@@ -3240,7 +3240,7 @@ describe('release inventory', () => {
         }
     });
 
-    // Rebuilds the Grand Boule fixture repository several times; ~4.5 s on an idle machine.
+    // Captures the error message once instead of recomputing the contract repeatedly; ~3.1 s on an idle machine.
     it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', { timeout: 20_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-assertion-'));
         writeGrandBouleReleaseFixture(root);
@@ -3276,14 +3276,14 @@ describe('release inventory', () => {
             const staleSingleLabelDigests = current.digests.map((entry) =>
                 entry === realProjectStateEntry ? staleProjectStateEntry : entry
             );
-            const assertStaleSingleLabel = (): void => {
+            const staleSingleLabelMessage = thrownMessage(() => {
                 assertGrandBouleReleaseInventory(root, { ...current, digests: staleSingleLabelDigests });
-            };
-            expect(assertStaleSingleLabel).toThrow(
+            });
+            expect(staleSingleLabelMessage).toContain(
                 `grand-boule-project-state: recorded ${staleProjectStateEntry} but the tree now yields ${realProjectStateEntry}`
             );
-            expect(assertStaleSingleLabel).toThrow(`tracked set: ${projectStateBoundary.gitPathspecs.join(', ')}`);
-            expect(assertStaleSingleLabel).toThrow(
+            expect(staleSingleLabelMessage).toContain(`tracked set: ${projectStateBoundary.gitPathspecs.join(', ')}`);
+            expect(staleSingleLabelMessage).toContain(
                 'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
                     "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
             );
@@ -3293,7 +3293,7 @@ describe('release inventory', () => {
                 if (boundary.digestLabel === 'grand-boule-project-state') {
                     continue;
                 }
-                expect(assertStaleSingleLabel).not.toThrow(`${boundary.digestLabel}: recorded`);
+                expect(staleSingleLabelMessage).not.toContain(`${boundary.digestLabel}: recorded`);
             }
 
             // Folding recorded entries into a Map by label is lossy: a duplicated
