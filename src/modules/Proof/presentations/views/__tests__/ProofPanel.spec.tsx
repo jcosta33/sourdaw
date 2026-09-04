@@ -305,15 +305,6 @@ describe('ProofPanel', () => {
         expect(missionCard).toHaveClass('shrink-0');
     });
 
-    it('lets the faceplate scroll instead of clipping the desk when the panel is smaller than it', () => {
-        render(<ProofPanel deviceId={DEVICE_ID} />);
-
-        const faceplate = document.querySelector('.proof-faceplate');
-        expect(faceplate).not.toBeNull();
-        expect(faceplate).toHaveClass('overflow-auto');
-        expect(faceplate).not.toHaveClass('overflow-hidden');
-    });
-
     it('reserves a desk-column minimum that covers the EQ surface so the rails cannot crush it', () => {
         seedState({ uiLevel: 3 });
         render(<ProofPanel deviceId={DEVICE_ID} />);
@@ -1592,5 +1583,13 @@ describe('ProofPanel', () => {
         expect(getProofState(DEVICE_ID).patch.limBypassed).toBe(true);
         expect(persistDevicePatchMock).toHaveBeenCalledWith(DEVICE_ID, { lim_bypass: 1 });
         expect(bridge.setParam).toHaveBeenCalledWith('lim_bypass', 1);
+    });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-auto', () => {
+        const { container } = render(<ProofPanel deviceId="proof-1" />);
+        const faceplate = container.querySelector<HTMLElement>('.proof-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-auto');
     });
 });

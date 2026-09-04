@@ -155,7 +155,7 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const announced = useDebouncedAnnouncement(liveMessage);
 
     return (
-        <Row align="stretch" gap={3} className="scoring-faceplate h-full min-h-0 overflow-hidden p-3">
+        <Row align="stretch" gap={3} className="scoring-faceplate h-full min-h-[440px] p-3">
             <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
                 {announced}
             </div>

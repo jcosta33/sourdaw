@@ -165,7 +165,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     return (
         <div
-            className="crumbs-faceplate relative h-full min-h-0 overflow-hidden rounded-[26px] p-3"
+            className="crumbs-faceplate relative h-full min-h-[440px] rounded-[26px] p-3"
             onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'copy';
@@ -185,7 +185,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     <span className="text-sm font-medium text-[var(--color-accent-lavender)]">Drop sample here</span>
                 </Row>
             ) : null}
-            <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
+            <div className="grid h-full min-h-[440px] grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
                 {/* Left rail — Pad grid + selected pad info */}
                 <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Sample" detail={activeSample?.fileName ?? 'No sample loaded'}>
