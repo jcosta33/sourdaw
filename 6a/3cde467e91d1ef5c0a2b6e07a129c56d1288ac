@@ -1,0 +1,39 @@
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_9b530f08172a54::t_9544b0b1c7e97e 180-185,205,214,225-226,228,378-384,391-411,458,461,470,472,509,518,521,524,531,671-673,1477-1478
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_9b530f08172a54::t_b6cca375250b5c 58,69-115,335,345-347,355-357,363-364,373-375,401-402,408,411,414,416,421-422
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_9b530f08172a54::t_020ede33f29751 473,505-508,510-515,526,533-535,546-548,554-555
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_9b530f08172a54::t_85a37f797070f2 423-428,430-433,519-526
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_9b530f08172a54::t_ab47d6ba1b2af5 35-38,79-80,103,107,109,298-299,758,769,1483-1484,1493-1494,1497-1498,1575,1581-1584
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_9b530f08172a54::t_6dccf70d79f820 16-18,34-35,52,55,57,100-101,382,384,388-390,392-393,573,578-579,583-586
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_9b530f08172a54::t_8a28ba2fa2284d 54-55,67-68,76,107-109,589-628
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_9b530f08172a54::t_40cba5c96efbc1 336-338,1382,1687-1689,1805-1816,2113,2146,2493-2495
+src/modules/AudioEngine/services/__tests__/matchesRuntimeDeviceChainTopology.spec.ts
+  s_9b530f08172a54::t_0600c5e109632c 90-91,93
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_835b3601b3bc4d 154
+src/modules/AudioEngine/useCases/trackAudioControls/setNativeCarriedTracks.ts
+  s_9b530f08172a54::t_af6c82e21bd176 1-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6a3cde467e91d1ef5c0a2b6e07a129c56d1288ac",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
