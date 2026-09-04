@@ -5,6 +5,9 @@ import { type MidiStoreState } from '#/modules/MIDI/stores';
 import { type ArrangementSnapshot } from '../../../stores/arrangementStore';
 import { takeSnapshot } from '../takeSnapshot';
 
+/** The live track store value, which also carries transient view state. */
+type TracksStoreValue = ArrangementSnapshot['tracks'] & { ghostClips?: unknown[] };
+
 type StoreMock<TValue> = {
     value: TValue | null;
 };
@@ -21,7 +24,7 @@ const mocks = vi.hoisted(() => {
         take_lane_store: create_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(null),
         tempo_map_store: create_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(null),
         time_signature_map_store: create_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(null),
-        track_store: create_store_mock<ArrangementSnapshot['tracks']>(null),
+        track_store: create_store_mock<TracksStoreValue>(null),
     };
 });
 
@@ -119,8 +122,23 @@ describe('takeSnapshot', () => {
             markers,
             takeLanes,
         });
-        expect(snapshot.tracks).toBe(tracks);
+        expect(snapshot.tracks).toEqual(tracks);
         expect(snapshot.automation).toBe(automation);
         expect(snapshot.midi).not.toHaveProperty('probabilitySeed');
+    });
+
+    it('should persist only the arrangement keys of the tracks section, never transient ghost clips', () => {
+        // A snapshot key the hydrate projection rebuilds away is content the
+        // raw projection-loss detector can never see returned: the document
+        // reads as corrupt and the project refuses every edit and every save.
+        mocks.track_store.value = {
+            tracks: [],
+            selectedTrackId: null,
+            ghostClips: [{ id: 'ghost-1', trackId: 'track-1', startBeat: 0, duration: 4 }],
+        };
+
+        const snapshot = takeSnapshot('arr-ghosts', 'Ghosts');
+
+        expect(Object.keys(snapshot.tracks).toSorted()).toEqual(['selectedTrackId', 'tracks']);
     });
 });

@@ -124,6 +124,26 @@ type AutomergeStorageOptions<TData> = {
      */
     ownsCrdtEncoding?: (raw: unknown) => boolean;
     /**
+     * The raw slot value with the content this store discards on purpose
+     * removed. `findAutomergeStorageRawProjectionLosses` compares the
+     * projection against that pre-image rather than the document itself.
+     * Defaults to identity.
+     *
+     * The detector's contract — anything the projection cannot return is loss —
+     * has to stay exactly that strict, because an undeclared dropped key is how
+     * a real projection defect announces itself. A store nevertheless drops some
+     * keys by contract: transient view state an older build persisted by
+     * mistake, a field retired from the model. There the projection is right and
+     * the document is stale, but the detector cannot tell that from a defect,
+     * and a document carrying such a key is held in repair-required forever —
+     * which refuses every action and every save, including the save that would
+     * have rewritten the document without it.
+     *
+     * A hook removes only what its sanitizer removes by contract, and only from
+     * the raw side: applying it to the projection would hide real loss instead.
+     */
+    discardsRaw?: (raw: unknown) => unknown;
+    /**
      * Identity overrides for collections whose rows carry no `id`, keyed by the
      * field name holding the collection. Without an entry a collection of
      * id-less rows is written as one opaque value.
@@ -256,6 +276,7 @@ type AutomergeStorageMutationProvenance = {
 let activeAutomergeStorageMutationProvenance: AutomergeStorageMutationProvenance | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
 type InboundSanitizerEntry = {
+    discardsRaw: (raw: unknown) => unknown;
     ownsCrdtEncoding: (raw: unknown) => boolean;
     sanitize: (value: unknown) => unknown;
 };
@@ -457,6 +478,15 @@ function projectionMatchesAmbiguousItems(
     return ambiguousRaw.every((item) => tryMatch(item, new Uint8Array(unclaimedProjected.length)));
 }
 
+/**
+ * Slots of `document` whose raw content the owning store's projection cannot
+ * return, sorted — the evidence `inspectCurrentAgentProjectRepairState` arms
+ * repair-required on.
+ *
+ * Content a store discards by contract is not loss: the slot's `discardsRaw`
+ * hook removes it from the raw side first, and everything else the projection
+ * drops still reports.
+ */
 export function findAutomergeStorageRawProjectionLosses(input: {
     docId: string;
     document: Readonly<Record<string, unknown>>;
@@ -470,7 +500,7 @@ export function findAutomergeStorageRawProjectionLosses(input: {
             continue;
         }
         try {
-            if (!projectionPreservesRawValue(rawValue, entry.sanitize(rawValue))) {
+            if (!projectionPreservesRawValue(entry.discardsRaw(rawValue), entry.sanitize(rawValue))) {
                 losses.push(slot);
             }
         } catch {
@@ -1015,6 +1045,7 @@ export const createAutomergeStorage = <TData>(
     const resolveCrdtConflicts = options?.resolveCrdtConflicts;
     const mutateCrdt = options?.mutateCrdt;
     const ownsCrdtEncoding = options?.ownsCrdtEncoding;
+    const discardsRaw = options?.discardsRaw;
     const crdtEntityIdentity = options?.crdtEntityIdentity;
     const rebasePending = options?.rebasePending;
     type AdapterPendingWrite = {
@@ -1412,6 +1443,7 @@ export const createAutomergeStorage = <TData>(
 
         registerInboundSanitizer(sanitize): void {
             inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), {
+                discardsRaw: discardsRaw ?? ((raw) => raw),
                 ownsCrdtEncoding: ownsCrdtEncoding ?? (() => false),
                 sanitize: (value) => sanitize(fromCrdt ? fromCrdt(value as TData) : value),
             });

@@ -539,6 +539,28 @@ function normalize_tracks_section(value: unknown): ProjectTrackStoreState | null
 }
 
 /**
+ * Live track-store keys that are view state, never project truth.
+ * `takeSnapshot` copied the whole store value into the snapshot until #3533, so
+ * documents saved by those builds carry them and hydrate has to keep loading.
+ */
+const TRANSIENT_TRACKS_SECTION_KEYS = ['ghostClips'] as const;
+
+function without_keys<TValue extends object>(value: TValue, keys: readonly string[]): TValue {
+    const next = { ...value };
+    for (const key of keys) {
+        Reflect.deleteProperty(next, key);
+    }
+    return next;
+}
+
+function discard_transient_tracks_section_keys(snapshot: PlainObject): PlainObject {
+    if (!is_plain_object(snapshot.tracks)) {
+        return snapshot;
+    }
+    return { ...snapshot, tracks: without_keys(snapshot.tracks, TRANSIENT_TRACKS_SECTION_KEYS) };
+}
+
+/**
  * Lane keys that were removed from the lane model and must not survive a
  * hydrate. `virginTerritory` is the first: a lane flag that never affected
  * playback or rendering and was deleted rather than given a meaning.
@@ -579,6 +601,16 @@ function normalize_tracks_section(value: unknown): ProjectTrackStoreState | null
  * requiring it while still emitting it, then stop emitting it once no older peer
  * can connect. Removing `virginTerritory` in one step was safe only because the
  * app had no tagged release and therefore no older peer in existence.
+ *
+ * ## Stripping alone is not enough
+ *
+ * **Invariant: a key this store drops on purpose is also declared to the raw
+ * projection-loss detector** — see `SNAPSHOT_RAW_DISCARDS`. The detector reads
+ * anything the projection cannot return as unrecoverable content and arms
+ * repair-required, which refuses every action and every save, including the
+ * save that would have rewritten the document without the key. Strip a key
+ * without declaring it and every document already carrying it is dead: it
+ * hydrates, and then nothing can be done to it.
  */
 const RETIRED_AUTOMATION_LANE_KEYS = ['virginTerritory'] as const;
 
@@ -591,14 +623,22 @@ function has_any_retired_automation_lane_key(lanes: unknown): boolean {
 }
 
 function strip_retired_automation_lane_keys(lane: ProjectAutomationLane): ProjectAutomationLane {
-    if (!has_retired_automation_lane_key(lane)) {
+    return has_retired_automation_lane_key(lane) ? without_keys(lane, RETIRED_AUTOMATION_LANE_KEYS) : lane;
+}
+
+function discard_retired_keys_from_lane(lane: unknown): unknown {
+    if (!is_plain_object(lane) || !has_retired_automation_lane_key(lane)) {
         return lane;
     }
-    const stripped = { ...lane };
-    for (const key of RETIRED_AUTOMATION_LANE_KEYS) {
-        Reflect.deleteProperty(stripped, key);
+    return without_keys(lane, RETIRED_AUTOMATION_LANE_KEYS);
+}
+
+function discard_retired_automation_lane_keys(snapshot: PlainObject): PlainObject {
+    if (!is_plain_object(snapshot.automation) || !Array.isArray(snapshot.automation.lanes)) {
+        return snapshot;
     }
-    return stripped;
+    const lanes: unknown[] = snapshot.automation.lanes.map(discard_retired_keys_from_lane);
+    return { ...snapshot, automation: { ...snapshot.automation, lanes } };
 }
 
 function is_exact_automation_section(value: unknown): value is ProjectAutomationState {
@@ -806,8 +846,40 @@ export function sanitize_arrangement_store_state(value: unknown): ArrangementSto
     };
 }
 
+/**
+ * Snapshot keys this store removes on purpose, declared to the raw
+ * projection-loss detector.
+ *
+ * A key the sanitizer drops is content the projection can never return, and the
+ * detector reads that as unrecoverable — repair-required, which refuses every
+ * action and every save, including the save that would rewrite the document
+ * without the key. So a deliberate discard has to be declared here as well as
+ * implemented above: an already-saved document keeps loading, while an
+ * undeclared dropped key still reports, which is the whole point of the
+ * detector.
+ *
+ * One function per discarded shape. The next transient or retired key is a line
+ * in the list its function reads, not a new mechanism.
+ */
+const SNAPSHOT_RAW_DISCARDS = [discard_transient_tracks_section_keys, discard_retired_automation_lane_keys] as const;
+
+function discard_snapshot_raw_keys(snapshot: unknown): unknown {
+    if (!is_plain_object(snapshot)) {
+        return snapshot;
+    }
+    return SNAPSHOT_RAW_DISCARDS.reduce<PlainObject>((next, discard) => discard(next), snapshot);
+}
+
+export function discard_arrangements_raw_keys(raw: unknown): unknown {
+    if (!is_plain_object(raw) || !Array.isArray(raw.arrangements)) {
+        return raw;
+    }
+    return { ...raw, arrangements: raw.arrangements.map(discard_snapshot_raw_keys) };
+}
+
 export const arrangementStore = createStore<ArrangementStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'arrangements', {
+        discardsRaw: discard_arrangements_raw_keys,
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultArrangementStoreState,
