@@ -749,3 +749,64 @@ fn streaming_freeze_cycle_restores_shimmer_tail_without_resending_shimmer() {
         "shimmer tail must be sounding after freeze clears; delta against shimmer-off: {delta:e}"
     );
 }
+
+#[test]
+fn freeze_disables_shimmer_while_frozen() {
+    // Shimmer must be suppressed while freeze is active (shimmer && !freeze)
+    // so recirculating audio does not pitch-shift runaway in the lossless freeze loop.
+    let mut instance_shimmer = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_shimmer.set_param("algorithm", PLATE);
+    instance_shimmer.set_param("mix", 1.0);
+    // Render initial stimulus with shimmer off so internal tank state is identical
+    instance_shimmer.set_param("shimmer", 0.0);
+    instance_shimmer.set_param("shimmer_amount", 0.9);
+    instance_shimmer.set_param("shimmer_pitch", 0.8);
+
+    let mut instance_no_shimmer = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_no_shimmer.set_param("algorithm", PLATE);
+    instance_no_shimmer.set_param("mix", 1.0);
+    instance_no_shimmer.set_param("shimmer", 0.0);
+    instance_no_shimmer.set_param("shimmer_amount", 0.9);
+    instance_no_shimmer.set_param("shimmer_pitch", 0.8);
+
+    let mut out_shimmer = Vec::with_capacity(32_000);
+    let mut out_no_shimmer = Vec::with_capacity(32_000);
+
+    let mut index = 0;
+    while index < 32_000 {
+        if index == 16_000 {
+            // Engage freeze on both. On one, enable shimmer.
+            instance_shimmer.set_param("freeze", 1.0);
+            instance_shimmer.set_param("shimmer", 1.0);
+
+            instance_no_shimmer.set_param("freeze", 1.0);
+            instance_no_shimmer.set_param("shimmer", 0.0);
+        }
+
+        let left: Vec<f32> = (0..BLOCK).map(|i| stimulus(index + i)).collect();
+        let right = left.clone();
+
+        let ptr_a = instance_shimmer.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            out_shimmer.push(unsafe { *ptr_a.add(i) });
+        }
+
+        let ptr_b = instance_no_shimmer.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            out_no_shimmer.push(unsafe { *ptr_b.add(i) });
+        }
+
+        index += BLOCK;
+    }
+
+    // During frames 16k..32k, both instances are frozen. Because freeze disables shimmer,
+    // enabling shimmer while frozen must not affect the output buffer.
+    assert_eq!(
+        max_delta(
+            &out_shimmer[16_000..32_000],
+            &out_no_shimmer[16_000..32_000]
+        ),
+        0.0,
+        "shimmer must be suppressed while freeze is active"
+    );
+}
