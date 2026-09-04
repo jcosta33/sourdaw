@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -466,13 +466,18 @@ describe('TrackListView', () => {
         const { executeAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         renderWithTooltip(<TrackListView />);
-        fireEvent.keyDown(screen.getByTestId('inline-rename-input'), { key: 'Backspace' });
+        const input = screen.getByTestId('inline-rename-input');
+        const backspaceEvent = createEvent.keyDown(input, { key: 'Backspace' });
+        fireEvent(input, backspaceEvent);
         await Promise.resolve();
         await Promise.resolve();
         // The rename input owns the keystroke: no delete confirmation may
         // open and no removeTrack action may fire from the bubbled keydown.
         expect(confirmUser).not.toHaveBeenCalled();
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        // Not cancelling matters as much as not acting: the native default
+        // must survive or character deletion breaks inside the input.
+        expect(backspaceEvent.defaultPrevented).toBe(false);
     });
 
     it('ignores ArrowDown, Enter, and Delete typed into the inline rename input (#3602)', async () => {
@@ -480,15 +485,23 @@ describe('TrackListView', () => {
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
         renderWithTooltip(<TrackListView />);
         const input = screen.getByTestId('inline-rename-input');
-        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        const arrowDownEvent = createEvent.keyDown(input, { key: 'ArrowDown' });
+        fireEvent(input, arrowDownEvent);
         fireEvent.keyDown(input, { key: 'Enter' });
-        fireEvent.keyDown(input, { key: 'Delete' });
+        const deleteEvent = createEvent.keyDown(input, { key: 'Delete' });
+        fireEvent(input, deleteEvent);
         // The rename input owns every keystroke: arrows must not move the
         // track selection mid-edit, Enter must not enter clip mode, and
         // Delete must not open the track-delete confirmation.
         expect(selectTrack).not.toHaveBeenCalled();
         expect(setWorkspaceMode).not.toHaveBeenCalled();
         expect(confirmUser).not.toHaveBeenCalled();
+        // Not cancelling matters as much as not acting: the native defaults
+        // must survive or caret movement and character deletion break inside
+        // the input. Enter has no meaningful default in a single-line
+        // input, so it is not asserted.
+        expect(arrowDownEvent.defaultPrevented).toBe(false);
+        expect(deleteEvent.defaultPrevented).toBe(false);
     });
 
     it('claims Delete for a selected-but-hidden master track without confirming (#3602)', async () => {
