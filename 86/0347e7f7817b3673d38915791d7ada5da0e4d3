@@ -1,0 +1,37 @@
+crates/daw-engine/src/midi/diagnostics.rs
+  s_9b530f08172a54::t_6cf851195ed41f 39-45,100,163-169
+crates/daw-engine/src/midi/rt_contract.rs
+  s_9b530f08172a54::t_8ffde9ab0376b6 231,255-256
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_fc6117b382ce2a 407-410,438-440,702-704,734-742,1308-1310,1312-1332,1341,1772-1777,1782,1794,1798,2256-2259,2264-2267,2495-2521,2713,2724,3050-3053,3058-3059,3061-3064,5948-6053,7045-7260
+crates/sourdaw-native/AGENTS.md
+  s_9b530f08172a54::t_fb846516e33f16 61-72
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  s_9b530f08172a54::t_a5aaed46228f48 104-107,150,218,240-241,263-264,316,342
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_727f231e985ac0 350-353,671-679,850,1207-1208,1213-1216,1220,1233-1243,1245-1255,1261,1263,1267-1293,1318,1341-1414,1454-1459,1465,1498,1578,1635-1642,1650,1658,1660,1741-1748,1756,1764,1766,1928-1935,1944,1952,1954,1985,1987,1990-1992,2023-2033,2640-2654,2680-2686,2911,3029-3037,3080-3082,3197-3208,3243,3275,3303,3439,3497,3524,3546,3589,3623,3646,3669,3690,3716,3748,3765,3796,3832,3866,3884,3898,3919,3940,3954,3976,3992,4053,4062,4076,4109,4131,4142,4213,4237,4278,4290,4311,4323,4338,4389,4482,5011-5077,5881,5906,5934,6035,6055,6073-6135,6170,6212,6238-6275,6277,6279-6456,6464-6466,6469-6513,6515-6519,6521-6532,6534,6536,6539-6546,6548,6550,6552-6553,6566,6590
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  s_9b530f08172a54::t_c4fc10e72d9435 44-51,83
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_5cbf35d4b04ea9 32
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  s_9b530f08172a54::t_2dc14023217bdf 82
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_fdb9bee958412a 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "860347e7f7817b3673d38915791d7ada5da0e4d3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
