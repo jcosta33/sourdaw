@@ -2,6 +2,7 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
+use daw_plugin_host::scanner::ScannedPlugin;
 // The trait, the resizer and the raw handle are how a plugin's editor is
 // reached, and no production body here does that any more: the stores hold
 // concrete runtimes, and every editor call lives in `commands::plugin_gui`.
@@ -366,6 +367,32 @@ pub struct PluginRegistryEntry {
     pub num_outputs: u32,
     pub has_custom_ui: bool,
     pub capability_metadata_reason: Option<String>,
+}
+
+impl PluginRegistryEntry {
+    /// The registry row a scanned plugin resolves to.
+    ///
+    /// The single mapping from a scan result to a registry row: the scan's own
+    /// index, the persisted registry and the activation rescan all go through
+    /// it, so none of them can come to disagree about what a scanned plugin
+    /// means.
+    ///
+    /// `capability_metadata_reason` travels with the values it qualifies and is
+    /// never dropped on the way through. A row that kept the counts and lost
+    /// the reason would state as fact what the scan recorded as unknown.
+    pub fn from_scanned(plugin: &ScannedPlugin) -> Self {
+        Self {
+            path: plugin.path.clone(),
+            stable_id: plugin.id.clone(),
+            descriptor_id: plugin.descriptor_id.clone(),
+            format: plugin.format.clone(),
+            name: plugin.name.clone(),
+            num_inputs: plugin.num_inputs,
+            num_outputs: plugin.num_outputs,
+            has_custom_ui: plugin.has_custom_ui,
+            capability_metadata_reason: plugin.capability_metadata_reason.clone(),
+        }
+    }
 }
 
 impl AppState {

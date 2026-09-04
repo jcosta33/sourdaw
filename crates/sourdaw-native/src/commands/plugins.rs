@@ -2,7 +2,7 @@
 
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
-    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim,
+    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim, ScanRow,
 };
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
@@ -148,7 +148,19 @@ fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
 /// can produce was not written by one. The two bounds have to move together, or
 /// the cap quietly stops meaning what it says.
 pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
-const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
+
+/// The whole enumeration's clock.
+///
+/// Sized against the shell supervisor that owns the scan invocation
+/// (`electron/scan.ts`, 120 s): this has to fit inside that bound with room for
+/// the response to be built and returned, or the supervisor kills a walk that
+/// was about to answer and the user sees a failure instead of a partial list.
+///
+/// It only has to cover the candidates a run actually inspects. An unchanged
+/// file's rows are reused without spawning a helper, so a settled plugin folder
+/// costs the walk almost nothing however large it is, and this budget is spent
+/// on what is new or changed.
+const MAX_SCAN_DURATION: Duration = Duration::from_secs(90);
 static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 /// The two clocks a scan runs under.
@@ -210,7 +222,7 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
     });
 }
 
-/// Build the lookup table `load_plugin` resolves against.
+/// Pair every scanned plugin with the registry keys it answers to.
 ///
 /// Two keys per scanned plugin, on purpose. The primary key is `ScannedPlugin::id`,
 /// a hash of the file path — which is exactly why it is fragile: move the plugin
@@ -219,7 +231,7 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
 /// CLAP descriptor id, or the VST3 class id — which carries no path and
 /// therefore survives the move.
 ///
-/// Additive by construction: every primary key is inserted first and a
+/// Additive by construction: every primary key is claimed first and a
 /// descriptor id may only fill a vacancy, never displace one. Nothing that
 /// resolves today stops resolving, and there is no migration to run. Making the
 /// descriptor id primary would be the stronger fix, but it would change every
@@ -228,40 +240,42 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
 ///
 /// An empty descriptor id is never a key: a format with no identity of its own
 /// would otherwise have every plugin collide on `""`.
-fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginRegistryEntry> {
-    let mut registry = HashMap::new();
+///
+/// The one keying rule, so the in-memory lookup table and the persisted
+/// registry cannot come to disagree about which keys resolve a plugin.
+fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
+    let claimed_primary_keys: HashSet<&str> =
+        plugins.iter().map(|plugin| plugin.id.as_str()).collect();
+    let mut claimed_descriptor_keys = HashSet::new();
 
-    for plugin in plugins {
-        registry.insert(plugin.id.clone(), registry_entry(plugin));
-    }
-
-    for plugin in plugins {
-        if plugin.descriptor_id.is_empty() {
-            continue;
-        }
-        registry
-            .entry(plugin.descriptor_id.clone())
-            .or_insert_with(|| registry_entry(plugin));
-    }
-
-    registry
+    plugins
+        .iter()
+        .map(|plugin| {
+            let mut keys = vec![plugin.id.clone()];
+            let takes_descriptor_key = !plugin.descriptor_id.is_empty()
+                && !claimed_primary_keys.contains(plugin.descriptor_id.as_str())
+                && claimed_descriptor_keys.insert(plugin.descriptor_id.clone());
+            if takes_descriptor_key {
+                keys.push(plugin.descriptor_id.clone());
+            }
+            ScanRow {
+                keys,
+                plugin: plugin.clone(),
+            }
+        })
+        .collect()
 }
 
-fn registry_entry(plugin: &ScannedPlugin) -> PluginRegistryEntry {
-    PluginRegistryEntry {
-        path: plugin.path.clone(),
-        stable_id: plugin.id.clone(),
-        descriptor_id: plugin.descriptor_id.clone(),
-        format: plugin.format.clone(),
-        name: plugin.name.clone(),
-        num_inputs: plugin.num_inputs,
-        num_outputs: plugin.num_outputs,
-        has_custom_ui: plugin.has_custom_ui,
-        // Carried with the values, never dropped on the way through. A row that
-        // kept the counts and lost the reason would state as fact what the scan
-        // recorded as unknown.
-        capability_metadata_reason: plugin.capability_metadata_reason.clone(),
-    }
+/// Build the lookup table `load_plugin` resolves against, under
+/// [`key_scanned_plugins`]'s keys.
+fn index_scanned_plugins(plugins: &[ScannedPlugin]) -> HashMap<String, PluginRegistryEntry> {
+    key_scanned_plugins(plugins)
+        .into_iter()
+        .flat_map(|row| {
+            let entry = PluginRegistryEntry::from_scanned(&row.plugin);
+            row.keys.into_iter().map(move |key| (key, entry.clone()))
+        })
+        .collect()
 }
 
 /// Replace the scanned roots' share of the registry with this scan's results.
@@ -319,16 +333,17 @@ async fn hydrate_plugin_registry(state: &AppState) {
     }
 }
 
-/// Write the in-memory registry back to the registry file.
-async fn persist_plugin_registry(state: &AppState) {
-    let snapshot = state
-        .plugin_registry
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
+/// Write a completed scan's rows back to the registry file.
+///
+/// The scan's own results, not a snapshot of the in-memory registry: the row a
+/// later scan reuses has to be the whole of what this scan learned, and the
+/// registry holds only the columns activation reads. Rows this scan did not
+/// produce — another root's, hydrated earlier — are already in the store's
+/// persisted view and survive the union `persist` performs.
+async fn persist_scanned_plugins(state: &AppState, plugins: &[ScannedPlugin]) {
+    let rows = key_scanned_plugins(plugins);
     let registry_store = Arc::clone(&state.plugin_registry_store);
-    if let Err(error) = tokio::task::spawn_blocking(move || registry_store.persist(&snapshot)).await
-    {
+    if let Err(error) = tokio::task::spawn_blocking(move || registry_store.persist(&rows)).await {
         eprintln!("[Plugin] Could not save the plugin scan registry: {error}");
     }
 }
@@ -530,7 +545,10 @@ async fn scan_plugins_with_backend(
                 }
                 scanned_paths.push(candidate.path.clone());
 
+                let mut retried_from_quarantine = false;
                 if retry_quarantined {
+                    retried_from_quarantine =
+                        registry_store.is_quarantined(&candidate.path).is_some();
                     registry_store.clear_quarantine(&candidate.path);
                 } else if registry_store.is_quarantined(&candidate.path).is_some() {
                     // Skipped, not retried: a binary whose helper already
@@ -538,6 +556,22 @@ async fn scan_plugins_with_backend(
                     // ordinary scan (AC-002). It is still named in the scan
                     // response below, via `quarantined_snapshot`.
                     continue;
+                }
+
+                // A DAW rescans what is new or changed and takes the rest from
+                // its database — a settled plugin folder is not re-inspected
+                // every time the user asks for a scan. The rows the last scan
+                // wrote for an unchanged file are that scan's whole answer, so
+                // republishing them costs no helper process and no budget.
+                //
+                // A candidate the user is explicitly retrying is never reused:
+                // asking for the retry is asking for the helper to run.
+                if !retried_from_quarantine {
+                    if let Some(rows) = registry_store.reusable_rows(&candidate.path, &scan_policy)
+                    {
+                        plugins.extend(rows);
+                        continue;
+                    }
                 }
 
                 match scan_descriptor(candidate.format, &candidate.path, budget.candidate) {
@@ -617,7 +651,7 @@ async fn scan_plugins_with_backend(
         scan_complete,
         &plugins,
     );
-    persist_plugin_registry(state).await;
+    persist_scanned_plugins(state, &plugins).await;
 
     let quarantined: Vec<QuarantinedPlugin> = state
         .plugin_registry_store
@@ -741,7 +775,7 @@ fn read_registry_entry(
 fn plugin_gone_from_last_known_path(entry: &PersistedPluginEntry, reason: &str) -> String {
     format!(
         "Plugin '{}' could not be loaded from its last known location {}: {reason}. It has been moved, removed or replaced since it was scanned — reinstall it there, or scan the folder it lives in now.",
-        entry.name, entry.path
+        entry.plugin.name, entry.plugin.path
     )
 }
 
@@ -789,7 +823,7 @@ fn resolve_registry_entry(
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
-    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<PluginRegistryEntry, String>,
+    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<ScannedPlugin, String>,
 ) -> Result<PluginRegistryEntry, String> {
     registry_store.hydrate_into(plugin_registry, scan_policy);
 
@@ -809,12 +843,12 @@ fn resolve_registry_entry(
         RescanClaim::InProgress => {
             return Err(format!(
                 "Plugin '{}' is already being looked for at {}. Try again once that finishes.",
-                last_known.name, last_known.path
+                last_known.plugin.name, last_known.plugin.path
             ));
         }
     };
 
-    let last_known_path = PathBuf::from(&last_known.path);
+    let last_known_path = PathBuf::from(&last_known.plugin.path);
     // The rescan reads the path the policy resolved and authorized, which is the
     // only path the checks above actually looked at. It also carries the
     // persisted descriptor id: a requested key that no longer matches a row —
@@ -824,10 +858,10 @@ fn resolve_registry_entry(
         .authorize_scan_root(&last_known_path)
         .and_then(|authorized| {
             rescan(
-                &last_known.format,
+                &last_known.plugin.format,
                 &authorized,
                 plugin_id,
-                &last_known.descriptor_id,
+                &last_known.plugin.descriptor_id,
             )
         }) {
         Ok(rescanned) => rescanned,
@@ -839,30 +873,35 @@ fn resolve_registry_entry(
     };
     attempt.resolved();
 
+    // The requested key first, so the saved project resolves; the plugin's own
+    // keys additively, which is the same rule `key_scanned_plugins` follows —
+    // nothing that resolves today stops resolving. The requested key is carried
+    // into the persisted row too: it is what the saved project actually
+    // recorded, and dropping it would send the next launch back through this
+    // rescan.
+    let entry = PluginRegistryEntry::from_scanned(&rescanned);
+    let mut keys = vec![plugin_id.to_string()];
     {
         let mut registry = plugin_registry
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // The requested key first, so the saved project resolves; the plugin's
-        // own keys additively, which is the same rule `index_scanned_plugins`
-        // follows — nothing that resolves today stops resolving.
-        registry.insert(plugin_id.to_string(), rescanned.clone());
-        registry
-            .entry(rescanned.stable_id.clone())
-            .or_insert_with(|| rescanned.clone());
-        if !rescanned.descriptor_id.is_empty() {
+        registry.insert(plugin_id.to_string(), entry.clone());
+        for own_key in [&rescanned.id, &rescanned.descriptor_id] {
+            if own_key.is_empty() || keys.contains(own_key) {
+                continue;
+            }
+            keys.push(own_key.clone());
             registry
-                .entry(rescanned.descriptor_id.clone())
-                .or_insert_with(|| rescanned.clone());
+                .entry(own_key.clone())
+                .or_insert_with(|| entry.clone());
         }
     }
-    let snapshot = plugin_registry
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
-    registry_store.persist(&snapshot);
+    registry_store.persist(&[ScanRow {
+        keys,
+        plugin: rescanned,
+    }]);
 
-    Ok(rescanned)
+    Ok(entry)
 }
 
 /// The one bounded rescan an activation miss gets: a single file, through the
@@ -884,7 +923,7 @@ fn rescan_plugin_file(
     path: &Path,
     plugin_id: &str,
     last_known_descriptor_id: &str,
-) -> Result<PluginRegistryEntry, String> {
+) -> Result<ScannedPlugin, String> {
     // The format comes off the persisted row rather than from the extension:
     // the row is what the scan that wrote it claimed, and re-deriving it here
     // would let a rename decide which extractor loads the file.
@@ -902,7 +941,7 @@ fn rescan_plugin_file(
                 last_known_descriptor_id
             )
         })?;
-    Ok(registry_entry(requested))
+    Ok(requested.clone())
 }
 
 /// The one row of a rescanned bundle a registry miss resolves to.
@@ -5397,6 +5436,362 @@ mod tests {
         );
     }
 
+    // ── Reuse of unchanged rows: a scan re-inspects what changed ────────────
+
+    /// A budget no fake backend can exhaust, so a reuse test observes reuse
+    /// rather than a walk running out of time.
+    const UNCONSTRAINED_SCAN_BUDGET: ScanBudget = ScanBudget {
+        walk: Duration::from_secs(30),
+        candidate: Duration::from_millis(100),
+    };
+
+    /// App state whose registry store is a real file, so a second scan in one
+    /// test meets the rows the first scan persisted. `AppState::default` is
+    /// deliberately file-less and can carry nothing between scans.
+    fn state_with_registry_file(root: &Path) -> AppState {
+        AppState {
+            plugin_registry_store: Arc::new(PluginRegistryStore::at(
+                root.join("plugin-registry.json"),
+            )),
+            ..AppState::default()
+        }
+    }
+
+    /// A descriptor whose identity is the file's own stem, so two fixture
+    /// plugins are two identities and neither deduplicates the other away.
+    fn descriptor_for(path: &Path) -> scanner::ScannedDescriptor {
+        let stem = path
+            .file_stem()
+            .expect("a fixture plugin file has a stem")
+            .to_string_lossy();
+        descriptor(&format!("com.vendor.{stem}"))
+    }
+
+    /// A descriptor backend that records every call and answers from the path.
+    fn recording_descriptor_scan(
+        log: ScanCallLog,
+    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String> + Send + 'static
+    {
+        move |_format, path, timeout| {
+            record_scan_call(&log, path, timeout);
+            Ok(vec![descriptor_for(path)])
+        }
+    }
+
+    /// An instance backend that records every call and answers successfully,
+    /// which is what makes a row eligible for reuse.
+    fn recording_instance_scan(
+        log: ScanCallLog,
+    ) -> impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, String> + Send + 'static
+    {
+        move |_format, path, _plugin_id, timeout| {
+            record_scan_call(&log, path, timeout);
+            Ok(ScannedInstance::default())
+        }
+    }
+
+    fn scan_fixture_root(
+        root: &Path,
+        retry_quarantined: bool,
+        state: &AppState,
+        descriptor_calls: &ScanCallLog,
+        instance_calls: &ScanCallLog,
+    ) -> ScanResult {
+        crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            retry_quarantined,
+            PluginScanPolicy::with_allowed_roots(vec![root.to_path_buf()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            state,
+            recording_descriptor_scan(Arc::clone(descriptor_calls)),
+            recording_instance_scan(Arc::clone(instance_calls)),
+        ))
+        .expect("a scan over an authorized fixture root should succeed")
+    }
+
+    /// The defect (#3505): every scan spawned a descriptor helper and an
+    /// instance helper for every candidate, so a settled plugin folder paid the
+    /// whole per-candidate cost again on every run and a large one could not
+    /// finish inside the walk's budget at all. A DAW rescans what is new or
+    /// changed.
+    ///
+    /// Mutation this catches: removing the `reusable_rows` branch from the
+    /// candidate loop makes the second scan's call counts non-zero; publishing
+    /// anything but the persisted row verbatim, or publishing the rows of one
+    /// file out of their recorded order, fails the field-for-field equality.
+    #[test]
+    fn a_second_scan_of_unchanged_files_spawns_no_helper_and_republishes_the_same_rows() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-unchanged");
+        let first_plugin = root.join("A-First.clap");
+        let second_plugin = root.join("B-Second.clap");
+        std::fs::write(&first_plugin, b"clap-bytes").expect("fixture plugin should be written");
+        std::fs::write(&second_plugin, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        let first_scan =
+            scan_fixture_root(&root, false, &state, &scan_call_log(), &scan_call_log());
+
+        let descriptor_calls = scan_call_log();
+        let instance_calls = scan_call_log();
+        let second_scan =
+            scan_fixture_root(&root, false, &state, &descriptor_calls, &instance_calls);
+        let _ = std::fs::remove_dir_all(&root);
+
+        for path in [&first_plugin, &second_plugin] {
+            assert_eq!(
+                scan_calls_for(&descriptor_calls, path),
+                0,
+                "an unchanged candidate must not be handed to a descriptor helper again: {}",
+                path.display()
+            );
+            assert_eq!(
+                scan_calls_for(&instance_calls, path),
+                0,
+                "an unchanged candidate must not be handed to an instance helper again: {}",
+                path.display()
+            );
+        }
+        assert_eq!(
+            first_scan.plugins.len(),
+            2,
+            "the fixture must produce a row for each of its two files: {:?}",
+            first_scan.plugins
+        );
+        assert_eq!(
+            serde_json::to_value(&second_scan.plugins).expect("scanned rows should serialize"),
+            serde_json::to_value(&first_scan.plugins).expect("scanned rows should serialize"),
+            "a reused row is the row the previous scan published, field for field and in order"
+        );
+    }
+
+    /// The fingerprint is what separates "already scanned" from "unchanged": a
+    /// plugin updated in place keeps its path, so reuse keyed on the path alone
+    /// would pin the old version's metadata until the user reinstalled
+    /// elsewhere.
+    ///
+    /// Mutation this catches: dropping the fingerprint check from
+    /// `reusable_rows` leaves the changed file's call count at zero and its
+    /// name at the first scan's.
+    #[test]
+    fn a_candidate_whose_file_changed_is_rescanned_and_its_row_replaced() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-changed-file");
+        let unchanged = root.join("A-Unchanged.clap");
+        let updated = root.join("B-Updated.clap");
+        std::fs::write(&unchanged, b"clap-bytes").expect("fixture plugin should be written");
+        std::fs::write(&updated, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        scan_fixture_root(&root, false, &state, &scan_call_log(), &scan_call_log());
+        std::fs::write(&updated, b"clap-bytes-version-2")
+            .expect("the plugin should be updated in place");
+
+        let descriptor_calls = scan_call_log();
+        let updated_path = updated.clone();
+        let descriptor_log = Arc::clone(&descriptor_calls);
+        let second_scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            move |_format, path, timeout| {
+                record_scan_call(&descriptor_log, path, timeout);
+                let mut answered = descriptor_for(path);
+                if path == updated_path {
+                    answered.name = Some("Second Edition".to_string());
+                }
+                Ok(vec![answered])
+            },
+            recording_instance_scan(scan_call_log()),
+        ))
+        .expect("a scan over an authorized fixture root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &updated),
+            1,
+            "a file whose bytes changed since the scan must be read again"
+        );
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &unchanged),
+            0,
+            "the file that did not change must still be reused"
+        );
+        let updated_row = second_scan
+            .plugins
+            .iter()
+            .find(|plugin| plugin.path == updated.display().to_string())
+            .expect("the rescanned file must be in the result");
+        assert_eq!(
+            updated_row.name, "Second Edition",
+            "the rescan's row replaces the stale one rather than standing beside it"
+        );
+    }
+
+    /// Reuse has to converge on a complete answer, not freeze an incomplete
+    /// one. A row whose instance inspection was refused knows less about the
+    /// plugin than a scan can learn, so leaving the file alone must not stop
+    /// the next scan from asking again.
+    ///
+    /// Mutation this catches: dropping the `instance_inspection_answered` test
+    /// from `reusable_rows` reuses the refused row, leaving the call count at
+    /// zero and the parameter reason in place forever.
+    #[test]
+    fn a_row_whose_instance_inspection_was_refused_is_rescanned_though_the_file_is_unchanged() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-refused-inspection");
+        let plugin_path = root.join("Reverb.clap");
+        std::fs::write(&plugin_path, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        let first_scan = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+            UNCONSTRAINED_SCAN_BUDGET,
+            &state,
+            recording_descriptor_scan(scan_call_log()),
+            // A data-level refusal, not a process failure: the candidate is not
+            // quarantined, it just has no parameter contract recorded.
+            |_format, _path, _plugin_id, _timeout| Err("deadline".to_string()),
+        ))
+        .expect("a scan whose instance pass is refused still publishes the descriptor row");
+        assert_eq!(
+            first_scan
+                .plugins
+                .first()
+                .expect("the fixture must produce a row")
+                .parameter_metadata_reason
+                .as_deref(),
+            Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON),
+            "the fixture must record a refused inspection, or this test proves nothing"
+        );
+
+        let descriptor_calls = scan_call_log();
+        let second_scan =
+            scan_fixture_root(&root, false, &state, &descriptor_calls, &scan_call_log());
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &plugin_path),
+            1,
+            "a row that never learned the plugin's parameters must be asked again"
+        );
+        assert_eq!(
+            second_scan
+                .plugins
+                .first()
+                .expect("the rescan must produce a row")
+                .parameter_metadata_reason,
+            None,
+            "the scan that finally answers must leave a complete row behind"
+        );
+    }
+
+    /// Reuse must not become a way back in for a quarantined binary. The
+    /// candidate is skipped before the reuse branch is reached, so a row it
+    /// left behind from a healthier session stays out of the list.
+    ///
+    /// Mutation this catches: moving the reuse branch above the quarantine
+    /// handling republishes the quarantined plugin into the result.
+    #[test]
+    fn a_quarantined_candidates_row_is_never_reused_into_an_ordinary_scan() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-quarantined-skip");
+        let plugin_path = root.join("Hostile.clap");
+        std::fs::write(&plugin_path, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        let first_scan =
+            scan_fixture_root(&root, false, &state, &scan_call_log(), &scan_call_log());
+        assert_eq!(
+            first_scan.plugins.len(),
+            1,
+            "the fixture must leave a reusable row behind: {:?}",
+            first_scan.plugins
+        );
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+
+        let descriptor_calls = scan_call_log();
+        let second_scan =
+            scan_fixture_root(&root, false, &state, &descriptor_calls, &scan_call_log());
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            second_scan.plugins.is_empty(),
+            "a quarantined candidate must not reach the list, reused or scanned: {:?}",
+            second_scan.plugins
+        );
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &plugin_path),
+            0,
+            "a quarantined candidate must not be handed to a helper on an ordinary scan"
+        );
+    }
+
+    /// Asking for a quarantine retry is asking for that binary's helper to run.
+    /// Everything else in the folder is still unchanged, and re-inspecting it
+    /// would make the retry cost a full sweep.
+    ///
+    /// Mutation this catches: reusing the retried candidate's row leaves its
+    /// call count at zero; skipping reuse for the whole run whenever
+    /// `retry_quarantined` is set makes the healthy candidate's count non-zero.
+    #[test]
+    fn a_quarantine_retry_rescans_that_candidate_and_reuses_the_unchanged_ones() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-quarantine-retry");
+        let quarantined = root.join("A-Recovered.clap");
+        let healthy = root.join("B-Healthy.clap");
+        std::fs::write(&quarantined, b"clap-bytes").expect("fixture plugin should be written");
+        std::fs::write(&healthy, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        scan_fixture_root(&root, false, &state, &scan_call_log(), &scan_call_log());
+        state.plugin_registry_store.quarantine_failure(
+            &quarantined,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+
+        let descriptor_calls = scan_call_log();
+        let retry_scan =
+            scan_fixture_root(&root, true, &state, &descriptor_calls, &scan_call_log());
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &quarantined),
+            1,
+            "the candidate the user asked to retry must actually be read again"
+        );
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &healthy),
+            0,
+            "a retry is not a reason to re-inspect every other file in the folder"
+        );
+        assert_eq!(
+            retry_scan.plugins.len(),
+            2,
+            "both files belong in the retry's result: {:?}",
+            retry_scan.plugins
+        );
+    }
+
     /// The other half of AC-002: the default incremental path must never
     /// clear a quarantine record on its own, whatever else the scan finds.
     #[test]
@@ -6224,20 +6619,26 @@ mod tests {
         }
 
         fn persist(&self, plugin_id: &str, path: &Path) {
-            self.store().persist(&HashMap::from([(
-                plugin_id.to_string(),
-                PluginRegistryEntry {
-                    path: path.display().to_string(),
-                    stable_id: plugin_id.to_string(),
-                    descriptor_id: "com.vendor.reverb".to_string(),
-                    format: "clap".to_string(),
+            self.store().persist(&[ScanRow {
+                keys: vec![plugin_id.to_string()],
+                plugin: ScannedPlugin {
+                    id: plugin_id.to_string(),
                     name: "Vendor Reverb".to_string(),
+                    vendor: "Vendor".to_string(),
+                    format: "clap".to_string(),
+                    category: "effect".to_string(),
+                    path: path.display().to_string(),
+                    version: "1.0.0".to_string(),
+                    descriptor_id: "com.vendor.reverb".to_string(),
                     num_inputs: 2,
                     num_outputs: 2,
+                    num_parameters: 0,
                     has_custom_ui: true,
+                    parameters: Some(Vec::new()),
+                    parameter_metadata_reason: None,
                     capability_metadata_reason: None,
                 },
-            )]));
+            }]);
         }
     }
 
@@ -6302,17 +6703,23 @@ mod tests {
                     format, "clap",
                     "the targeted rescan must be handed the persisted row's format"
                 );
-                Ok(PluginRegistryEntry {
-                    path: path.display().to_string(),
-                    stable_id: "aaaa1111".to_string(),
-                    descriptor_id: "com.vendor.reverb".to_string(),
-                    format: "clap".to_string(),
+                Ok(ScannedPlugin {
+                    id: "aaaa1111".to_string(),
                     name: "Vendor Reverb 2".to_string(),
+                    vendor: "Vendor".to_string(),
+                    format: "clap".to_string(),
+                    category: "effect".to_string(),
+                    path: path.display().to_string(),
+                    version: "2.0.0".to_string(),
+                    descriptor_id: "com.vendor.reverb".to_string(),
                     // A targeted rescan reads the descriptor only, so it
-                    // reports no capabilities and says so.
+                    // reports no capabilities and no parameters, and says so.
                     num_inputs: 0,
                     num_outputs: 0,
+                    num_parameters: 0,
                     has_custom_ui: false,
+                    parameters: None,
+                    parameter_metadata_reason: None,
                     capability_metadata_reason: Some(
                         scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                     ),
@@ -6371,7 +6778,7 @@ mod tests {
         // reaches it.
         let rescan = |_format: &str, path: &Path, _plugin_id: &str, _descriptor_id: &str| {
             rescans.set(rescans.get() + 1);
-            Err::<PluginRegistryEntry, String>(format!("no such file: {}", path.display()))
+            Err::<ScannedPlugin, String>(format!("no such file: {}", path.display()))
         };
 
         let first = resolve_registry_entry(
