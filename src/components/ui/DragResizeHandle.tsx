@@ -1,8 +1,17 @@
-import { type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactElement, useEffect, useRef } from 'react';
+import {
+    type KeyboardEvent,
+    type MouseEvent,
+    type PointerEvent,
+    type ReactElement,
+    type Ref,
+    useEffect,
+    useRef,
+} from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
 export type DragResizeHandleProps = {
+    ref?: Ref<HTMLDivElement>;
     side?: 'left' | 'right' | 'top' | 'bottom';
     direction?: 'horizontal' | 'vertical';
     onResize: (delta: number) => void;
@@ -267,6 +276,7 @@ const useDragResize = ({
  * Supports mouse, pointer events with pointer capture, keyboard navigation, and ARIA attributes.
  */
 export const DragResizeHandle = ({
+    ref,
     side,
     direction,
     onResize,
@@ -315,6 +325,7 @@ export const DragResizeHandle = ({
 
     return (
         <div
+            ref={ref}
             className={cn(
                 'shrink-0 select-none transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                 'bg-surface-tray hover:bg-surface-raised active:bg-surface-overlay',

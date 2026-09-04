@@ -67,6 +67,12 @@ describe('DragResizeHandle', () => {
         expect(onResizeEnd).not.toHaveBeenCalled();
     });
 
+    it('forwards ref to the separator element', () => {
+        const ref = { current: null as HTMLDivElement | null };
+        render(<DragResizeHandle ref={ref} onResize={vi.fn()} />);
+        expect(ref.current).toBe(screen.getByRole('separator'));
+    });
+
     describe('direction props', () => {
         it('supports direction="vertical" with horizontal drag', () => {
             const onResize = vi.fn();
@@ -186,15 +192,26 @@ describe('DragResizeHandle', () => {
 
     describe('unmount mid-drag cleanup', () => {
         it('detaches document listeners on unmount mid-drag', () => {
-            const onResize = vi.fn();
-            const { unmount } = render(<DragResizeHandle side="right" onResize={onResize} />);
-            const separator = screen.getByRole('separator');
+            const removeSpy = vi.spyOn(document, 'removeEventListener');
+            try {
+                const onResize = vi.fn();
+                const { unmount } = render(<DragResizeHandle side="right" onResize={onResize} />);
+                const separator = screen.getByRole('separator');
 
-            fireEvent.mouseDown(separator, { clientX: 100, clientY: 0 });
-            unmount();
+                fireEvent.mouseDown(separator, { clientX: 100, clientY: 0 });
+                unmount();
 
-            fireEvent.mouseMove(document, { clientX: 150, clientY: 0 });
-            expect(onResize).not.toHaveBeenCalled();
+                expect(removeSpy).toHaveBeenCalledWith('mousemove', expect.any(Function));
+                expect(removeSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
+                expect(removeSpy).toHaveBeenCalledWith('pointermove', expect.any(Function));
+                expect(removeSpy).toHaveBeenCalledWith('pointerup', expect.any(Function));
+                expect(removeSpy).toHaveBeenCalledWith('pointercancel', expect.any(Function));
+
+                fireEvent.mouseMove(document, { clientX: 150, clientY: 0 });
+                expect(onResize).not.toHaveBeenCalled();
+            } finally {
+                removeSpy.mockRestore();
+            }
         });
 
         it('clears body cursor and user-select on unmount mid-drag', () => {
