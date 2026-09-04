@@ -39,6 +39,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type AudioGraphApplyResult, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
+import { carryQueuedStamps } from './carryQueuedStamps';
 import {
     AUTOMATION_QUEUE_CAPACITY,
     AUTOMATION_QUEUE_MARGIN,
@@ -171,28 +172,6 @@ function takeLoopSeam(input: { pass: LiveAutomationWriterPass; positionSeconds: 
     pass.targets = pass.loopTargets;
     for (const slot of pass.targets) {
         slot.cursor = 0;
-    }
-}
-
-/** The identity the engine addresses a queue by: the whole target, spelled out. */
-function targetKey(slot: LiveAutomationWriterTarget): string {
-    const { target } = slot;
-    if (target.kind === 'track-send-level') {
-        return `${target.kind}:${target.trackId}:${target.busId}`;
-    }
-    return `${target.kind}:${target.trackId}`;
-}
-
-function carryQueuedStamps(
-    from: readonly LiveAutomationWriterTarget[],
-    to: readonly LiveAutomationWriterTarget[]
-): void {
-    if (from === to) {
-        return;
-    }
-    const outgoing = new Map(from.map((slot): [string, LiveAutomationWriterTarget] => [targetKey(slot), slot]));
-    for (const slot of to) {
-        slot.queued = outgoing.get(targetKey(slot))?.queued ?? [];
     }
 }
 
