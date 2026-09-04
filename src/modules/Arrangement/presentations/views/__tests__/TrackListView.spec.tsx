@@ -475,6 +475,22 @@ describe('TrackListView', () => {
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
+    it('ignores ArrowDown, Enter, and Delete typed into the inline rename input (#3602)', async () => {
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        renderWithTooltip(<TrackListView />);
+        const input = screen.getByTestId('inline-rename-input');
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        fireEvent.keyDown(input, { key: 'Delete' });
+        // The rename input owns every keystroke: arrows must not move the
+        // track selection mid-edit, Enter must not enter clip mode, and
+        // Delete must not open the track-delete confirmation.
+        expect(selectTrack).not.toHaveBeenCalled();
+        expect(setWorkspaceMode).not.toHaveBeenCalled();
+        expect(confirmUser).not.toHaveBeenCalled();
+    });
+
     it('claims Delete for a selected-but-hidden master track without confirming (#3602)', async () => {
         const { executeAppAction } = await import('#/modules/Command/useCases');
         const { confirmUser } = await import('#/utils/Notification/confirmUser');
