@@ -1,0 +1,24 @@
+.github/workflows/nightly.yml
+  h_1228e573df1f42 126-130
+.github/workflows/validation.yml
+  h_1228e573df1f42 261-265
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_1228e573df1f42 518-521,1082-1085
+scripts/__tests__/vitestUnitShardExclusions.spec.ts
+  h_1228e573df1f42 15,25,32-33,47-53,58-64,69-75,86-87,91,93-99,141-145
+scripts/healthGateWorkflowContract.ts
+  h_1228e573df1f42 94,222
+scripts/vitestUnitShardExclusions.ts
+  h_1228e573df1f42 16-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "699dca913020b2637d18f9d0de58d17ba35f2a4c",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
