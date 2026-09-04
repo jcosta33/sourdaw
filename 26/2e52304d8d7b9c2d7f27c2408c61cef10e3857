@@ -1,0 +1,19 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_28abfd94826e36::t_b79c45014c05ce 3243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "262e52304d8d7b9c2d7f27c2408c61cef10e3857",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
