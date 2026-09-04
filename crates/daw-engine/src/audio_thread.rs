@@ -2281,9 +2281,12 @@ mod device_output_tests {
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const DEVICE_CHANNELS: usize = 2;
-    /// Loud enough that a leak of any size is unmistakable, and a value the
-    /// unity-rate render reproduces bit-exactly.
-    const MATERIAL_SAMPLE: f32 = 0.5;
+    /// Left channel sample: subtle to catch one-channel folds.
+    const LEFT_SAMPLE: f32 = 0.5;
+    /// Right channel sample: louder and negative to catch averaging and missing abs().
+    const RIGHT_SAMPLE: f32 = -0.75;
+    /// The true peak across both channels: the magnitude the meter must report.
+    const MATERIAL_PEAK: f32 = 0.75;
     const COMMAND_CAPACITY: usize = 32;
 
     /// How long a peak stands before a quieter callback replaces it, derived
@@ -2367,17 +2370,19 @@ mod device_output_tests {
         }
     }
 
-    /// A track holding one clip of constant material from frame zero, and a
+    /// A track holding one clip with asymmetric material from frame zero, and a
     /// rolling transport — the smallest schedule whose device output is
-    /// unmistakably non-zero.
+    /// unmistakably non-zero. The left and right channels differ in magnitude and
+    /// sign so that a fold missing either channel, dropping abs(), or averaging
+    /// would produce a different peak than the true maximum.
     fn schedule_rolling_material(harness: &mut DeviceHarness, frames: usize) {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
             TimelineClip::new(
                 7,
-                vec![MATERIAL_SAMPLE; frames].into(),
-                vec![MATERIAL_SAMPLE; frames].into(),
+                vec![LEFT_SAMPLE; frames].into(),
+                vec![RIGHT_SAMPLE; frames].into(),
                 ClipPlacement {
                     start_frame: 0,
                     source_offset_frames: 0,
@@ -2414,7 +2419,7 @@ mod device_output_tests {
             heard.iter().any(|sample| *sample != 0.0),
             "the unshadowed schedule must reach the device, or the silent half proves nothing"
         );
-        assert_eq!(heard[0], MATERIAL_SAMPLE);
+        assert_eq!(heard[0], LEFT_SAMPLE);
         assert!(
             silent.iter().all(|sample| *sample == 0.0),
             "a shadowed monitor writes true zeros, not a small gain"
@@ -2438,7 +2443,7 @@ mod device_output_tests {
 
         assert!(while_shadowed.iter().all(|sample| *sample == 0.0));
         assert!(after_cutover.iter().any(|sample| *sample != 0.0));
-        assert_eq!(after_cutover[0], MATERIAL_SAMPLE);
+        assert_eq!(after_cutover[0], LEFT_SAMPLE);
     }
 
     /// The shadow silences the output, never the clock. A shadowed engine
@@ -2483,9 +2488,10 @@ mod device_output_tests {
     }
 
     /// The meter's own claim: the level it publishes is the level the device
-    /// was handed. The render is unity from the clip's gain through the master
-    /// fader, so a meter that scaled, averaged or summed the pair would land
-    /// somewhere other than the material's own sample value.
+    /// was handed, measured as the maximum absolute value across both channels.
+    /// The render is unity from the clip's gain through the master fader, so a
+    /// meter that folded only one channel, dropped abs(), or averaged the pair
+    /// would land somewhere other than the true peak.
     #[test]
     fn the_master_meter_publishes_the_peak_the_device_was_handed() {
         const FRAMES: usize = 512;
@@ -2494,8 +2500,10 @@ mod device_output_tests {
         schedule_rolling_material(&mut harness, FRAMES);
         let heard = harness.render(FRAMES);
 
-        assert_eq!(heard[0], MATERIAL_SAMPLE);
-        assert_eq!(harness.master_peak(), MATERIAL_SAMPLE);
+        // Interleaved stereo: index 0 is left, index 1 is right.
+        assert_eq!(heard[0], LEFT_SAMPLE);
+        assert_eq!(heard[1], RIGHT_SAMPLE);
+        assert_eq!(harness.master_peak(), MATERIAL_PEAK);
     }
 
     /// A meter fed per callback and read per animation frame needs the hold:
@@ -2511,12 +2519,12 @@ mod device_output_tests {
         // renders past the clip and hands the device silence.
         schedule_rolling_material(&mut harness, FRAMES);
         harness.render(FRAMES);
-        assert_eq!(harness.master_peak(), MATERIAL_SAMPLE);
+        assert_eq!(harness.master_peak(), MATERIAL_PEAK);
 
         harness.render(FRAMES);
         assert_eq!(
             harness.master_peak(),
-            MATERIAL_SAMPLE,
+            MATERIAL_PEAK,
             "one callback of silence is well inside the hold window; a meter that fell here \
              would read zero for every transient a poll did not happen to land on"
         );
@@ -2543,7 +2551,7 @@ mod device_output_tests {
     /// The meter reports the output, not the render. A shadowed monitor hands
     /// the device zeros, so the level a musician sees is zero however loud the
     /// graph behind it is — and the same schedule, unshadowed, meters its own
-    /// material.
+    /// material's peak.
     #[test]
     fn a_shadowed_callback_meters_zero_where_the_same_schedule_meters_its_material() {
         const FRAMES: usize = 512;
@@ -2557,7 +2565,7 @@ mod device_output_tests {
         shadowed.send(GraphCommand::SetMonitorShadow(true));
         shadowed.render(FRAMES);
 
-        assert_eq!(audible.master_peak(), MATERIAL_SAMPLE);
+        assert_eq!(audible.master_peak(), MATERIAL_PEAK);
         assert_eq!(shadowed.master_peak(), 0.0);
     }
 }
