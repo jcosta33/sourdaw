@@ -9,7 +9,7 @@
  * correct while the handler forwards none of the request details is a check
  * that passes blind.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     ALLOWED_PERMISSIONS,
@@ -23,6 +23,57 @@ import {
 } from '../security.js';
 
 import type { Session, WebContents } from 'electron';
+
+// `main.ts` imports Electron's whole main-process surface at load time; every
+// other module it pulls in resolves the same mocked module. `vi.mock` is
+// hoisted above the imports above, so the real `electron` package is never
+// reached. `vi.hoisted` is required to hand the factory a place to record
+// what it saw, since the factory itself runs before this file's own
+// top-level `const`s would otherwise exist.
+const { mainWindowConstructorCalls } = vi.hoisted(() => ({
+    mainWindowConstructorCalls: [] as Record<string, unknown>[],
+}));
+
+vi.mock('electron', () => {
+    class MockBrowserWindow {
+        static fromWebContents = vi.fn();
+        readonly webContents = { on: vi.fn(), setWindowOpenHandler: vi.fn(), getURL: () => '' };
+        readonly once = vi.fn();
+        readonly on = vi.fn();
+        readonly isDestroyed = (): boolean => false;
+        readonly loadURL = vi.fn(() => Promise.resolve());
+        readonly show = vi.fn();
+        readonly hide = vi.fn();
+        readonly destroy = vi.fn();
+        readonly close = vi.fn();
+        constructor(options: Record<string, unknown>) {
+            mainWindowConstructorCalls.push(options);
+        }
+    }
+    return {
+        app: {
+            isPackaged: false,
+            getAppPath: () => '/app',
+            whenReady: () => Promise.resolve(),
+            on: vi.fn(),
+            exit: vi.fn(),
+            quit: vi.fn(),
+        },
+        BrowserWindow: MockBrowserWindow,
+        BaseWindow: { getFocusedWindow: vi.fn() },
+        dialog: { showErrorBox: vi.fn() },
+        ipcMain: { handle: vi.fn() },
+        Menu: { buildFromTemplate: vi.fn(), setApplicationMenu: vi.fn(), sendActionToFirstResponder: vi.fn() },
+        screen: { on: vi.fn() },
+        session: {
+            defaultSession: { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() },
+        },
+        shell: { openExternal: vi.fn(), openPath: vi.fn() },
+        utilityProcess: { fork: vi.fn() },
+        protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
+        net: { fetch: vi.fn() },
+    };
+});
 
 const APP_ORIGIN = 'app://sourdaw';
 const FOREIGN_ORIGIN = 'https://evil.example';
@@ -234,5 +285,32 @@ describe('applyPermissionPolicy', () => {
     it('should keep denying an unlisted permission through the handlers', () => {
         expect(requestVerdict('geolocation', `${APP_ORIGIN}/index.html`)).toBe(false);
         expect(checkVerdict('geolocation', APP_ORIGIN)).toBe(false);
+    });
+});
+
+describe('main window webPreferences', () => {
+    it('pins sandbox, contextIsolation, nodeIntegration and backgroundThrottling for the real main window', async () => {
+        // `main.ts` creates its one window inside `app.whenReady().then(...)`,
+        // which our mocked `app.whenReady()` resolves immediately; importing
+        // it here drives the real `createWindow` and the real `BrowserWindow`
+        // constructor call, not a re-implementation of either.
+        await import('../main.js');
+        await new Promise((resolve) => setImmediate(resolve));
+
+        const [options] = mainWindowConstructorCalls;
+        const webPreferences = options?.webPreferences as Record<string, unknown> | undefined;
+
+        // Each is load-bearing for a different reason: the first three are
+        // Electron's own defaults, and a copied config or a future default
+        // change must not quietly hand the renderer Node; the fourth is what
+        // keeps the audio graph, the transport clock, the meters and the live
+        // automation writer running while the window is hidden or minimised —
+        // see `nativeEnginePlayheadFeedState.ts`.
+        expect(webPreferences).toMatchObject({
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+            backgroundThrottling: false,
+        });
     });
 });

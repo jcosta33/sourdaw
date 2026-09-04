@@ -15,6 +15,23 @@
  * must not stack: the reading is a level, not a stream, so a late answer that
  * arrives behind a newer one has nothing to contribute.
  *
+ * ## Why the writer may ride this loop
+ *
+ * This same progress tick is the live automation writer's only steady-state
+ * clock: every reading that lands while the engine is playing pumps it
+ * further down. A paint loop that stopped while the window sat hidden or
+ * minimised would drain that writer's window and freeze every automated
+ * parameter at its last value — the defect #3364 describes.
+ *
+ * It does not happen, because the desktop shell is the only process that
+ * holds the native engine, and that shell creates its window with
+ * `backgroundThrottling: false` (`electron/main.ts`). Under that option
+ * Chromium throttles neither animation frames nor timers, and the Page
+ * Visibility API never reports the page hidden, so `animationScheduler` keeps
+ * ticking and this poll keeps riding it regardless of window visibility.
+ * `electron/__tests__/security.spec.ts` pins the option, so a copied or
+ * rewritten window config cannot silently reintroduce the gate.
+ *
  * ## Why the epoch, and not a boolean
  *
  * A bridge round trip can outlive the session that issued it. Stop and play
