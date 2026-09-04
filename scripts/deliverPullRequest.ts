@@ -558,12 +558,14 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
 
 /**
  * Tolerating a cancellation rests on some later attempt under the same name having decided the check
- * on this head. GitHub reports two shapes of later decision: a success, and — for a leg the workflow
- * scope-gates on its own path filters — a skip. Health gates answers only `pull_request`, never
- * `pull_request_review`, so every attempt this repository ever reports on a head evaluates the same
- * diff from scratch; a later `SKIPPED` under a cancelled name is that same evaluation choosing to run
- * nothing, not the absence of one. That is the scope decision of record for this head, and admitting
- * it is the honest read, exactly as admitting a later success is.
+ * on this head. `validateSupersededChecks` requires a `Gate` SUCCESS on the head before this rule
+ * ever runs: `gate`'s own step fails unless every job it needs, `decide` included, reports success or
+ * skipped, so a `Gate` SUCCESS proves `decide` succeeded in that run and every gating leg without a
+ * scope `if` ran and already sits in `passed`. A `decide` that failed on some other run is itself an
+ * unretired failure, caught earlier by `unretiredFailedCheckRun` rather than reaching this rule. For a
+ * leg the workflow scope-gates on `decide`'s output, a fixed head's changed-file set only shrinks as
+ * the merge base advances, so a scope output flips `true` to `false` and never back — which is why a
+ * later `SKIPPED` under a cancelled name is the decision of record rather than an absence of one.
  *
  * A cancellation itself says nothing: it was killed before it could report the leg's own verdict.
  * Only a skip that is itself the newer attempt speaks for it, which `skippedAfter` proves the same
@@ -571,10 +573,9 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
  * or before the cancellation, cannot prove it is the later word, so it decides nothing and the
  * cancelled name stays undecided.
  *
- * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
- * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
- * rather than deciding this head, so refusing on it would refuse every delivery forever. The gating
- * set is whatever `Gate` needs, read from the workflow rather than restated here.
+ * Only a check whose verdict gates the merge is evidence: a cancelled name outside `Gate`'s needs
+ * decides nothing the merge waits on. The gating set is whatever `Gate` needs, read from the workflow
+ * rather than restated here.
  */
 function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlySet<string>): string | undefined {
     const passed = new Set(

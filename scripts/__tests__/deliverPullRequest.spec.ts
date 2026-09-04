@@ -6549,11 +6549,16 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * A scope-gated leg (Lint, the unit shards, the production build, the Rust legs, the offline
-     * browser smoke) is skipped by the workflow's own path-filter decision, re-evaluated on the
-     * current diff. Health gates answers only `pull_request`, so that skip is a full scope
-     * evaluation of this head, not an absence of one, and it is the newest attempt under the name —
-     * the scope decision of record — so the head is green by design and merges.
+     * `Gate`'s own `needs` names twelve jobs; of those, `Lint`, `Module boundaries`,
+     * `Offline browser smoke`, `Production build`, `Rust workspace and collaboration server`,
+     * `Native audio backend (macOS)`, `Windows device layer`, and `Native parity (macOS)` carry a
+     * job-level `if:` on `decide`'s scope output. `unit` is not among `Gate`'s needs at all, and a
+     * skipped matrix job reports under its unexpanded template name rather than a shard name, so this
+     * rule cannot decide a shard either way. A scope-gated leg is skipped by the workflow's own
+     * path-filter decision, re-evaluated on the current diff, and a fixed head's changed-file set only
+     * shrinks as the merge base advances, so that decision only ever moves true to false. A later
+     * `SKIPPED` under a cancelled name is therefore the scope decision of record, and the head is
+     * green by design and merges.
      */
     it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
         expect(gatingCheckNames.has('Lint')).toBe(true);
@@ -6611,6 +6616,36 @@ describe('pull-request delivery', () => {
             headCheckRuns: [
                 checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
                 checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: null }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A skip only speaks for the cancellation it shares a name with. `skippedAfter` also checks
+     * `candidate.name === attempt.name`, so a later skip under a different gating name — however
+     * recent — cannot retire a cancellation it never re-ran.
+     */
+    it('refuses an UNSTABLE head whose cancellation is skipped beside under another gating name', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Production build')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
