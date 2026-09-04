@@ -557,15 +557,17 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
 }
 
 /**
- * Tolerating a cancellation rests on some later attempt under the same name having decided the check
- * on this head. `validateSupersededChecks` requires a `Gate` SUCCESS on the head before this rule
- * ever runs: `gate`'s own step fails unless every job it needs, `decide` included, reports success or
- * skipped, so a `Gate` SUCCESS proves `decide` succeeded in that run and every gating leg without a
- * scope `if` ran and already sits in `passed`. A `decide` that failed on some other run is itself an
- * unretired failure, caught earlier by `unretiredFailedCheckRun` rather than reaching this rule. For a
- * leg the workflow scope-gates on `decide`'s output, a fixed head's changed-file set only shrinks as
- * the merge base advances, so a scope output flips `true` to `false` and never back — which is why a
- * later `SKIPPED` under a cancelled name is the decision of record rather than an absence of one.
+ * Tolerating a cancellation rests on some later attempt under the same name having decided the
+ * check on this head. `validateSupersededChecks` requires a `Gate` SUCCESS on the head before this
+ * rule ever runs: `gate`'s own step fails unless every job it needs, `decide` included, reports
+ * success or skipped, so a `Gate` SUCCESS proves `decide` succeeded in that run and every gating
+ * leg without a scope `if` ran and already sits in `passed`. A `decide` that failed on an earlier
+ * run is retired by the later `decide` success and does reach this rule together with the
+ * dependency skips it produced; that is harmless, because the `Gate`-success run's scope skip is
+ * newer than any cancellation of the same leg. For a leg the workflow scope-gates on `decide`'s
+ * output, a fixed head's changed-file set only shrinks as the merge base advances, so a scope
+ * output flips `true` to `false` and never back — which is why a later `SKIPPED` under
+ * a cancelled name is the decision of record rather than an absence of one.
  *
  * A cancellation itself says nothing: it was killed before it could report the leg's own verdict.
  * Only a skip that is itself the newer attempt speaks for it, which `skippedAfter` proves the same

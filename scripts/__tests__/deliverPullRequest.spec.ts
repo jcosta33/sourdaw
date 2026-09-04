@@ -6662,9 +6662,9 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * `Nightly failure report` is cancelled with the rest of the superseded run and never succeeds
-     * on a pull request, because it reports a failed scheduled run and nothing else. `Gate` does not
-     * need it, so its silence decides nothing — and refusing on it would refuse every delivery.
+     * `Nightly failure report` belongs to nightly.yml, which does not run on pull requests, so the
+     * name never appears on a pull-request head and is outside `Gate`'s needs. Its silence decides
+     * nothing — and refusing on it would refuse every delivery.
      */
     it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
