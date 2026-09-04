@@ -88,10 +88,8 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
     extended: { maxRssBytes: 4 * 1024 ** 3, timeoutMs: 60 * 60_000 },
 };
 
-// Peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
-const measuredScriptBudgets: Record<string, number> = {
-    'typecheck:test': 6 * 1024 ** 3,
-};
+// Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
+const measuredScriptBudgets = new Map<string, number>([['typecheck:test', 6 * 1024 ** 3]]);
 
 function pnpmScriptName(command: string, args: readonly string[]): string | undefined {
     if (command !== 'pnpm') {
@@ -109,7 +107,7 @@ export function resolveDefaultMaxRssBytes(input: {
     args: readonly string[];
 }): number {
     const script = pnpmScriptName(input.command, input.args);
-    const measuredBudgetBytes = script === undefined ? undefined : measuredScriptBudgets[script];
+    const measuredBudgetBytes = script === undefined ? undefined : measuredScriptBudgets.get(script);
     return Math.max(profiles[input.profile].maxRssBytes, measuredBudgetBytes ?? 0);
 }
 
@@ -1202,7 +1200,7 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
     if (result.reason === 'memory') {
         const budgetMiB = Math.ceil(result.maxRssBytes / 1024 ** 2);
         console.error(
-            `${label}: peak ${peakMiB} MiB exceeded the ${budgetMiB} MiB RSS budget; rerun with --max-rss-mib above the peak, or record the new peak in measuredScriptBudgets`
+            `${label}: peak ${peakMiB} MiB exceeded the ${budgetMiB} MiB RSS budget; rerun with --max-rss-mib above the peak, or record a budget above it in measuredScriptBudgets`
         );
     }
     if (result.omittedBytes > 0) {

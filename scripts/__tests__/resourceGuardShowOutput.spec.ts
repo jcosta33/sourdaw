@@ -93,4 +93,27 @@ describe('resource guard --show-output', () => {
         ).toBe(true);
         errorSpy.mockRestore();
     });
+
+    it('keeps the RSS budget line off a non-memory failure', () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const exitCode = emitGuardedResult('pnpm', {
+            code: null,
+            signal: 'SIGKILL',
+            reason: 'timeout',
+            output: '',
+            omittedBytes: 0,
+            peakRssBytes: 1024 ** 3,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 1000,
+        });
+
+        expect(exitCode).toBe(1);
+        expect(
+            errorSpy.mock.calls.some(
+                ([line]) => typeof line === 'string' && /exceeded the .* MiB RSS budget/.test(line)
+            )
+        ).toBe(false);
+        errorSpy.mockRestore();
+    });
 });
