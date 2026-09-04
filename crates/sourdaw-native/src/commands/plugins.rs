@@ -5951,10 +5951,18 @@ mod tests {
     /// plugin with no resolvable binary, and the module that actually changes
     /// on an update would never be the one fingerprinted.
     ///
-    /// Mutation this catches: dropping the `Contents/MacOS` fallback from the
-    /// macOS VST3 branch falls back to the bundle directory, whose own
-    /// timestamps do not move when the module is rewritten, so the second scan
-    /// reuses and its call counts stay at zero.
+    /// The directory holds more than the module, which is why the pick has to
+    /// be both filtered and ordered: a dot-prefixed sidecar is not an
+    /// executable, and among the ones that are, only a deterministic choice
+    /// makes two runs agree about which file the plugin's version is.
+    ///
+    /// Mutations this catches: dropping the `Contents/MacOS` fallback from the
+    /// macOS VST3 branch falls back to the bundle directory, whose timestamps
+    /// do not move when the module is rewritten, so the final scan reuses and
+    /// its call counts stay at zero; taking the first `read_dir` entry instead
+    /// of the lowest name resolves the companion, and dropping the dot-prefix
+    /// filter resolves the sidecar — both fail the resolution assertion, and
+    /// both then track a file whose rewriting is not a plugin update.
     #[test]
     #[cfg(target_os = "macos")]
     fn a_vst3_bundle_whose_executable_is_not_named_after_its_stem_is_fingerprinted_by_it() {
@@ -5965,10 +5973,21 @@ mod tests {
         let bundle = root.join("Reverb.vst3");
         let executables = bundle.join("Contents").join("MacOS");
         std::fs::create_dir_all(&executables).expect("the bundle directory should be created");
-        // Named for the product, not the bundle: what `CFBundleExecutable`
-        // points at, and not what `Reverb.vst3` would suggest.
-        let module = executables.join("VendorEngine");
-        std::fs::write(&module, b"vst3-bytes").expect("the fixture module should be written");
+        // What `CFBundleExecutable` points at is named for the product, not the
+        // bundle. Beside it: a second executable, and the sidecar Finder leaves
+        // in any directory a user has looked at. The module is the lowest real
+        // name of the three, and `.DS_Store` sorts below all of them.
+        let module = executables.join("Engine");
+        let companion = executables.join("VendorEngine");
+        let sidecar = executables.join(".DS_Store");
+        for path in [&module, &companion, &sidecar] {
+            std::fs::write(path, b"vst3-bytes").expect("the fixture file should be written");
+        }
+        assert_eq!(
+            scanned_binary_location(&vst3_bundle_row(&bundle)).as_deref(),
+            Some(module.as_path()),
+            "the lowest real executable name decides, and a dot-prefixed sidecar is not one"
+        );
         let state = state_with_registry_file(&root);
 
         let scan_with = |name: &'static str, descriptors: &ScanCallLog, instances: &ScanCallLog| {
@@ -5988,6 +6007,18 @@ mod tests {
         assert!(
             registry_after_relaunch(&root).contains_key(&scanner::stable_id(&bundle)),
             "a bundle whose module resolved must leave a row a relaunch can resolve"
+        );
+
+        // A file beside the module is not the module. Rewriting it is not a
+        // plugin update, and must not cost the walk a helper.
+        std::fs::write(&companion, b"a-companion-of-an-entirely-different-length")
+            .expect("the companion should be rewritten in place");
+        let bystander_calls = scan_call_log();
+        scan_with("Never Published", &bystander_calls, &scan_call_log());
+        assert_eq!(
+            scan_calls_for(&bystander_calls, &bundle),
+            0,
+            "rewriting a file the bundle does not load must not invalidate its row"
         );
 
         std::fs::write(&module, b"vst3-bytes-of-the-second-edition")

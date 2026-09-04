@@ -838,12 +838,20 @@ fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
     lowest_regular_file(&bundle.join("Contents").join("MacOS")).or(Some(stem_named))
 }
 
-/// The lexicographically lowest regular file directly inside `directory`.
+/// The lexicographically lowest regular file directly inside `directory`,
+/// ignoring the dot-prefixed ones.
+///
+/// Finder leaves `.DS_Store` behind and AppleDouble leaves `._Name`, and both
+/// sort below every executable name a vendor would choose. An unfiltered
+/// minimum would fingerprint a sidecar the loader never opens — and then an
+/// update that rewrote the real module would read as unchanged, because the
+/// sidecar had not moved.
 #[cfg(target_os = "macos")]
 fn lowest_regular_file(directory: &Path) -> Option<PathBuf> {
     fs::read_dir(directory)
         .ok()?
         .flatten()
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
         .map(|entry| entry.path())
         .filter(|path| path.is_file())
         .min()
