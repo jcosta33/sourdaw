@@ -42,6 +42,7 @@ import { type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
+import { carryQueuedStamps } from './carryQueuedStamps';
 import {
     nativeLiveAutomationWriter,
     writeStartSeconds,
@@ -67,6 +68,11 @@ export type ArmNativeLiveAutomationWriterInput = Readonly<{
      * {@link LiveAutomationWriterPass.provenAfterBatch}.
      */
     provenAfterBatch: number | null;
+    /**
+     * Whether this arm was preceded by a locate command that pruned stamps at or past
+     * this position in the engine ledger (`QueueBudgets::apply_seek`).
+     */
+    seek?: boolean;
 }>;
 
 /** One stretch of the engine clock a pass sends writes for. */
@@ -176,6 +182,12 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     const entry = readSpan(input, spans.entry);
     const loop = spans.loop ? readSpan(input, spans.loop) : null;
     reportExclusions(entry.exclusions);
+
+    const previousPass = nativeLiveAutomationWriter.pass;
+    if (previousPass !== null) {
+        const seekFrame = input.seek ? secondsToFrames(input.positionSeconds, input.sampleRate) : null;
+        carryQueuedStamps(previousPass.targets, entry.targets, seekFrame);
+    }
 
     nativeLiveAutomationWriter.epoch += 1;
     nativeLiveAutomationWriter.pass = {

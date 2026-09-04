@@ -1106,4 +1106,48 @@ describe('the live automation writer', () => {
 
         expect(mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'))).toEqual([]);
     });
+
+    it('carries queued stamps across a loop region change so subsequent admission does not refuse for capacity', async () => {
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+
+        // Populate a dense curve that will fill part of the queue
+        mocks.curve = [{ target: FADER, writes: curvedLane(20) }];
+
+        // Arm at 0
+        arm(0);
+        await flush();
+
+        // Pump 1 tick: admits first batch
+        await pump(0, 0, engineBatches);
+        const firstBatchWrites = writeBatches();
+        expect(firstBatchWrites.length).toBeGreaterThan(0);
+        const queuedBefore = nativeLiveAutomationWriter.pass?.targets[0]?.queued.length ?? 0;
+        expect(queuedBefore).toBeGreaterThan(0);
+
+        // Simulate a loop region change mid-pass without a seek
+        const pass = nativeLiveAutomationWriter.pass!;
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 0, endSeconds: 2 };
+        nativeLiveGraphSession.loopEnabled = true;
+        armNativeLiveAutomationWriter({
+            stripTracks: pass.stripTracks,
+            sampleRate: pass.sampleRate,
+            programmeEndSeconds: pass.programmeEndSeconds,
+            positionSeconds: 0.01,
+            provenAfterBatch: engineBatches,
+        });
+
+        // Verify the new pass retained the queued stamps from previous pass
+        const queuedAfter = nativeLiveAutomationWriter.pass?.targets[0]?.queued.length ?? 0;
+        expect(queuedAfter).toBe(queuedBefore);
+
+        // Pump subsequent ticks with playhead advancing slowly: no refusal should occur
+        for (let tick = 1; tick <= 10; tick++) {
+            engineEchoSeconds = tick * 0.005;
+            await pump(engineEchoSeconds, 0, engineBatches);
+        }
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+    });
 });
