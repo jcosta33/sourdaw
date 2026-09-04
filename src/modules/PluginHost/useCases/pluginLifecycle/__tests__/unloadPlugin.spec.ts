@@ -12,6 +12,28 @@ const mocks = vi.hoisted(() => ({
     unloadRepo: vi.fn<(instanceId?: string) => Promise<[string[], string[]]>>(),
 }));
 
+/**
+ * A repository call the test settles by hand, so the store can be read while
+ * the unload is still in flight.
+ */
+function deferUnload(): { resolve: (result: [string[], string[]]) => void; reject: (error: Error) => void } {
+    let settle = {} as { resolve: (result: [string[], string[]]) => void; reject: (error: Error) => void };
+    mocks.unloadRepo.mockReturnValue(
+        new Promise<[string[], string[]]>((resolve, reject) => {
+            settle = { resolve, reject };
+        })
+    );
+    return {
+        resolve: (result) => settle.resolve(result),
+        reject: (error) => settle.reject(error),
+    };
+}
+
+/** Whether the store still mirrors an engine behind each named instance. */
+function attachmentOf(...instanceIds: string[]): (boolean | undefined)[] {
+    return instanceIds.map((id) => externalPluginParameterStore.value?.byInstanceId[id]?.engineAttached);
+}
+
 /** One parameter, so a retraction that dropped the list instead would show. */
 const PARAMETER = {
     id: 7,
@@ -130,5 +152,107 @@ describe('unloadPlugin', () => {
 
         settle();
         await unloading;
+    });
+
+    /**
+     * The retraction is optimistic, and an unload that fails keeps the instance
+     * loaded *and* attached — the native `cancel_unload` leaves it in
+     * `engine_plugins`. Nothing else ever sets the flag back: activation
+     * short-circuits on an instance it already holds, and the engine reports
+     * only the dormant instances a batch newly took. Left retracted, every
+     * automation lane on that plugin stops riding the audible path and its
+     * parameters leave the picker for the rest of the session.
+     */
+    it('restores the attachment of an instance the native side refused to unload', async () => {
+        externalPluginParameterStore.set({
+            byInstanceId: { 'inst-1': { engineAttached: true, parameters: [PARAMETER] } },
+        });
+        loadedExternalInstances.add('inst-1');
+        const unload = deferUnload();
+
+        const unloading = subject.unloadPlugin('inst-1');
+        unload.resolve([[], ['inst-1: still processing']]);
+
+        await expect(unloading).rejects.toThrow('inst-1: still processing');
+        // The instance is still loaded, so its snapshot stands and says so.
+        expect(externalPluginParameterStore.value?.byInstanceId['inst-1']).toEqual({
+            engineAttached: true,
+            parameters: [PARAMETER],
+        });
+    });
+
+    it('restores the attachment when the unload call itself rejects', async () => {
+        externalPluginParameterStore.set({
+            byInstanceId: { 'inst-1': { engineAttached: true, parameters: [PARAMETER] } },
+        });
+        loadedExternalInstances.add('inst-1');
+        const unload = deferUnload();
+
+        const unloading = subject.unloadPlugin('inst-1');
+        unload.reject(new Error('desktop bridge unavailable'));
+
+        await expect(unloading).rejects.toThrow('desktop bridge unavailable');
+        expect(externalPluginParameterStore.value?.byInstanceId['inst-1']).toEqual({
+            engineAttached: true,
+            parameters: [PARAMETER],
+        });
+    });
+
+    it('invents no attachment for an instance that had none before the failed unload', async () => {
+        // Restoring from the *captured* set rather than from the failure is what
+        // keeps this false: an instance loaded while no engine ran was never
+        // attached, and claiming otherwise would offer automation the engine
+        // never performs.
+        externalPluginParameterStore.set({
+            byInstanceId: { 'inst-1': { engineAttached: false, parameters: [PARAMETER] } },
+        });
+        loadedExternalInstances.add('inst-1');
+        const unload = deferUnload();
+
+        const unloading = subject.unloadPlugin('inst-1');
+        unload.reject(new Error('desktop bridge unavailable'));
+
+        await expect(unloading).rejects.toThrow('desktop bridge unavailable');
+        expect(attachmentOf('inst-1')).toEqual([false]);
+    });
+
+    it('forgets what an unkeyed unload took and re-attaches what it did not', async () => {
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                'inst-1': { engineAttached: true, parameters: [] },
+                'inst-2': { engineAttached: true, parameters: [PARAMETER] },
+            },
+        });
+        const unload = deferUnload();
+
+        const unloading = subject.unloadPlugin();
+        unload.resolve([['inst-1'], ['inst-2: still processing']]);
+
+        await expect(unloading).rejects.toThrow('inst-2: still processing');
+        // The taken instance is gone outright, so the restore passes over it;
+        // the refused one keeps the engine it never stopped having.
+        expect(externalPluginParameterStore.value?.byInstanceId['inst-1']).toBeUndefined();
+        expect(externalPluginParameterStore.value?.byInstanceId['inst-2']).toEqual({
+            engineAttached: true,
+            parameters: [PARAMETER],
+        });
+    });
+
+    it('restores only the attachments an unkeyed unload actually retracted', async () => {
+        // One failed rebuild unload must not hand every plugin in the session an
+        // engine it never had.
+        externalPluginParameterStore.set({
+            byInstanceId: {
+                'inst-1': { engineAttached: true, parameters: [] },
+                'inst-2': { engineAttached: false, parameters: [] },
+            },
+        });
+        const unload = deferUnload();
+
+        const unloading = subject.unloadPlugin();
+        unload.reject(new Error('desktop bridge unavailable'));
+
+        await expect(unloading).rejects.toThrow('desktop bridge unavailable');
+        expect(attachmentOf('inst-1', 'inst-2')).toEqual([true, false]);
     });
 });

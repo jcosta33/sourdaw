@@ -18,7 +18,7 @@
  * instance from a rolling graph needs a command that does not tear the topology
  * down, which is #3575's work; this module deliberately has no route to one.
  *
- * ── The mirror is retracted first, not last ───────────────────────────────
+ * ── The mirror is retracted first, reconciled after ───────────────────────
  *
  * The attachment is cleared *before* the unload is awaited, and the rest of the
  * instance's record only after it returns. The window between those two is real
@@ -27,6 +27,22 @@
  * attached instance, claim a native body for that device, and have the mapper
  * refuse the whole batch when it cannot find the instance. Retracting early
  * under-reports instead: one strip degrades, and the session stands.
+ *
+ * That retraction is a bet, so it is reconciled against what actually landed.
+ * An unload can fail two ways and both keep the instance loaded *and* attached:
+ * the native side reports it in the error list, where `cancel_unload` leaves it
+ * in `engine_plugins`, or the bridge call rejects outright and nothing was ever
+ * retired. A retraction left standing over either is permanent — no writer ever
+ * sets the flag back, because activation short-circuits on an instance it
+ * already holds and the engine reports only the dormant instances a batch newly
+ * took — and it costs the plugin every automation lane on the audible path and
+ * its whole parameter picker. The unkeyed unload retracts the entire session at
+ * once, so one failed rebuild would do that to every loaded plugin.
+ *
+ * So a failed unload restores the attachments it captured. It restores the
+ * whole captured set rather than reasoning about which leg failed: an instance
+ * the unload *did* take has no snapshot left, and the restore skips an absent
+ * one, so the same call is right whether nothing landed or only part of it did.
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
@@ -36,8 +52,10 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import {
     dropExternalPluginParameterSnapshot,
+    externalPluginParameterStore,
     markEveryExternalPluginParameterSnapshotDetached,
     markExternalPluginParameterSnapshotDetached,
+    markExternalPluginParameterSnapshotsAttached,
 } from '../../stores/externalPluginParameterStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
@@ -87,16 +105,54 @@ function reconcileUnloadResult(
     }
 }
 
-export function unloadPlugin(instanceId?: string): Promise<void> {
+/** The instances this unload is about to retract, as the mirror stands now. */
+function attachedInstanceIds(instanceId?: string): ReadonlySet<string> {
+    const byInstanceId = externalPluginParameterStore.value?.byInstanceId ?? {};
+    if (instanceId !== undefined) {
+        return new Set(byInstanceId[instanceId]?.engineAttached === true ? [instanceId] : []);
+    }
+    return new Set(
+        Object.entries(byInstanceId)
+            .filter(([, snapshot]) => snapshot.engineAttached)
+            .map(([id]) => id)
+    );
+}
+
+/**
+ * Run one unload with the attach mirror retracted across it.
+ *
+ * Retract and restore are paired here so the happy path above stays a straight
+ * line: the bet is placed, the unload is awaited, and only a failure pays it
+ * back. See the header for why the whole captured set is restored rather than
+ * the failed leg's share of it.
+ */
+async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
+    const attached = attachedInstanceIds(instanceId);
     if (instanceId === undefined) {
         markEveryExternalPluginParameterSnapshotDetached();
-        return unloadPluginRepo().then(reconcileUnloadResult);
-    }
-    return serializePluginLifecycle(instanceId, async () => {
-        if (!loadedExternalInstances.has(instanceId)) {
-            return;
-        }
+    } else {
         markExternalPluginParameterSnapshotDetached(instanceId);
-        reconcileUnloadResult(await unloadPluginRepo(instanceId), instanceId);
+    }
+    try {
+        // The bulk command names no instance at all, rather than naming an
+        // undefined one: `unload_plugin` reads an absent key as "retire
+        // everything" and a present one as a target.
+        const unloaded = instanceId === undefined ? await unloadPluginRepo() : await unloadPluginRepo(instanceId);
+        reconcileUnloadResult(unloaded, instanceId);
+    } catch (error) {
+        markExternalPluginParameterSnapshotsAttached(attached);
+        throw error;
+    }
+}
+
+export function unloadPlugin(instanceId?: string): Promise<void> {
+    if (instanceId === undefined) {
+        return unloadWithRetractedMirror();
+    }
+    return serializePluginLifecycle(instanceId, () => {
+        if (!loadedExternalInstances.has(instanceId)) {
+            return Promise.resolve();
+        }
+        return unloadWithRetractedMirror(instanceId);
     });
 }

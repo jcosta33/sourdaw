@@ -159,15 +159,53 @@ export function markExternalPluginParameterSnapshotDetached(instanceId: string):
 export function markEveryExternalPluginParameterSnapshotDetached(): void {
     externalPluginParameterStore.update((state) => {
         const current = state ?? defaultExternalPluginParameterState;
+        const entries = Object.entries(current.byInstanceId);
+        if (!entries.some(([, snapshot]) => snapshot.engineAttached)) {
+            return current;
+        }
         return {
             ...current,
             byInstanceId: Object.fromEntries(
-                Object.entries(current.byInstanceId).map(([instanceId, snapshot]) => [
-                    instanceId,
-                    { ...snapshot, engineAttached: false },
-                ])
+                entries.map(([instanceId, snapshot]) => [instanceId, { ...snapshot, engineAttached: false }])
             ),
         };
+    });
+}
+
+/**
+ * Put back the attachment of instances an unload retracted and then failed to
+ * take.
+ *
+ * The retraction is optimistic — it has to lead the unload, because the window
+ * between the native side dropping an instance and this process hearing about
+ * it is one a play can land in. An unload that fails leaves the instance loaded
+ * and attached, and nothing else ever revises this flag back: activation
+ * short-circuits on an instance it already holds, and the engine reports only
+ * the dormant instances a batch newly took. Left retracted, the plugin's
+ * automation lanes stop riding the audible path and its parameters leave the
+ * picker for the rest of the session.
+ *
+ * An id with no snapshot is skipped rather than created: that is how an unload
+ * that took *some* of what it named restores only the rest, because a taken
+ * instance's snapshot is already dropped.
+ */
+export function markExternalPluginParameterSnapshotsAttached(instanceIds: ReadonlySet<string>): void {
+    if (instanceIds.size === 0) {
+        return;
+    }
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const restored = [...instanceIds].flatMap((instanceId) => {
+            const snapshot = current.byInstanceId[instanceId];
+            if (!snapshot || snapshot.engineAttached) {
+                return [];
+            }
+            return [[instanceId, { ...snapshot, engineAttached: true }] as const];
+        });
+        if (restored.length === 0) {
+            return current;
+        }
+        return { ...current, byInstanceId: { ...current.byInstanceId, ...Object.fromEntries(restored) } };
     });
 }
 
