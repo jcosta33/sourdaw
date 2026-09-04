@@ -801,7 +801,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             );
         }
         return (
-            <Stack justify="center" className="h-full text-center text-[10px] uppercase tracking-widest text-stone-500">
+            <Stack
+                justify="center"
+                className="h-full text-center text-dense uppercase tracking-widest text-muted-foreground"
+            >
                 {isNativeProjectRuntimeAvailable() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
             </Stack>
         );
@@ -997,7 +1000,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     aria-label="Tail seconds"
                                     className="h-auto w-20 rounded-md border border-border-hairline bg-surface-well px-2 py-1 text-xs text-foreground disabled:opacity-40"
                                 />
-                                <span className="text-nano text-muted-foreground">seconds</span>
+                                <span className="text-dense text-muted-foreground">seconds</span>
                             </Row>
                             <Row as="label" gap={1.5} className="text-compact text-muted-foreground">
                                 <DawCompactCheckbox
@@ -1059,7 +1062,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                                     active
                                                         ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
-                                                        : 'border-border-hairline bg-surface-raised hover:border-border hover:bg-surface-panel'
+                                                        : 'border-border-hairline bg-surface-panel hover:border-border hover:bg-surface-raised'
                                                 }`}
                                                 onClick={() => toggleFormat(freq.value)}
                                                 aria-pressed={active}
@@ -1104,8 +1107,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     sampleRate === sr
-                                                        ? 'bg-surface-panel text-foreground font-medium'
-                                                        : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateSampleRate(sr)}
                                                 disabled={exporting}
@@ -1131,8 +1134,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     effectiveBitDepth === bd
-                                                        ? 'bg-surface-panel text-foreground font-medium'
-                                                        : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateBitDepth(bd)}
                                                 disabled={exporting}
@@ -1163,8 +1166,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     normalization === option.value
-                                                        ? 'bg-surface-panel text-foreground font-medium'
-                                                        : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateNormalization(option.value)}
                                                 disabled={exporting}
@@ -1173,7 +1176,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
-                                    <p className="mt-1.5 text-nano text-muted-foreground/70">
+                                    <p className="mt-1.5 text-dense text-muted-foreground/70">
                                         Measures programme loudness and inter-sample peaks, then applies one gain to
                                         reach the target without exceeding {R128_CEILING_DB_TP} dBTP.
                                     </p>
@@ -1200,8 +1203,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     dither === option.value
-                                                        ? 'bg-surface-panel text-foreground font-medium'
-                                                        : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateDither(option.value)}
                                                 disabled={exporting}
@@ -1210,7 +1213,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
-                                    <p className="mt-1.5 text-nano text-muted-foreground/70">
+                                    <p className="mt-1.5 text-dense text-muted-foreground/70">
                                         Repeatable re-exports the same project to identical bytes. Off skips dither
                                         entirely for a bit-exact bounce.
                                     </p>
@@ -1232,8 +1235,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                     size="sm"
                                                     className={`h-6 rounded-md px-2 text-[10px] ${
                                                         mp3BitRate === br
-                                                            ? 'bg-surface-panel text-foreground font-medium'
-                                                            : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
+                                                            ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                            : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                     }`}
                                                     onClick={() => updateMp3BitRate(br)}
                                                     disabled={exporting}
@@ -1277,7 +1280,7 @@ const RangeRadio = ({ label, value, activeValue, disabled, onChange }: RangeRadi
     const active = activeValue === value;
     return (
         <label
-            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-all ${
+            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-compact transition-all ${
                 active
                     ? 'border-orange-500/30 bg-orange-950/40 text-orange-200'
                     : 'border-border-hairline bg-surface-raised text-muted-foreground hover:border-border hover:text-foreground'
