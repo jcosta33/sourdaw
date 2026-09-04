@@ -27,6 +27,7 @@ import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptDraft } from '#/modules/AiRuntime/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
+import { isKeyboardEditableTarget } from '#/modules/CommandInterface/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
@@ -157,6 +158,14 @@ export const TrackListView = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        // Keystrokes typed into an inline editor (track rename) bubble to
+        // this container; they must edit text, not navigate or delete —
+        // the same gate the global shortcut layer applies to itself.
+        const target = event.target as HTMLElement;
+        if (isKeyboardEditableTarget(target)) {
+            return;
+        }
+
         const currentIndex = visibleTracks.findIndex((time) => time.id === selectedTrackId);
 
         if (event.key === 'ArrowDown') {

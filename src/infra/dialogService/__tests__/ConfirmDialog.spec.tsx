@@ -147,6 +147,39 @@ describe('ConfirmDialog', () => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
 
+    it('stops Delete from reaching the window shortcut layer while pending (#3602)', async () => {
+        const fire = await renderAndGetHandler();
+        const resolve = vi.fn();
+        act(() => {
+            fire(makePayload({ variant: 'danger', confirmLabel: 'Delete', resolve }));
+        });
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        // Focus sits on the portaled dialog's own button: the keystroke must
+        // be cut before window, where the global layer would delete the
+        // selected arrangement clips with no confirmation.
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Delete' }), { key: 'Delete' });
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        expect(resolve).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('stops Backspace from reaching the window shortcut layer while pending (#3602)', async () => {
+        const fire = await renderAndGetHandler();
+        const resolve = vi.fn();
+        act(() => {
+            fire(makePayload({ variant: 'danger', confirmLabel: 'Delete', resolve }));
+        });
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Delete' }), { key: 'Backspace' });
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        expect(resolve).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
     it('auto-resolves an overlapping pending confirmation to false when a second ui.confirm arrives', async () => {
         const fire = await renderAndGetHandler();
         const firstResolve = vi.fn();

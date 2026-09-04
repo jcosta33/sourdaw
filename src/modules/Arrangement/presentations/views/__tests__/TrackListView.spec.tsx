@@ -50,6 +50,7 @@ vi.mock('../TrackHeader', () => ({
     TrackHeader: ({ track, isSelected }: TrackHeaderMockProps): ReactElement => (
         <div data-testid={`track-${track.id}`} data-selected={isSelected}>
             {track.name}
+            {isSelected ? <input data-testid="inline-rename-input" aria-label="Rename track" /> : null}
         </div>
     ),
 }));
@@ -446,6 +447,19 @@ describe('TrackListView', () => {
         window.removeEventListener('keydown', windowKeyDown);
         await Promise.resolve();
         await Promise.resolve();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('ignores Backspace typed into the inline rename input (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByTestId('inline-rename-input'), { key: 'Backspace' });
+        await Promise.resolve();
+        await Promise.resolve();
+        // The rename input owns the keystroke: no delete confirmation may
+        // open and no removeTrack action may fire from the bubbled keydown.
+        expect(confirmUser).not.toHaveBeenCalled();
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
