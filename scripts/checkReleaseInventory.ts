@@ -1604,6 +1604,15 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             ],
             digestLabel: 'grand-boule-live-runtime',
         },
+        // `paths` states surface membership for licensing; `gitPathspecs` states what
+        // a released Grand Boule project is read back through, so it hashes only what
+        // this surface distributes. The shared files outside the module stay pinned
+        // whole because they are the registration and argument-versioning contracts
+        // that decide how a stored Grand Boule command is resolved and dispatched: a
+        // change to any of them can change what an already-released project does, and
+        // no per-declaration hashing exists to narrow them. Module specs and the module
+        // AGENTS.md are excluded because nothing in them reaches a distributed
+        // artifact — the line `isScannedSource` already draws for scanned source.
         {
             paths: [
                 'src/modules/GrandBoule/**',
@@ -1618,6 +1627,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             gitPathspecs: [
                 'src/modules/GrandBoule',
                 ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+                ':(exclude,glob)src/modules/GrandBoule/**/__tests__/**',
+                ':(exclude)src/modules/GrandBoule/AGENTS.md',
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
