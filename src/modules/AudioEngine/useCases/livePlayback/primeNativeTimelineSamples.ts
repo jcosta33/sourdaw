@@ -49,11 +49,12 @@ function projectLiveProgrammeBatch(sampleRate: number): ReturnType<typeof projec
     const stripTracks = readLiveStripTracks();
     return projectLiveGraphTopology({
         stripTracks,
-        // The prime cares about material, not about mix state: the gates below
-        // change no source id, and a strip's real state arrives with the batch
-        // the session actually sends.
+        // The prime cares about material, not about mix state or which chains
+        // the engine can build: neither changes a source id, and both arrive at
+        // their real values with the batch the session actually sends.
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
+        attachedInstanceIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
         programme: readLiveGraphProgramme({ stripTracks, sampleRate }),

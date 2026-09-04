@@ -606,6 +606,9 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
         stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
+        // The parity fixtures carry no externally hosted plugin, so no engine
+        // attachment could change a strip in this batch.
+        attachedInstanceIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
         programme: projectLiveGraphProgramme({

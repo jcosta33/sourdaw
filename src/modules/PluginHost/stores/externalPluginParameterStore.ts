@@ -120,6 +120,96 @@ export function markExternalPluginParameterSnapshotAttached(instanceId: string):
 }
 
 /**
+ * Retract the attachment of one instance the engine is about to lose.
+ *
+ * The mirror is read to decide whether a live strip may claim a native body for
+ * an external plugin, and the native mapper refuses the *whole batch* over a
+ * device whose instance it cannot find. So the retraction has to lead the
+ * unload rather than follow it: between the native side dropping an instance
+ * and this process hearing about it, a play that still read `engineAttached`
+ * would build a strip the engine cannot map. Under-reporting is the safe
+ * direction — the strip degrades, the session stands.
+ *
+ * Only the attachment fact moves. The parameters stay for the same reason
+ * {@link markExternalPluginParameterSnapshotAttached} leaves them: they describe
+ * the plugin, not the engine behind it, and the unload drops the whole snapshot
+ * anyway once it lands.
+ */
+export function markExternalPluginParameterSnapshotDetached(instanceId: string): void {
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot || !snapshot.engineAttached) {
+            return current;
+        }
+        return {
+            ...current,
+            byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, engineAttached: false } },
+        };
+    });
+}
+
+/**
+ * Retract every attachment this process is mirroring.
+ *
+ * The unkeyed unload names no instance, so it retires all of them; anything
+ * left claiming an engine after it would be claiming one for an instance that
+ * is gone.
+ */
+export function markEveryExternalPluginParameterSnapshotDetached(): void {
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const entries = Object.entries(current.byInstanceId);
+        if (!entries.some(([, snapshot]) => snapshot.engineAttached)) {
+            return current;
+        }
+        return {
+            ...current,
+            byInstanceId: Object.fromEntries(
+                entries.map(([instanceId, snapshot]) => [instanceId, { ...snapshot, engineAttached: false }])
+            ),
+        };
+    });
+}
+
+/**
+ * Put back the attachment of instances an unload retracted and then failed to
+ * take.
+ *
+ * The retraction is optimistic — it has to lead the unload, because the window
+ * between the native side dropping an instance and this process hearing about
+ * it is one a play can land in. An unload that fails leaves the instance loaded
+ * and attached, and nothing else ever revises this flag back: activation
+ * short-circuits on an instance it already holds, and the engine reports only
+ * the dormant instances a batch newly took. Left retracted, the plugin's
+ * automation lanes stop riding the audible path and its parameters leave the
+ * picker for the rest of the session.
+ *
+ * An id with no snapshot is skipped rather than created: that is how an unload
+ * that took *some* of what it named restores only the rest, because a taken
+ * instance's snapshot is already dropped.
+ */
+export function markExternalPluginParameterSnapshotsAttached(instanceIds: ReadonlySet<string>): void {
+    if (instanceIds.size === 0) {
+        return;
+    }
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const restored = [...instanceIds].flatMap((instanceId) => {
+            const snapshot = current.byInstanceId[instanceId];
+            if (!snapshot || snapshot.engineAttached) {
+                return [];
+            }
+            return [[instanceId, { ...snapshot, engineAttached: true }] as const];
+        });
+        if (restored.length === 0) {
+            return current;
+        }
+        return { ...current, byInstanceId: { ...current.byInstanceId, ...Object.fromEntries(restored) } };
+    });
+}
+
+/**
  * Record the setting a plugin reported for one of its own parameters.
  *
  * Only the value moves: a plugin-side edit says what the control is now set to
