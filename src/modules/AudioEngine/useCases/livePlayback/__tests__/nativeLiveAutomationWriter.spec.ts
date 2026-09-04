@@ -58,6 +58,12 @@ const mocks = vi.hoisted(() => ({
     readPosition: vi.fn<() => Promise<EngineTransportPosition>>(),
     stopPlayheadFeed: vi.fn(),
     warn: vi.fn<(message: string, ...rest: unknown[]) => void>(),
+    /**
+     * PluginHost's correction for an instance the engine has just taken over.
+     * Doubled because what this file owns is whether a pump's own batch
+     * forwards one, not what PluginHost then writes.
+     */
+    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -66,6 +72,10 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({
     stopNativeEnginePlayheadFeed: () => mocks.stopPlayheadFeed(),
 }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return { ...actual, markExternalPluginEngineAttached: mocks.markExternalPluginEngineAttached };
+});
 vi.mock('../../../repositories/engineTransport/getEngineTransportPosition', () => ({
     getEngineTransportPosition: () => mocks.readPosition(),
 }));
@@ -275,6 +285,7 @@ beforeEach(() => {
     mocks.readPosition.mockReset();
     mocks.stopPlayheadFeed.mockClear();
     mocks.warn.mockClear();
+    mocks.markExternalPluginEngineAttached.mockClear();
     mocks.curve = [];
     mocks.exclusions = [];
     engineEchoSeconds = 0;
@@ -307,6 +318,28 @@ describe('the live automation writer', () => {
         // at the value the parameter holds on the start frame, so half a ramp
         // is a different ramp, not the first half of this one.
         expect(writesOf(0)).toEqual([ramp(0.05, 0.5, 0.4)]);
+    });
+
+    // A pass sends a batch every tick it owes writes on, so during a rolling
+    // take these are most of the batches the engine sees — and an instance
+    // loaded mid-take is taken over by whichever one comes next. A pump that
+    // dropped the report would leave that device showing a plugin passing dry
+    // audio until some other route happened to apply a batch.
+    it('forwards the instances its own tick’s batch took over', async () => {
+        mocks.curve = [{ target: FADER, writes: [step(0.05, 0.4), step(1, 0.6)] }];
+        arm(0);
+        await flush();
+        mocks.apply.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-pumped', bridgeRoundTripFrames: 192 }],
+        });
+
+        await pump(0.95, 0);
+
+        expect(writesOf(1)).toEqual([step(1, 0.6)]);
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-pumped', bridgeRoundTripFrames: 192 }],
+        ]);
     });
 
     it('opens a looping pass at the playhead, and takes the whole region only once a seam closes', async () => {

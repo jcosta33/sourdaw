@@ -135,11 +135,102 @@ describe('snapshotImportSpecifiers', () => {
         expect(snapshotImportSpecifiers(source).sort()).toEqual(['./foo.ts', 'node:path']);
         expect(bareModuleSpecifiers(source)).toEqual([]);
     });
+
+    it('collects import.meta.resolve specifiers across quotes, grouping parens, and await', () => {
+        expect(snapshotImportSpecifiers("import.meta.resolve('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("import.meta.resolve('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('import.meta.resolve("yaml")')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('import.meta.resolve("yaml")')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('import.meta.resolve(`yaml`)')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('import.meta.resolve(`yaml`)')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("await import.meta.resolve('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("await import.meta.resolve('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("import.meta.resolve(('yaml'))")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("import.meta.resolve(('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("import.meta.resolve( ('yaml') )")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("import.meta.resolve( ('yaml') )")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("import?.meta?.resolve?.('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("import?.meta?.resolve?.('yaml')")).toEqual(['yaml']);
+    });
+
+    it('ignores dynamic expressions in import.meta.resolve', () => {
+        expect(snapshotImportSpecifiers('import.meta.resolve(`yaml${x}`)')).toEqual([]);
+        expect(bareModuleSpecifiers('import.meta.resolve(`yaml${x}`)')).toEqual([]);
+    });
+
+    it('ignores method-call import.meta.resolve after property access', () => {
+        expect(snapshotImportSpecifiers("obj.import.meta.resolve('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj.import.meta.resolve('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("obj?.import.meta.resolve('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj?.import.meta.resolve('yaml')")).toEqual([]);
+    });
+
+    it('collects require and require.resolve specifiers across quotes, grouping parens, and optional chaining', () => {
+        expect(snapshotImportSpecifiers("require('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('require("yaml")')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('require("yaml")')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('require(`yaml`)')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('require(`yaml`)')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("require(('yaml'))")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require(('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("require( ('yaml') )")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require( ('yaml') )")).toEqual(['yaml']);
+
+        expect(snapshotImportSpecifiers("require.resolve('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require.resolve('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('require.resolve("yaml")')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('require.resolve("yaml")')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('require.resolve(`yaml`)')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('require.resolve(`yaml`)')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("require.resolve(('yaml'))")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require.resolve(('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("require?.resolve('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require?.resolve('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("require?.resolve?.('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("require?.resolve?.('yaml')")).toEqual(['yaml']);
+    });
+
+    it('ignores method-call require after property access', () => {
+        expect(snapshotImportSpecifiers("obj.require('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj.require('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("obj?.require('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj?.require('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("obj.require.resolve('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj.require.resolve('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("obj?.require?.resolve('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj?.require?.resolve('yaml')")).toEqual([]);
+    });
+
+    it('collects createRequire chained calls across quotes, grouping parens, and optional chaining', () => {
+        expect(snapshotImportSpecifiers("createRequire(import.meta.url)('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("createRequire(import.meta.url)('yaml')")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('createRequire(import.meta.url)("yaml")')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('createRequire(import.meta.url)("yaml")')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers('createRequire(import.meta.url)(`yaml`)')).toEqual(['yaml']);
+        expect(bareModuleSpecifiers('createRequire(import.meta.url)(`yaml`)')).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("createRequire(import.meta.url)(('yaml'))")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("createRequire(import.meta.url)(('yaml'))")).toEqual(['yaml']);
+        expect(snapshotImportSpecifiers("createRequire(import.meta.url)?.('yaml')")).toEqual(['yaml']);
+        expect(bareModuleSpecifiers("createRequire(import.meta.url)?.('yaml')")).toEqual(['yaml']);
+    });
+
+    it('ignores dynamic expressions in createRequire chained calls', () => {
+        expect(snapshotImportSpecifiers('createRequire(import.meta.url)(`yaml${x}`)')).toEqual([]);
+        expect(bareModuleSpecifiers('createRequire(import.meta.url)(`yaml${x}`)')).toEqual([]);
+    });
+
+    it('ignores method-call createRequire after property access', () => {
+        expect(snapshotImportSpecifiers("obj.createRequire(import.meta.url)('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj.createRequire(import.meta.url)('yaml')")).toEqual([]);
+        expect(snapshotImportSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
+        expect(bareModuleSpecifiers("obj?.createRequire(import.meta.url)('yaml')")).toEqual([]);
+    });
 });
 
 describe('trusted GitHub write snapshot launcher', () => {
     it.each([
-        ['deliver', false],
+        ['deliver', true],
         ['issue:reconcile', false],
         ['lane:publish', false],
         ['review:publish', true],
@@ -147,6 +238,7 @@ describe('trusted GitHub write snapshot launcher', () => {
         ['review:resolve', false],
     ] as const)('uses a detached POSIX process group only for %s: %s', (command, expected) => {
         expect(trustedSnapshotRunsDetached(command, 'linux')).toBe(expected);
+        expect(trustedSnapshotRunsDetached(command, 'darwin')).toBe(expected);
         expect(trustedSnapshotRunsDetached(command, 'win32')).toBe(false);
     });
 

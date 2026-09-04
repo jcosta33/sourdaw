@@ -8,6 +8,9 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type ProductionBriefScope } from '../models/ProductionBrief';
 import { projectStore } from '../stores/projectStore';
 
+import { collectProtectedScopes } from './collectProtectedScopes';
+import { isProjectWideScope } from './isProjectWideScope';
+
 type ProductionBriefActionFootprint = {
     readonly actions: readonly AppAction[];
     readonly adjustmentLayers: typeof adjustmentLayerStore.value;
@@ -560,10 +563,7 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
         collectActionStrings(action.payload, actionStrings);
     }
 
-    const protectedScopes = [
-        ...brief.locks.map((lock) => lock.scope),
-        ...brief.decisions.filter((decision) => decision.status === 'locked').map((decision) => decision.scope),
-    ];
+    const protectedScopes = collectProtectedScopes(brief).map((protection) => protection.scope);
     if (
         protectedScopes.length > 0 &&
         projectActions.some((action) => action.type === 'cutClip' || action.type === 'pasteClip')
@@ -572,7 +572,7 @@ function doesProductionBriefAllowActionFootprint(footprint: ProductionBriefActio
     }
 
     return protectedScopes.every((scope) => {
-        if (scope.kind === 'project') {
+        if (isProjectWideScope(scope)) {
             return false;
         }
         if (scope.kind === 'range') {

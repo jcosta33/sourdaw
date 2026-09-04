@@ -547,6 +547,22 @@ function startedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
 }
 
 /**
+ * A skip never retires a failure — that stays `retiresAttempt`'s rule alone, unreached from here. It
+ * can only speak for a cancellation, and only as the newest attempt under that name: one that started
+ * strictly after the cancellation it stands beside, per the same `startedAfter` recency test
+ * `retiresAttempt` uses. A skip GitHub reports no start for, or one that started at or before the
+ * cancellation, cannot prove it is the later word and so decides nothing.
+ */
+function skippedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+    return (
+        candidate.name === attempt.name &&
+        candidate.status === SETTLED_CHECK_STATUS &&
+        candidate.conclusion === SKIPPED_CONCLUSION &&
+        startedAfter(candidate, attempt)
+    );
+}
+
+/**
  * A cancelled run is the only tolerated corpse. Anything else that settled without a passing
  * conclusion — an unrecognized one included — is a real result the merge must not step over.
  */
@@ -559,26 +575,38 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
 }
 
 /**
- * Tolerating a cancellation rests on some later run having re-run that same job on the same commit,
- * which is only observable as a success under the same check name. A name that was cancelled and
- * never succeeded on the head therefore carries no verdict at all, and a skipped sibling does not
- * supply one: jobs gated on the pull-request payload can still skip on a later run, and `Gate`
- * passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
- * `Dependency review` has exactly this shape when its cancellation is followed only by skips beside
- * it, with no success anywhere. This rule consequently refuses such a head rather than merging with
- * no dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ * Tolerating a cancellation rests on some later attempt under the same name having decided the
+ * check on this head. `validateSupersededChecks` requires a `Gate` SUCCESS on the head before this
+ * rule ever runs: `gate`'s own step fails unless every job it needs, `decide` included, reports
+ * success or skipped, so a `Gate` SUCCESS proves `decide` succeeded in that run and every gating
+ * leg without a scope `if` ran and already sits in `passed`. A `decide` that failed on an earlier
+ * run is retired by the later `decide` success and does reach this rule together with the
+ * dependency skips it produced; that is harmless, because the `Gate`-success run's scope skip is
+ * newer than any cancellation of the same leg. For a leg the workflow scope-gates on `decide`'s
+ * output, a fixed head's changed-file set only shrinks as the merge base advances, so a scope
+ * output flips `true` to `false` and never back — which is why a later `SKIPPED` under
+ * a cancelled name is the decision of record rather than an absence of one.
  *
- * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
- * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
- * rather than deciding this head, so refusing on it would refuse every delivery forever. The gating
- * set is whatever `Gate` needs, read from the workflow rather than restated here.
+ * A cancellation itself says nothing: it was killed before it could report the leg's own verdict.
+ * Only a skip that is itself the newer attempt speaks for it, which `skippedAfter` proves the same
+ * way `retiresAttempt` proves a later success. A skip with no recorded start, or one that started at
+ * or before the cancellation, cannot prove it is the later word, so it decides nothing and the
+ * cancelled name stays undecided.
+ *
+ * Only a check whose verdict gates the merge is evidence: a cancelled name outside `Gate`'s needs
+ * decides nothing the merge waits on. The gating set is whatever `Gate` needs, read from the workflow
+ * rather than restated here.
  */
 function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlySet<string>): string | undefined {
     const passed = new Set(
         checks.filter((check) => check.conclusion === PASSING_CONCLUSION).map((check) => check.name)
     );
     return checks.find(
-        (check) => check.conclusion === SUPERSEDED_CONCLUSION && required.has(check.name) && !passed.has(check.name)
+        (check) =>
+            check.conclusion === SUPERSEDED_CONCLUSION &&
+            required.has(check.name) &&
+            !passed.has(check.name) &&
+            !checks.some((candidate) => skippedAfter(candidate, check))
     )?.name;
 }
 

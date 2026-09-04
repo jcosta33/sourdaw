@@ -48,7 +48,7 @@ export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): Rea
                     size="icon-xs"
                     className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive"
                     onClick={() => onRemove(task.id)}
-                    aria-label="Remove task"
+                    aria-label="Remove task result"
                 >
                     <X className="size-3" />
                 </Button>
@@ -73,7 +73,13 @@ export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): Rea
                         {task.durationMs ? `${(task.durationMs / 1000).toFixed(1)}s` : 'Done'}
                     </span>
                     <Row gap={1}>
-                        <Button variant="secondary" size="icon-xs" className="h-5 w-5 bg-surface-base" title="Preview">
+                        <Button
+                            variant="secondary"
+                            size="icon-xs"
+                            className="h-5 w-5 bg-surface-base"
+                            title="Preview"
+                            aria-label="Preview task result"
+                        >
                             <Play className="size-3 text-foreground" />
                         </Button>
                         <Button
@@ -81,6 +87,7 @@ export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): Rea
                             size="icon-xs"
                             className="h-5 w-5 bg-surface-base"
                             title="Add to arrangement"
+                            aria-label="Add task result to arrangement"
                         >
                             <Plus className="size-3 text-foreground" />
                         </Button>

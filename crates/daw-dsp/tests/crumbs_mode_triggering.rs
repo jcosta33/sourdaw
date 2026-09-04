@@ -536,24 +536,28 @@ fn choke_pair_with_free_pad_engine() -> CrumbsEngine {
     engine
 }
 
-/// A voice already fading must not be stolen again.
+/// A pool with nothing left but fades must still answer a note-on, and the
+/// fade it displaces must *continue* in the tail rather than restart.
 ///
 /// `choke_voices_in_group` deliberately leaves the allocator slot alone and
 /// starts only the 3 ms de-click fade, because releasing it would let the very
-/// next `allocate` hand the same slot back and jump-cut the waveform. That
-/// protection held only while the pool had a free slot elsewhere: once
-/// saturated, `find_steal_target` scored a just-choked voice as `ChokeGroup` —
-/// its second-highest priority — and took it, so the two passes undid each
-/// other and the choke became the click it was written to avoid.
-///
-/// Putting the scan in front of fading voices *and nothing else* takes a stack,
-/// not a single note. `note_on` reserves before it chokes, so the newest voice
-/// in a group is always still live, and it is the legitimate victim — see
-/// `a_saturated_pool_takes_the_choke_group_rather_than_an_unrelated_voice`. A
-/// two-voice stack exhausts it: the first half reserves that one live
+/// next `allocate` hand the same slot back and jump-cut the waveform. The scan
+/// used to go further and skip fading voices entirely, so a pool whose every
+/// voice was fading returned no target and `note_on` dropped the note —
+/// silence where the musician struck. Reaching an all-fading pool deliberately
+/// takes a stack, not a single note: `note_on` reserves before it chokes, so
+/// the newest voice in a group is always still live, and it is the legitimate
+/// victim (see `a_saturated_pool_takes_the_choke_group_rather_than_an_unrelated_voice`).
+/// A two-voice stack exhausts it: the first half reserves that one live
 /// group-mate, and the second half is left with fades.
+///
+/// Displacement is what makes the fading pool safe to steal from:
+/// `move_voice_to_steal_tail` swaps the struct without resetting `steal_fade`,
+/// so the victim carries its fade position into the tail and the tail renders
+/// it to silence. A restart — `steal_fade` back at 1.0 — would be an audible
+/// level bump on a voice already most of the way out.
 #[test]
-fn a_choked_voice_is_not_stolen_again_while_its_fade_is_running() {
+fn a_note_on_left_with_only_fading_voices_steals_one_and_lands_whole() {
     let mut engine = choke_pair_engine(1.0, 0.4);
 
     // Fill the pool. Every pad in the fixture shares choke group 1, so each of
@@ -584,25 +588,54 @@ fn a_choked_voice_is_not_stolen_again_while_its_fade_is_running() {
     });
     note_on(&mut engine, 37, 127);
 
-    // Nothing already fading was taken, so no voice carries note 37 — and the
-    // reservation being all-or-nothing, the live group-mate the first half of
-    // the stack had reserved is handed back untouched rather than silenced for
-    // a note that never landed.
-    //
-    // Asserting the note *identity* rather than a level: summing 128 voices
-    // cannot isolate one being overwritten, and an earlier version of this test
-    // measured exactly that and passed with the fix reverted.
-    assert!(
-        !engine.any_active_voice_has_note(37),
-        "note 37 took a slot inside the de-click fade, so the steal pass \
-         overwrote a voice the choke pass had just started fading — the click \
-         the choke path leaves its allocator slot alone to avoid"
+    // The whole stack landed. Asserting the note *identity* rather than a
+    // level: summing 128 voices cannot isolate one being overwritten, and an
+    // earlier version of this test measured exactly that and passed with the
+    // fix reverted.
+    assert_eq!(
+        engine.active_voices_with_note(37),
+        2,
+        "the stack note was dropped: a pool of fading voices offered no steal \
+         target, so a hit inside the choke group's 3 ms fade went silent"
     );
     assert_eq!(
         engine.active_voices_with_note(36),
-        MAX_VOICES,
-        "a note-36 voice went missing although the stack never landed, so an \
-         incomplete reservation consumed a steal target it then abandoned"
+        MAX_VOICES - 2,
+        "expected exactly the live group-mate and one fading voice to leave \
+         the pool for the stack's two halves"
+    );
+    // Both displaced voices are finishing their fades in tail slots, not
+    // overwritten where they stood: the live group-mate with a fresh 3 ms
+    // fade, the fading one with whatever remained of its own.
+    assert_eq!(
+        engine.fading_steal_tail_count(),
+        2,
+        "a displaced voice did not land in a fade slot, so its de-click was \
+         cut short instead of moved"
+    );
+
+    // The continuation discriminator. At displacement the fading victim had
+    // 16 frames of its 144-frame fade left (one block of a whole-pool choke
+    // had run), so its tail must retire inside this block. The live
+    // group-mate's fade started at the note-on and still has 16 frames to run
+    // — exactly one tail left means the carried fade finished on schedule.
+    // Two tails left means it restarted at full level, an audible bump.
+    render(&mut engine, BLOCK);
+    assert_eq!(
+        engine.fading_steal_tail_count(),
+        1,
+        "the displaced voice's de-click restarted at displacement or never \
+         advanced in its tail, instead of continuing from its position"
+    );
+
+    // Past the full 3 ms both fades have finished in their tails.
+    for _ in 0..3 {
+        render(&mut engine, BLOCK);
+    }
+    assert_eq!(
+        engine.fading_steal_tail_count(),
+        0,
+        "a fade slot is still sounding past the full FADE_STOLEN_SECS window"
     );
 }
 
@@ -669,7 +702,8 @@ fn a_saturated_pool_takes_the_choke_group_rather_than_an_unrelated_voice() {
     // voice left the pool, and read with the note-38 assertion above, that the
     // slot the open hat took was a group-mate's rather than an outsider's.
     // Which group-mate — the live one rather than a fade — is what
-    // `a_choked_voice_is_not_stolen_again_while_its_fade_is_running` covers.
+    // `a_note_on_left_with_only_fading_voices_steals_one_and_lands_whole`
+    // covers.
     assert_eq!(
         engine.active_voices_with_note(36),
         MAX_VOICES - UNRELATED - 1,

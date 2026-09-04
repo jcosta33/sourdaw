@@ -988,6 +988,43 @@ function initializeDeliveryLockRepository(root: string): void {
 }
 
 /**
+ * Acquiring a delivery lock records the owner's process fence, which the lock module reads through
+ * the launcher-resolved `ps`. These cases run outside that launcher, so they supply their own.
+ */
+function writeTrustedPsFixture(root: string): () => void {
+    const executable = join(root, 'ps');
+    const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+    writeFileSync(
+        executable,
+        '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "owner-process-start"; fi\n'
+    );
+    chmodSync(executable, 0o700);
+    process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+    return () => {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_TRUSTED_PS_PATH;
+        } else {
+            process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+        }
+    };
+}
+
+function readDeliveryLockOid(root: string, number: number): string {
+    return execFileSync('git', ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${number}`], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
+}
+
+function readDeliveryLockOwner(root: string, number: number): Record<string, unknown> {
+    const blob = execFileSync('git', ['cat-file', 'blob', readDeliveryLockOid(root, number)], {
+        cwd: root,
+        encoding: 'utf8',
+    });
+    return JSON.parse(blob) as Record<string, unknown>;
+}
+
+/**
  * A `git init`-backed temp repository can leave file handles closing asynchronously on some
  * platforms, so a bare `rmSync` on its directory can race an in-flight close and throw `ENOTEMPTY`.
  * Retrying, as the rest of the suite already does for its own temp-dir cleanups, absorbs that race
@@ -1040,12 +1077,48 @@ function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError 
 }
 
 describe('pull-request delivery', () => {
+    it('journals a fenced delivery owner and records the first remote mutation attempt', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-owner-journal-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+
+        try {
+            await withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationAttempt }) => {
+                const prepared = readDeliveryLockOid(root, 42);
+                expect(readDeliveryLockOwner(root, 42)).toMatchObject({
+                    version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
+                    mutation: { phase: 'prepared', epoch: 0 },
+                });
+
+                markRemoteMutationAttempt();
+
+                expect(readDeliveryLockOid(root, 42)).not.toBe(prepared);
+                expect(readDeliveryLockOwner(root, 42)).toMatchObject({
+                    version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
+                    mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+                });
+            });
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
     it.each([
         ['releases the lock after definitive HTTP 422', '422', false],
         ['retains the lock and refuses reacquisition after ambiguous HTTP 409', '409', true],
     ] as const)('%s', async (_label, status, retainsLock) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, tracker } = fakePort({ dependentSets: [[], []] });
         const rejection = shellMergeRejection(status);
         port.merge = () => {
@@ -1070,6 +1143,7 @@ describe('pull-request delivery', () => {
                 );
             }
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -5983,6 +6057,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head before any remote write, naming the pending required check, and releases the lock', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
@@ -6002,6 +6077,7 @@ describe('pull-request delivery', () => {
             // absence here is what proves the refusal happened before any remote mutation.
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6009,6 +6085,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: 'SUCCESS' })],
@@ -6029,6 +6106,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6821,13 +6899,68 @@ describe('pull-request delivery', () => {
     });
 
     /**
+     * The rule serves the legs `Gate` needs that carry a job-level `if:` on `decide`'s scope output,
+     * which the fixtures below derive from the live workflow rather than list. The unit shards are
+     * not among `Gate`'s needs, and a skipped matrix job reports under its unexpanded template name
+     * rather than a shard name, so this rule cannot decide a shard either way. A scope-gated leg is
+     * skipped by the workflow's own path-filter decision, re-evaluated on the current diff, and a
+     * fixed head's changed-file set only shrinks as the merge base advances, so that decision only
+     * ever moves true to false. A later `SKIPPED` under a cancelled name is therefore the scope
+     * decision of record, and the head is green by design and merges.
+     */
+    it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * A skip only speaks for the cancellation beside it when it is the newer attempt. One that
+     * started before the cancellation it stands beside proves nothing about what the workflow
+     * decided afterward, so the cancelled name stays undecided.
+     */
+    it('refuses an UNSTABLE head whose scope-gated skip started before its cancellation', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
      * The live shape of `Validation / Dependency review` — the dependency scan reporting through the
      * validation lane — when a cancelled attempt is followed only by later skips. `Gate` passes on
      * `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not one either.
      * `Gate` needs that leg through the lane, which is why `deliver` refused PR #2795's head when
      * the scan still reported under its own name.
      */
-    it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
+    it('refuses an UNSTABLE head whose cancelled validation-lane leg never succeeded', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
@@ -6852,9 +6985,67 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * `Nightly failure report` is cancelled with the rest of the superseded run and never succeeds
-     * on a pull request, because it reports a failed scheduled run and nothing else. `Gate` does not
-     * need it, so its silence decides nothing — and refusing on it would refuse every delivery.
+     * A skip GitHub reports no start for cannot prove it is the later word either, so it cannot
+     * retire the cancellation beside it.
+     */
+    it('refuses an UNSTABLE head whose later scope-gated skip carries no start', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: null }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A skip only speaks for the cancellation it shares a name with. `skippedAfter` also checks
+     * `candidate.name === attempt.name`, so a later skip under a different gating name — however
+     * recent — cannot retire a cancellation it never re-ran.
+     */
+    it('refuses an UNSTABLE head whose cancellation is skipped beside under another gating name', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Production build')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * `Nightly failure report` belongs to nightly.yml, not to the workflow `Gate` needs, so it is
+     * outside `Gate`'s gating set whether or not a dispatch of that workflow put it on this head.
+     * Its silence decides nothing — and refusing on it would refuse every delivery.
      */
     it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };

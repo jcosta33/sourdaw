@@ -164,12 +164,7 @@ export const NodeGraphEditor = ({
     const getNode = (id: string): NodeDef | undefined => nodeById.get(id);
 
     return (
-        <svg
-            width={width}
-            height={height}
-            className="rounded-lg border border-border/30"
-            style={{ background: '#080808' }}
-        >
+        <svg width={width} height={height} className="rounded-lg border border-border/30 bg-surface-inset">
             {/* Grid */}
             <defs>
                 <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">

@@ -10,6 +10,7 @@
 ///   3. Releasing voices (in release stage)
 ///   4. Oldest active voice
 ///   5. Quietest active voice
+///   6. Voices already fading out (last resort — displacement preserves the fade)
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::types::MAX_VOICES;
@@ -131,8 +132,8 @@ pub struct StealCandidate {
 pub enum StealPriority {
     /// Same note being retriggered — the victim in every configuration, the
     /// incoming note's own choke group included. The one thing that keeps it
-    /// from being taken is a fade already in flight: steal selection passes
-    /// over fading voices entirely (see `CrumbsEngine::find_steal_target`).
+    /// from being taken is a fade already in flight: a fading voice reports
+    /// [`StealPriority::Fading`] instead, below every live tier.
     SameNote,
     /// Voice belongs to a choke group that should be cut.
     ChokeGroup,
@@ -142,6 +143,17 @@ pub enum StealPriority {
     Oldest,
     /// Quietest active voice (lowest energy → lowest priority).
     Quietest,
+    /// Voice is already running its de-click fade — a choke or an earlier
+    /// steal has spent it, and it leaves the pool within
+    /// [`FADE_STOLEN_SECS`](super::types::FADE_STOLEN_SECS) whatever this scan
+    /// does. Stealable, because displacement preserves its fade:
+    /// `move_voice_to_steal_tail` swaps the struct without resetting
+    /// `steal_fade` and the tail renders the fade to silence. Ranked below
+    /// every live tier so a scan with a live candidate still takes the voice
+    /// it took before this tier existed — and a just-choked voice is never
+    /// handed straight back to the note that choked it while anything else is
+    /// on offer.
+    Fading,
     /// No suitable candidate found.
     None,
 }

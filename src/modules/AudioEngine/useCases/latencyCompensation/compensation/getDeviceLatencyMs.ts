@@ -1,7 +1,6 @@
 import { getAudioContext } from '../../engineAccess/getAudioContext';
-import { getLiveEngineSampleRate } from '../../engineAccess/getLiveEngineSampleRate';
 
-import { externalBridgeRoundTripFrames, externalLatencyRegistry } from './externalLatencyRegistry';
+import { externalLatencyRegistry } from './externalLatencyRegistry';
 import { deviceLatencyMap, WORKLET_BLOCK_SIZE } from './helpers';
 
 const EXTERNAL_PLUGIN_DEVICE_TYPE = 'external-plugin';
@@ -16,43 +15,22 @@ function engineSampleRate(): number {
 }
 
 /**
- * What the audio bridge adds for one external-plugin device, on top of the
- * latency the plugin reports for itself.
+ * What one device costs the Web Audio graph, in milliseconds.
  *
- * A bridged plugin's audio leaves this process, waits in the native host's
- * ring for the audio callback, is processed, and waits again for the relay to
- * collect it. None of that is in the plugin's own figure, so a track hosting
- * one used to run audibly late against every compensated built-in beside it.
- * The frames are the host's own measurement of that round trip; the rate is the
- * engine rate the plugin was activated with, which is this context's.
- *
- * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet relay
- * with the native graph, and this contribution goes with it.
+ * An `external-plugin` device costs nothing (#3564). The native engine hosts
+ * and sounds the plugin; what stands in its place in the Web Audio chain is a
+ * unity gain pass-through, and a pass-through delays no sample. Neither the
+ * plugin's own reported latency nor the bridge round trip belongs here any
+ * more — both described audio that used to leave this process and come back,
+ * and none does. Compensating for a delay the graph no longer has would push
+ * every other device on the strip late by exactly that figure.
  */
-function getBridgeRoundTripMs(deviceId: string): number {
-    const frames = externalBridgeRoundTripFrames.get(deviceId);
-    if (frames === undefined || frames <= 0) {
-        return 0;
-    }
-    // No fallback rate here, deliberately. The frames were counted at the rate
-    // the instance was activated with, and that activation refuses to happen
-    // without a live engine; converting them against a substituted rate would
-    // report a compensation nothing measured. With no engine there is also no
-    // bridged audio to compensate.
-    const rate = getLiveEngineSampleRate();
-    if (rate === undefined) {
-        return 0;
-    }
-    return (frames / rate) * 1000;
-}
-
 export function getDeviceLatencyMs(deviceId: string, deviceType: string): number {
-    const reported = externalLatencyRegistry.get(deviceId);
-
     if (deviceType === EXTERNAL_PLUGIN_DEVICE_TYPE) {
-        return (reported ?? 0) + getBridgeRoundTripMs(deviceId);
+        return 0;
     }
 
+    const reported = externalLatencyRegistry.get(deviceId);
     if (reported !== undefined) {
         return reported;
     }

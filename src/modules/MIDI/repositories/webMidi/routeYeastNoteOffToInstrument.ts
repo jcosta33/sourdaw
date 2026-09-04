@@ -1,3 +1,5 @@
+import { resolveDeviceNode } from '../../models/ResolveDeviceNode';
+
 import type { WebMidiInstrumentStrip } from './engineStripAccess';
 
 export type WebMidiInstrumentTrack = Readonly<{
@@ -29,7 +31,7 @@ export function routeYeastNoteOffToInstrument(
 ): void {
     const fDev = instrumentTrack.devices.find((data) => data.type === 'fermenter');
     if (fDev) {
-        const dn = strip?.deviceNodes.find((data) => data.type === 'fermenter');
+        const dn = resolveDeviceNode(strip, { type: 'fermenter' });
         if (sampleFrame === undefined) {
             dn?.fermenterControls?.noteOff(note);
         } else {
@@ -39,14 +41,14 @@ export function routeYeastNoteOffToInstrument(
     }
     const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
     if (gbDev) {
-        const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
+        const dn = resolveDeviceNode(strip, { type: 'grand-boule' });
         dn?.grandBouleControls?.noteOff(note, sampleFrame, releaseVelocity);
         emitGrandBouleEvent(gbDev.id, note);
         return;
     }
     const lDev = instrumentTrack.devices.find((data) => data.type === 'levain');
     if (lDev) {
-        const dn = strip?.deviceNodes.find((data) => data.type === 'levain');
+        const dn = resolveDeviceNode(strip, { type: 'levain' });
         if (sampleFrame === undefined) {
             dn?.levainControls?.noteOff(note);
         } else {

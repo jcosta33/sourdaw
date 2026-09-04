@@ -111,9 +111,11 @@ function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGrap
         stripTracks: [],
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
+        attachedInstanceIds: new Set(),
         transport: { playing: true, positionSeconds: 0 },
         monitor: 'shadowed',
         programme: NO_PROGRAMME,
+        inputMonitoredTrackIds: new Set(),
         ...overrides,
     });
 }
@@ -414,15 +416,183 @@ describe('projectLiveGraphTopology', () => {
                 }),
             ],
             programme: programmeFor(['audio-1']),
+            attachedInstanceIds: new Set(),
         });
 
         const creation = stripCreation(commands, 'audio-1');
         expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
     });
 
-    it('renders the programme into the shadowed monitor rather than scheduling nothing', () => {
+    it('builds a playing strip whose external plugin the engine holds as contributing audio', () => {
+        // The mapper splices the engine-owned instance into the chain, so the
+        // device has a native body and the whole chain is representable. Read
+        // as unrepresentable, this strip renders without the plugin the
+        // engineer loaded.
         const commands = project({
-            stripTracks: [createTrack({ id: 'audio-1' }), createTrack({ id: 'audio-2' })],
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [
+                        createDevice({ id: 'dev-1', type: 'knead' }),
+                        createDevice({
+                            id: 'dev-2',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:reverb',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            programme: programmeFor(['audio-1']),
+            attachedInstanceIds: new Set(['i1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(true);
+        // The identity the mapper resolves the instance by still travels with
+        // the device: a chain the strip claims to build and cannot name is a
+        // batch the native side refuses whole.
+        expect(
+            creation?.kind === 'create-track-strip' &&
+                creation.devices.map((device) => device.externalInstanceId).includes('i1')
+        ).toBe(true);
+    });
+
+    it('keeps a strip whose external plugin the engine has not taken off contributing audio', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [
+                        createDevice({ id: 'dev-1', type: 'knead' }),
+                        createDevice({
+                            id: 'dev-2',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:reverb',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            programme: programmeFor(['audio-1']),
+            attachedInstanceIds: new Set(),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
+    });
+
+    it('judges the whole chain, so an attached plugin cannot carry a WASM device past the mapper', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [
+                        createDevice({ id: 'dev-1', type: 'knead' }),
+                        createDevice({
+                            id: 'dev-2',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:reverb',
+                            externalInstanceId: 'i1',
+                        }),
+                        createDevice({ id: 'dev-3', type: 'builtin-filter' }),
+                    ],
+                }),
+            ],
+            programme: programmeFor(['audio-1']),
+            attachedInstanceIds: new Set(['i1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
+    });
+
+    it('never claims a bus contributes audio, however representable its own chain is', () => {
+        // A bus is shared: both carriers route into it, and whichever tracks
+        // are native carry their own contribution through it. A bus claiming
+        // its own would let the native side sum the strip twice.
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'bus-1',
+                    kind: 'bus',
+                    devices: [
+                        createDevice({
+                            id: 'dev-1',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:reverb',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            programme: programmeFor(['bus-1']),
+            attachedInstanceIds: new Set(['i1']),
+        });
+
+        const creation = stripCreation(commands, 'bus-1');
+        expect(creation?.kind === 'create-bus-strip' && creation.contributesAudio).toBe(false);
+    });
+
+    it('keeps an input-monitored strip off contributing audio, so its live signal stays audible', () => {
+        // Gating this strip out of Web Audio is what taking it native means,
+        // and the live input reaches nothing else — a performer would lose
+        // their own signal mid-take.
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            programme: programmeFor(['audio-1']),
+            inputMonitoredTrackIds: new Set(['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
+    });
+
+    it('keeps a strip routed through a bus it cannot build off contributing audio', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1', outputId: 'bus-1' }),
+                createTrack({
+                    id: 'bus-1',
+                    kind: 'bus',
+                    devices: [createDevice({ id: 'dev-1', type: 'builtin-filter' })],
+                }),
+            ],
+            programme: programmeFor(['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
+    });
+
+    it('schedules only the strips it carries when the session is audible', () => {
+        // An audible session sounds what it schedules, so a clip on a strip
+        // Web Audio is still playing would be heard from both engines at once.
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1', devices: [createDevice({ id: 'dev-1', type: 'knead' })] }),
+                createTrack({ id: 'audio-2', devices: [createDevice({ id: 'dev-2', type: 'builtin-filter' })] }),
+            ],
+            programme: programmeFor(['audio-1', 'audio-2']),
+            monitor: 'audible',
+        });
+
+        expect(createdStripIds(commands)).toEqual(['audio-1', 'audio-2']);
+        expect(
+            commands.flatMap((command) => (command.kind === 'schedule-clip' ? [command.playback.trackId] : []))
+        ).toEqual(['audio-1']);
+    });
+
+    it('renders the whole programme into the shadowed monitor, carried strip or not', () => {
+        // A shadowed session sounds nothing, so it exists to be compared
+        // against Web Audio — and a comparison that silently omitted the
+        // strips this engine would not carry would compare two shorter
+        // programmes and call them equal.
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1' }),
+                createTrack({ id: 'audio-2', devices: [createDevice({ id: 'dev-1', type: 'builtin-filter' })] }),
+            ],
             programme: programmeFor(['audio-1', 'audio-2']),
         });
 

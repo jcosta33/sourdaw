@@ -355,28 +355,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     if (renderOnlyManualReview) {
                         return null;
                     }
-                    const hasGenericEffect = continuation.effects.some(({ kind }) => kind === 'external-effect');
-                    const repairsCurrentRuntime = continuation.effects.some(
-                        ({ kind, remediation }) => kind === 'runtime-graph' && remediation === 'repair'
-                    );
-                    let actionLabel = 'Retry runtime effect';
-                    if (hasGenericEffect) {
-                        actionLabel = 'Reconcile pending effects';
-                    } else if (repairsCurrentRuntime) {
-                        actionLabel = 'Repair audio graph';
-                    }
-                    let recoveryDescription =
-                        'Retry only the receipt-bound runtime effect without replaying project actions.';
-                    if (manualRepairRequired) {
-                        recoveryDescription =
-                            'At least one external effect cannot be retried exactly. Inspect its retained details and repair it manually; the project mutation will not replay.';
-                    } else if (hasGenericEffect) {
-                        recoveryDescription =
-                            'Reconcile every receipt-bound external effect without replaying project actions.';
-                    } else if (repairsCurrentRuntime) {
-                        recoveryDescription =
-                            'Rebuild the audio graph from the current project without replaying project actions.';
-                    }
+                    const recoveryDescription = manualRepairRequired
+                        ? 'At least one external effect cannot be retried exactly. Inspect its retained details and repair it manually; the project mutation will not replay.'
+                        : 'Reconcile every receipt-bound external effect without replaying project actions.';
                     return (
                         <div
                             key={`${continuation.runId}:${continuation.batchId}`}
@@ -406,13 +387,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     variant="secondary"
                                     className="mt-2 h-7 gap-1.5 text-[11px]"
                                     disabled={chatState.isGenerating}
-                                    aria-label={actionLabel}
                                     onClick={() =>
                                         handleRecoverPendingEffects(continuation.runId, continuation.batchId)
                                     }
                                 >
                                     <RotateCw className="size-3" />
-                                    {actionLabel}
+                                    Reconcile pending effects
                                 </Button>
                             )}
                         </div>
@@ -466,6 +446,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                             onClick={clearChatMessages}
                             className="text-muted-foreground hover:text-foreground hover:bg-muted"
                             title="Clear Chat History"
+                            aria-label="Clear chat history"
                             disabled={chatState.isGenerating || chatState.messages.length === 0}
                         >
                             <Trash2 className="size-3.5" />
@@ -476,6 +457,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                             onClick={toggleChat}
                             className="text-muted-foreground hover:text-foreground hover:bg-muted"
                             title="Close Chat Panel"
+                            aria-label="Close chat panel"
                         >
                             <X className="size-3.5" />
                         </Button>

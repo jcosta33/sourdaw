@@ -84,11 +84,20 @@ type SnapshotRunner = (
     command: TrustedGithubWriteCommand
 ) => Promise<number>;
 
+/**
+ * These commands fence their lock owner on the process identity that holds it, so the launcher must
+ * put the whole command tree in one process group: a surviving child is then what keeps the fence
+ * live, and recovery can prove the crashed owner gone.
+ */
+function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefined): boolean {
+    return command === 'deliver' || command === 'review:publish' || command === 'review:publish:recover';
+}
+
 export function trustedSnapshotRunsDetached(
     command: TrustedGithubWriteCommand,
     platform: NodeJS.Platform = process.platform
 ): boolean {
-    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+    return platform !== 'win32' && commandFencesItsLockOwner(command);
 }
 
 export function trustedSnapshotSignalTarget(
@@ -122,6 +131,8 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
         'scripts/recoverDeliveryLock.ts',
+        'scripts/deliveryLockLegacyIncidents.ts',
+        'scripts/deliveryRemoteInspection.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/reconcileTrackerIssue.ts',
         'scripts/trackerIssueReconciliation.ts',
@@ -239,14 +250,16 @@ function assertSnapshotResolvableImports(path: string, source: string, pathSet: 
 const LOADER_EXEMPT_SPECIFIER = 'yaml';
 
 /**
- * Every shape that names a module: a `from` clause, a side-effect statement that binds nothing, and
- * a dynamic call. Both rules below read the same three, because a list that saw only `from` accepted
- * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
- * rule passed vacuously on the very file it was written to hold.
+ * Every shape that names a module: a `from '...'` clause, a side-effect `import '...'` statement,
+ * dynamic `import(...)` (including static template literals and parenthesized specifiers),
+ * `import.meta.resolve(...)`, `require(...)` / `require.resolve(...)`, and chained
+ * `createRequire(...)('...')`. Both rules below read these shapes, because a list that saw only `from`
+ * accepted the others — and the dynamic call is the shape this loader itself uses, so the
+ * bare-specifier rule passed vacuously on the very file it was written to hold.
  *
  * Specifiers are collected by walking syntax, not by regex over raw source. Comments and the contents
- * of string and template literals cannot contribute; only a real `from` / `import` / `import()` form
- * at code depth can. That keeps an example in this comment from being refused as a dependency.
+ * of string and template literals cannot contribute; only real import/require forms at code depth can.
+ * That keeps an example in this comment from being refused as a dependency.
  */
 export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
@@ -318,11 +331,80 @@ function scanImportSpecifiers(
             const dynamic = readDynamicImportSpecifier(source, afterKeyword);
             if (dynamic !== undefined) {
                 const before = index === 0 ? undefined : source[index - 1];
-                if (before !== '.') {
+                if (
+                    before !== '.' &&
+                    (index < 2 || source.slice(index - 2, index) !== '?.') &&
+                    !isPrecededByDotAccess(source, index)
+                ) {
                     specifiers.add(dynamic.value);
                 }
                 index = dynamic.end;
                 continue;
+            }
+            const metaResolve = readImportMetaResolveSpecifier(source, index);
+            if (metaResolve !== undefined) {
+                specifiers.add(metaResolve.value);
+                index = metaResolve.end;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, index, 'require')) {
+            const before = index === 0 ? undefined : source[index - 1];
+            if (
+                before !== '.' &&
+                (index < 2 || source.slice(index - 2, index) !== '?.') &&
+                !isPrecededByDotAccess(source, index)
+            ) {
+                let cursor = skipWhitespace(source, index + 7);
+                if (source[cursor] === '.') {
+                    const afterDot = skipWhitespace(source, cursor + 1);
+                    if (isKeywordAt(source, afterDot, 'resolve')) {
+                        cursor = afterDot + 7;
+                    }
+                } else if (source.startsWith('?.', cursor)) {
+                    const afterDot = skipWhitespace(source, cursor + 2);
+                    if (isKeywordAt(source, afterDot, 'resolve')) {
+                        cursor = afterDot + 7;
+                    }
+                }
+                cursor = skipWhitespace(source, cursor);
+                if (source.startsWith('?.', cursor) && source[skipWhitespace(source, cursor + 2)] === '(') {
+                    cursor = skipWhitespace(source, cursor + 2);
+                }
+                const spec = readDynamicImportSpecifier(source, cursor);
+                if (spec !== undefined) {
+                    specifiers.add(spec.value);
+                    index = spec.end;
+                    continue;
+                }
+            }
+        }
+        if (isKeywordAt(source, index, 'createRequire')) {
+            const before = index === 0 ? undefined : source[index - 1];
+            if (
+                before !== '.' &&
+                (index < 2 || source.slice(index - 2, index) !== '?.') &&
+                !isPrecededByDotAccess(source, index)
+            ) {
+                const afterKeyword = skipWhitespace(source, index + 13);
+                if (source[afterKeyword] === '(') {
+                    const afterFirstCall = skipBalancedParens(source, afterKeyword);
+                    if (afterFirstCall !== undefined) {
+                        let secondCallCursor = skipWhitespace(source, afterFirstCall);
+                        if (
+                            source.startsWith('?.', secondCallCursor) &&
+                            source[skipWhitespace(source, secondCallCursor + 2)] === '('
+                        ) {
+                            secondCallCursor = skipWhitespace(source, secondCallCursor + 2);
+                        }
+                        const spec = readDynamicImportSpecifier(source, secondCallCursor);
+                        if (spec !== undefined) {
+                            specifiers.add(spec.value);
+                            index = spec.end;
+                            continue;
+                        }
+                    }
+                }
             }
         }
         index += 1;
@@ -528,6 +610,108 @@ function readDynamicImportSpecifier(source: string, index: number): ReadSpecifie
         cursor += 1;
     }
     return readModuleStringAfter(source, cursor);
+}
+
+function skipBalancedParens(source: string, index: number): number | undefined {
+    if (source[index] !== '(') {
+        return undefined;
+    }
+    let cursor = index;
+    let depth = 0;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, source.length, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
+            continue;
+        }
+        if (character === '(') {
+            depth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === ')') {
+            depth -= 1;
+            cursor += 1;
+            if (depth === 0) {
+                return cursor;
+            }
+            continue;
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function readImportMetaResolveSpecifier(source: string, index: number): ReadSpecifier | undefined {
+    if (!isKeywordAt(source, index, 'import') || isPrecededByDotAccess(source, index)) {
+        return undefined;
+    }
+    let cursor = skipWhitespace(source, index + 6);
+    if (source.startsWith('?.', cursor)) {
+        cursor = skipWhitespace(source, cursor + 2);
+    } else if (source[cursor] === '.') {
+        cursor = skipWhitespace(source, cursor + 1);
+    } else {
+        return undefined;
+    }
+    if (!isKeywordAt(source, cursor, 'meta')) {
+        return undefined;
+    }
+    cursor = skipWhitespace(source, cursor + 4);
+    if (source.startsWith('?.', cursor)) {
+        cursor = skipWhitespace(source, cursor + 2);
+    } else if (source[cursor] === '.') {
+        cursor = skipWhitespace(source, cursor + 1);
+    } else {
+        return undefined;
+    }
+    if (!isKeywordAt(source, cursor, 'resolve')) {
+        return undefined;
+    }
+    let afterResolve = skipWhitespace(source, cursor + 7);
+    if (source.startsWith('?.', afterResolve) && source[skipWhitespace(source, afterResolve + 2)] === '(') {
+        afterResolve = skipWhitespace(source, afterResolve + 2);
+    }
+    return readDynamicImportSpecifier(source, afterResolve);
+}
+
+function isPrecededByDotAccess(source: string, index: number): boolean {
+    const before = index === 0 ? undefined : source[index - 1];
+    if (before === '.' || (index >= 2 && source.slice(index - 2, index) === '?.')) {
+        return true;
+    }
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor]!;
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                break;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        return character === '.';
+    }
+    return false;
 }
 
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
@@ -1048,14 +1232,14 @@ export function resolveTrustedLauncherBinding(
 }
 
 function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
-    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+    return platform !== 'win32' && commandFencesItsLockOwner(command);
 }
 
 function commandRequiresTrustedPowerShell(
     command: TrustedGithubWriteCommand | undefined,
     platform: NodeJS.Platform
 ): boolean {
-    return platform === 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+    return platform === 'win32' && commandFencesItsLockOwner(command);
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {

@@ -420,7 +420,17 @@ export type TrackChannelStrip = {
     panNode: StereoPannerNode;
     meterNode: AudioWorkletNode | null;
     analyserNode: AnalyserNode;
+    /** Native-carrier gate on the strip's destination edge and its post-fader
+     *  send tap. Open (1) unless the native engine carries this track audibly. */
+    carrierGate: GainNode;
+    /** Native-carrier gate on the pre-fader send tap, closed alongside
+     *  `carrierGate` so a carried track stops feeding cue and return buses too. */
+    preFaderSendGate: GainNode;
     muted: boolean;
+    /** The native engine sounds this track, so Web Audio must render it without
+     *  letting it out. Held apart from `muted` and `soloGated`: it is neither a
+     *  user mute nor a solo decision, and releasing it must not clear either. */
+    nativeCarried: boolean;
     /** FX-8: silenced because solo is engaged elsewhere, not because the user
      *  muted this track. Tracked apart from `muted` so releasing solo cannot
      *  clear a real mute. */
@@ -506,6 +516,14 @@ export type AudioEngine = {
      *  pending automation ramp so none lands after playback ends. */
     cancelTrackAutomationRamps(): void;
     setTrackMute(trackId: string, muted: boolean): void;
+    /**
+     * Name the exact set of tracks the native engine currently carries audibly.
+     * Every listed strip is silenced at its Web Audio exits — destination and
+     * both send taps — while every other strip is reopened, so one call is the
+     * whole truth rather than a delta. Strips created afterwards inherit their
+     * membership, and the set is dropped with the rest of the graph on reset.
+     */
+    setNativeCarriedTracks(trackIds: ReadonlySet<string>): void;
     /** FX-8: solo-in-place gating, applied at the pre-fader tap so a non-soloed
      *  track stops feeding return buses too. Separate from `setTrackMute`. */
     setTrackSoloGate(trackId: string, gated: boolean): void;

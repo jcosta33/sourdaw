@@ -21,7 +21,7 @@ import {
     type ReviewDocument,
 } from './publishReview.ts';
 import {
-    currentReviewPublicationOwnerFence,
+    currentMutationOwnerFence,
     isReviewPublicationPullRequestMutationLockOwner,
     pullRequestMutationLockRef,
     readPullRequestMutationLockOid,
@@ -30,7 +30,7 @@ import {
     recordReviewPublicationRecoveryReceipt,
     replacePullRequestMutationLockOwner,
     releasePullRequestMutationLockOwner,
-    reviewPublicationOwnerFenceIsLive,
+    mutationOwnerFenceIsLive,
     type PullRequestMutationLockOwner,
     type PullRequestMutationLockOwnerFence,
 } from './pullRequestMutationLock.ts';
@@ -117,7 +117,7 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
             const gh = (args: string[]) => spawnCapture('gh', args, { env: session.env, cwd: primaryRoot });
             return inspectReviewPublicationRemote(number, expectedActorNodeId, expectedHead, gh);
         },
-        isOwnerLive: reviewPublicationOwnerFenceIsLive,
+        isOwnerLive: mutationOwnerFenceIsLive,
     };
 }
 
@@ -302,10 +302,7 @@ function assertRecoveryOwnerNotLive(
     journaledOwner: ReviewPublicationLockOwner | undefined,
     dependencies: RecoverPublishReviewDependencies
 ): void {
-    if (
-        journaledOwner !== undefined &&
-        (dependencies.isOwnerLive ?? reviewPublicationOwnerFenceIsLive)(journaledOwner)
-    ) {
+    if (journaledOwner !== undefined && (dependencies.isOwnerLive ?? mutationOwnerFenceIsLive)(journaledOwner)) {
         fail(`PR #${number} review-publication lock is still held by a live process`);
     }
     if (originalOwner.version !== 1) {
@@ -473,7 +470,7 @@ function adoptedRecoveryOwner(
         expectedHead,
         payloadDigest: expectedDigest,
         reviewerActorNodeId: expectedActorNodeId,
-        ownerFence: dependencies.currentOwnerFence?.() ?? currentReviewPublicationOwnerFence(),
+        ownerFence: dependencies.currentOwnerFence?.() ?? currentMutationOwnerFence(),
         mutation: {
             phase: legacyIncident === undefined ? journaledOwner!.mutation.phase : ('prepared' as const),
             epoch:

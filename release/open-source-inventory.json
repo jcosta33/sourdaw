@@ -18,6 +18,7 @@
                 ".github/**",
                 "crates/**",
                 "docs/**",
+                "measurements/**",
                 "release/desktop-runtime-material.json",
                 "release/open-source-inventory.json",
                 "release/web-artifact-manifest.json",
@@ -162,7 +163,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:94a4c86e120f9d35bce5e2657a4660074977b6613dfae1989992666482f1a794:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:2fe8429ef190e48b2df7291523e7c44751b97ade9ae7627c9ff81e33d3fa9556:release/dependency-license-proofs.json"
+                "sha256:2b3609897595e9bcebb0057d94c6a434a69333eab6fa55900d5c50c6ad624d26:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1153,7 +1154,7 @@
                 "src/modules/Command/useCases/versionedCommandArgumentKeys.ts",
                 "src/modules/Arrangement/useCases/index.ts",
                 "src/modules/Arrangement/useCases/device/setDeviceState.ts",
-                "src/app/bootstrap.ts",
+                "src/app/composeGrandBoule.ts",
                 "src/app/getProductionCommandHandlerMaps.ts",
                 "src/utils/handlerContract.ts",
                 "src/app/prepareOfflineDeviceSetup.ts",
@@ -1163,6 +1164,8 @@
                 "crates/daw-dsp/benches/wasm/deviceRecipes.js",
                 "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
                 "crates/daw-dsp/benches/wasm/run.mjs",
+                "crates/daw-dsp/benches/wasm/measurementCensus.mjs",
+                "crates/daw-dsp/benches/wasm/measurementCensus.d.mts",
                 "crates/daw-dsp/benches/wasm/renderTable.mjs",
                 "crates/daw-dsp/benches/wasm/renderTable.d.mts",
                 "crates/daw-dsp/benches/quantum-cost-table.json",
@@ -1189,12 +1192,12 @@
             "digests": [
                 "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:e285a2588b0c9fa7b9c20c7b901d4570814bc9c43d1892e24fe10cdbe1aac6cc:grand-boule-discovery-catalog",
+                "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:50e391921ef973fc7ca6af8814ed67ae5395c9db9aa1719395f67d6edc5dac74:grand-boule-live-runtime",
-                "tracked-set-sha256:d0a85d9f0c742f082dd1b6162295b78e746d0dbdeefef0f2ecf08c5bea197d4a:grand-boule-project-state",
+                "tracked-set-sha256:0a082d27ff81cdeaec63073694854c0fc1a65353d9a42cd5f13098b0033b30fb:grand-boule-live-runtime",
+                "tracked-set-sha256:41f17f76ef9725c2a6d9ce2ea7c787f9bd6651c35c1143e86a3310152c349ba7:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:4bf849852bfec4307aec40b24b331ac02c237f3fcd6e81ea6555eaf8fbf443f9:grand-boule-release-proof"
+                "tracked-set-sha256:4c2da2367bac2b8b220ab507900ec9583ae14cf2bbeae8e955af8327cd96cbaf:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1325,13 +1328,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:be54773e1b2d3530d43093c444d7375032d978d24aa8cdb03e1cdb73b15e84be",
-                "daw-wasm-decoder sha256:c9d101b5187e2ea6719a95901cbb5f1873fee984366492d636a2216271ad3f54",
-                "proof-chamber sha256:9d8c178c0883be34c328426e69dfbdfb1338c65957f46128281b63618b980f93",
-                "scoring sha256:035d2e8858fe6d6c8a6062b89d8054432841dc999581e5faf2286c36dedb1762"
+                "daw-dsp sha256:2a142c54350d4310de8219100ca628687dbf068647a763d68411609668003c3c",
+                "daw-wasm-decoder sha256:5b265f5b68d99951d7e6b73ec0f3daf7b52bbdd56971f12d08d4065e51c44dfe",
+                "proof-chamber sha256:58963155c2097b67a0ba353dffed639e1fdde1b7805e004b211cb6a729f02f8b",
+                "scoring sha256:42025a2d92a929504c3593d074d04e0f75e758c1bc42c50d99e6a457bfb78a36"
             ],
             "digests": [
-                "sha256:0eb3b41b8a3308062f2bfa84f553386a644e6b9e14a49a6aa781ef21feaa31df:public/wasm/manifest.json"
+                "sha256:120a12ed41a7d28f341a86fbf57031a548f02a52e55673b698cc9bf14f2f4ea4:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1457,13 +1460,13 @@
                 "derived renditions"
             ],
             "digests": [
-                "sha256:5538c2a47e15ed3a4457e026274620fbdc493ac4d0ec7c45760aa6313afdbc1d:public/favicon.ico",
-                "sha256:c266c541e95f02db79b78620f7c425059694026d2f0e809afde63782f0b319d5:public/icon-192.png",
+                "sha256:517fc1306f4c8efaf3c10ef65745658d014ad68725c5f8218877d36288d64cf4:public/favicon.ico",
+                "sha256:0f5f1435a632f0fac52ed7cf59f60387be55a597235bdee96df2fa2ac1cddbbb:public/icon-192.png",
                 "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
-                "sha256:e05b026de6c10e974dea2086061f694970d1a9a3874142595ab0ad7df85e3457:public/icon.png",
-                "sha256:e05b026de6c10e974dea2086061f694970d1a9a3874142595ab0ad7df85e3457:sourdaw.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:9c0580b110ea4d3d19f761c101023679e9ef14a7567c8988a18b26e35e0c0390:build/icons"
+                "tree-sha256:296936aec862140877137df4f5cdc57306b70a24804fa89100d4aa905b019dc2:build/icons"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1687,7 +1690,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "b75a9a841314a7fabd9ca05abe6b19da44fe4bc112599afc3d0be53d69c865da"
+            "sha256": "3f5021ace70f5d1edb05b3ab21e846a69ef953c7f2ce3005452644dc5e702e39"
         },
         {
             "path": "server/package.json",
@@ -1715,7 +1718,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "0eb3b41b8a3308062f2bfa84f553386a644e6b9e14a49a6aa781ef21feaa31df"
+            "sha256": "120a12ed41a7d28f341a86fbf57031a548f02a52e55673b698cc9bf14f2f4ea4"
         }
     ],
     "externalReferences": [
@@ -1816,6 +1819,16 @@
             "surface": "desktop-shell",
             "file": "scripts/electronRuntimeContract.ts",
             "value": "https://github.com/nodejs/node"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://$alias/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://vercel.com/sso-api"
         },
         {
             "surface": "project-source",
@@ -2026,6 +2039,46 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://app.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://moved.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://no-coep.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://popups.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://restricted.vercel.app/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Falso-restricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/login"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/resolveVercelProductionDeployment.ts",
             "value": "https://api.vercel.com/v7/deployments"
         },
@@ -2034,6 +2087,11 @@
             "file": "scripts/resolveVercelProductionDeployment.ts",
             "value": "https://api.github.com/repos/${slot}/compare/${slot}...${slot}",
             "templateSha256": "7470486018f472ccc4df09937895331e18f6047d895ad2a177b2329ed026c6d5"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelDeploymentAliases.ts",
+            "value": "https://api.vercel.com/v13/deployments"
         },
         {
             "surface": "project-source",

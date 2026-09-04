@@ -606,8 +606,14 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
         stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
+        // The parity fixtures carry no externally hosted plugin, so no engine
+        // attachment could change a strip in this batch.
+        attachedInstanceIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
+        // No fixture track monitors live input, so the carrier law leaves every
+        // one of them to be judged on its chain and its routing alone.
+        inputMonitoredTrackIds: new Set(),
         programme: projectLiveGraphProgramme({
             stripTracks,
             sampleRate: SAMPLE_RATE,

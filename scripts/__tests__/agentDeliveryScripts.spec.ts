@@ -78,6 +78,28 @@ function initializeDeliveryLockRepository(root: string): void {
     runGit(root, ['init', '--quiet']);
 }
 
+/**
+ * Acquiring a delivery lock records the owner's process fence, which the lock module reads through
+ * the launcher-resolved `ps`. These cases run outside that launcher, so they supply their own.
+ */
+function writeTrustedPsFixture(root: string): () => void {
+    const executable = join(root, 'ps');
+    const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+    writeFileSync(
+        executable,
+        '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "owner-process-start"; fi\n'
+    );
+    chmodSync(executable, 0o700);
+    process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+    return () => {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_TRUSTED_PS_PATH;
+        } else {
+            process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+        }
+    };
+}
+
 function deliveryLockRef(number: number): string {
     return `refs/sourdaw/delivery/pr-${number}`;
 }
@@ -153,6 +175,7 @@ async function expectAmbiguousDeliveryMutationRetainsOwner(
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
     const number = 2495;
     initializeDeliveryLockRepository(root);
+    const restorePs = writeTrustedPsFixture(root);
     let reacquired = false;
 
     try {
@@ -168,6 +191,7 @@ async function expectAmbiguousDeliveryMutationRetainsOwner(
         expect(reacquired).toBe(false);
         expect(readDeliveryLockOid(root, number)).toBe(retainedOwnerOid);
     } finally {
+        restorePs();
         removeTemporaryDirectory(root);
     }
 }
@@ -913,6 +937,8 @@ describe('package scripts and gitignore', () => {
             'removeLane.ts',
             'resolveThread.ts',
             'recoverDeliveryLock.ts',
+            'deliveryLockLegacyIncidents.ts',
+            'deliveryRemoteInspection.ts',
             'supersedePullRequest.ts',
             'reconcileTrackerIssue.ts',
             'trackerIssueReconciliation.ts',
@@ -938,6 +964,8 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
             'scripts/recoverDeliveryLock.ts',
+            'scripts/deliveryLockLegacyIncidents.ts',
+            'scripts/deliveryRemoteInspection.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/reconcileTrackerIssue.ts',
             'scripts/trackerIssueReconciliation.ts',
@@ -1032,9 +1060,26 @@ describe('package scripts and gitignore', () => {
         );
     });
 
-    it('pins complete and exact reviewer-mutation source closures', async () => {
+    it('pins complete and exact mutation-command source closures', async () => {
         const repositoryRoot = join(import.meta.dirname, '..', '..');
         const cases = [
+            {
+                command: 'deliver' as const,
+                entry: 'scripts/deliverPullRequest.ts',
+                required: 'scripts/deliveryRemoteInspection.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/deliverPullRequest.ts',
+                    'scripts/recoverDeliveryLock.ts',
+                    'scripts/deliveryLockLegacyIncidents.ts',
+                    'scripts/deliveryRemoteInspection.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/reconcileTrackerIssue.ts',
+                    'scripts/trackerIssueReconciliation.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
             {
                 command: 'review:publish' as const,
                 entry: 'scripts/publishReview.ts',
@@ -1562,7 +1607,7 @@ describe('package scripts and gitignore', () => {
             }
         });
 
-        it('requires trusted process-identity bindings on review-mutation commands and reports invalid commands before binding', () => {
+        it('requires trusted process-identity bindings on lock-fencing commands and reports invalid commands before binding', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-bootstrap-command-gating-');
             const gitBin = join(fixtureRoot, 'git-bin');
             const ghBin = join(fixtureRoot, 'gh-bin');
@@ -1597,7 +1642,7 @@ describe('package scripts and gitignore', () => {
                     resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath
                 ).toBeUndefined();
                 expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve').psPath).toBeUndefined();
-                for (const command of ['deliver', 'lane:publish', 'issue:reconcile', 'review:resolve'] as const) {
+                for (const command of ['lane:publish', 'issue:reconcile', 'review:resolve'] as const) {
                     expect(
                         resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, command, 'win32')
                     ).toMatchObject({
@@ -1614,18 +1659,14 @@ describe('package scripts and gitignore', () => {
                     gitPath: realpathSync(windowsGitWrapper),
                     ghPath: realpathSync(windowsGhWrapper),
                 });
-                expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish')).toThrow(
-                    /cannot resolve trusted ps executable/i
-                );
-                expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish:recover')).toThrow(
-                    /cannot resolve trusted ps executable/i
-                );
-                expect(() =>
-                    resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish', 'win32')
-                ).toThrow(/cannot resolve trusted powershell executable/i);
-                expect(() =>
-                    resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish:recover', 'win32')
-                ).toThrow(/cannot resolve trusted powershell executable/i);
+                for (const command of ['deliver', 'review:publish', 'review:publish:recover'] as const) {
+                    expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, command)).toThrow(
+                        /cannot resolve trusted ps executable/i
+                    );
+                    expect(() =>
+                        resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, command, 'win32')
+                    ).toThrow(/cannot resolve trusted powershell executable/i);
+                }
 
                 const result = spawnSync(
                     process.execPath,
@@ -2005,6 +2046,7 @@ describe('package scripts and gitignore', () => {
     it('refuses a live delivery owner before authentication or delivery starts', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const entered: string[] = [];
         const dependencies: DeliveryCoordinatorDependencies = {
             primaryRoot: () => root,
@@ -2029,6 +2071,7 @@ describe('package scripts and gitignore', () => {
             });
             expect(entered).toEqual([]);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2200,6 +2243,7 @@ describe('package scripts and gitignore', () => {
     it('refuses a well-formed lock whose owner process is conclusively dead without takeover', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const deadProcess = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
         expect(deadProcess.status).toBe(0);
         expect(deadProcess.pid).toBeTypeOf('number');
@@ -2221,6 +2265,7 @@ describe('package scripts and gitignore', () => {
             expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
             expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2228,6 +2273,7 @@ describe('package scripts and gitignore', () => {
     it('releases the current delivery token after success and a pre-mutation failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
 
         try {
             const sentinel = Symbol('delivery-result');
@@ -2246,6 +2292,7 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow('delivery failed');
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2253,6 +2300,7 @@ describe('package scripts and gitignore', () => {
     it('retains the exact owner after an attempted mutation error and refuses reacquisition', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         let reacquired = false;
 
         try {
@@ -2273,6 +2321,7 @@ describe('package scripts and gitignore', () => {
             expect(reacquired).toBe(false);
             expect(readDeliveryLockOid(root, 2495)).toBe(retainedOwnerOid);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2280,6 +2329,7 @@ describe('package scripts and gitignore', () => {
     it('releases the exact owner when a known-absent record precedes an error', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
 
         try {
             await expect(
@@ -2291,6 +2341,7 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow(/was not merged/);
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2435,6 +2486,7 @@ describe('package scripts and gitignore', () => {
     it('forwards the known-absent marker so a definitive merge rejection releases the exact owner', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const authentication: DeliveryAuthentication = {
             minted: {
                 token: 'ghs_delivery',
@@ -2496,6 +2548,7 @@ describe('package scripts and gitignore', () => {
             expect(forwardedKnownAbsent).toBeInstanceOf(Function);
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2503,6 +2556,7 @@ describe('package scripts and gitignore', () => {
     it('does not release a delivery lock whose ownership token changed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         let replacementOid = '';
 
         try {
@@ -2521,6 +2575,7 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow(/ownership changed before release/);
             expect(readDeliveryLockOid(root, 2495)).toBe(replacementOid);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2528,6 +2583,7 @@ describe('package scripts and gitignore', () => {
     it('keeps per-PR owners isolated without releasing the wrong delivery', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
 
         try {
             await withPullRequestDeliveryLock(root, 2495, async () => {
@@ -2541,6 +2597,7 @@ describe('package scripts and gitignore', () => {
             });
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     });
@@ -2548,6 +2605,7 @@ describe('package scripts and gitignore', () => {
     it('admits exactly one fresh process while a same-PR contender is held at the lock boundary', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
 
         try {
             const values = await contendForDeliveryLock(root);
@@ -2557,6 +2615,7 @@ describe('package scripts and gitignore', () => {
             ).toHaveLength(1);
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryDirectory(root);
         }
     }, 10_000);

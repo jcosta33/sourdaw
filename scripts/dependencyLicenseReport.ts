@@ -80,7 +80,7 @@ export type CargoRuntimeInventorySnapshot = {
     }>;
 };
 
-type DependencyLicenseProofSourceManifest = {
+export type DependencyLicenseProofSourceManifest = {
     schemaVersion: 3 | 4;
     packages: Record<string, DependencyLicenseProof>;
     cargoRuntimeInventory?: CargoRuntimeInventorySnapshot;
@@ -843,7 +843,7 @@ export function collectCargoDependencyLicenses(root: string): DependencyLicenseR
     });
 }
 
-function collectCargoDependencyLicensesFromInstalledMetadata(root: string): {
+export function collectCargoDependencyLicensesFromInstalledMetadata(root: string): {
     metadata: CargoMetadata;
     records: DependencyLicenseRecord[];
 } {
@@ -932,12 +932,16 @@ function pnpmIntegrity(packages: PnpmLockPackages, name: string, version: string
     return typeof integrity === 'string' ? integrity : undefined;
 }
 
+export function cargoRegistryArchiveSource(record: Pick<DependencyLicenseRecord, 'name' | 'version'>): string {
+    return `https://crates.io/api/v1/crates/${record.name}/${record.version}/download`;
+}
+
 function npmRegistryArchiveSource(name: string, version: string): string {
     const archiveName = name.slice(name.lastIndexOf('/') + 1);
     return `https://registry.npmjs.org/${name}/-/${archiveName}-${version}.tgz`;
 }
 
-function expectedProofIdentities(
+export function expectedProofIdentities(
     root: string,
     record: DependencyLicenseRecord,
     loadPnpmLockPackages: PnpmLockPackageReader = pnpmLockPackages
@@ -954,12 +958,7 @@ function expectedProofIdentities(
         if (checksum === undefined) {
             throw new Error(`cargo:${record.name}@${record.version}: Cargo.lock checksum is missing`);
         }
-        return [
-            {
-                source: `https://crates.io/api/v1/crates/${record.name}/${record.version}/download`,
-                revision: `sha256:${checksum}`,
-            },
-        ];
+        return [{ source: cargoRegistryArchiveSource(record), revision: `sha256:${checksum}` }];
     }
     const identities: Array<{ source: string; revision: string }> = [];
     if (record.graphs?.includes('server/package-lock.json')) {
@@ -1152,6 +1151,33 @@ export function assertLicenseExpressionEvidence(
     }
 }
 
+/** Smallest set of retained canonical SPDX texts that satisfies the expression, or undefined when none does. */
+function selectSpdxNodeLicenses(node: SpdxNode): string[] | undefined {
+    if ('license' in node) {
+        if (node.exception !== undefined || SPDX_LICENSE_TEXTS[node.license] === undefined) {
+            return undefined;
+        }
+        return [node.license];
+    }
+    const left = selectSpdxNodeLicenses(node.left);
+    if (node.conjunction === 'or') {
+        return left ?? selectSpdxNodeLicenses(node.right);
+    }
+    const right = selectSpdxNodeLicenses(node.right);
+    if (left === undefined || right === undefined) {
+        return undefined;
+    }
+    return [...new Set([...left, ...right])];
+}
+
+export function selectCanonicalSpdxLicenses(expression: string): string[] {
+    const selection = selectSpdxNodeLicenses(parseSpdxExpression(normalizeLicenseExpression(expression)));
+    if (selection === undefined) {
+        throw new Error(`no retained canonical SPDX text satisfies ${expression}`);
+    }
+    return selection;
+}
+
 function readCanonicalSpdxText(root: string, license: string): LegalFile {
     const source = SPDX_LICENSE_TEXTS[license];
     if (source === undefined) {
@@ -1162,6 +1188,23 @@ function readCanonicalSpdxText(root: string, license: string): LegalFile {
         throw new Error(`${source.path}: SPDX ${SPDX_LICENSE_LIST_VERSION} text drifted`);
     }
     return { ...legal, label: `${license} canonical text from ${source.source}` };
+}
+
+/** The satisfaction rule validateAssembledProof applies to an assembled proof's elected licenses. */
+export function canonicalSpdxLicensesSatisfy(root: string, licenses: readonly string[], expression: string): boolean {
+    if (licenses.length === 0 || new Set(licenses).size !== licenses.length) {
+        return false;
+    }
+    try {
+        assertLicenseExpressionEvidence(
+            'assembled proof',
+            expression,
+            licenses.map((license) => readCanonicalSpdxText(root, license))
+        );
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function validateAssembledProof(
@@ -1264,7 +1307,7 @@ export function validateDependencyLicenseProof(
     return legalFiles;
 }
 
-function readDependencyLicenseProofSourceManifest(root: string): DependencyLicenseProofSourceManifest {
+export function readDependencyLicenseProofSourceManifest(root: string): DependencyLicenseProofSourceManifest {
     const manifestPath = resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH);
     return readJsonFile<DependencyLicenseProofSourceManifest>(manifestPath);
 }
@@ -1325,7 +1368,7 @@ function applyDependencyLicenseProofs(
     return resolved;
 }
 
-function mergeDependencyLicenseRecords(records: DependencyLicenseRecord[]): DependencyLicenseRecord[] {
+export function mergeDependencyLicenseRecords(records: DependencyLicenseRecord[]): DependencyLicenseRecord[] {
     const merged = new Map<string, DependencyLicenseRecord>();
     for (const record of records) {
         const key = `${record.ecosystem}:${record.name}@${record.version}`;

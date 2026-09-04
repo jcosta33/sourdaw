@@ -1,3 +1,22 @@
+import { randomUUID } from 'node:crypto';
+
+import {
+    legacyDeliveryLockIncidents,
+    type MissingReceiptIncident,
+    type RecoveryIncident,
+    type RejectedMergeIncident,
+} from './deliveryLockLegacyIncidents.ts';
+import {
+    defaultJournaledRemoteState,
+    defaultRemoteState,
+    sameJournaledRemoteState,
+    sameRemoteState,
+    type DeliveryLockRecoveryRemoteState,
+    type IssueCommentObservation,
+    type JournaledRecoveryRemoteState,
+    type MissingReceiptRecoveryRemoteState,
+    type RejectedMergeRecoveryRemoteState,
+} from './deliveryRemoteInspection.ts';
 import {
     AUTHOR_BOT_NODE_ID,
     assertRequiredRepository,
@@ -8,110 +27,45 @@ import {
 } from './githubAppIdentity.ts';
 import { parseDeliveryReceipt, fail } from './prContract.ts';
 import {
+    currentMutationOwnerFence,
+    isDeliveryPullRequestMutationLockOwner,
+    mutationOwnerFenceIsLive,
     pullRequestMutationLockRef,
+    readDeliveryRecoveryReceipt,
     readPullRequestMutationLockOid,
     readPullRequestMutationLockOwner,
+    recordDeliveryRecoveryReceipt,
     releasePullRequestMutationLockExact,
+    replacePullRequestMutationLockOwner,
     type PullRequestMutationLockOwner,
+    type PullRequestMutationLockOwnerFence,
 } from './pullRequestMutationLock.ts';
 
-type IncidentBase = {
-    number: number;
-    ownerOid: string;
-    owner: PullRequestMutationLockOwner;
+export type {
+    DeliveryLockRecoveryRemoteState,
+    IssueCommentObservation,
+    JournaledRecoveryRemoteState,
+    MissingReceiptRecoveryRemoteState,
+    RecoveryIncident,
+    RejectedMergeRecoveryRemoteState,
 };
 
-type RejectedMergeIncident = IncidentBase & {
-    kind: 'rejected-merge';
-    rejectedHead: string;
-    receiptId: number;
-};
+const usage = 'usage: pnpm deliver --recover-lock <pr-number> --owner <owner-oid>';
 
-type MissingReceiptIncident = IncidentBase & {
-    kind: 'missing-receipt';
-};
-
-export type RecoveryIncident = RejectedMergeIncident | MissingReceiptIncident;
-
-const INCIDENT_3344: RejectedMergeIncident = {
-    kind: 'rejected-merge',
-    number: 3344,
-    ownerOid: '9f9c875746e69d6282e4233b32dfb1d07f418724',
-    owner: {
-        version: 1,
-        pid: 1297320,
-        token: 'bcf9e594-59ce-450e-a357-97a433899ce5',
-    },
-    rejectedHead: '8dca20782dfc174bf28ed2ad985414674e7a8180',
-    receiptId: 5506507863,
-};
-
-// PR #3437's delivery died before any receipt was posted, so this incident proves the
-// absence of an author-App delivery receipt instead of matching a rejected merge.
-const INCIDENT_3437: MissingReceiptIncident = {
-    kind: 'missing-receipt',
-    number: 3437,
-    ownerOid: '3ebcbf92f6a331dcd31a00b1891b522fbd170748',
-    owner: {
-        version: 1,
-        pid: 26953,
-        token: 'f515a71d-c25a-4714-b725-ef6e9b141005',
-    },
-};
-
-// A parallel session's delivery crashed after the first incident's recovery, retaining a
-// second lock on the same PR; same missing-receipt proof class.
-const INCIDENT_3437_SECOND: MissingReceiptIncident = {
-    kind: 'missing-receipt',
-    number: 3437,
-    ownerOid: '4d5a9fed9640e4b074b79c8a9fa3f6708ad3538e',
-    owner: {
-        version: 1,
-        pid: 45432,
-        token: '8cd2556c-c162-45d7-bc73-17a019c581b1',
-    },
-};
-
-const INCIDENTS: readonly RecoveryIncident[] = [INCIDENT_3344, INCIDENT_3437, INCIDENT_3437_SECOND];
-
-const usage = `usage: ${INCIDENTS.map(
-    (incident) => `pnpm deliver --recover-lock ${incident.number} --owner ${incident.ownerOid}`
-).join('\n       ')}`;
+// A pre-journal owner carries no fence, so only these retained incidents can ever be proven safe.
+const pinnedIncidentUsage = `usage: ${legacyDeliveryLockIncidents
+    .map((incident) => `pnpm deliver --recover-lock ${incident.number} --owner ${incident.ownerOid}`)
+    .join('\n       ')}`;
 
 export type RecoverDeliveryLockArgs = { help: boolean; number?: number; ownerOid?: string };
+
+export type DeliveryLockOwner = Extract<PullRequestMutationLockOwner, { version: 4 }>;
 
 export type DeliveryLockRecoveryTrustedLauncher = {
     primaryRoot: string;
     gitPath: string;
     ghPath: string;
 };
-
-export type RejectedMergeRecoveryRemoteState = {
-    state: string;
-    head: string;
-    receipt: {
-        id: number;
-        body: string;
-        authorNodeId: string;
-        createdAt: string;
-        updatedAt: string;
-    };
-};
-
-export type IssueCommentObservation = {
-    id: number;
-    authorNodeId: string;
-    body: string;
-};
-
-export type MissingReceiptRecoveryRemoteState = {
-    state: string;
-    head: string;
-    merged: boolean;
-    comments: IssueCommentObservation[];
-};
-
-export type DeliveryLockRecoveryRemoteState = RejectedMergeRecoveryRemoteState | MissingReceiptRecoveryRemoteState;
 
 export type DeliveryLockRecoveryDependencies = {
     trustedLauncher?: DeliveryLockRecoveryTrustedLauncher;
@@ -126,153 +80,24 @@ export type DeliveryLockRecoveryDependencies = {
         primaryRoot: string,
         incident: RecoveryIncident
     ) => DeliveryLockRecoveryRemoteState;
+    readJournaledRemoteState?: (
+        repository: string,
+        session: GhSession,
+        primaryRoot: string,
+        number: number
+    ) => JournaledRecoveryRemoteState;
     processIsDead?: (pid: number) => boolean;
+    ownerFenceIsLive?: (owner: DeliveryLockOwner) => boolean;
+    currentOwnerFence?: () => PullRequestMutationLockOwnerFence;
     readLockOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
     readLockOwner?: (primaryRoot: string, oid: string, number: number) => PullRequestMutationLockOwner;
     releaseLock?: (primaryRoot: string, number: number, ownerOid: string) => void;
+    /** Fault-injection seam for the window between a persisted recovery receipt and its release. */
+    afterRecoveryReceiptPersisted?: (number: number, ownerOid: string, adoptedOid: string) => void;
 };
 
-type ResolvedDependencies = Required<DeliveryLockRecoveryDependencies>;
-
-function readJson(value: string, label: string): unknown {
-    try {
-        return JSON.parse(value) as unknown;
-    } catch {
-        return fail(`delivery lock recovery could not read ${label}`);
-    }
-}
-
-function record(value: unknown, label: string): Record<string, unknown> {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        fail(`delivery lock recovery could not read ${label}`);
-    }
-    return Object.fromEntries(Object.entries(value));
-}
-
-function text(value: unknown, label: string): string {
-    if (typeof value !== 'string' || value === '') {
-        fail(`delivery lock recovery could not read ${label}`);
-    }
-    return value;
-}
-
-function numericId(value: unknown, label: string): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-        fail(`delivery lock recovery could not read ${label}`);
-    }
-    return value;
-}
-
-function mergedState(value: unknown): boolean {
-    if (typeof value !== 'boolean') {
-        fail('delivery lock recovery could not read pull-request merged state');
-    }
-    return value;
-}
-
-function readPullRequestRecord(repository: string, session: GhSession, primaryRoot: string, number: number) {
-    const pullRequest = record(
-        readJson(
-            spawnCapture('gh', ['api', `repos/${repository}/pulls/${number}`], {
-                cwd: primaryRoot,
-                env: session.env,
-            }),
-            'pull-request state'
-        ),
-        'pull-request state'
-    );
-    return { pullRequest, head: record(pullRequest.head, 'pull-request head') };
-}
-
-function readRejectedMergeRemoteState(
-    repository: string,
-    session: GhSession,
-    primaryRoot: string,
-    incident: RejectedMergeIncident
-): RejectedMergeRecoveryRemoteState {
-    const { pullRequest, head } = readPullRequestRecord(repository, session, primaryRoot, incident.number);
-    const comment = record(
-        readJson(
-            spawnCapture('gh', ['api', `repos/${repository}/issues/comments/${incident.receiptId}`], {
-                cwd: primaryRoot,
-                env: session.env,
-            }),
-            'delivery receipt'
-        ),
-        'delivery receipt'
-    );
-    const author = record(comment.user, 'delivery receipt author');
-    return {
-        state: text(pullRequest.state, 'pull-request state'),
-        head: text(head.sha, 'pull-request head'),
-        receipt: {
-            id: numericId(comment.id, 'delivery receipt id'),
-            body: text(comment.body, 'delivery receipt body'),
-            authorNodeId: text(author.node_id, 'delivery receipt author'),
-            createdAt: text(comment.created_at, 'delivery receipt created time'),
-            updatedAt: text(comment.updated_at, 'delivery receipt updated time'),
-        },
-    };
-}
-
-function readIssueCommentObservation(value: unknown): IssueCommentObservation {
-    const comment = record(value, 'issue comment');
-    const author = record(comment.user, 'issue comment author');
-    return {
-        id: numericId(comment.id, 'issue comment id'),
-        authorNodeId: text(author.node_id, 'issue comment author'),
-        body: text(comment.body, 'issue comment body'),
-    };
-}
-
-// REST issue comments come back in ascending comment-ID order; pagination and flattening
-// keep that order so the two stability reads compare the same observation sequence.
-function readIssueComments(
-    repository: string,
-    session: GhSession,
-    primaryRoot: string,
-    number: number
-): IssueCommentObservation[] {
-    const pages = readJson(
-        spawnCapture(
-            'gh',
-            ['api', '--paginate', '--slurp', `repos/${repository}/issues/${number}/comments?per_page=100`],
-            { cwd: primaryRoot, env: session.env }
-        ),
-        'issue comments'
-    );
-    if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
-        fail('delivery lock recovery could not read issue comments');
-    }
-    return pages.flat().map(readIssueCommentObservation);
-}
-
-function readMissingReceiptRemoteState(
-    repository: string,
-    session: GhSession,
-    primaryRoot: string,
-    incident: MissingReceiptIncident
-): MissingReceiptRecoveryRemoteState {
-    const { pullRequest, head } = readPullRequestRecord(repository, session, primaryRoot, incident.number);
-    return {
-        state: text(pullRequest.state, 'pull-request state'),
-        head: text(head.sha, 'pull-request head'),
-        merged: mergedState(pullRequest.merged),
-        comments: readIssueComments(repository, session, primaryRoot, incident.number),
-    };
-}
-
-function defaultRemoteState(
-    repository: string,
-    session: GhSession,
-    primaryRoot: string,
-    incident: RecoveryIncident
-): DeliveryLockRecoveryRemoteState {
-    if (incident.kind === 'rejected-merge') {
-        return readRejectedMergeRemoteState(repository, session, primaryRoot, incident);
-    }
-    return readMissingReceiptRemoteState(repository, session, primaryRoot, incident);
-}
+type ResolvedDependencies = Required<Omit<DeliveryLockRecoveryDependencies, 'afterRecoveryReceiptPersisted'>> &
+    Pick<DeliveryLockRecoveryDependencies, 'afterRecoveryReceiptPersisted'>;
 
 function defaultProcessIsDead(pid: number): boolean {
     try {
@@ -307,10 +132,14 @@ function resolveDependencies(dependencies: DeliveryLockRecoveryDependencies | un
                     cwd: primaryRoot,
                 })),
         readRemoteState: dependencies.readRemoteState ?? defaultRemoteState,
+        readJournaledRemoteState: dependencies.readJournaledRemoteState ?? defaultJournaledRemoteState,
         processIsDead: dependencies.processIsDead ?? defaultProcessIsDead,
+        ownerFenceIsLive: dependencies.ownerFenceIsLive ?? mutationOwnerFenceIsLive,
+        currentOwnerFence: dependencies.currentOwnerFence ?? currentMutationOwnerFence,
         readLockOid: dependencies.readLockOid ?? readPullRequestMutationLockOid,
         readLockOwner: dependencies.readLockOwner ?? readPullRequestMutationLockOwner,
         releaseLock: dependencies.releaseLock ?? releasePullRequestMutationLockExact,
+        afterRecoveryReceiptPersisted: dependencies.afterRecoveryReceiptPersisted,
     };
 }
 
@@ -321,13 +150,20 @@ export function parseRecoverDeliveryLockArgs(args: string[]): RecoverDeliveryLoc
         }
         return { help: true };
     }
-    const incident = INCIDENTS.find(
-        (candidate) => args[0] === String(candidate.number) && args[2]?.toLowerCase() === candidate.ownerOid
-    );
-    if (args.length !== 3 || incident === undefined || args[1] !== '--owner') {
+    const [pullRequest, flag, ownerOid] = args;
+    if (
+        args.length !== 3 ||
+        flag !== '--owner' ||
+        !/^[1-9][0-9]*$/u.test(pullRequest ?? '') ||
+        !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(ownerOid ?? '')
+    ) {
         fail(usage);
     }
-    return { help: false, number: incident.number, ownerOid: incident.ownerOid };
+    const number = Number(pullRequest);
+    if (!Number.isSafeInteger(number)) {
+        fail(usage);
+    }
+    return { help: false, number, ownerOid: ownerOid!.toLowerCase() };
 }
 
 function assertRejectedMergeRemoteState(
@@ -390,56 +226,6 @@ function assertIncidentRemoteState(incident: RecoveryIncident, remote: DeliveryL
     assertMissingReceiptRemoteState(incident, remote);
 }
 
-function sameRejectedMergeRemoteState(
-    left: RejectedMergeRecoveryRemoteState,
-    right: RejectedMergeRecoveryRemoteState
-): boolean {
-    return (
-        left.state === right.state &&
-        left.head === right.head &&
-        left.receipt.id === right.receipt.id &&
-        left.receipt.body === right.receipt.body &&
-        left.receipt.authorNodeId === right.receipt.authorNodeId &&
-        left.receipt.createdAt === right.receipt.createdAt &&
-        left.receipt.updatedAt === right.receipt.updatedAt
-    );
-}
-
-function sameIssueCommentObservation(
-    left: IssueCommentObservation,
-    right: IssueCommentObservation | undefined
-): boolean {
-    return (
-        right !== undefined &&
-        left.id === right.id &&
-        left.authorNodeId === right.authorNodeId &&
-        left.body === right.body
-    );
-}
-
-function sameMissingReceiptRemoteState(
-    left: MissingReceiptRecoveryRemoteState,
-    right: MissingReceiptRecoveryRemoteState
-): boolean {
-    return (
-        left.state === right.state &&
-        left.head === right.head &&
-        left.merged === right.merged &&
-        left.comments.length === right.comments.length &&
-        left.comments.every((comment, index) => sameIssueCommentObservation(comment, right.comments[index]))
-    );
-}
-
-function sameRemoteState(left: DeliveryLockRecoveryRemoteState, right: DeliveryLockRecoveryRemoteState): boolean {
-    if ('receipt' in left && 'receipt' in right) {
-        return sameRejectedMergeRemoteState(left, right);
-    }
-    if ('merged' in left && 'merged' in right) {
-        return sameMissingReceiptRemoteState(left, right);
-    }
-    return false;
-}
-
 function assertExactOwner(incident: RecoveryIncident, owner: PullRequestMutationLockOwner): void {
     if (
         owner.version !== incident.owner.version ||
@@ -450,31 +236,240 @@ function assertExactOwner(incident: RecoveryIncident, owner: PullRequestMutation
     }
 }
 
-export async function runRecoverDeliveryLockCli(
-    args: string[],
-    dependencies?: DeliveryLockRecoveryDependencies
-): Promise<number> {
-    const parsed = parseRecoverDeliveryLockArgs(args);
-    if (parsed.help) {
-        console.log(`Usage: ${usage.slice('usage: '.length)}`);
-        return 0;
+type JournaledRecoveryReceipt = {
+    version: 1;
+    number: number;
+    ownerOid: string;
+    adoptedOwnerOid: string;
+    ownerPhase: DeliveryLockOwner['mutation']['phase'];
+    ownerEpoch: number;
+    state: string;
+    head: string;
+    mergedByActorNodeId: string | null;
+    receiptIds: number[];
+};
+
+function observedDeliveryState(remote: JournaledRecoveryRemoteState): string {
+    return remote.merged ? 'MERGED' : remote.state.toUpperCase();
+}
+
+function describeOwnerFence(ownerFence: PullRequestMutationLockOwnerFence): string {
+    if (ownerFence.kind === 'pgid') {
+        return `process group ${ownerFence.pgid}`;
     }
-    const incident = INCIDENTS.find(
-        (candidate) => candidate.number === parsed.number && candidate.ownerOid === parsed.ownerOid
+    if (ownerFence.kind === 'pid') {
+        return `process ${ownerFence.pid}`;
+    }
+    return `Windows process tree ${ownerFence.rootPid}`;
+}
+
+function reportRecoveredLock(number: number, ownerOid: string, state: string): void {
+    console.log(`delivery-lock-recovered:${number}:${ownerOid}:${state}`);
+    console.log(`pnpm deliver ${number}`);
+}
+
+function isJournaledRecoveryReceipt(
+    value: unknown,
+    number: number,
+    ownerOid: string
+): value is JournaledRecoveryReceipt {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const receipt = value as Record<string, unknown>;
+    return (
+        receipt.version === 1 &&
+        receipt.number === number &&
+        receipt.ownerOid === ownerOid &&
+        typeof receipt.adoptedOwnerOid === 'string' &&
+        typeof receipt.state === 'string' &&
+        receipt.state !== ''
+    );
+}
+
+/**
+ * A recovery that already recorded its receipt has finished reconciling: replaying it must reach the
+ * same conclusion from the receipt alone, and must never read or write GitHub a second time.
+ */
+function replayRecordedRecovery(
+    primaryRoot: string,
+    number: number,
+    ownerOid: string,
+    liveOid: string | undefined,
+    resolved: ResolvedDependencies
+): number | undefined {
+    const persisted = readDeliveryRecoveryReceipt(primaryRoot, number, ownerOid);
+    if (!isJournaledRecoveryReceipt(persisted, number, ownerOid)) {
+        return undefined;
+    }
+    if (liveOid === persisted.adoptedOwnerOid) {
+        resolved.releaseLock(primaryRoot, number, persisted.adoptedOwnerOid);
+    } else if (liveOid !== undefined) {
+        fail(`PR #${number} delivery lock ownership changed before recovery`);
+    }
+    reportRecoveredLock(number, ownerOid, persisted.state);
+    return 0;
+}
+
+function adoptedDeliveryOwner(
+    number: number,
+    owner: DeliveryLockOwner,
+    ownerFence: PullRequestMutationLockOwnerFence
+): DeliveryLockOwner {
+    return {
+        version: 4,
+        pid: process.pid,
+        token: randomUUID(),
+        operation: 'delivery',
+        number,
+        ownerFence,
+        mutation: { phase: owner.mutation.phase, epoch: owner.mutation.epoch + 1 },
+    };
+}
+
+function journaledRecoveryReceipt(
+    number: number,
+    ownerOid: string,
+    adoptedOwnerOid: string,
+    owner: DeliveryLockOwner,
+    remote: JournaledRecoveryRemoteState
+): JournaledRecoveryReceipt {
+    return {
+        version: 1,
+        number,
+        ownerOid,
+        adoptedOwnerOid,
+        ownerPhase: owner.mutation.phase,
+        ownerEpoch: owner.mutation.epoch,
+        state: observedDeliveryState(remote),
+        head: remote.head,
+        mergedByActorNodeId: remote.mergedByActorNodeId ?? null,
+        receiptIds: remote.receipts.map((receipt) => receipt.id),
+    };
+}
+
+function assertRecoverableMergeActor(number: number, remote: JournaledRecoveryRemoteState): void {
+    const actorNodeId = remote.mergedByActorNodeId;
+    if (actorNodeId === undefined) {
+        // `deliver` itself refuses a merge it cannot attribute to the author App, so a merge with no
+        // actor must stop here rather than clear the lock for a command that will refuse anyway.
+        if (remote.merged) {
+            fail(`PR #${number} is merged with no merge actor, so the author App cannot be proven`);
+        }
+        return;
+    }
+    if (!isAuthorBotNodeId(actorNodeId)) {
+        fail(`PR #${number} was merged by ${actorNodeId}, which is not the author App`);
+    }
+}
+
+async function recoverJournaledOwner(
+    number: number,
+    ownerOid: string,
+    owner: DeliveryLockOwner,
+    primaryRoot: string,
+    resolved: ResolvedDependencies
+): Promise<number> {
+    if (resolved.ownerFenceIsLive(owner)) {
+        fail(
+            `PR #${number} delivery lock is still held by live process ${owner.pid} ` +
+                `(${describeOwnerFence(owner.ownerFence)})`
+        );
+    }
+    const auth = await resolved.authenticateAuthor(primaryRoot);
+    try {
+        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+        }
+        const repository = resolved.repositoryName(auth.session, primaryRoot);
+        assertRequiredRepository(repository);
+        // Adopting first means a crash anywhere below leaves a journaled owner under this process's
+        // own fence rather than a half-cleared ref no later recovery could attest.
+        const adoptedOid = replacePullRequestMutationLockOwner(
+            primaryRoot,
+            number,
+            ownerOid,
+            adoptedDeliveryOwner(number, owner, resolved.currentOwnerFence())
+        );
+        try {
+            return reconcileAdoptedDeliveryOwner({
+                primaryRoot,
+                number,
+                ownerOid,
+                adoptedOid,
+                owner,
+                repository,
+                session: auth.session,
+                resolved,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(
+                `${message}; PR #${number} delivery recovery preserved exact lock owner ${adoptedOid}: ` +
+                    `pnpm deliver --recover-lock ${number} --owner ${adoptedOid}`,
+                { cause: error }
+            );
+        }
+    } finally {
+        auth.session.dispose();
+    }
+}
+
+type AdoptedDeliveryRecovery = {
+    primaryRoot: string;
+    number: number;
+    ownerOid: string;
+    adoptedOid: string;
+    owner: DeliveryLockOwner;
+    repository: string;
+    session: GhSession;
+    resolved: ResolvedDependencies;
+};
+
+function reconcileAdoptedDeliveryOwner({
+    primaryRoot,
+    number,
+    ownerOid,
+    adoptedOid,
+    owner,
+    repository,
+    session,
+    resolved,
+}: AdoptedDeliveryRecovery): number {
+    const before = resolved.readJournaledRemoteState(repository, session, primaryRoot, number);
+    const after = resolved.readJournaledRemoteState(repository, session, primaryRoot, number);
+    if (!sameJournaledRemoteState(before, after)) {
+        fail(`PR #${number} remote state changed between reads`);
+    }
+    assertRecoverableMergeActor(number, after);
+    recordDeliveryRecoveryReceipt(
+        primaryRoot,
+        number,
+        ownerOid,
+        journaledRecoveryReceipt(number, ownerOid, adoptedOid, owner, after)
+    );
+    resolved.afterRecoveryReceiptPersisted?.(number, ownerOid, adoptedOid);
+    resolved.releaseLock(primaryRoot, number, adoptedOid);
+    reportRecoveredLock(number, ownerOid, observedDeliveryState(after));
+    return 0;
+}
+
+async function recoverPinnedIncident(
+    number: number,
+    ownerOid: string,
+    owner: PullRequestMutationLockOwner,
+    primaryRoot: string,
+    resolved: ResolvedDependencies
+): Promise<number> {
+    const incident = legacyDeliveryLockIncidents.find(
+        (candidate) => candidate.number === number && candidate.ownerOid === ownerOid
     );
     if (incident === undefined) {
-        fail(usage);
+        fail(pinnedIncidentUsage);
     }
-    const resolved = resolveDependencies(dependencies);
-    const primaryRoot = resolved.trustedLauncher.primaryRoot;
-    const ownerOid = resolved.readLockOid(primaryRoot, pullRequestMutationLockRef(incident.number), incident.number);
-    if (ownerOid !== incident.ownerOid) {
-        fail(`PR #${incident.number} delivery lock owner does not match this recovery incident`);
-    }
-    const owner = resolved.readLockOwner(primaryRoot, ownerOid, incident.number);
     assertExactOwner(incident, owner);
     if (!resolved.processIsDead(owner.pid)) {
-        fail(`PR #${incident.number} delivery lock process is still live or cannot be proven dead`);
+        fail(`PR #${number} delivery lock process is still live or cannot be proven dead`);
     }
     const auth = await resolved.authenticateAuthor(primaryRoot);
     try {
@@ -488,12 +483,43 @@ export async function runRecoverDeliveryLockCli(
         const after = resolved.readRemoteState(repository, auth.session, primaryRoot, incident);
         assertIncidentRemoteState(incident, after);
         if (!sameRemoteState(before, after)) {
-            fail(`PR #${incident.number} remote state changed during delivery lock recovery`);
+            fail(`PR #${number} remote state changed during delivery lock recovery`);
         }
-        resolved.releaseLock(primaryRoot, incident.number, ownerOid);
-        console.log(`delivery-lock-recovered:${incident.number}:${ownerOid}:${after.head}`);
+        resolved.releaseLock(primaryRoot, number, ownerOid);
+        console.log(`delivery-lock-recovered:${number}:${ownerOid}:${after.head}`);
         return 0;
     } finally {
         auth.session.dispose();
     }
+}
+
+export async function runRecoverDeliveryLockCli(
+    args: string[],
+    dependencies?: DeliveryLockRecoveryDependencies
+): Promise<number> {
+    const parsed = parseRecoverDeliveryLockArgs(args);
+    if (parsed.help) {
+        console.log(`Usage: ${usage.slice('usage: '.length)}`);
+        return 0;
+    }
+    const number = parsed.number!;
+    const ownerOid = parsed.ownerOid!;
+    const resolved = resolveDependencies(dependencies);
+    const primaryRoot = resolved.trustedLauncher.primaryRoot;
+    const liveOid = resolved.readLockOid(primaryRoot, pullRequestMutationLockRef(number), number);
+    const replayed = replayRecordedRecovery(primaryRoot, number, ownerOid, liveOid, resolved);
+    if (replayed !== undefined) {
+        return replayed;
+    }
+    if (liveOid !== ownerOid) {
+        fail(`PR #${number} delivery lock owner does not match this recovery incident`);
+    }
+    const owner = resolved.readLockOwner(primaryRoot, ownerOid, number);
+    if (owner.version === 1) {
+        return recoverPinnedIncident(number, ownerOid, owner, primaryRoot, resolved);
+    }
+    if (!isDeliveryPullRequestMutationLockOwner(owner)) {
+        fail(`PR #${number} delivery lock recovery requires a delivery lock owner`);
+    }
+    return recoverJournaledOwner(number, ownerOid, owner, primaryRoot, resolved);
 }

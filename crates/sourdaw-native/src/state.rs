@@ -2,65 +2,61 @@ use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
+use daw_plugin_host::scanner::ScannedPlugin;
+// The trait, the resizer and the raw handle are how a plugin's editor is
+// reached, and no production body here does that any more: the stores hold
+// concrete runtimes, and every editor call lives in `commands::plugin_gui`.
+// The fixtures below still implement the trait, so the imports stay for them.
+#[cfg(test)]
 use daw_plugin_host::AudioPlugin;
+#[cfg(test)]
 use daw_plugin_host::EditorWindowResizer;
 use daw_plugin_host::HostedRuntime;
 use daw_plugin_host::PluginParameter;
 use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
+#[cfg(test)]
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
+/// An instance the command layer owns outright, because no engine was running
+/// when it was loaded.
+///
+/// The runtime is held as the concrete `HostedRuntime` the loader built rather
+/// than behind `dyn AudioPlugin`: the engine takes this very value when it
+/// starts (`commands::plugins::attach_dormant_plugins`), and the shared runtime
+/// owner it is handed to is generic over the backend, so a trait object could
+/// never be attached at all. Every editor call still reaches the plugin through
+/// `AudioPlugin`, whose `HostedRuntime` implementation delegates to the backend
+/// this instance actually is.
+///
+/// `name`, `parameters` and `has_gui` mirror `EnginePluginInstanceData`: they
+/// are what the load read off the plugin, and the attach registers the instance
+/// under exactly those rather than asking a plugin that has since been edited.
 pub struct PluginInstanceData {
-    pub plugin: Box<dyn AudioPlugin>,
+    pub plugin: HostedRuntime,
+    pub name: String,
+    pub parameters: Vec<PluginParameter>,
+    pub has_gui: bool,
 }
 
-/// Every method here reaches the plugin through `AudioPlugin` and nothing else.
-///
-/// The editor path used to downcast to `ClapWrapper` and answer "no editor",
-/// "not a CLAP plugin" or nothing at all for anything else — which made the
-/// CLAP-only assumption invisible at the call site and wrong for any second
-/// format. The honest answers now live on the trait, where a backend states its
-/// own, and `as_any`/`as_any_mut` are gone with the downcasts they existed for.
 impl PluginInstanceData {
-    /// Check if this plugin instance supports a custom GUI.
-    pub fn has_gui(&self) -> bool {
-        self.plugin.has_gui()
-    }
-
-    /// Get the display name of this plugin.
-    pub fn get_name(&self) -> &str {
-        self.plugin.get_name()
-    }
-
-    /// Hand the plugin the host's own window resizer.
+    /// A dormant record around a runtime, read off the runtime itself.
     ///
-    /// A plugin editor resizes itself, and no return value can carry that: the
-    /// request arrives while the editor is open, from inside the plugin's own
-    /// call into the host. Installed before `open_gui`, because a view laying
-    /// itself out against its new parent may ask during the attach.
-    pub fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
-        self.plugin.set_editor_window_resizer(resize);
-    }
-
-    /// Tell the plugin the display scale its editor's host window runs at.
-    ///
-    /// Stated before `open_gui` for the same reason the resizer is: a view may
-    /// state its size, in units this scale converts, from inside the attach.
-    pub fn set_editor_content_scale(&mut self, scale: f64) {
-        self.plugin.set_editor_content_scale(scale);
-    }
-
-    /// Open the plugin GUI, parenting it into the given native handle.
-    pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        self.plugin.open_gui(handle_ptr)
-    }
-
-    /// Close the plugin GUI.
-    pub fn close_gui(&mut self) {
-        self.plugin.close_gui();
+    /// The load path spells the three fields out instead, from the values it
+    /// already read while the plugin was in its hands — it is the load's own
+    /// reading that the attach must register under. This is for the tests that
+    /// park a fixture runtime and care about none of them.
+    #[cfg(test)]
+    pub fn dormant_fixture(plugin: HostedRuntime) -> Self {
+        Self {
+            name: plugin.get_name().to_string(),
+            parameters: plugin.get_parameters(),
+            has_gui: plugin.has_gui(),
+            plugin,
+        }
     }
 }
 
@@ -373,6 +369,32 @@ pub struct PluginRegistryEntry {
     pub capability_metadata_reason: Option<String>,
 }
 
+impl PluginRegistryEntry {
+    /// The registry row a scanned plugin resolves to.
+    ///
+    /// The single mapping from a scan result to a registry row: the scan's own
+    /// index, the persisted registry and the activation rescan all go through
+    /// it, so none of them can come to disagree about what a scanned plugin
+    /// means.
+    ///
+    /// `capability_metadata_reason` travels with the values it qualifies and is
+    /// never dropped on the way through. A row that kept the counts and lost
+    /// the reason would state as fact what the scan recorded as unknown.
+    pub fn from_scanned(plugin: &ScannedPlugin) -> Self {
+        Self {
+            path: plugin.path.clone(),
+            stable_id: plugin.id.clone(),
+            descriptor_id: plugin.descriptor_id.clone(),
+            format: plugin.format.clone(),
+            name: plugin.name.clone(),
+            num_inputs: plugin.num_inputs,
+            num_outputs: plugin.num_outputs,
+            has_custom_ui: plugin.has_custom_ui,
+            capability_metadata_reason: plugin.capability_metadata_reason.clone(),
+        }
+    }
+}
+
 impl AppState {
     /// App state whose plugin registry is backed by the scan registry file in
     /// the platform's app-data directory. The production constructor.
@@ -471,6 +493,17 @@ fn claimed_unless_the_ui_thread_would_park<'store, Value, Ui: UiThread + ?Sized>
         Err(TryLockError::WouldBlock) => None,
         Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
     }
+}
+
+/// Empty a store into a vec of its values, every one handed back **undropped**.
+///
+/// Dropping a plugin instance runs the plugin's own teardown — third-party code
+/// of unbounded duration — and running that inside the store's critical section
+/// parks every other plugin command for its whole length. So the values leave
+/// the guard alive and the caller drops them outside it, the discipline
+/// [`sweep_retired_runtimes`] keeps for the retirement vec.
+fn take_store_values<Value>(store: &mut HashMap<String, Value>) -> Vec<Value> {
+    std::mem::take(store).into_values().collect()
 }
 
 fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtime: Arc<Runtime>) {
@@ -634,7 +667,7 @@ impl AppState {
             for instance in engine_plugins.values() {
                 instance.runtime.begin_unload();
             }
-            std::mem::take(&mut *engine_plugins).into_values().collect()
+            take_store_values(&mut engine_plugins)
         };
 
         let Some(mut plugins) = claimed_unless_the_ui_thread_would_park(&self.plugins, ui) else {
@@ -646,7 +679,7 @@ impl AppState {
         };
 
         LivePluginInstances {
-            command_owned: std::mem::take(&mut *plugins).into_values().collect(),
+            command_owned: take_store_values(&mut plugins),
             engine_owned,
             left_in_a_busy_store: Vec::new(),
         }
@@ -669,10 +702,10 @@ mod tests {
 
     /// A hosted plugin that is not a `ClapWrapper`.
     ///
-    /// The editor methods below used to be reachable only by downcasting the
-    /// boxed plugin to that one concrete type, so a backend like this one got
-    /// "Plugin", "no editor" and a refusal naming CLAP no matter what it
-    /// implemented. Restore either downcast and every assertion in
+    /// The editor path used to reach a plugin only by downcasting it to that
+    /// one concrete type, so a backend like this one got "Plugin", "no editor"
+    /// and a refusal naming CLAP no matter what it implemented. Restore either
+    /// downcast and every assertion in
     /// `a_non_clap_backend_is_reached_through_the_trait` fails.
     struct EditorBackedTestPlugin {
         editor_open: Arc<std::sync::atomic::AtomicBool>,
@@ -783,15 +816,13 @@ mod tests {
     fn the_window_resizer_reaches_the_plugin_before_its_editor_opens() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let (resize, sizes) = recording_resizer(&calls);
-        let mut instance = PluginInstanceData {
-            plugin: Box::new(SelfResizingTestPlugin {
-                calls: Arc::clone(&calls),
-                resize: None,
-            }),
+        let mut plugin = SelfResizingTestPlugin {
+            calls: Arc::clone(&calls),
+            resize: None,
         };
 
-        instance.set_editor_window_resizer(resize);
-        let size = instance
+        plugin.set_editor_window_resizer(resize);
+        let size = plugin
             .open_gui(std::ptr::null_mut())
             .expect("a plugin given a resizer before the open can use it during one");
 
@@ -828,19 +859,17 @@ mod tests {
     #[test]
     fn a_non_clap_backend_is_reached_through_the_trait() {
         let editor_open = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let mut instance = PluginInstanceData {
-            plugin: Box::new(EditorBackedTestPlugin {
-                editor_open: Arc::clone(&editor_open),
-            }),
+        let mut plugin = EditorBackedTestPlugin {
+            editor_open: Arc::clone(&editor_open),
         };
 
-        assert_eq!(instance.get_name(), "Test Backend Plugin");
+        assert_eq!(plugin.get_name(), "Test Backend Plugin");
         assert!(
-            instance.has_gui(),
+            plugin.has_gui(),
             "a backend that reports an editor must be believed"
         );
         assert_eq!(
-            instance.open_gui(std::ptr::null_mut()),
+            plugin.open_gui(std::ptr::null_mut()),
             Ok((640, 480)),
             "the editor size must come from the plugin, not from a downcast that missed"
         );
@@ -849,7 +878,7 @@ mod tests {
             "open_gui must mark the editor open"
         );
 
-        instance.close_gui();
+        plugin.close_gui();
         assert!(
             !editor_open.load(std::sync::atomic::Ordering::SeqCst),
             "close_gui must mark the editor closed"
@@ -861,14 +890,12 @@ mod tests {
     /// subject, and it will be wrong again for the next format.
     #[test]
     fn a_backend_with_no_editor_refuses_without_naming_a_format() {
-        let mut instance = PluginInstanceData {
-            plugin: Box::new(SilentTestPlugin),
-        };
+        let mut plugin = SilentTestPlugin;
 
-        assert_eq!(instance.get_name(), "Plugin");
-        assert!(!instance.has_gui());
+        assert_eq!(plugin.get_name(), "Plugin");
+        assert!(!plugin.has_gui());
 
-        let refusal = instance
+        let refusal = plugin
             .open_gui(std::ptr::null_mut())
             .expect_err("a plugin with no editor cannot open one");
         assert_eq!(refusal, "Plugin does not support GUI");
@@ -879,7 +906,7 @@ mod tests {
 
         // A plugin with no editor has nothing to close, and closing it is not an
         // error a caller has to guard against.
-        instance.close_gui();
+        plugin.close_gui();
     }
 
     #[test]
@@ -1038,34 +1065,18 @@ mod tests {
     /// plugin teardown is third-party code of unbounded duration, and running
     /// it inside a store's critical section parks every concurrent plugin
     /// command for its whole length.
+    type ProbeStore = Arc<Mutex<HashMap<String, StoreLockProbe>>>;
+
     struct StoreLockProbe {
-        plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
+        store: ProbeStore,
         dropped: Arc<std::sync::atomic::AtomicBool>,
         store_lock_was_free: Arc<std::sync::atomic::AtomicBool>,
-    }
-
-    impl AudioPlugin for StoreLockProbe {
-        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
-
-        fn set_parameter(&mut self, _: u32, _: f64) {}
-
-        fn get_parameters(&self) -> Vec<PluginParameter> {
-            Vec::new()
-        }
-
-        fn get_state(&self) -> Result<Vec<u8>, String> {
-            Ok(Vec::new())
-        }
-
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
-            Ok(())
-        }
     }
 
     impl Drop for StoreLockProbe {
         fn drop(&mut self) {
             self.store_lock_was_free.store(
-                self.plugins.try_lock().is_ok(),
+                self.store.try_lock().is_ok(),
                 std::sync::atomic::Ordering::Relaxed,
             );
             self.dropped
@@ -1073,34 +1084,40 @@ mod tests {
         }
     }
 
+    /// The seam both plugin stores are drained through
+    /// ([`AppState::take_live_plugin_instances`]), probed with a value that
+    /// answers from inside its own teardown — a real instance cannot, because
+    /// the runtime it holds is the plugin's and has no hook to lend.
     #[test]
-    fn taking_live_instances_hands_them_back_undropped() {
-        let state = AppState::default();
+    fn taking_a_stores_values_hands_them_back_undropped() {
+        let store: ProbeStore = Arc::new(Mutex::new(HashMap::new()));
         let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let store_lock_was_free = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        state.plugins.lock().expect("plugins lock").insert(
+        store.lock().expect("probe store lock").insert(
             "command-instance".to_string(),
-            PluginInstanceData {
-                plugin: Box::new(StoreLockProbe {
-                    plugins: Arc::clone(&state.plugins),
-                    dropped: Arc::clone(&dropped),
-                    store_lock_was_free: Arc::clone(&store_lock_was_free),
-                }),
+            StoreLockProbe {
+                store: Arc::clone(&store),
+                dropped: Arc::clone(&dropped),
+                store_lock_was_free: Arc::clone(&store_lock_was_free),
             },
         );
 
-        let instances = state.take_live_plugin_instances(&NoWindowHost);
+        let taken = {
+            let mut guard = store.lock().expect("probe store lock");
+            let taken = take_store_values(&mut guard);
+            assert!(
+                !dropped.load(std::sync::atomic::Ordering::Relaxed),
+                "a value dropped inside the drain runs its teardown under the store lock"
+            );
+            taken
+        };
 
-        assert!(
-            !dropped.load(std::sync::atomic::Ordering::Relaxed),
-            "an instance dropped inside the drain runs its teardown under the store lock"
-        );
-
-        drop(instances);
+        assert!(store.lock().expect("probe store lock").is_empty());
+        drop(taken);
 
         assert!(
             dropped.load(std::sync::atomic::Ordering::Relaxed),
-            "the caller's drop must be what tears the instance down"
+            "the caller's drop must be what tears the value down"
         );
         assert!(
             store_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),

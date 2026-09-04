@@ -1,11 +1,65 @@
+/**
+ * Retire one external plugin instance, and everything this process recorded
+ * about it.
+ *
+ * ── What the native audio graph does with the hole ────────────────────────
+ *
+ * An unload drops the instance's parameter snapshot, so the live producer stops
+ * reading it as attached (`readAttachedExternalInstanceIds`). What that means
+ * for the running engine depends on where the session is.
+ *
+ * Parked, the release is the next play's topology batch: that batch replaces the
+ * whole topology, and the strip it rebuilds names no effect for the unloaded
+ * device, so nothing survives the fence.
+ *
+ * Rolling, nothing here reaches the graph. The engine's registry goes on naming
+ * the freed effect until some later batch replaces the topology, and the
+ * scheduler passes it through and counts it in the meantime. Releasing an
+ * instance from a rolling graph needs a command that does not tear the topology
+ * down, which is #3575's work; this module deliberately has no route to one.
+ *
+ * ── The mirror is retracted first, reconciled after ───────────────────────
+ *
+ * The attachment is cleared *before* the unload is awaited, and the rest of the
+ * instance's record only after it returns. The window between those two is real
+ * — `resetExternalPluginRuntimeForGraphRebuild` unloads every instance while the
+ * tracks keep their devices — and a play landing inside it would read a still
+ * attached instance, claim a native body for that device, and have the mapper
+ * refuse the whole batch when it cannot find the instance. Retracting early
+ * under-reports instead: one strip degrades, and the session stands.
+ *
+ * That retraction is a bet, so it is reconciled against what actually landed.
+ * An unload can fail two ways and both keep the instance loaded *and* attached:
+ * the native side reports it in the error list, where `cancel_unload` leaves it
+ * in `engine_plugins`, or the bridge call rejects outright and nothing was ever
+ * retired. A retraction left standing over either is permanent — no writer ever
+ * sets the flag back, because activation short-circuits on an instance it
+ * already holds and the engine reports only the dormant instances a batch newly
+ * took — and it costs the plugin every automation lane on the audible path and
+ * its whole parameter picker. The unkeyed unload retracts the entire session at
+ * once, so one failed rebuild would do that to every loaded plugin.
+ *
+ * So a failed unload restores the attachments it captured. It restores the
+ * whole captured set rather than reasoning about which leg failed: an instance
+ * the unload *did* take has no snapshot left, and the restore skips an absent
+ * one, so the same call is right whether nothing landed or only part of it did.
+ */
+
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
-import { dropExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import {
+    dropExternalPluginParameterSnapshot,
+    externalPluginParameterStore,
+    markEveryExternalPluginParameterSnapshotDetached,
+    markExternalPluginParameterSnapshotDetached,
+    markExternalPluginParameterSnapshotsAttached,
+} from '../../stores/externalPluginParameterStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
+import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { loadedExternalInstances } from './loadedExternalInstances';
@@ -14,6 +68,7 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
 function forgetPluginInstance(instanceId: string): void {
     loadedExternalInstances.delete(instanceId);
     externalLatencyReporters.delete(instanceId);
+    externalBridgeFramesReporters.delete(instanceId);
     externalPluginActivationTasks.delete(instanceId);
     externalPluginActivationOutcomes.delete(instanceId);
     // The parameters described an instance that no longer exists; leaving them
@@ -50,14 +105,51 @@ function reconcileUnloadResult(
     }
 }
 
+/** The instances this unload is about to retract, as the mirror stands now. */
+function attachedInstanceIds(instanceId?: string): ReadonlySet<string> {
+    const byInstanceId = externalPluginParameterStore.value?.byInstanceId ?? {};
+    if (instanceId !== undefined) {
+        return new Set(byInstanceId[instanceId]?.engineAttached === true ? [instanceId] : []);
+    }
+    return new Set(
+        Object.entries(byInstanceId)
+            .filter(([, snapshot]) => snapshot.engineAttached)
+            .map(([id]) => id)
+    );
+}
+
+/**
+ * Run one unload with the attach mirror retracted across it.
+ *
+ * Retract and restore are paired here so the happy path above stays a straight
+ * line: the bet is placed, the unload is awaited, and only a failure pays it
+ * back. See the header for why the whole captured set is restored rather than
+ * the failed leg's share of it.
+ */
+async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
+    const attached = attachedInstanceIds(instanceId);
+    if (instanceId === undefined) {
+        markEveryExternalPluginParameterSnapshotDetached();
+    } else {
+        markExternalPluginParameterSnapshotDetached(instanceId);
+    }
+    try {
+        const unloaded = await unloadPluginRepo(instanceId);
+        reconcileUnloadResult(unloaded, instanceId);
+    } catch (error) {
+        markExternalPluginParameterSnapshotsAttached(attached);
+        throw error;
+    }
+}
+
 export function unloadPlugin(instanceId?: string): Promise<void> {
     if (instanceId === undefined) {
-        return unloadPluginRepo().then(reconcileUnloadResult);
+        return unloadWithRetractedMirror();
     }
-    return serializePluginLifecycle(instanceId, async () => {
+    return serializePluginLifecycle(instanceId, () => {
         if (!loadedExternalInstances.has(instanceId)) {
-            return;
+            return Promise.resolve();
         }
-        reconcileUnloadResult(await unloadPluginRepo(instanceId), instanceId);
+        return unloadWithRetractedMirror(instanceId);
     });
 }

@@ -8,12 +8,32 @@
  * the bridge would wake the renderer per audio block to deliver a number
  * nothing is going to paint. So the seam is a poll, driven from the same
  * `animationScheduler` the cursor's own painting runs on: at most one reading
- * per animation frame, and none at all while the window is not painting, which
- * is exactly when a position nobody can see costs nothing to miss.
+ * per animation frame. That cadence is bridge-wakeup economy, not a claim that
+ * a frame this poll skips costs nothing to miss — the live automation writer
+ * below reads the same tick, and under the desktop shell the loop this poll
+ * rides never stops, hidden window or not (see "Why the writer may ride this
+ * loop").
  *
  * One request is in flight at a time. A bridge round trip that outlasts a frame
  * must not stack: the reading is a level, not a stream, so a late answer that
  * arrives behind a newer one has nothing to contribute.
+ *
+ * ## Why the writer may ride this loop
+ *
+ * This progress tick is the automation writer's only steady-state clock — arm
+ * itself pumps once more, from `armNativeLiveAutomationWriter.ts`, to prime
+ * the first write, but every write after that arrives through this poll. A
+ * paint loop that stopped while the window sat hidden or minimised would
+ * drain that writer's window and freeze every automated parameter at its
+ * last value — the defect #3364 describes.
+ *
+ * It does not happen, because the desktop shell is the only process that
+ * holds the native engine, and that shell creates its window with
+ * `backgroundThrottling: false` (`electron/main.ts`). Under that option
+ * Chromium throttles neither animation frames nor timers, and the Page
+ * Visibility API never reports the page hidden. `electron/__tests__/security.spec.ts`
+ * pins the option, so a copied or rewritten window config cannot silently
+ * reintroduce the gate.
  *
  * ## Why the epoch, and not a boolean
  *

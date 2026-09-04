@@ -333,6 +333,9 @@ class AudioEngineImpl implements AudioEngine {
     public masterMeterNode: AudioWorkletNode | NoopMeterNode | undefined;
 
     private trackNodes = new Map<string, TrackNode>();
+    /** Tracks the native engine currently carries audibly; see
+     *  {@link setNativeCarriedTracks}. Strips created later read it too. */
+    private nativeCarriedTrackIds: ReadonlySet<string> = new Set();
     private busNodes = new Map<string, BusNode>();
     private sendNodes = new Map<string, SendNode>();
     private sidechainConnections = new Map<string, SidechainConnection>();
@@ -1376,7 +1379,7 @@ class AudioEngineImpl implements AudioEngine {
             if (send.sourceTrackId !== trackId) {
                 continue;
             }
-            const sourceNode = send.preFader ? strip.preFaderTap : strip.analyserNode;
+            const sourceNode = send.preFader ? strip.preFaderSendGate : strip.carrierGate;
             try {
                 send.sourceNode.disconnect(send.gainNode);
             } catch {
@@ -1681,6 +1684,9 @@ class AudioEngineImpl implements AudioEngine {
         let created = false;
         if (!node) {
             node = this.createTrackNode(trackId);
+            // A graph rebuild mid-play re-creates the strip with its gates open;
+            // carrying is a property of the track, not of this node instance.
+            node.setNativeCarried(this.nativeCarriedTrackIds.has(trackId));
             this.trackNodes.set(trackId, node);
             created = true;
         }
@@ -1794,6 +1800,18 @@ class AudioEngineImpl implements AudioEngine {
     public setTrackMute(trackId: string, muted: boolean): void {
         this.ensureTrackStrip(trackId);
         this.trackNodes.get(trackId)?.setMute(muted);
+    }
+
+    /**
+     * The set is the whole answer, not a delta: every live strip is driven to
+     * its membership on each call, so a track that has just left the set is
+     * reopened in the same pass that closes a track that has just joined.
+     */
+    public setNativeCarriedTracks(trackIds: ReadonlySet<string>): void {
+        this.nativeCarriedTrackIds = new Set(trackIds);
+        for (const [trackId, trackNode] of this.trackNodes) {
+            trackNode.setNativeCarried(this.nativeCarriedTrackIds.has(trackId));
+        }
     }
 
     public setTrackSoloGate(trackId: string, gated: boolean): void {
@@ -2092,7 +2110,7 @@ class AudioEngineImpl implements AudioEngine {
 
             const sendGain = this.context.createGain();
             sendGain.gain.value = clampedLevel;
-            const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
+            const tap = preFader ? trackNode.strip.preFaderSendGate : trackNode.strip.carrierGate;
             tap.connect(sendGain);
             sendGain.connect(busMutation.value.gainNode);
             this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
@@ -2125,7 +2143,7 @@ class AudioEngineImpl implements AudioEngine {
         if (!sourceStrip) {
             return;
         }
-        const newTap = preFader ? sourceStrip.preFaderTap : sourceStrip.analyserNode;
+        const newTap = preFader ? sourceStrip.preFaderSendGate : sourceStrip.carrierGate;
         const newGain = this.context.createGain();
         newGain.gain.setValueAtTime(0, now);
         newGain.gain.linearRampToValueAtTime(clampedLevel, end);
@@ -2472,6 +2490,9 @@ class AudioEngineImpl implements AudioEngine {
 
     public resetGraph(): void {
         this.withheldDeviceNotices.clear();
+        // The carried set names tracks of the project being torn down; a strip
+        // ensured for the next one must not inherit a closed gate from it.
+        this.nativeCarriedTrackIds = new Set();
         // Tear down all per-project audio graph state (tracks, buses, sends,
         // sidechain routes) without closing the AudioContext, master nodes,
         // or already-loaded worklet modules. Used when switching projects.

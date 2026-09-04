@@ -101,6 +101,10 @@ pub struct EngineRtDiagnostics {
     pub bridge_output_blocks_dropped: u64,
     pub unmatched_bridge_blocks: u64,
     pub bridge_backlog_blocks_shed: u64,
+    /// Bridge blocks returned unprocessed because a strip chain owns the
+    /// plugin this block, from
+    /// `ActiveMidiRtDiagnosticsSnapshot::bridge_blocks_passed_chain_bound`.
+    pub bridge_blocks_passed_chain_bound: u64,
     pub callback_frames_over_bridge_reach: u64,
     /// Counted on the control side, not the audio thread: input blocks the app
     /// could not hand to a bridge because its input ring was full.
@@ -143,6 +147,7 @@ fn running_engine_diagnostics(
         bridge_output_blocks_dropped: snapshot.bridge_output_blocks_dropped,
         unmatched_bridge_blocks: snapshot.unmatched_bridge_blocks,
         bridge_backlog_blocks_shed: snapshot.bridge_backlog_blocks_shed,
+        bridge_blocks_passed_chain_bound: snapshot.bridge_blocks_passed_chain_bound,
         callback_frames_over_bridge_reach: snapshot.callback_frames_over_bridge_reach,
         bridge_input_blocks_refused,
         capture_consumer_refusals: snapshot.capture_consumer_refusals,
@@ -210,6 +215,7 @@ mod tests {
             bridge_output_blocks_dropped: 6,
             unmatched_bridge_blocks: 7,
             bridge_backlog_blocks_shed: 8,
+            bridge_blocks_passed_chain_bound: 15,
             callback_frames_over_bridge_reach: 9,
             bridge_input_blocks_refused: 10,
             capture_consumer_refusals: 11,
@@ -231,7 +237,8 @@ mod tests {
                 r#""arpeggiatorActiveNoteExhaustions":2,"effectIdCollisions":3,"#,
                 r#""unsupportedEffectAdditions":4,"unmappedSetParamCalls":5,"#,
                 r#""bridgeOutputBlocksDropped":6,"unmatchedBridgeBlocks":7,"#,
-                r#""bridgeBacklogBlocksShed":8,"callbackFramesOverBridgeReach":9,"#,
+                r#""bridgeBacklogBlocksShed":8,"bridgeBlocksPassedChainBound":15,"#,
+                r#""callbackFramesOverBridgeReach":9,"#,
                 r#""bridgeInputBlocksRefused":10,"captureConsumerRefusals":11,"#,
                 r#""captureBlocksDropped":12,"captureInputUnderruns":13,"#,
                 r#""inputLatencyFrames":14,"#,
@@ -253,7 +260,8 @@ mod tests {
                 r#""arpeggiatorActiveNoteExhaustions":0,"effectIdCollisions":0,"#,
                 r#""unsupportedEffectAdditions":0,"unmappedSetParamCalls":0,"#,
                 r#""bridgeOutputBlocksDropped":0,"unmatchedBridgeBlocks":0,"#,
-                r#""bridgeBacklogBlocksShed":0,"callbackFramesOverBridgeReach":0,"#,
+                r#""bridgeBacklogBlocksShed":0,"bridgeBlocksPassedChainBound":0,"#,
+                r#""callbackFramesOverBridgeReach":0,"#,
                 r#""bridgeInputBlocksRefused":0,"captureConsumerRefusals":0,"#,
                 r#""captureBlocksDropped":0,"captureInputUnderruns":0,"#,
                 r#""inputLatencyFrames":0,"events":[]}"#
@@ -305,6 +313,7 @@ mod tests {
             bridge_output_blocks_dropped: 6,
             unmatched_bridge_blocks: 7,
             bridge_backlog_blocks_shed: 8,
+            bridge_blocks_passed_chain_bound: 15,
             callback_frames_over_bridge_reach: 9,
             capture_consumer_refusals: 10,
             capture_blocks_dropped: 12,
@@ -330,6 +339,7 @@ mod tests {
         assert_eq!(diagnostics.bridge_output_blocks_dropped, 6);
         assert_eq!(diagnostics.unmatched_bridge_blocks, 7);
         assert_eq!(diagnostics.bridge_backlog_blocks_shed, 8);
+        assert_eq!(diagnostics.bridge_blocks_passed_chain_bound, 15);
         assert_eq!(diagnostics.callback_frames_over_bridge_reach, 9);
         assert_eq!(diagnostics.capture_consumer_refusals, 10);
         assert_eq!(diagnostics.capture_blocks_dropped, 12);

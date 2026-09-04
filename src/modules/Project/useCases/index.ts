@@ -30,6 +30,7 @@ export {
     doesProductionBriefAllowActionBatch,
     productionBriefActionBatchAdmission,
 } from './doesProductionBriefAllowActionBatch';
+export { getProjectScopedBriefLock } from './getProjectScopedBriefLock';
 export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';

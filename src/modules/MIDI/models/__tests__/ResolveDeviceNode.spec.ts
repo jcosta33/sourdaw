@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveDeviceNode } from '../resolveDeviceNode';
+import { resolveDeviceNode } from '../ResolveDeviceNode';
 
 type TestNode = { deviceId: string; type: string };
 

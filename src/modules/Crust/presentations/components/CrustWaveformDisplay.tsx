@@ -258,7 +258,7 @@ export const CrustWaveformDisplay = ({
     }, []); // ← intentionally empty: all live data read via latestRef, no dependency restarts needed
 
     return (
-        <div className="relative w-full h-full" style={{ background: '#0E0E10' }}>
+        <div className="relative w-full h-full bg-surface-well">
             <canvas
                 ref={canvasRef}
                 width={420}

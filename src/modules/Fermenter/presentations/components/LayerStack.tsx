@@ -52,6 +52,7 @@ export const LayerStack = ({
                     className="h-4 w-4"
                     disabled={numLayers <= 1}
                     onClick={() => onNumLayersChange(numLayers - 1)}
+                    aria-label="Decrease layer count"
                 >
                     <Minus className="size-2.5" />
                 </Button>
@@ -61,6 +62,7 @@ export const LayerStack = ({
                     className="h-4 w-4"
                     disabled={numLayers >= 4}
                     onClick={() => onNumLayersChange(numLayers + 1)}
+                    aria-label="Increase layer count"
                 >
                     <Plus className="size-2.5" />
                 </Button>
