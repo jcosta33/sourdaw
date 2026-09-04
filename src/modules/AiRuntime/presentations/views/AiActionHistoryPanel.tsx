@@ -173,6 +173,7 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
                 size="icon-xs"
                 onClick={() => void revertAiActionGroup(group)}
                 title="Undo all changes from this AI action"
+                aria-label="Undo all changes from this AI action"
             >
                 <Undo2 className="size-3" />
             </Button>
@@ -191,6 +192,8 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
                             type="button"
                             onClick={() => setExpanded(!expanded)}
                             className="text-muted-foreground hover:text-foreground"
+                            aria-label={expanded ? 'Collapse action details' : 'Expand action details'}
+                            aria-expanded={expanded}
                         >
                             {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                         </Button>

@@ -585,7 +585,13 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                     className="fermenter-window h-8 w-24 px-2 text-[10px] outline-none"
                                     autoFocus
                                 />
-                                <Button variant="ghost" size="icon-xs" className="h-8 w-8" onClick={handleSave}>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="h-8 w-8"
+                                    onClick={handleSave}
+                                    aria-label="Save preset"
+                                >
                                     <Save className="size-3" />
                                 </Button>
                             </>
@@ -599,13 +605,26 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                         setSaveName(patch.name === 'Init' ? '' : patch.name);
                                         setShowSave(true);
                                     }}
+                                    aria-label="Open save preset dialog"
                                 >
                                     <Save className="size-3" />
                                 </Button>
-                                <Button variant="ghost" size="icon-xs" className="h-8 w-8" onClick={initPatch}>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="h-8 w-8"
+                                    onClick={initPatch}
+                                    aria-label="Reset patch to default"
+                                >
                                     <RotateCcw className="size-3" />
                                 </Button>
-                                <Button variant="ghost" size="icon-xs" className="h-8 w-8" onClick={applyRandomPatch}>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="h-8 w-8"
+                                    onClick={applyRandomPatch}
+                                    aria-label="Randomize patch"
+                                >
                                     <Shuffle className="size-3" />
                                 </Button>
                             </>

@@ -134,8 +134,8 @@ describe('GenerativeAiPanel', () => {
     it('should close panel when X button is clicked', async () => {
         const { toggleAiPanel } = await import('#/modules/AiGeneration/useCases');
         render(<GenerativeAiPanel />);
-        const closeButton = screen.getAllByRole('button')[0];
-        fireEvent.click(closeButton!);
+        const closeButton = screen.getByRole('button', { name: 'Close generate panel' });
+        fireEvent.click(closeButton);
         expect(toggleAiPanel).toHaveBeenCalled();
     });
 

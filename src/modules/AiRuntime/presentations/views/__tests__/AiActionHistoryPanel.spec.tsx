@@ -132,6 +132,31 @@ describe('AiActionHistoryPanel', () => {
         expect(screen.getByText('Test prompt')).toBeInTheDocument();
     });
 
+    it('supports undoing AI action groups and expanding action details with accessible controls', () => {
+        const group: MockAiActionGroup = {
+            id: 'g1',
+            prompt: 'Create tracks',
+            actions: [{ kind: 'appAction', actionType: 'track.add', label: 'Action 1' }],
+            groupId: 'group-1',
+            timestamp: Date.now(),
+            reverted: false,
+        };
+        mock_ai_state.groups = [group];
+        render(<AiActionHistoryPanel />);
+
+        const undoButton = screen.getByRole('button', { name: 'Undo all changes from this AI action' });
+        expect(undoButton).toBeInTheDocument();
+        fireEvent.click(undoButton);
+        expect(module_mocks.revert_ai_action_group).toHaveBeenCalledWith(group);
+
+        const expandButton = screen.getByRole('button', { name: 'Expand action details' });
+        expect(expandButton).toHaveAttribute('aria-expanded', 'false');
+        fireEvent.click(expandButton);
+
+        const collapseButton = screen.getByRole('button', { name: 'Collapse action details' });
+        expect(collapseButton).toHaveAttribute('aria-expanded', 'true');
+    });
+
     it('labels runtime execution receipts without offering Undo', () => {
         mock_ai_state.groups = [
             {

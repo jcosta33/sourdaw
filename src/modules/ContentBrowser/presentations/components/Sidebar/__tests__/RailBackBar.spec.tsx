@@ -9,7 +9,7 @@ describe('RailBackBar', () => {
         const onBack = vi.fn();
         render(<RailBackBar title="Presets" onBack={onBack} icon={Piano} />);
         expect(screen.getByText('Presets')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button'));
+        fireEvent.click(screen.getByRole('button', { name: 'Back' }));
         expect(onBack).toHaveBeenCalledTimes(1);
     });
 });

@@ -532,7 +532,7 @@ describe('InstrumentsTab', () => {
             />
         );
 
-        fireEvent.click(screen.getByTitle('Save "Track 1" as preset'));
+        fireEvent.click(screen.getByRole('button', { name: 'Save "Track 1" as preset' }));
         fireEvent.change(screen.getByPlaceholderText('Preset name…'), { target: { value: 'Withheld preset' } });
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
