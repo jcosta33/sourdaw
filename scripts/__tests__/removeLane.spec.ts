@@ -620,6 +620,28 @@ describe('lane removal', () => {
             },
             /active/,
         ],
+        [
+            'ambiguous commit PRs on detached review',
+            `${root}/.agents/worktrees/review-provider-stream`,
+            {
+                lane: worktree({
+                    path: `${root}/.agents/worktrees/review-provider-stream`,
+                    branch: undefined,
+                    detached: true,
+                }),
+                commitPullRequests: [pullRequest({ number: 100 }), pullRequest({ number: 101 })],
+            },
+            /does not identify one pull request/,
+        ],
+        [
+            'unrecorded merge timestamp on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, state: 'MERGED', mergedAt: null })],
+            },
+            /not merged/,
+        ],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
 
