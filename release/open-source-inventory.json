@@ -2038,6 +2038,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/resolveVercelDeploymentAliases.ts",
+            "value": "https://api.vercel.com/v13/deployments"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/linkVercelCliProject.ts",
             "value": "https://api.vercel.com/v9/projects"
         },
