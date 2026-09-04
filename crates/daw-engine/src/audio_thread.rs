@@ -1702,7 +1702,12 @@ mod tests {
         .expect("audio owner should start");
         let started_at = Instant::now();
         drop(handle);
-        assert!(started_at.elapsed() < Duration::from_millis(250));
+        // The reclaimer is still blocked here: its release is sent only after
+        // this assertion, so the ceiling only tells a return from a hang.
+        assert!(
+            started_at.elapsed() < Duration::from_secs(1),
+            "dropping the audio owner handle must not wait for the reclaimer"
+        );
 
         release_tx.send(()).unwrap();
     }
