@@ -391,6 +391,18 @@ async function applyTopologyBatch(input: {
  * feed meanwhile reports a parked transport and the cursor keeps the
  * scheduler's own clock.
  *
+ * ── An unreadable answer is not a failed roll ─────────────────────────────
+ *
+ * `apply` reports a transport failure as `rejected` and throws only on an
+ * answer it cannot read, which it decides *after* the command has crossed the
+ * bridge. So a throw here says the roll may have taken effect, and the one
+ * thing that must not happen is unwinding out of the session start: the caller
+ * would reopen the Web Audio gates on strips a rolling engine is sounding, and
+ * every one of them would be heard twice for the length of the take. The roll
+ * is therefore undone here, and reported as a reason like any other parked
+ * engine — the state is known again, and the caller's existing parked exit is
+ * the correct handling of it.
+ *
  * ── It starts playback; it must not locate ────────────────────────────────
  *
  * The topology batch already parked the engine at this very position, so the
@@ -432,15 +444,78 @@ function logProgrammeExclusions(programme: LiveGraphProgramme): void {
     }
 }
 
+function reasonOf(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Undo an optimistic carrier claim whose session start then threw.
+ *
+ * Everything that can still throw past the claim left the engine parked by
+ * construction — the topology batches go out with `playing: false`, and an
+ * unreadable roll answer is undone where it happens rather than unwound — so
+ * reopening the gates here cannot double a mix the engine is already sounding.
+ */
+function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBackend>): void {
+    setNativeCarriedTracks(new Set());
+    nativeLiveGraphSession.audibleCarrier = false;
+    if (nativeLiveGraphSession.backend !== backend) {
+        // Thrown before this handle was adopted, so nothing else will ever
+        // close it.
+        backend.dispose();
+    }
+}
+
+/**
+ * Put the engine back where the roll found it, after an answer nobody could
+ * read.
+ *
+ * Sent through the same `apply` on purpose: a transport failure comes back as
+ * `rejected` there rather than throwing, so the only thing left to catch is a
+ * second malformed answer — and a park that cannot be confirmed is still worth
+ * attempting, because the alternative is leaving an engine rolling that every
+ * caller believes is parked.
+ */
+async function parkUnreadableRoll(
+    backend: ReturnType<typeof createNativeLiveGraphBackend>,
+    positionSeconds: number
+): Promise<void> {
+    try {
+        const parked = await backend.apply({
+            schemaVersion: 1,
+            commands: [{ kind: 'set-transport', playing: false, positionSeconds, locate: false }],
+        });
+        if (parked.application !== 'applied') {
+            logger.warn(`[AudioEngine] native transport refused the park after an unreadable roll: ${parked.reason}`);
+        }
+    } catch (error) {
+        logger.warn(`[AudioEngine] native transport answered the park unreadably too: ${reasonOf(error)}`);
+    }
+}
+
 async function rollNativeTransport(
     backend: ReturnType<typeof createNativeLiveGraphBackend>,
     positionSeconds: number
 ): Promise<RolledNativeTransport> {
-    const rolling = await backend.apply({
-        schemaVersion: 1,
-        commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate: false }],
-    });
-    reportAttachedPlugins(rolling);
+    let rolling: AudioGraphApplyResult;
+    try {
+        rolling = await backend.apply({
+            schemaVersion: 1,
+            commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate: false }],
+        });
+        reportAttachedPlugins(rolling);
+    } catch (error) {
+        // The command is already out. `apply` turns a transport failure into
+        // `rejected`, so reaching here means the engine answered — unreadably —
+        // and it may well be rolling and sounding every carried strip. Letting
+        // this out would unwind past the caller's release into a graph that is
+        // audible on both carriers at once, so the roll is undone instead and
+        // reported as the parked engine it now is.
+        const reason = reasonOf(error);
+        logger.warn(`[AudioEngine] native transport answered the roll unreadably: ${reason}`);
+        await parkUnreadableRoll(backend, positionSeconds);
+        return { rolling: false, provenAfterBatch: null, reason };
+    }
     if (rolling.application !== 'applied') {
         logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
         return { rolling: false, provenAfterBatch: null, reason: rolling.reason };
@@ -669,8 +744,7 @@ export function startNativeLiveGraphSession(
                 reports: rebound.result.reports,
             };
         } catch (error) {
-            releaseCarriedStrips();
-            nativeLiveGraphSession.audibleCarrier = false;
+            abandonSessionStart(backend);
             // Rethrown untouched: the gates are the only thing this repairs, and
             // a caller told the session started when it threw would be worse off
             // than one that sees the failure.

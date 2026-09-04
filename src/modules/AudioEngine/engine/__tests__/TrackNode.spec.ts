@@ -125,6 +125,12 @@ describe('TrackNode', () => {
 
             for (const gate of gates) {
                 expect(gate.cancelScheduledValues).toHaveBeenCalledWith(0.002);
+                // First of the three, not merely present: a cancel issued after
+                // the reopen was scheduled would wipe the very ramp and landing
+                // this call just wrote and leave the gate wherever it stood.
+                expect(vi.mocked(gate.cancelScheduledValues).mock.invocationCallOrder[0]).toBeLessThan(
+                    vi.mocked(gate.setValueAtTime).mock.invocationCallOrder[0]!
+                );
                 // Re-anchored at where the gate actually is, and before the new
                 // ramp — an anchor scheduled after it would overwrite its start.
                 expect(gate.setValueAtTime).toHaveBeenNthCalledWith(1, gate.value, 0.002);

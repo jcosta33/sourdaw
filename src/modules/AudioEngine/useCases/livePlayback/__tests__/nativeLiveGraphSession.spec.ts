@@ -922,6 +922,38 @@ describe('startNativeLiveGraphSession', () => {
         expect(result).toMatchObject({ outcome: 'started' });
     });
 
+    it('parks the engine when it cannot read the roll answer, rather than unwinding under a rolling engine', async () => {
+        // The roll command is already across the bridge when the answer turns
+        // out to be unreadable, so the engine may well be rolling and sounding
+        // every carried strip. Letting that throw out would reopen the Web
+        // Audio gates underneath it and the musician would hear every carried
+        // track twice for the length of the take.
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce(APPLIED)
+            .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: Number.NaN });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // One batch past the roll, undoing it: without this the engine is left
+        // rolling while every caller here believes it parked.
+        expect(appliedBatches()[2]?.commands).toEqual([
+            { kind: 'set-transport', playing: false, positionSeconds: 2.5, locate: false },
+        ]);
+        expect(nativeLiveGraphSession.rolling).toBe(false);
+        expect(mocks.carriedClaims.at(-1)?.ids).toEqual([]);
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('malformed runtimeRevision'), 'warning');
+        // A parked engine, not a failed start: the topology stands and the
+        // handle is open, which is what stop and reposition still need.
+        expect(result).toMatchObject({ outcome: 'started' });
+    });
+
     it('hands the carried strips back when a step past the claim throws, and lets the error out', async () => {
         // An unwind is an exit like any other. One that left the gates shut
         // would silence every carried track with no session standing to account
