@@ -248,6 +248,9 @@ describe('hashCrateClosure (integration, real repository)', () => {
             .replace('"crates/sourdaw-native"', '"crates/sourdaw-native",\n    "crates/fake-member-for-spec"')
             .replace('opt-level = 3', 'opt-level = 3 # unrelated comment');
 
+        expect(editedManifestText).toContain('"crates/fake-member-for-spec"');
+        expect(editedManifestText).toContain('opt-level = 3 # unrelated comment');
+
         expect(wasmArtifacts.hashCrateClosure('crates/daw-wasm-decoder', editedManifestText)).toEqual(baseline);
     });
 
