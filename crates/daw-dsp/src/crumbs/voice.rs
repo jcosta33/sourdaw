@@ -773,10 +773,11 @@ fn bounded_playback_speed(semitone_diff: f32) -> Option<f64> {
 /// and that budget picks a window from a step function, so a longer kernel can
 /// land in a wider, less-attenuating tier than a shorter one at the same
 /// ratio — and measured foldback across the ratio range is not monotonic in
-/// kernel length even inside one tier. Treat this rule and `kaiser_beta` as
-/// one surface: change either, and measure delivered foldback at several
-/// ratios rather than reasoning from tap count. The 42 dB contract clears with
-/// room to spare on both sides of that step and will not show the difference.
+/// kernel length even inside one tier, because a Kaiser window's sidelobe
+/// heights are beta-fixed while their positions scale as 1/N. Treat this rule
+/// and `kaiser_beta` as one surface: change either, and measure delivered
+/// foldback across the reachable ratio range — the floor contract is stated
+/// and pinned on `kaiser_beta`.
 ///
 /// The tap count also feeds `bandlimited_work_units`, so growth is paid for a
 /// second time in polyphony.
@@ -792,9 +793,21 @@ fn bandlimited_tap_count(speed: f64) -> usize {
 /// A wider budget carries a sharper window. Beta 9 needs the widest, and earns
 /// it with a passband flat enough that a read landing on whole source frames
 /// returns them essentially unchanged — the accuracy the chromatic-octave
-/// tests measure against. Beta 7 is the widest window that still holds both
-/// that passband and the 42 dB stop-band. Beta 5 gives up the passband and
-/// keeps the stop-band.
+/// tests measure against. Beta 7 holds both that passband and a deep stop-band
+/// down to budget 6.5; below that its stop-band collapses faster than beta 5's
+/// (the first window sidelobe region moves with 1/N, and the growth-rule
+/// radii park beta 7's worst sidelobe just 50 dB down at ratios past 8x), so
+/// the wide ratios run beta 5, whose stop-band there measures a flat ≈54 dB.
+///
+/// The measured contract these tiers buy: foldback-to-passband stays below
+/// −53 dB at every reachable playback ratio (a half-semitone sweep of the
+/// reachable range, worst point r ≈ 8.7 at −54.2 dB, worst phase held; the 8x
+/// point itself at −54.9). Attenuation is *not* monotonic in kernel length
+/// within one beta — a Kaiser window's sidelobe heights are fixed by beta
+/// while their positions scale as 1/N, so a fixed probe frequency hops
+/// between lobes and nulls as taps change;
+/// `longer_kernels_do_not_deepen_the_stop_band_within_a_beta_tier`
+/// pins that inversion. Judge tiers by measured rejection, never by tap count.
 ///
 /// Two things about the shape, because both mislead. It is a step function, so
 /// a small change in tap count or cutoff either does nothing or moves a whole
@@ -808,7 +821,7 @@ fn kaiser_beta(tap_count: usize, cutoff: f32) -> f32 {
     let budget = (tap_count as f64 / 2.0) * f64::from(cutoff);
     if budget >= 10.0 {
         9.0
-    } else if budget >= 6.0 {
+    } else if budget >= 6.5 {
         7.0
     } else {
         5.0
@@ -1275,9 +1288,14 @@ mod tests {
         }
     }
 
-    /// One voice rendered at `ratio`x, reached by `note` plus `tune_cents`.
-    fn render_at_ratio(source_frequency: f32, ratio: usize, note: u8, tune_cents: f32) -> Vec<f32> {
-        let source_frames = (OUTPUT_SAMPLES + SETTLE_SAMPLES) * ratio + 512;
+    /// One voice rendered at an exact semitone offset above the root —
+    /// fractional semitones included, because the reachable ratio range is a
+    /// continuum and the foldback floor has to be measurable at ratios no
+    /// integer note reaches.
+    fn render_at_semitones(source_frequency: f32, semitones: f32) -> Vec<f32> {
+        let speed = 2.0_f64.powf(f64::from(semitones) / 12.0);
+        let source_frames =
+            ((OUTPUT_SAMPLES + SETTLE_SAMPLES) as f64 * speed).ceil() as usize + 512;
         let source = (0..source_frames)
             .map(|frame| {
                 let phase =
@@ -1288,12 +1306,12 @@ mod tests {
         let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
         let mut voice = CrumbsVoice::new(SAMPLE_RATE);
         voice.trigger(&VoiceTriggerParams {
-            note,
+            note: 60,
             root_note: 60,
             playback_mode: PlaybackMode::OneShot,
             ..VoiceTriggerParams::default()
         });
-        voice.set_tune(tune_cents);
+        voice.set_tune(semitones * 100.0);
 
         let mut output = Vec::with_capacity(OUTPUT_SAMPLES);
         for frame in 0..(OUTPUT_SAMPLES + SETTLE_SAMPLES) {
@@ -1305,6 +1323,12 @@ mod tests {
             }
         }
         output
+    }
+
+    /// One voice rendered at `ratio`x, reached by `note` plus `tune_cents`.
+    fn render_at_ratio(source_frequency: f32, ratio: usize, note: u8, tune_cents: f32) -> Vec<f32> {
+        let semitones = (note as f32 - 60.0) + tune_cents / 100.0;
+        render_at_semitones(source_frequency, semitones)
     }
 
     /// Foldback-to-passband ratio in dB at `ratio`x, and the passband reference
@@ -1322,6 +1346,22 @@ mod tests {
         );
         let foldback = bin_magnitude(
             &render_at_ratio(32_000.0 / ratio as f32, ratio, note, tune_cents),
+            16_000.0,
+            SAMPLE_RATE,
+        );
+        (20.0 * (foldback / passband.max(1.0e-12)).log10(), passband)
+    }
+
+    /// [`foldback_margin_db`] at a fractional semitone offset.
+    fn foldback_margin_db_at_semitones(semitones: f32) -> (f32, f32) {
+        let speed = 2.0_f32.powf(semitones / 12.0);
+        let passband = bin_magnitude(
+            &render_at_semitones(8_000.0 / speed, semitones),
+            8_000.0,
+            SAMPLE_RATE,
+        );
+        let foldback = bin_magnitude(
+            &render_at_semitones(32_000.0 / speed, semitones),
             16_000.0,
             SAMPLE_RATE,
         );
@@ -1470,6 +1510,195 @@ mod tests {
             resampling_work_units_for_pitch(60, 60, 0.0, true),
             resampling_work_units_for_pitch(60, 60, 0.0, false) * 2,
             "admission must charge the same doubling the live accounting does"
+        );
+    }
+
+    /// The 8x tier's own bound, restored. The growth rule moved 8x from an
+    /// 81-tap kernel to 97 taps and delivered foldback fell from about -75 dB
+    /// to -50 dB; the 42 dB contract absorbed that silently. This holds 8x to
+    /// the floor the re-derived beta tiers deliver (measured -54.9 dB).
+    #[test]
+    fn eight_fold_playback_suppresses_foldback_by_at_least_53_db() {
+        let (alias_to_signal_db, passband) = foldback_margin_db(8, 96, 0.0);
+
+        assert!(passband > 0.1, "8x passband reference was inaudible");
+        assert!(
+            alias_to_signal_db <= -53.0,
+            "8x playback must suppress foldback by at least 53 dB, got \
+             {alias_to_signal_db:.1} dB"
+        );
+    }
+
+    /// Each tier pinned at a ratio a note actually reaches it. Measured:
+    /// 2x (beta 9) -96.4 dB, 4x (beta 7) -87.8 dB, 16x (beta 5, at the speed
+    /// cap) -75.6 dB, and the floor's own worst reachable ratio — 37.5
+    /// semitones, r ~= 8.72, which no integer note reaches — -54.3 dB. The
+    /// bounds sit a few dB under the measurements so ordinary drift passes and
+    /// a tier move reddens them.
+    #[test]
+    fn each_tier_holds_its_measured_foldback_rejection() {
+        for (ratio, note, tune_cents, bound_db) in [
+            (2, 72, 0.0, -90.0),
+            (4, 84, 0.0, -80.0),
+            (16, 84, 2_400.0, -65.0),
+        ] {
+            let (alias_to_signal_db, passband) = foldback_margin_db(ratio, note, tune_cents);
+
+            assert!(passband > 0.1, "{ratio}x passband reference was inaudible");
+            assert!(
+                alias_to_signal_db <= bound_db,
+                "{ratio}x playback must suppress foldback by at least {} dB, got \
+                 {alias_to_signal_db:.1} dB",
+                -bound_db
+            );
+        }
+
+        let (alias_to_signal_db, passband) = foldback_margin_db_at_semitones(37.5);
+        assert!(
+            passband > 0.1,
+            "worst-ratio passband reference was inaudible"
+        );
+        assert!(
+            alias_to_signal_db <= -53.0,
+            "the floor's worst reachable ratio (~8.72x) must still hold 53 dB, got \
+             {alias_to_signal_db:.1} dB"
+        );
+    }
+
+    /// The kernel a voice actually runs, extracted through
+    /// `bandlimited_stereo_sample` itself: an impulse read frame by frame
+    /// returns the tap weights one per frame, so the frequency response
+    /// measured on that sequence is the shipped construction's, not a
+    /// re-derivation.
+    fn bandlimited_kernel_weights(
+        radius: usize,
+        beta: f32,
+        cutoff: f32,
+        fraction: f32,
+    ) -> Vec<f32> {
+        let taps = radius * 2 + 1;
+        let mut window = [0.0_f32; MAX_BANDLIMITED_TAPS];
+        fill_kaiser_window(&mut window, taps, beta);
+        let step = core::f32::consts::PI * cutoff;
+        let (step_sin, step_cos) = step.sin_cos();
+        let impulse = radius as i32 + 8;
+        let frames = taps + 16;
+        let mut source = vec![0.0_f32; frames];
+        source[impulse as usize] = 1.0;
+        let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+
+        (0..taps)
+            .map(|tap| {
+                let frame = impulse - tap as i32 + radius as i32;
+                let (left, _) = bandlimited_stereo_sample(
+                    &sample,
+                    frame as usize,
+                    fraction,
+                    cutoff,
+                    step_sin,
+                    step_cos,
+                    taps,
+                    &window,
+                    0,
+                    0,
+                    frames as u32,
+                    LoopMode::Off,
+                    false,
+                );
+                left
+            })
+            .collect()
+    }
+
+    /// The kernel's foldback-to-passband ratio in dB at `speed`x, worst over
+    /// the polyphase fractions a moving playhead samples, using the same probe
+    /// geometry as `foldback_margin_db`.
+    fn kernel_foldback_db(radius: usize, beta: f32, cutoff: f32, fractions: &[f32]) -> f32 {
+        let mut worst_db = f32::MIN;
+        for &fraction in fractions {
+            let weights = bandlimited_kernel_weights(radius, beta, cutoff, fraction);
+            let magnitude = |omega: f32| {
+                let mut re = 0.0_f32;
+                let mut im = 0.0_f32;
+                for (tap, &weight) in weights.iter().enumerate() {
+                    let offset = tap as i32 - radius as i32;
+                    let angle = omega * offset as f32;
+                    re += weight * angle.cos();
+                    im -= weight * angle.sin();
+                }
+                (re * re + im * im).sqrt()
+            };
+            let passband_omega = core::f32::consts::PI * cutoff / 3.0;
+            let foldback_omega = core::f32::consts::PI * cutoff * 4.0 / 3.0;
+            let db =
+                20.0 * (magnitude(foldback_omega) / magnitude(passband_omega).max(1.0e-12)).log10();
+            worst_db = worst_db.max(db);
+        }
+        worst_db
+    }
+
+    /// The length-attenuation inversion, pinned. Within one beta tier the
+    /// stop-band attenuation at a fixed probe is NOT monotonic in tap count:
+    /// a Kaiser window's sidelobe heights are fixed by beta while their
+    /// positions scale as 1/N, so the probe hops between lobes and nulls as
+    /// the kernel lengthens. At the 8x cutoff, beta 5 measures -75.4 dB at 81
+    /// taps and -54.9 dB at 97 — the 16-tap growth that the growth rule buys
+    /// for passband flatness lands the probe on a sidelobe. Any change here is
+    /// a deliberate retune: re-measure the tier floor, do not assume longer
+    /// buys deeper.
+    #[test]
+    fn longer_kernels_do_not_deepen_the_stop_band_within_a_beta_tier() {
+        let short = kernel_foldback_db(40, 5.0, 0.125, &[0.0]);
+        let long = kernel_foldback_db(48, 5.0, 0.125, &[0.0]);
+
+        assert!(
+            short <= -70.0,
+            "81-tap beta 5 at the 8x cutoff should sit in a stop-band null, got {short:.1} dB"
+        );
+        assert!(
+            long - short >= 15.0,
+            "the 97-tap kernel must measure at least 15 dB shallower than the 81-tap \
+             kernel (got {long:.1} vs {short:.1} dB) — if it does not, the inversion \
+             mechanism changed and the tier floor must be re-measured"
+        );
+    }
+
+    /// The stated floor, held across the reachable ratio continuum. Every
+    /// playback ratio from 4/3x (below that the foldback probe source exceeds
+    /// source Nyquist, so the probe is unrealizable; audible folds there come
+    /// from near-Nyquist source content and measure at least 86 dB down with
+    /// the beta-9 baseline kernel) to the 16x cap, at half-semitone
+    /// resolution, running the exact taps and beta the shipped rules choose.
+    /// Measured worst: -54.2 dB at r ~= 8.7; the bound holds 53.
+    #[test]
+    fn kernel_tier_floor_holds_across_every_reachable_ratio() {
+        let fractions = [0.0_f32, 0.25, 0.5, 0.75];
+        let mut worst_db = f32::MIN;
+        let mut worst_semitones = 0.0_f32;
+        let mut tiers_seen = [false; 3];
+
+        for half_step in 10..=96 {
+            let semitones = half_step as f32 / 2.0;
+            let speed = 2.0_f64.powf(f64::from(semitones) / 12.0);
+            let taps = bandlimited_tap_count(speed);
+            let cutoff = (1.0 / speed) as f32;
+            let beta = kaiser_beta(taps, cutoff);
+            tiers_seen[(beta as usize - 5) / 2] = true;
+            let db = kernel_foldback_db(taps / 2, beta, cutoff, &fractions);
+            if db > worst_db {
+                worst_db = db;
+                worst_semitones = semitones;
+            }
+        }
+
+        assert!(
+            tiers_seen == [true, true, true],
+            "the sweep must exercise all three beta tiers, saw {tiers_seen:?}"
+        );
+        assert!(
+            worst_db <= -53.0,
+            "foldback floor broke at {worst_semitones:.1} semitones: {worst_db:.1} dB, \
+             the tier contract is 53 dB across every reachable ratio"
         );
     }
 

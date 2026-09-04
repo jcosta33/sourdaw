@@ -10,7 +10,17 @@
  * close, and a graph left standing is what the engine holds while the plugin
  * runtimes on it stay loaded. The next start replaces it whole, so nothing here
  * has to know what changed while the transport was stopped.
+ *
+ * The Web Audio carrier gates are the one thing released unconditionally, and
+ * before anything else. A stopped transport plays no timeline, so nothing the
+ * native engine was carrying is being sounded any more — while a strip whose
+ * input a musician is monitoring has to be heard *precisely* when the transport
+ * is stopped. Releasing them behind an IPC round trip, or only on a session that
+ * exists, would leave that strip gated shut for the length of the round trip or
+ * for good.
  */
+
+import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
 
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
@@ -29,6 +39,8 @@ export function stopNativeLiveGraphSession(
     input: StopNativeLiveGraphSessionInput
 ): Promise<StopNativeLiveGraphSessionResult> {
     return queueOnNativeLiveGraphSession(async (): Promise<StopNativeLiveGraphSessionResult> => {
+        // First, and unconditionally — see the header.
+        setNativeCarriedTracks(new Set());
         // Stopped before the command, and whatever the command answers: the
         // feed exists to draw a rolling playhead, and one that keeps polling a
         // transport nobody is watching only burns bridge round trips.

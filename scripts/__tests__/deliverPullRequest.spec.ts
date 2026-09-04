@@ -6549,18 +6549,44 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * The live shape of `Dependency review` when a cancelled attempt is followed only by later skips.
-     * `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not
-     * one either. `Gate` needs that job, so this is why `deliver` refuses PR #2795's head today.
+     * The rule serves the legs `Gate` needs that carry a job-level `if:` on `decide`'s scope output,
+     * which the fixtures below derive from the live workflow rather than list. The unit shards are
+     * not among `Gate`'s needs, and a skipped matrix job reports under its unexpanded template name
+     * rather than a shard name, so this rule cannot decide a shard either way. A scope-gated leg is
+     * skipped by the workflow's own path-filter decision, re-evaluated on the current diff, and a
+     * fixed head's changed-file set only shrinks as the merge base advances, so that decision only
+     * ever moves true to false. A later `SKIPPED` under a cancelled name is therefore the scope
+     * decision of record, and the head is green by design and merges.
      */
-    it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
+    it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * A skip only speaks for the cancellation beside it when it is the newer attempt. One that
+     * started before the cancellation it stands beside proves nothing about what the workflow
+     * decided afterward, so the cancelled name stays undecided.
+     */
+    it('refuses an UNSTABLE head whose scope-gated skip started before its cancellation', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
-                checkRun({ name: 'Dependency review', conclusion: 'CANCELLED' }),
-                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
-                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
             ],
         });
 
@@ -6572,15 +6598,73 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Dependency review was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
 
     /**
-     * `Nightly failure report` is cancelled with the rest of the superseded run and never succeeds
-     * on a pull request, because it reports a failed scheduled run and nothing else. `Gate` does not
-     * need it, so its silence decides nothing — and refusing on it would refuse every delivery.
+     * A skip GitHub reports no start for cannot prove it is the later word either, so it cannot
+     * retire the cancellation beside it.
+     */
+    it('refuses an UNSTABLE head whose later scope-gated skip carries no start', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: null }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A skip only speaks for the cancellation it shares a name with. `skippedAfter` also checks
+     * `candidate.name === attempt.name`, so a later skip under a different gating name — however
+     * recent — cannot retire a cancellation it never re-ran.
+     */
+    it('refuses an UNSTABLE head whose cancellation is skipped beside under another gating name', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Production build')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * `Nightly failure report` belongs to nightly.yml, not to the workflow `Gate` needs, so it is
+     * outside `Gate`'s gating set whether or not a dispatch of that workflow put it on this head.
+     * Its silence decides nothing — and refusing on it would refuse every delivery.
      */
     it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };

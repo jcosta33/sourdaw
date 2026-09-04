@@ -57,6 +57,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0041](0041-llm-batch-local-track-and-clip-bindings.md)                           | LLM batches may bind a newly created track or clip, on grants mirroring the canonical capability contract                               |
 | [0042](0042-high-level-intent-compiles-through-the-bounded-catalog.md)            | A high-level request compiles through the bounded catalog into one ordinary proposal, or declines as clarify or unsupported             |
 | [0043](0043-midi-transforms-compile-to-add-notes-through-the-command-registry.md) | Deterministic MIDI transforms are catalog entries the application expands into ordinary addNotes commands before approval               |
+| [0044](0044-two-carrier-live-playback-until-native-hosts-every-device.md)         | Live playback runs on two carriers, split per strip, until the native engine can host every device                                      |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).

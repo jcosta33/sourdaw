@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     hasSharedArrayBuffer: vi.fn(() => true),
     findReleasedWasmDescriptor: vi.fn(),
     loggerDebug: vi.fn(),
+    setPluginParameter: vi.fn<(input: unknown) => Promise<void>>(() => Promise.resolve()),
+    setPluginBypass: vi.fn<(input: unknown) => Promise<void>>(() => Promise.resolve()),
 }));
 
 vi.mock('#/utils/capabilities', async (importOriginal) => ({
@@ -26,10 +28,24 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { debug: mocks.loggerDebug, warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
+// A hosted external plugin reaches its native instance only through this IPC.
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    setPluginParameter: mocks.setPluginParameter,
+    setPluginBypass: mocks.setPluginBypass,
+    // The wasm device registry and the Faust device resolver read the barrel's
+    // Faust half at module scope; no device under test is a Faust module, so it
+    // answers "not one of mine" and its builders are never reached.
+    isFaustModule: () => false,
+    getFaustModuleLatencyMs: () => 0,
+    compileFaustDSP: () => Promise.reject(new Error('unexpected Faust compile')),
+    createFaustNode: () => Promise.reject(new Error('unexpected Faust node')),
+}));
+
 type MockContext = ReturnType<typeof createMockAudioContext>;
 type WorkletParamStub = { setTargetAtTime: ReturnType<typeof vi.fn> };
 
 const workletInstances: Array<{
+    processorName: string | undefined;
     port: { postMessage: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> };
     parameters: Map<string, WorkletParamStub>;
     connect: ReturnType<typeof vi.fn>;
@@ -45,8 +61,10 @@ class FakeAudioWorkletNode {
     ]);
     connect = vi.fn();
     disconnect = vi.fn();
+    processorName: string | undefined;
 
-    constructor() {
+    constructor(_context?: unknown, processorName?: string) {
+        this.processorName = processorName;
         workletInstances.push(this);
     }
 }
@@ -245,6 +263,10 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         workletInstances.length = 0;
         mocks.hasSharedArrayBuffer.mockReturnValue(true);
         mocks.findReleasedWasmDescriptor.mockReturnValue(undefined);
+        mocks.setPluginParameter.mockReset();
+        mocks.setPluginParameter.mockResolvedValue(undefined);
+        mocks.setPluginBypass.mockReset();
+        mocks.setPluginBypass.mockResolvedValue(undefined);
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
         vi.stubGlobal(
             'SharedArrayBuffer',
@@ -573,6 +595,83 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             track.setOutput('hw_out');
             expect(track.getDefaultDestination()).toBe(deps.masterGainNode);
+        });
+    });
+
+    // The native engine hosts and sounds an external plugin, so Web Audio keeps
+    // only a pass-through where the two-clock audio relay used to be. What is
+    // left to prove is that nothing is constructed or awaited for it, and that
+    // its parameter and bypass control traffic still reaches the instance.
+    describe('hosted external plugin', () => {
+        it('builds no relay worklet and is ready the moment it is added', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const meterWorkletCount = workletInstances.length;
+
+            const added = track.addDevice('ext-1', 'external-plugin', 'inst-1');
+
+            expect(added).toBe(true);
+            expect(workletInstances).toHaveLength(meterWorkletCount);
+            expect(workletInstances.some((node) => node.processorName === 'native-plugin-bridge-processor')).toBe(
+                false
+            );
+            // No pending load registered, so nothing has to settle first.
+            expect(track.getDeviceLoadState('ext-1')).toBe('ready');
+            const device = track.strip.deviceNodes.find((candidate) => candidate.deviceId === 'ext-1');
+            if (!device) {
+                throw new Error('expected the external-plugin device on the strip');
+            }
+            // One pass-through node standing in for the plugin, in and out.
+            expect(device.nodes).toHaveLength(1);
+            expect(device.inputNode).toBe(device.outputNode);
+        });
+
+        it('forwards a numeric parameter name to the hosted instance as that parameter id', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('ext-1', 'external-plugin', 'inst-1');
+
+            track.updateParam('ext-1', '12', 0.6);
+
+            expect(mocks.setPluginParameter).toHaveBeenCalledWith({
+                instanceId: 'inst-1',
+                paramId: 12,
+                value: 0.6,
+            });
+        });
+
+        it('queues a bypass toggle thrown while the previous send is still out, newest value last', async () => {
+            const pending: PromiseWithResolvers<void>[] = [];
+            mocks.setPluginBypass.mockImplementation(() => {
+                const deferred = Promise.withResolvers<void>();
+                pending.push(deferred);
+                return deferred.promise;
+            });
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('ext-1', 'external-plugin', 'inst-1');
+
+            track.updateBypass('ext-1', true);
+            track.updateBypass('ext-1', false);
+
+            // Single-flight: the second toggle waits rather than racing the first
+            // onto the engine mutex, where the two could land in either order.
+            expect(mocks.setPluginBypass).toHaveBeenCalledTimes(1);
+            expect(mocks.setPluginBypass).toHaveBeenLastCalledWith({ instanceId: 'inst-1', bypassed: true });
+
+            pending[0]!.resolve();
+            await vi.waitFor(() => {
+                expect(mocks.setPluginBypass).toHaveBeenCalledTimes(2);
+            });
+            expect(mocks.setPluginBypass).toHaveBeenLastCalledWith({ instanceId: 'inst-1', bypassed: false });
+        });
+
+        it('issues no control IPC for a device that names no plugin instance', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('ext-orphan', 'external-plugin');
+
+            track.updateParam('ext-orphan', '3', 0.5);
+            track.updateBypass('ext-orphan', true);
+
+            expect(mocks.setPluginParameter).not.toHaveBeenCalled();
+            expect(mocks.setPluginBypass).not.toHaveBeenCalled();
         });
     });
 

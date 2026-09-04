@@ -61,10 +61,11 @@ export function startPlayback(): void {
     // graph batch boots it — so play is where it starts, carrying this
     // session's topology and, since #3068, its programme. Fired rather than
     // awaited because nothing about the Web Audio transport waits on it: the
-    // native session starts with its monitor shadowed, so it contributes true
-    // zeros at the device however full its timeline is, and a decline (a
-    // browser build, an addon that cannot answer, a topology the native
-    // registry will not hold) leaves playback exactly where it already was.
+    // session sounds only the strips the carrier law hands it and gates those
+    // out of Web Audio itself (#3564), so Web Audio starts every strip here and
+    // gives the carried ones up when the session says so. A decline (a browser
+    // build, an addon that cannot answer, a topology the native registry will
+    // not hold) leaves playback exactly where it already was.
     Promise.resolve(
         startNativeLiveGraphSession({
             positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, startPosition, state.tempo),

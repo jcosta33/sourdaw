@@ -1,3 +1,13 @@
+/**
+ * A device that reports its own lookahead reaches plugin-delay compensation
+ * (RT-4).
+ *
+ * The device under test is a WASM built-in, because that is what Web Audio still
+ * hosts and still delays for. An `external-plugin` is sounded by the native
+ * engine and costs this graph nothing at all — that law, and the reasons for it,
+ * live in `externalPluginCompensation.spec.ts`.
+ */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -26,10 +36,13 @@ const mockTrackStore = trackStore as unknown as MutableTrackStore;
 
 /**
  * A linear-phase EQ's worth of lookahead: 1500 samples @48k, the golden-standard
- * example RT-4 cites. Expressed in ms because the native host converts at the
- * rate the plugin was activated with (PH-4), not the webview context rate.
+ * example RT-4 cites. Expressed in ms because a device reports its figure in ms,
+ * converted at the rate it is running at rather than the webview context rate.
  */
 const LIN_PHASE_MS = (1500 / 48_000) * 1000;
+
+/** The device type these tracks host: a WASM built-in Web Audio renders itself. */
+const REPORTING_TYPE = 'knead';
 
 type DeviceInput = { id: string; type?: string; bypassed?: boolean };
 
@@ -41,7 +54,7 @@ function makeTrack(overrides: { id: string; devices?: DeviceInput[]; outputId?: 
         devices: (overrides.devices ?? []).map((device) => ({
             id: device.id,
             name: device.id,
-            type: device.type ?? 'external-plugin',
+            type: device.type ?? REPORTING_TYPE,
             bypassed: device.bypassed ?? false,
             parameterValues: {},
         })),
@@ -49,22 +62,22 @@ function makeTrack(overrides: { id: string; devices?: DeviceInput[]; outputId?: 
     };
 }
 
-/** A native plugin on `guitar`, plus an unprocessed `drums` track to compensate. */
-function setUpNativePluginProject(): void {
+/** A reporting device on `guitar`, plus an unprocessed `drums` track to compensate. */
+function setUpReportingDeviceProject(): void {
     mockTrackStore.value = {
-        tracks: [makeTrack({ id: 'guitar', devices: [{ id: 'dev-native' }] }), makeTrack({ id: 'drums' })],
+        tracks: [makeTrack({ id: 'guitar', devices: [{ id: 'dev-wasm' }] }), makeTrack({ id: 'drums' })],
     };
 }
 
-describe('native plugin latency reaches plugin-delay compensation (RT-4)', () => {
+describe('a reported device latency reaches plugin-delay compensation (RT-4)', () => {
     beforeEach(() => {
         mockTrackStore.value = null;
         externalLatencyRegistry.clear();
     });
 
-    it('folds a reported native-plugin latency into its own track total', () => {
-        setUpNativePluginProject();
-        reportLatency('dev-native', LIN_PHASE_MS);
+    it('folds a reported device latency into its own track total', () => {
+        setUpReportingDeviceProject();
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
         expect(getTrackLatency('guitar')).toEqual({
             trackId: 'guitar',
@@ -73,9 +86,9 @@ describe('native plugin latency reaches plugin-delay compensation (RT-4)', () =>
         });
     });
 
-    it('delays every other track by the native plugin latency, and the plugin track by nothing', () => {
-        setUpNativePluginProject();
-        reportLatency('dev-native', LIN_PHASE_MS);
+    it('delays every other track by that latency, and the reporting track by nothing', () => {
+        setUpReportingDeviceProject();
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
         // drums carries no latency, so it must be pushed back by the full amount
         // the guitar chain costs; the guitar itself is already the late one.
@@ -83,62 +96,62 @@ describe('native plugin latency reaches plugin-delay compensation (RT-4)', () =>
         expect(getCompensationDelay('guitar')).toBe(0);
     });
 
-    it('reports zero compensation while the native plugin has not reported yet', () => {
-        setUpNativePluginProject();
+    it('reports zero compensation while the device has not reported yet', () => {
+        setUpReportingDeviceProject();
 
-        // No reportLatency call: an external-plugin device carries no static
-        // entry in deviceLatencyMap, so nothing is compensated.
+        // No reportLatency call, and no static entry in deviceLatencyMap for
+        // this type, so nothing is compensated.
         expect(getTrackLatency('guitar').totalLatencyMs).toBe(0);
         expect(getCompensationDelay('drums')).toBe(0);
     });
 
-    it('recomputes compensation when the host pushes a mid-session latency change', () => {
-        setUpNativePluginProject();
-        reportLatency('dev-native', LIN_PHASE_MS);
+    it('recomputes compensation when the device pushes a mid-session latency change', () => {
+        setUpReportingDeviceProject();
+        reportLatency('dev-wasm', LIN_PHASE_MS);
         expect(getCompensationDelay('drums')).toBeCloseTo(LIN_PHASE_MS / 1000, 10);
 
-        // plugin-latency-changed (PH-4) lands a smaller lookahead: the delay must
-        // follow it down rather than serving a cached value.
-        reportLatency('dev-native', 4);
+        // A smaller lookahead lands: the delay must follow it down rather than
+        // serving a cached value.
+        reportLatency('dev-wasm', 4);
 
         expect(getTrackLatency('guitar').totalLatencyMs).toBe(4);
         expect(getCompensationDelay('drums')).toBeCloseTo(0.004, 10);
     });
 
-    it('drops the compensation when the plugin instance is torn down', () => {
-        setUpNativePluginProject();
-        reportLatency('dev-native', LIN_PHASE_MS);
+    it('drops the compensation when the device is torn down', () => {
+        setUpReportingDeviceProject();
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
-        clearReportedLatency('dev-native');
+        clearReportedLatency('dev-wasm');
 
         expect(getTrackLatency('guitar').totalLatencyMs).toBe(0);
         expect(getCompensationDelay('drums')).toBe(0);
     });
 
-    it('ignores a bypassed native plugin', () => {
+    it('ignores a bypassed device', () => {
         mockTrackStore.value = {
             tracks: [
-                makeTrack({ id: 'guitar', devices: [{ id: 'dev-native', bypassed: true }] }),
+                makeTrack({ id: 'guitar', devices: [{ id: 'dev-wasm', bypassed: true }] }),
                 makeTrack({ id: 'drums' }),
             ],
         };
-        reportLatency('dev-native', LIN_PHASE_MS);
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
         expect(getTrackLatency('guitar').totalLatencyMs).toBe(0);
         expect(getCompensationDelay('drums')).toBe(0);
     });
 
-    it('compensates upstream tracks for a native plugin hosted on a downstream bus', () => {
+    it('compensates upstream tracks for a device hosted on a downstream bus', () => {
         mockTrackStore.value = {
             tracks: [
                 makeTrack({ id: 'guitar', outputId: 'bus-fx' }),
                 makeTrack({ id: 'drums' }),
-                makeTrack({ id: 'bus-fx', devices: [{ id: 'dev-native' }] }),
+                makeTrack({ id: 'bus-fx', devices: [{ id: 'dev-wasm' }] }),
             ],
         };
-        reportLatency('dev-native', LIN_PHASE_MS);
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
-        // guitar itself hosts nothing, but everything it feeds costs the plugin's
+        // guitar itself hosts nothing, but everything it feeds costs the device's
         // lookahead, so its total must carry the downstream cost...
         expect(getTrackLatency('guitar')).toEqual({
             trackId: 'guitar',
@@ -150,7 +163,7 @@ describe('native plugin latency reaches plugin-delay compensation (RT-4)', () =>
         expect(getCompensationDelay('guitar')).toBe(0);
     });
 
-    it('sums two native plugins on the same chain', () => {
+    it('sums two reporting devices on the same chain', () => {
         mockTrackStore.value = {
             tracks: [
                 makeTrack({ id: 'guitar', devices: [{ id: 'dev-eq' }, { id: 'dev-limiter' }] }),
@@ -164,31 +177,31 @@ describe('native plugin latency reaches plugin-delay compensation (RT-4)', () =>
         expect(getCompensationDelay('drums')).toBeCloseTo((LIN_PHASE_MS + 5) / 1000, 10);
     });
 
-    it('omitting external-plugin on the queried track drops its own device latency from the total', () => {
-        setUpNativePluginProject();
-        reportLatency('dev-native', LIN_PHASE_MS);
+    it('omitting the type on the queried track drops its own device latency from the total', () => {
+        setUpReportingDeviceProject();
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
-        expect(getTrackLatency('guitar', new Set(), ['external-plugin'])).toEqual({
+        expect(getTrackLatency('guitar', new Set(), [REPORTING_TYPE])).toEqual({
             trackId: 'guitar',
             deviceLatencyMs: 0,
             totalLatencyMs: 0,
         });
-        // Live max still includes the plugin, so omitted compensation matches drums'.
-        expect(getCompensationDelay('guitar', ['external-plugin'])).toBeCloseTo(LIN_PHASE_MS / 1000, 10);
+        // Live max still includes the device, so omitted compensation matches drums'.
+        expect(getCompensationDelay('guitar', [REPORTING_TYPE])).toBeCloseTo(LIN_PHASE_MS / 1000, 10);
         expect(getCompensationDelay('guitar')).toBe(0);
     });
 
-    it('does not pass omit into recursive downstream latency when the plugin is on a bus', () => {
+    it('does not pass omit into recursive downstream latency when the device is on a bus', () => {
         mockTrackStore.value = {
             tracks: [
                 makeTrack({ id: 'guitar', outputId: 'bus-fx' }),
                 makeTrack({ id: 'drums' }),
-                makeTrack({ id: 'bus-fx', devices: [{ id: 'dev-native' }] }),
+                makeTrack({ id: 'bus-fx', devices: [{ id: 'dev-wasm' }] }),
             ],
         };
-        reportLatency('dev-native', LIN_PHASE_MS);
+        reportLatency('dev-wasm', LIN_PHASE_MS);
 
-        expect(getTrackLatency('guitar', new Set(), ['external-plugin']).totalLatencyMs).toBe(LIN_PHASE_MS);
-        expect(getCompensationDelay('guitar', ['external-plugin'])).toBe(0);
+        expect(getTrackLatency('guitar', new Set(), [REPORTING_TYPE]).totalLatencyMs).toBe(LIN_PHASE_MS);
+        expect(getCompensationDelay('guitar', [REPORTING_TYPE])).toBe(0);
     });
 });
