@@ -1,4 +1,6 @@
-import { type ReactElement, type MouseEvent } from 'react';
+import { type ReactElement, useRef } from 'react';
+
+import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
 import { setTrackHeight } from '../../../useCases/toggleTrackState/setTrackHeight';
 
@@ -7,36 +9,25 @@ type ResizeHandleProps = {
 };
 
 export const ResizeHandle = ({ trackId }: ResizeHandleProps): ReactElement => {
-    const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const startY = event.clientY;
-        const row = (event.currentTarget as HTMLElement).parentElement;
-        const startHeight = row?.getBoundingClientRect().height ?? 64;
-
-        const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
-            const delta = moveEvent.clientY - startY;
-            setTrackHeight(trackId, Math.round(startHeight + delta));
-        };
-
-        const onMouseUp = () => {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-            document.body.style.cursor = '';
-        };
-
-        document.body.style.cursor = 'ns-resize';
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    };
+    const startHeightRef = useRef(64);
 
     return (
-        <div
+        <DragResizeHandle
+            side="bottom"
+            cursor="ns-resize"
+            onMouseDown={(event) => {
+                const row = (event.currentTarget as HTMLElement).parentElement;
+                startHeightRef.current = row?.getBoundingClientRect().height ?? 64;
+            }}
+            onPointerDown={(event) => {
+                const row = (event.currentTarget as HTMLElement).parentElement;
+                startHeightRef.current = row?.getBoundingClientRect().height ?? 64;
+            }}
+            onResize={(delta) => {
+                startHeightRef.current += delta;
+                setTrackHeight(trackId, Math.round(startHeightRef.current));
+            }}
             className="absolute bottom-0 left-0 right-0 h-1 cursor-ns-resize opacity-0 hover:opacity-100 hover:bg-ring/40 transition-opacity"
-            onMouseDown={handleMouseDown}
-            role="separator"
-            aria-orientation="horizontal"
             aria-label="Resize track height"
         />
     );
