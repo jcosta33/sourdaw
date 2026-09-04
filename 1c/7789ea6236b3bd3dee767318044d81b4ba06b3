@@ -1,0 +1,33 @@
+package.json
+  s_28abfd94826e36::t_8ffce83ceecc98 20
+scripts/recordHealthGateWorkflowSnapshot.ts
+  s_28abfd94826e36::t_a9e745f17fe814 1-23
+.prettierignore
+  s_28abfd94826e36::t_5526d7a23160e5 33-37
+scripts/test-health-gate-scripts.sh
+  s_50aeeb21094d41::t_fc6d3307e88e78 181-191,947-1011
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1c7789ea6236b3bd3dee767318044d81b4ba06b3",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_50aeeb21094d41": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a12478e8adde31437",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
