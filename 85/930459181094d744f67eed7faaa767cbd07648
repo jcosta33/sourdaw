@@ -1,0 +1,26 @@
+src/components/daw/DawSearchInput.tsx
+  h_1228e573df1f42 1-99
+src/components/daw/__tests__/DawSearchInput.spec.tsx
+  h_1228e573df1f42 1-167
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_1228e573df1f42 5,366-374
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  h_1228e573df1f42 5,247,249-250,253-254
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  h_1228e573df1f42 3,15,619-626
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_1228e573df1f42 8,971-978
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  h_1228e573df1f42 8,119-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "85930459181094d744f67eed7faaa767cbd07648",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
