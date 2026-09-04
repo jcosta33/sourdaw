@@ -1,0 +1,118 @@
+crates/proof-chamber/src/lib.rs
+  h_1228e573df1f42 653-663
+crates/proof-chamber/src/proof_chamber.rs
+  h_1228e573df1f42 807-810,901
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  h_1228e573df1f42 526-532,534-536
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  h_1228e573df1f42 80,103-112,233,235,237,242-246,248-250,461-464,479-505
+public/wasm/manifest.json
+  h_1228e573df1f42 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_1228e573df1f42 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_1228e573df1f42 1
+release/open-source-inventory.json
+  h_1228e573df1f42 1198,1200,1333,1337,1463-1467,1469,1721
+scripts/__tests__/checkReleaseInventory.spec.ts
+  h_1228e573df1f42 133,3716-3748,3779-3812,3818,3978
+scripts/brandIconFormats.ts
+  h_1228e573df1f42 1-310
+scripts/checkReleaseInventory.ts
+  h_1228e573df1f42 1793-1795,1798,1829-1838,1841-1846,2097-2098,2105-2114,2123,2133-2134,2153-2166,2169,2174-2180,2183-2185,2249-2255
+scripts/generateBrandIcons.ts
+  h_1228e573df1f42 1-510
+src/components/daw/DawDialogFooter.tsx
+  h_1228e573df1f42 13
+src/components/daw/DawDialogSection.tsx
+  h_1228e573df1f42 19
+src/components/daw/DawSearchInput.tsx
+  h_1228e573df1f42 1-99
+src/components/daw/__tests__/DawDialogFooter.spec.tsx
+  h_1228e573df1f42 57
+src/components/daw/__tests__/DawDialogSection.spec.tsx
+  h_1228e573df1f42 66
+src/components/daw/__tests__/DawSearchInput.spec.tsx
+  h_1228e573df1f42 1-167
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_1228e573df1f42 1
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_1228e573df1f42 774,804-807,847,875,1001,1003,1005,1037,1065,1074,1079,1095,1098,1110-1111,1122,1125,1137-1138,1149,1152,1169-1170,1179,1185,1188,1206-1207,1216,1223,1226,1238-1239,1283,1286
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  h_1228e573df1f42 41
+src/modules/Bacteria/presentations/components/BezierLfoEditor.tsx
+  h_1228e573df1f42 238
+src/modules/Bacteria/presentations/components/CrossoverDisplay.tsx
+  h_1228e573df1f42 185
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  h_1228e573df1f42 46,59,67,89,93
+src/modules/Bacteria/presentations/components/SpectralBinEditor.tsx
+  h_1228e573df1f42 188
+src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx
+  h_1228e573df1f42 170
+src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx
+  h_1228e573df1f42 226
+src/modules/Bacteria/presentations/components/XYMorphPad.tsx
+  h_1228e573df1f42 94
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_1228e573df1f42 5,243-244,262,290,298-299,312,366-374,390,393,411-412,422,463,466,663,730,1542,1815,1855,1858
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  h_1228e573df1f42 5,247,249-250,253-254
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  h_1228e573df1f42 43,97,142,169,184,246-247,288,595-596
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  h_1228e573df1f42 91,172
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  h_1228e573df1f42 149,151,157,170,173,189,196,206-207,233
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  h_1228e573df1f42 128,153,159,172,199,205,211,228,261-262,297,303-304,310-311,368
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  h_1228e573df1f42 3,15,287,289,414-415,599,611,619-626,666,677,739,742,757,1175,1367,1391
+src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx
+  h_1228e573df1f42 129-130,312-314
+src/modules/GrandBoule/presentations/components/MorphPanel.tsx
+  h_1228e573df1f42 46,57,102-103,123,177
+src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx
+  h_1228e573df1f42 70,84,108,112
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  h_1228e573df1f42 122-123,344-345,457,462,570,623,639,674
+src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx
+  h_1228e573df1f42 44,49,58,67,74
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  h_1228e573df1f42 8,427-428,436,487,572,608,644,669,678,689,722,759,761,786,798,826,831,837,843,893,925,967,971-979,998,1034,1038,1054,1071,1115,1198,1240,1243,1407,1447,1460,1541,1564,1575,1584,1595,1604,1615,1631,1681,1715,1747,1759,1766,1808,1932,1939,1975,2007,2111
+src/modules/Levain/presentations/components/ArticulationList.tsx
+  h_1228e573df1f42 45,47,61,72,77
+src/modules/Levain/presentations/components/ExpressionPanel.tsx
+  h_1228e573df1f42 174,192,214,230,247
+src/modules/Levain/presentations/components/HumanizePanel.tsx
+  h_1228e573df1f42 38-39,57,74,91,108
+src/modules/Levain/presentations/components/LegatoTuning.tsx
+  h_1228e573df1f42 151,166,181
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  h_1228e573df1f42 86
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  h_1228e573df1f42 8,104,119-126,166,169,180,194,321,324
+src/modules/Project/presentations/views/MissingMediaPanel.tsx
+  h_1228e573df1f42 66,68,71,76-77
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  h_1228e573df1f42 290,307
+src/modules/Yeast/presentations/components/StepPatternEditor.tsx
+  h_1228e573df1f42 221,230,235,244,255
+src/modules/Yeast/presentations/views/GrooveDropTarget.tsx
+  h_1228e573df1f42 201
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  h_1228e573df1f42 257,312,319,329,343,367,399,414,485,488,513,568,571,581,626,651,666,780,813,852,867,881,884,925,936
+src/modules/Yeast/presentations/views/YeastPreviewSurface.tsx
+  h_1228e573df1f42 297-298,300,328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "013a7b8d781503a31abdc3be661c5c5fb0e51129",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
