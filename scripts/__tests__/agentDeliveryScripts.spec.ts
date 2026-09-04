@@ -776,6 +776,7 @@ describe('package scripts and gitignore', () => {
                 return expect.fail(`unexpected pull request read: ${number}`);
             },
             gateRequiredCheckNames: () => new Set(['Gate']),
+            gateRequiredSkipAliases: () => new Map(),
             headCheckRuns: () => [],
             requiredStatusCheckContexts: () => ['Gate'],
             reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
@@ -2441,6 +2442,7 @@ describe('package scripts and gitignore', () => {
                     fetch: () => expect.fail('delivery domain should not run'),
                     pullRequest: () => expect.fail('delivery domain should not run'),
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
+                    gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
                     requiredStatusCheckContexts: () => expect.fail('delivery domain should not run'),
                     reviewState: () => expect.fail('delivery domain should not run'),
@@ -2500,6 +2502,7 @@ describe('package scripts and gitignore', () => {
             fetch: () => expect.fail('delivery domain should not run'),
             pullRequest: () => expect.fail('delivery domain should not run'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
+            gateRequiredSkipAliases: () => expect.fail('delivery domain should not run'),
             headCheckRuns: () => expect.fail('delivery domain should not run'),
             requiredStatusCheckContexts: () => expect.fail('delivery domain should not run'),
             reviewState: () => expect.fail('delivery domain should not run'),
@@ -2971,6 +2974,7 @@ describe('package scripts and gitignore', () => {
             fetch: () => undefined,
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            gateRequiredSkipAliases: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
             requiredStatusCheckContexts: () =>
                 expect.fail('delivery domain should be injected in this coordinator test'),

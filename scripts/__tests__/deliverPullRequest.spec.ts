@@ -166,6 +166,38 @@ function parserMatrixNames(template: string, strategy: unknown): string[] {
     return resolved;
 }
 
+function parserSkipAliases(workflowSource: string, calledSources: Record<string, string>): Map<string, string> {
+    const workflow = parse(workflowSource) as {
+        jobs?: Record<string, { uses?: unknown } | null>;
+    };
+    const aliases = new Map<string, string>();
+    for (const jobId of parserGateNeeds(workflowSource)) {
+        const job = workflow.jobs?.[jobId];
+        if (job === undefined || job === null || typeof job.uses !== 'string') {
+            continue;
+        }
+        const calledSource = calledSources[job.uses];
+        if (calledSource === undefined) {
+            throw new TypeError(`no called-workflow fixture for ${job.uses}`);
+        }
+        const called = parse(calledSource) as {
+            jobs?: Record<string, { name?: unknown; strategy?: unknown } | null>;
+        };
+        const callerName = parserCheckName(workflowSource, jobId);
+        for (const inner of Object.values(called.jobs ?? {})) {
+            const declared = inner?.name;
+            const template = typeof declared === 'string' && declared !== '' ? declared : undefined;
+            if (template === undefined || !template.includes('${{')) {
+                continue;
+            }
+            for (const resolved of parserMatrixNames(template, inner?.strategy)) {
+                aliases.set(`${callerName} / ${resolved}`, `${callerName} / ${template}`);
+            }
+        }
+    }
+    return aliases;
+}
+
 function relationshipBody(relationship: string): string {
     return `### 🎯 What does this PR do?
 Change.
@@ -536,6 +568,8 @@ const gatingCheckNames: ReadonlySet<string> = new Set(
     parserGatingCheckNames(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES)
 );
 
+const gatingSkipAliases: ReadonlyMap<string, string> = parserSkipAliases(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
+
 /**
  * A tolerated cancelled-check shape: every cancelled name succeeded again on the same commit,
  * beside a job the workflow skipped outright and never cancelled. The names carry the validation
@@ -646,6 +680,7 @@ type FakeInput = {
     headCheckRuns?: HeadCheckRun[] | Error;
     headCheckRunReads?: Array<HeadCheckRun[] | Error>;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
+    gateRequiredSkipAliases?: ReadonlyMap<string, string> | Error;
     requiredStatusCheckContexts?: string[] | Error;
     deletesMergedBranches?: boolean;
     failAddReceiptOnce?: boolean;
@@ -815,6 +850,13 @@ function fakePort(input: FakeInput = {}) {
                 throw required;
             }
             return required;
+        },
+        gateRequiredSkipAliases: () => {
+            const aliases = input.gateRequiredSkipAliases ?? gatingSkipAliases;
+            if (aliases instanceof Error) {
+                throw aliases;
+            }
+            return aliases;
         },
         requiredStatusCheckContexts: () => {
             calls.push('required-status-check-contexts');
@@ -7055,6 +7097,68 @@ describe('pull-request delivery', () => {
 
         expect(String(thrown)).toBe(
             'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A scope-skipped matrix job reports one check run under the declared name with its
+     * `${{{matrix.shard}}}` expression still in it, not under the per-combination names running
+     * shards report under — observed live on this repository's own heads. That raw template name is
+     * the only shape a later skip of a cancelled shard can carry, so it retires the cancellation
+     * through the alias, never as a satisfying success.
+     */
+    it('merges an UNSTABLE head whose cancelled unit shard was retired by the raw template skip name', () => {
+        expect(gatingCheckNames.has('Validation / Unit suite 3/4')).toBe(true);
+        expect(gatingSkipAliases.get('Validation / Unit suite 3/4')).toBe(
+            'Validation / Unit suite ${{ matrix.shard }}/4'
+        );
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Validation / Unit suite 3/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({
+                    name: 'Validation / Unit suite ${{ matrix.shard }}/4',
+                    conclusion: 'SKIPPED',
+                    startedAt: REVIEW_RUN_START,
+                }),
+                checkRun(),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The alias carries recency rules with it: a raw-template skip that started at or before the
+     * cancellation proves nothing about the workflow's later decision, so the cancelled shard stays
+     * undecided.
+     */
+    it('refuses an UNSTABLE head whose raw template skip is not newer than the cancelled shard', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Validation / Unit suite 3/4', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun({
+                    name: 'Validation / Unit suite ${{ matrix.shard }}/4',
+                    conclusion: 'SKIPPED',
+                    startedAt: PUSH_RUN_START,
+                }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 3/4 was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });

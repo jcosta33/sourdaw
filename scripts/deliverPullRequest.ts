@@ -88,6 +88,7 @@ export type StackedPullRequest = Pick<
  */
 export type CheckEvidencePort = {
     gateRequiredCheckNames: () => ReadonlySet<string>;
+    gateRequiredSkipAliases: () => ReadonlyMap<string, string>;
     headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
     /** The `required_status_checks` contexts on the live `main` ruleset, read fresh from GitHub. */
     requiredStatusCheckContexts: () => string[];
@@ -492,7 +493,11 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: Chec
     if (!checkRuns.some(isSuccessfulRequiredCheck)) {
         fail(`${state} and no ${REQUIRED_CHECK_NAME} check succeeded on ${pullRequest.headRefOid}`);
     }
-    const undecided = undecidedCancelledCheckName(checkRuns, checks.gateRequiredCheckNames());
+    const undecided = undecidedCancelledCheckName(
+        checkRuns,
+        checks.gateRequiredCheckNames(),
+        checks.gateRequiredSkipAliases()
+    );
     if (undecided !== undefined) {
         fail(`${state} and check ${undecided} was cancelled and never succeeded on ${pullRequest.headRefOid}`);
     }
@@ -552,10 +557,22 @@ function startedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
  * strictly after the cancellation it stands beside, per the same `startedAfter` recency test
  * `retiresAttempt` uses. A skip GitHub reports no start for, or one that started at or before the
  * cancellation, cannot prove it is the later word and so decides nothing.
+ *
+ * A scope-skipped matrix job is the one shape whose skip carries a different name than the
+ * cancellation it retires: GitHub labels a skipped matrix job's single check run with the declared
+ * name still carrying its `${{ matrix … }}` expression, not with the per-combination names running
+ * shards report under (observed live on this repository's own heads). `skipAliases` maps each
+ * resolved matrix name to that raw template name so the skip can still prove recency — only for
+ * skips; a template name never satisfies a required check as a success.
  */
-function skippedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+function skippedAfter(
+    candidate: HeadCheckRun,
+    attempt: HeadCheckRun,
+    skipAliases: ReadonlyMap<string, string>
+): boolean {
+    const alias = skipAliases.get(attempt.name);
     return (
-        candidate.name === attempt.name &&
+        (candidate.name === attempt.name || (alias !== undefined && candidate.name === alias)) &&
         candidate.status === SETTLED_CHECK_STATUS &&
         candidate.conclusion === SKIPPED_CONCLUSION &&
         startedAfter(candidate, attempt)
@@ -597,7 +614,11 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
  * decides nothing the merge waits on. The gating set is whatever `Gate` needs, read from the workflow
  * rather than restated here.
  */
-function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlySet<string>): string | undefined {
+function undecidedCancelledCheckName(
+    checks: HeadCheckRun[],
+    required: ReadonlySet<string>,
+    skipAliases: ReadonlyMap<string, string>
+): string | undefined {
     const passed = new Set(
         checks.filter((check) => check.conclusion === PASSING_CONCLUSION).map((check) => check.name)
     );
@@ -606,7 +627,7 @@ function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlyS
             check.conclusion === SUPERSEDED_CONCLUSION &&
             required.has(check.name) &&
             !passed.has(check.name) &&
-            !checks.some((candidate) => skippedAfter(candidate, check))
+            !checks.some((candidate) => skippedAfter(candidate, check, skipAliases))
     )?.name;
 }
 
@@ -665,6 +686,26 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
         }
     }
     return names;
+}
+
+/**
+ * The raw template name a scope-skipped matrix run reports under, for every resolved matrix name in
+ * the gating set — the alias only `skippedAfter` consults, never a required name itself.
+ */
+export function gateRequiredSkipAliases(serialized: string): ReadonlyMap<string, string> {
+    const { jobs, called } = workflowSummary(serialized);
+    const gate = jobs[GATE_JOB_ID];
+    if (gate === undefined) {
+        fail(
+            `${HEALTH_GATES_WORKFLOW_PATH} declares no ${GATE_JOB_ID} job, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    const skipAliases = new Map<string, string>();
+    for (const jobId of gateNeeds(gate.needs)) {
+        requiredCheckNames(jobId, jobs, called, skipAliases);
+    }
+    return skipAliases;
 }
 
 function workflowSummary(serialized: string): { jobs: WorkflowJobs; called: CalledWorkflows } {
@@ -760,8 +801,16 @@ function gateNeeds(declared: unknown): string[] {
  * the same expansion applies to the called file's own matrices. A name still carrying an expression
  * once the matrix values are substituted matches no check on the head, and so tolerates every real
  * cancellation: it refuses.
+ *
+ * `skipAliases`, when given, records for every resolved matrix name the raw template name GitHub
+ * labels a scope-skipped matrix run with — see `skippedAfter` for why only a skip can carry it.
  */
-function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWorkflows): string[] {
+function requiredCheckNames(
+    jobId: string,
+    jobs: WorkflowJobs,
+    called: CalledWorkflows,
+    skipAliases?: Map<string, string>
+): string[] {
     const job = jobs[jobId];
     if (job === undefined) {
         fail(
@@ -770,7 +819,7 @@ function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWor
         );
     }
     if (job.uses !== undefined && job.uses !== null) {
-        return reusableCheckNames(jobId, job, called);
+        return reusableCheckNames(jobId, job, called, skipAliases);
     }
     const combinations = matrixCombinations(jobId, job.strategy, HEALTH_GATES_WORKFLOW_PATH);
     if (combinations === undefined) {
@@ -784,11 +833,15 @@ function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWor
         ];
     }
     const declared = matrixCheckName(jobId, job.name, HEALTH_GATES_WORKFLOW_PATH);
-    return distinctCheckNames(
+    const resolved = distinctCheckNames(
         jobId,
         combinations.map((combination) => reportedCheckName(jobId, declared, combination, HEALTH_GATES_WORKFLOW_PATH)),
         HEALTH_GATES_WORKFLOW_PATH
     );
+    for (const name of resolved) {
+        skipAliases?.set(name, declared);
+    }
+    return resolved;
 }
 
 /**
@@ -797,7 +850,12 @@ function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWor
  * a call the launcher did not carry, a called file it could not read, a caller name GitHub would
  * substitute, a nested call, and a called workflow with no jobs all leave the merge with no verdict.
  */
-function reusableCheckNames(jobId: string, job: WorkflowJob, called: CalledWorkflows): string[] {
+function reusableCheckNames(
+    jobId: string,
+    job: WorkflowJob,
+    called: CalledWorkflows,
+    skipAliases?: Map<string, string>
+): string[] {
     if (typeof job.uses !== 'string' || job.uses === '') {
         fail(
             `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a reusable call that is not a workflow path, ` +
@@ -854,6 +912,7 @@ function reusableCheckNames(jobId: string, job: WorkflowJob, called: CalledWorkf
             usesPath
         )) {
             names.push(`${callerName} / ${resolved}`);
+            skipAliases?.set(`${callerName} / ${resolved}`, `${callerName} / ${declared}`);
         }
     }
     return names;
@@ -945,11 +1004,7 @@ function matrixCombinations(jobId: string, strategy: unknown, workflowPath: stri
     return combinations;
 }
 
-function declaredMatrix(
-    jobId: string,
-    strategy: unknown,
-    workflowPath: string
-): Record<string, unknown> | undefined {
+function declaredMatrix(jobId: string, strategy: unknown, workflowPath: string): Record<string, unknown> | undefined {
     if (strategy === undefined || strategy === null) {
         return undefined;
     }
@@ -1037,9 +1092,10 @@ function matrixEntries(
             failUnexpandableAxis(jobId, key, workflowPath);
         }
         return new Map(
-            Object.entries(entry).map(
-                ([name, value]): [string, MatrixValue] => [name, matrixValue(jobId, key, value, workflowPath)]
-            )
+            Object.entries(entry).map(([name, value]): [string, MatrixValue] => [
+                name,
+                matrixValue(jobId, key, value, workflowPath),
+            ])
         );
     });
 }
@@ -1176,6 +1232,17 @@ export function readGateRequiredCheckNames(env: NodeJS.ProcessEnv = process.env)
         );
     }
     return gateRequiredCheckNames(serialized);
+}
+
+export function readGateRequiredSkipAliases(env: NodeJS.ProcessEnv = process.env): ReadonlyMap<string, string> {
+    const serialized = env[GATE_WORKFLOW_ENV];
+    if (serialized === undefined || serialized === '') {
+        fail(
+            `deliver must run through the protected primary checkout launcher, which passes ` +
+                `${GATE_WORKFLOW_ENV} from ${HEALTH_GATES_WORKFLOW_PATH} at the pinned origin/main commit`
+        );
+    }
+    return gateRequiredSkipAliases(serialized);
 }
 
 function trackerCompletionTarget(pullRequest: PullRequestSnapshot): number | undefined {
@@ -3542,6 +3609,7 @@ export function shellPort(
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
+        gateRequiredSkipAliases: () => readGateRequiredSkipAliases(),
         requiredStatusCheckContexts: () => readRequiredStatusCheckContexts(repository, shell),
         reviewState: (number, expectedHead) => {
             const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
