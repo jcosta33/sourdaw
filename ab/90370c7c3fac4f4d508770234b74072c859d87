@@ -1,0 +1,35 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_28abfd94826e36::t_bfc383d4aea5d1 17,19,1049-1066,2221-2240
+scripts/healthGateWorkflowContract.ts
+  s_28abfd94826e36::t_71b80ac732097a 17-23,29,43-44,335-372
+scripts/recordHealthGateWorkflowSnapshot.ts
+  s_28abfd94826e36::t_d9e57cc83778d7 4-5,16-22,26-29,32
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_4a416a40014449::t_cbe11ad5facb74 2-7
+scripts/test-health-gate-scripts.sh
+  s_28abfd94826e36::t_49743eac240bd2 185,965-978
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ab90370c7c3fac4f4d508770234b74072c859d87",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4a416a40014449": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a725529eb2064ee6d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
