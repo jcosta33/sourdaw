@@ -1,0 +1,27 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_08b1c6b13742ba 1,848-877,993-1053
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_9ce5128841895d 1,5-34,150-210
+public/wasm/manifest.json
+  s_9b530f08172a54::t_82a82ad11b59a6 12,16-18,21
+release/open-source-inventory.json
+  s_9b530f08172a54::t_5630610c1ff2d4 1335,1719
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_8a2e6ff8435030 1,848-877,993-1053
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f78acd9d0d6073652e20981883b5ed66ac1bf889",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
