@@ -12,25 +12,20 @@ describe('AdjustmentLayerRuntime', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
     let rerouteTrack: Mock<(trackId: string) => void>;
     let deps: TrackRerouteDeps;
-    let trackOutputs: Map<string, AudioNode>;
     let trackDestinations: Map<string, AudioNode>;
 
     beforeEach(() => {
         ctx = createMockAudioContext();
-        trackOutputs = new Map();
         trackDestinations = new Map();
         rerouteTrack = vi.fn<(trackId: string) => void>();
 
         deps = {
             getContext: () => asBaseAudioContext(ctx),
-            getTrackOutputNode: (id) => trackOutputs.get(id) ?? null,
             getTrackDefaultDestination: (id) => trackDestinations.get(id) ?? null,
             rerouteTrack,
         };
 
-        trackOutputs.set('t1', asAudioNode(createMockAudioNode('gain')));
         trackDestinations.set('t1', asAudioNode(createMockAudioNode('gain')));
-        trackOutputs.set('t2', asAudioNode(createMockAudioNode('gain')));
         trackDestinations.set('t2', asAudioNode(createMockAudioNode('gain')));
     });
 
@@ -130,23 +125,19 @@ describe('AdjustmentLayerRuntime — chain wiring & disposal-timer branches', ()
     let ctx: ReturnType<typeof createMockAudioContext>;
     let rerouteTrack: Mock<(trackId: string) => void>;
     let deps: TrackRerouteDeps;
-    let trackOutputs: Map<string, AudioNode>;
     let trackDestinations: Map<string, AudioNode>;
 
     beforeEach(() => {
         ctx = createMockAudioContext();
-        trackOutputs = new Map();
         trackDestinations = new Map();
         rerouteTrack = vi.fn<(trackId: string) => void>();
 
         deps = {
             getContext: () => asBaseAudioContext(ctx),
-            getTrackOutputNode: (id) => trackOutputs.get(id) ?? null,
             getTrackDefaultDestination: (id) => trackDestinations.get(id) ?? null,
             rerouteTrack,
         };
 
-        trackOutputs.set('t1', asAudioNode(createMockAudioNode('gain')));
         trackDestinations.set('t1', asAudioNode(createMockAudioNode('gain')));
     });
 

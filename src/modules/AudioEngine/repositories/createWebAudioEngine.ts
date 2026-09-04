@@ -464,7 +464,6 @@ class AudioEngineImpl implements AudioEngine {
 
         this.adjustmentRuntime = createAdjustmentLayerRuntime({
             getContext: () => this.context ?? null,
-            getTrackOutputNode: (trackId) => this.trackNodes.get(trackId)?.strip.analyserNode ?? null,
             getTrackDefaultDestination: (trackId) => this.trackNodes.get(trackId)?.getDefaultDestination() ?? null,
             rerouteTrack: (trackId) => this.trackNodes.get(trackId)?.routeOutput(),
         });
