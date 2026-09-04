@@ -2027,6 +2027,46 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://app.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://moved.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://no-coep.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://popups.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://restricted.vercel.app/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Falso-restricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/login"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/resolveVercelProductionDeployment.ts",
             "value": "https://api.vercel.com/v7/deployments"
         },

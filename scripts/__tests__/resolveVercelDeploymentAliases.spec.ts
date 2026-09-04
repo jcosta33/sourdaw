@@ -110,6 +110,8 @@ describe('the assigned aliases', () => {
             `${PRODUCTION_ALIAS}/`,
             `${PRODUCTION_ALIAS}/sso-api`,
             `${PRODUCTION_ALIAS} vercel.com`,
+            `-${PRODUCTION_ALIAS}`,
+            `${PRODUCTION_ALIAS}.`,
             PRODUCTION_ALIAS.toUpperCase(),
             'localhost',
             42,

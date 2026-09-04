@@ -150,6 +150,7 @@ const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
 const DEPLOYMENT_ALIASES_REFERENCE = '${{ steps.aliases.outputs.aliases }}';
 const DEPLOY_WEB_ALIAS_STEP = 'Resolve the aliases of the deployment';
 const DEPLOY_WEB_ISOLATION_STEP = 'Assert cross-origin isolation on the deployment';
+const DEPLOY_WEB_ISOLATION_SCRIPT = 'scripts/assert-deployment-isolation.sh';
 const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
 const VERCEL_ORG_ID_REFERENCE = '${{ secrets.VERCEL_ORG_ID }}';
 const VERCEL_PROJECT_ID_REFERENCE = '${{ secrets.VERCEL_PROJECT_ID }}';
@@ -221,6 +222,7 @@ const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
+const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLATION_SCRIPT), 'utf8');
 const workflowSource = readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8');
 const workflowDocument = parseDocument(workflowSource);
 if (workflowDocument.errors.length > 0) {
@@ -923,14 +925,22 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
     if (recordAt(isolationStep, 'env').ALIASES !== DEPLOYMENT_ALIASES_REFERENCE) {
         throw new Error('the daily deploy train must read its headers back off the public aliases it just resolved');
     }
-    const isolation = stringAt(isolationStep, 'run');
+    if (stringAt(isolationStep, 'run') !== `sh ${DEPLOY_WEB_ISOLATION_SCRIPT}`) {
+        throw new Error(`the daily deploy train must grade isolation through ${DEPLOY_WEB_ISOLATION_SCRIPT}`);
+    }
+    // The grading itself is executed against a fake curl by
+    // `scripts/test-health-gate-scripts.sh`; what belongs here is that the
+    // script the workflow reaches for still names both headers and still
+    // refuses to follow the redirect a restricted deployment URL answers.
     if (
-        !isolation.includes('cross-origin-opener-policy: same-origin') ||
-        !isolation.includes('cross-origin-embedder-policy: require-corp')
+        !isolationScriptSource.includes('cross-origin-opener-policy') ||
+        !isolationScriptSource.includes('same-origin') ||
+        !isolationScriptSource.includes('cross-origin-embedder-policy') ||
+        !isolationScriptSource.includes('require-corp')
     ) {
         throw new Error('the daily deploy train must read the isolation headers back off the deployment');
     }
-    if (isolation.includes('--location')) {
+    if (isolationScriptSource.includes('--location')) {
         throw new Error('the isolation assertion must not follow a redirect off the domain it is grading');
     }
     const serialised = JSON.stringify(job);
@@ -1635,8 +1645,9 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must not pull the production environment through the Vercel CLI'
         );
 
-        // A fixed alias grades whatever that domain serves, which on a run
-        // whose alias never moved is the previous deployment.
+        // A hardcoded alias grades a domain this deployment may never have
+        // taken; the resolved list is what keeps the check on domains the
+        // deployment record says it did.
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
         recordAt(stepNamed(jobAt(reboundIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP), 'env').ALIASES =
             'app.sourdaw.studio';
@@ -1652,15 +1663,6 @@ describe('health gates workflow contract', () => {
             DEPLOYMENT_URL_REFERENCE;
         expect(() => assertDailyDeployTrain(restrictedIsolation)).toThrow(
             'the daily deploy train must read its headers back off the public aliases it just resolved'
-        );
-
-        // Mutation-kill: following the redirect a restricted URL answers is
-        // what graded the vercel.com login page rather than the deployment.
-        const redirectFollowingIsolation = asRecord(structuredClone(nightly), 'redirect-following deploy train');
-        const followingStep = stepNamed(jobAt(redirectFollowingIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP);
-        followingStep.run = stringAt(followingStep, 'run').replace('curl --silent', 'curl --location --silent');
-        expect(() => assertDailyDeployTrain(redirectFollowingIsolation)).toThrow(
-            'the isolation assertion must not follow a redirect off the domain it is grading'
         );
 
         const unidentifiedAliases = asRecord(structuredClone(nightly), 'unidentified-aliases deploy train');
@@ -1836,11 +1838,14 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must record the deployed revision on the deployment'
         );
 
+        // An inline curl is what this step used to be, and what nothing
+        // executes: the grading has to stay in the script the shell witness
+        // drives against a fake curl.
         const unassertedIsolation = asRecord(structuredClone(nightly), 'unasserted-isolation deploy train');
         stepNamed(jobAt(unassertedIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP).run =
             'curl --fail --silent --head "https://$ALIASES/"';
         expect(() => assertDailyDeployTrain(unassertedIsolation)).toThrow(
-            'the daily deploy train must read the isolation headers back off the deployment'
+            `the daily deploy train must grade isolation through ${DEPLOY_WEB_ISOLATION_SCRIPT}`
         );
 
         const taggingTrain = asRecord(structuredClone(nightly), 'tagging deploy train');
