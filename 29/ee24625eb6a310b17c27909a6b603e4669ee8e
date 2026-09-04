@@ -1,0 +1,19 @@
+crates/daw-engine/src/audio_thread.rs
+  s_87ab0a2f60ccf8::t_106becd89c7030 1428,1430,1723,1728-1729,1731-1732,1762-1769,1777,1790-1791,1793-1794,1804-1811
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "29ee24625eb6a310b17c27909a6b603e4669ee8e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
