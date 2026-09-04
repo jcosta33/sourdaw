@@ -177,6 +177,12 @@ export class TrackNode {
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
 
+        const carrierGate = context.createGain();
+        carrierGate.gain.value = 1;
+
+        const preFaderSendGate = context.createGain();
+        preFaderSendGate.gain.value = 1;
+
         let meterNode: AudioWorkletNode | null = null;
         let meterBuffer: Float32Array;
 
@@ -196,6 +202,7 @@ export class TrackNode {
 
         gainNode.connect(preFaderTap);
         preFaderTap.connect(faderNode);
+        preFaderTap.connect(preFaderSendGate);
         faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
         if (meterNode) {
@@ -204,6 +211,7 @@ export class TrackNode {
         } else {
             panNode.connect(analyserNode);
         }
+        analyserNode.connect(carrierGate);
 
         this.strip = {
             trackId,
@@ -214,7 +222,10 @@ export class TrackNode {
             panNode,
             meterNode,
             analyserNode,
+            carrierGate,
+            preFaderSendGate,
             muted: false,
+            nativeCarried: false,
             soloGated: false,
             soloed: false,
             deviceNodes: [],
@@ -364,16 +375,38 @@ export class TrackNode {
      * still played the reverb tails of every "muted" track.
      *
      * The gate therefore closes `preFaderTap` itself. That node is upstream of
-     * both send taps (`preFaderTap` / `analyserNode`), upstream of the sidechain
-     * key tap, and — critically — upstream of where `scheduleFrozenTrack`
-     * injects a frozen track's baked buffer, so a frozen track is gated by the
-     * same single node as a live one. It is held separately from `muted` so the
-     * two reasons never overwrite each other: releasing solo restores the tap
-     * without touching a mute the user actually pressed.
+     * both send taps (`preFaderSendGate` / `carrierGate`), upstream of the
+     * sidechain key tap, and — critically — upstream of where
+     * `scheduleFrozenTrack` injects a frozen track's baked buffer, so a frozen
+     * track is gated by the same single node as a live one. It is held
+     * separately from `muted` so the two reasons never overwrite each other:
+     * releasing solo restores the tap without touching a mute the user actually
+     * pressed.
      */
     public setSoloGate(gated: boolean): void {
         this.strip.soloGated = gated;
         this.strip.preFaderTap.gain.setTargetAtTime(gated ? 0 : 1, this.deps.context.currentTime, 0.005);
+    }
+
+    /**
+     * Silence this strip's Web Audio *exits* because the native engine is
+     * sounding the track instead. Both gates sit at the very end of the strip —
+     * the destination edge and the two send taps — and nowhere else, so the
+     * whole chain upstream of them keeps rendering while they are closed:
+     * meters and the analyser still read real levels, a Web Audio compressor on
+     * some other track still receives this one's sidechain key, and a frozen
+     * track's baked buffer still injects at `preFaderTap`. Gating at the head of
+     * the strip would take all three away with the audio.
+     *
+     * Reopening is therefore just a gain ramp: when the native side declines the
+     * track mid-stream, Web Audio resumes sounding it in place, with no chain
+     * rebuild and no restart of anything already playing.
+     */
+    public setNativeCarried(carried: boolean): void {
+        this.strip.nativeCarried = carried;
+        const now = this.deps.context.currentTime;
+        this.strip.carrierGate.gain.setTargetAtTime(carried ? 0 : 1, now, 0.005);
+        this.strip.preFaderSendGate.gain.setTargetAtTime(carried ? 0 : 1, now, 0.005);
     }
 
     public getPeakLevel(): number {
@@ -422,10 +455,10 @@ export class TrackNode {
         let previousDestinationDisconnected = false;
         try {
             if (previousDestination) {
-                this.strip.analyserNode.disconnect(previousDestination);
+                this.strip.carrierGate.disconnect(previousDestination);
                 previousDestinationDisconnected = true;
             }
-            this.strip.analyserNode.connect(nextDestination);
+            this.strip.carrierGate.connect(nextDestination);
         } catch (error) {
             if (!previousDestinationDisconnected) {
                 throw new RuntimeGraphMutationRejected(
@@ -434,9 +467,9 @@ export class TrackNode {
                 );
             }
             try {
-                this.strip.analyserNode.disconnect(nextDestination);
+                this.strip.carrierGate.disconnect(nextDestination);
                 if (previousDestination) {
-                    this.strip.analyserNode.connect(previousDestination);
+                    this.strip.carrierGate.connect(previousDestination);
                 }
             } catch (rollbackError) {
                 throw new RuntimeGraphMutationFailure(
@@ -473,7 +506,7 @@ export class TrackNode {
     }
 
     public routeOutput(): void {
-        const { analyserNode } = this.strip;
+        const { carrierGate } = this.strip;
         const { getAdjustmentBusForTrack } = this.deps;
         const adjustmentBus = getAdjustmentBusForTrack?.(this.trackId) ?? null;
         const nextDestination = adjustmentBus ?? this.getDefaultDestination();
@@ -482,20 +515,20 @@ export class TrackNode {
         }
         if (this._outputDestination) {
             try {
-                analyserNode.disconnect(this._outputDestination);
+                carrierGate.disconnect(this._outputDestination);
             } catch {
                 // The owned output edge was already detached during a wider graph
-                // teardown. Other analyser edges still must remain untouched.
+                // teardown. Other carrier-gate edges still must remain untouched.
             }
         }
-        analyserNode.connect(nextDestination);
+        carrierGate.connect(nextDestination);
         this._outputDestination = nextDestination;
     }
 
     private reconnectSends(): void {
         const sends = this.deps.getSendsForTrack(this.trackId);
         for (const send of sends) {
-            const tap = send.preFader ? this.strip.preFaderTap : this.strip.analyserNode;
+            const tap = send.preFader ? this.strip.preFaderSendGate : this.strip.carrierGate;
             try {
                 send.sourceNode.disconnect(send.gainNode);
             } catch {
@@ -635,6 +668,9 @@ export class TrackNode {
             p.connect(s.preFaderTap);
         }
         s.preFaderTap.connect(s.faderNode);
+        // The teardown above cleared every preFaderTap edge, and the pre-fader
+        // send gate hangs off it rather than off a node the rebuild rewires.
+        s.preFaderTap.connect(s.preFaderSendGate);
         s.faderNode.connect(s.postFaderGain);
         s.postFaderGain.connect(s.panNode);
         if (s.meterNode) {
@@ -1438,6 +1474,8 @@ export class TrackNode {
         this.strip.postFaderGain.disconnect();
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
+        this.strip.carrierGate.disconnect();
+        this.strip.preFaderSendGate.disconnect();
         this._outputDestination = null;
         if (this.strip.meterNode) {
             this.strip.meterNode.port.postMessage({ type: 'shutdown' });
