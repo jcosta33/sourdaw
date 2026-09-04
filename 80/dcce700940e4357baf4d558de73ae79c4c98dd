@@ -1,0 +1,14 @@
+scripts/__tests__/removeLane.spec.ts
+  h_1228e573df1f42 179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "80dcce700940e4357baf4d558de73ae79c4c98dd",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
