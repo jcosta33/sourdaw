@@ -1,0 +1,21 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_0bfea916524b71::t_3016fdfc192f62 3767
+scripts/checkReleaseInventory.ts
+  s_0bfea916524b71::t_1b4cb38fbb2623 1795,1798,2097-2098,2105-2114,2123,2133-2134,2169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e7980e0975c286e8a34b383ee7ebea75dda1819f",
+  "prompts": {},
+  "sessions": {
+    "s_0bfea916524b71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bc5-0169-7d31-8f56-d7fc43b79d98",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
