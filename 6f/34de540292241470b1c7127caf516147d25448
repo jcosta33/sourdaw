@@ -1,0 +1,90 @@
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_5e65b5ea4d2745 154
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_9b530f08172a54::t_814ac767cc5979 423-428,430-433
+  s_9b530f08172a54::t_ded21dfeb6bd7e 519-526
+src/modules/AudioEngine/services/__tests__/matchesRuntimeDeviceChainTopology.spec.ts
+  s_9b530f08172a54::t_e4404336ef1ed7 90-91,93
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineDelegation.spec.ts
+  s_9b530f08172a54::t_6dd0d1edf2c8a6 107-109
+  s_9b530f08172a54::t_54220ce75af20f 589-628
+  s_9b530f08172a54::t_008179e66f76f7 54-55,67-68,76
+src/modules/AudioEngine/engine/hostedPluginControls.ts
+  s_9b530f08172a54::t_2be9aa53b3d883 1-74
+  s_9b530f08172a54::t_bd5639ff4489e5 75-76
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_9b530f08172a54::t_ed3fda680a32e0 298-299
+  s_9b530f08172a54::t_7af1b30975dc6b 1483-1484
+  s_9b530f08172a54::t_654745675177a6 1493-1494,1497-1498
+  s_9b530f08172a54::t_e1eca57bef93ff 107,109
+  s_9b530f08172a54::t_eb27e59de9aad9 79-80
+  s_9b530f08172a54::t_01ac40bf0c03cc 35-38
+  s_9b530f08172a54::t_446def89654f94 1575,1581-1584
+  s_9b530f08172a54::t_5ab87615754deb 103,758,769
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_9b530f08172a54::t_60549eb851bb77 1050-1056,1058,1062-1084,1089-1094
+  s_9b530f08172a54::t_257654d8ff4595 189-194
+  s_9b530f08172a54::t_a0d58fd5ac51ca 214,223,234-235,237
+  s_9b530f08172a54::t_a9139175a643f9 479,481
+  s_9b530f08172a54::t_6d05f634e66cb4 467,470
+  s_9b530f08172a54::t_e2cf8dac7ea1af 1450-1451
+  s_9b530f08172a54::t_ee5cab9306d752 680-682
+  s_9b530f08172a54::t_ad8265b0d3af58 387-393,400-418
+  s_9b530f08172a54::t_9cb867d975ef46 9
+  s_9b530f08172a54::t_82b6193e32d0b0 47-56
+  s_9b530f08172a54::t_2eb5e446ff5965 518,527,530,533,540
+  s_9b530f08172a54::t_720bb35ba6af1d 419-420
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_9b530f08172a54::t_076e6795ab7a6f 2146
+  s_9b530f08172a54::t_35091830f47307 1382
+  s_9b530f08172a54::t_22ca2a13b8250b 1805-1816
+  s_9b530f08172a54::t_0622a7950c6ae5 1687-1689
+  s_9b530f08172a54::t_9f40a33037f088 336-338
+  s_9b530f08172a54::t_029e0604a293de 2113
+  s_9b530f08172a54::t_32f8a3b17909ff 2493-2495
+src/modules/AudioEngine/useCases/trackAudioControls/setNativeCarriedTracks.ts
+  s_9b530f08172a54::t_82c77dafa11bb2 1-10
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_9b530f08172a54::t_9917f6dd2d1e57 35-38
+  s_9b530f08172a54::t_987884e8d006f0 570
+  s_9b530f08172a54::t_5048d83a2ef41a 548,601-613,620-671,676-677
+  s_9b530f08172a54::t_0e578856b63305 266
+  s_9b530f08172a54::t_36f1091c2e1d11 13-14
+  s_9b530f08172a54::t_7b70128aacfa6a 614-619
+  s_9b530f08172a54::t_48d4dfe865517c 527-530
+  s_9b530f08172a54::t_4f89e705064aef 31-34,39-40
+  s_9b530f08172a54::t_66fc7048345579 64
+  s_9b530f08172a54::t_55e1d388fa8d06 41-43,48,66-67,267-269,495,532-537,555-557,568-569,576-577,672-675
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_9b530f08172a54::t_000f6ef9f9644f 73-117,349,583
+  s_9b530f08172a54::t_a47edbf1e37623 412,415
+  s_9b530f08172a54::t_5f0759c9cd9069 15-22
+  s_9b530f08172a54::t_4cfa8d1210b9a4 360,405,823-827,833,838-839,842-846,851-852,855-856,866,869-870,888
+  s_9b530f08172a54::t_b21a10f2aa174a 10-14
+  s_9b530f08172a54::t_add45d23f40845 572-573
+  s_9b530f08172a54::t_f794f3e60623f1 23-24,51-52,62,118-119,339,350-351,359,361,367-368,377-379,406,418,420,425-426,574-576,584-585
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  s_9b530f08172a54::t_1ac1bccec1769d 100-101
+  s_9b530f08172a54::t_f31d95866b67c0 573,578-579,583-586
+  s_9b530f08172a54::t_292611989c17b2 382,384,388-390,392-393
+  s_9b530f08172a54::t_84266011dbb21b 34-35
+  s_9b530f08172a54::t_9cffa4850b59ce 55,57
+  s_9b530f08172a54::t_24064aeeed174b 16-18
+  s_9b530f08172a54::t_0269d2b07e0f3d 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6f34de540292241470b1c7127caf516147d25448",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
