@@ -21,6 +21,9 @@ const transportStoreState: { value: typeof defaultTransportState | null } = { va
 const tempoMapStoreState: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
 const trackStoreState: { value: { tracks: unknown[] } | null } = { value: { tracks: [] } };
 const takeLaneStoreState: { value: { lanes: unknown[] } | null } = { value: { lanes: [] } };
+// The clip ids `startRecording` marks active; the loop-wrap path resolves each
+// armed track's take onto the clip actually recording the pass.
+const activeRecordingRefState: { current: string[] } = { current: [] };
 // currentTime holder so tests can advance the clock BETWEEN init and a tick
 // without vi.mocked() overrides that don't reach the module's bound import.
 const ctxTime = { now: 0 };
@@ -67,6 +70,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     takeLaneStore: {
         get value() {
             return takeLaneStoreState.value;
+        },
+    },
+    activeRecordingRef: {
+        get current() {
+            return activeRecordingRefState.current;
         },
     },
 }));
@@ -227,6 +235,7 @@ describe('startPlayheadScheduler', () => {
         tempoMapStoreState.value = { changes: [] };
         trackStoreState.value = { tracks: [] };
         takeLaneStoreState.value = { lanes: [] };
+        activeRecordingRefState.current = [];
         ctxTime.now = 0;
         ctxLatency.base = 0;
         ctxLatency.output = 0;
@@ -530,8 +539,11 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(resetMetronomeBeat)).toHaveBeenCalledWith(expect.closeTo(0.1, 5));
     });
 
-    it('opens a take lane and adds a take for each armed track on a loop wrap while recording', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+    it('opens a take lane and adds a take referencing the recording clip for each armed track on a loop wrap while recording', async () => {
+        trackStoreState.value = {
+            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1' }] }],
+        };
+        activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = null;
         transportStoreState.value = playingState({
             playheadPosition: 3.9,
@@ -550,17 +562,17 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(arrangementMocks.addTakeLane).toHaveBeenCalledWith('rec-1');
-        expect(arrangementMocks.addTake).toHaveBeenCalledWith(
-            'rec-1',
-            expect.any(String),
-            expect.stringContaining('Take'),
-            0,
-            4
-        );
+        // The take names the clip that is actually recording the pass — the id
+        // `startRecording` pushed into activeRecordingRef, not a synthesized
+        // string: comp resolution drops a take whose clipId matches no clip.
+        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 1', 0, 4);
     });
 
     it('skips the take-lane open when the armed track already has a lane on a loop wrap', async () => {
-        trackStoreState.value = { tracks: [{ id: 'rec-1', armed: true, kind: 'audio' }] };
+        trackStoreState.value = {
+            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1' }] }],
+        };
+        activeRecordingRefState.current = ['clip-rec-1'];
         takeLaneStoreState.value = { lanes: [{ trackId: 'rec-1', takes: [] }] };
         transportStoreState.value = playingState({
             playheadPosition: 3.9,
@@ -569,9 +581,9 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
-        ctxTime.now = 0.2;
 
         startPlayheadScheduler();
+        ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
@@ -579,8 +591,94 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // Lane already exists → no new lane created, but a take is still added.
+        // Lane already exists → no new lane created, but a take referencing the
+        // recording clip is still added.
         expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
+        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-1', 'clip-rec-1', 'Take 1', 0, 4);
+    });
+
+    it('adds no take and no lane on a loop wrap for an armed track with no actively recording clip', async () => {
+        trackStoreState.value = {
+            tracks: [{ id: 'rec-1', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-1' }] }],
+        };
+        // Armed, but `startRecording` never opened a clip (overdub merged into
+        // an existing clip, or the track is not recording-eligible): a take here
+        // would reference no clip and comp resolution would silently skip it.
+        activeRecordingRefState.current = [];
+        takeLaneStoreState.value = null;
+        transportStoreState.value = playingState({
+            playheadPosition: 3.9,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            isRecording: true,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.addTakeLane).not.toHaveBeenCalled();
+        expect(arrangementMocks.addTake).not.toHaveBeenCalled();
+    });
+
+    it('pairs each loop-wrap take with the recording clip of its own armed track, not a pre-existing clip or a clip of another track', async () => {
+        // Two armed tracks recording the same session, each with a distinct
+        // active clip sitting MIDWAY in its clips array between two pre-existing
+        // clips, and the ref holder listing them in the OPPOSITE order to the
+        // armed tracks. Resolving against the wrong track, zipping the ref
+        // array against track order, or falling back to clips[0] / clips.at(-1)
+        // while anything records all mint takes this spec rejects: the
+        // id-to-track pairing must be exact for comp resolution to find the
+        // clip.
+        trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'rec-a',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-old-a1' }, { id: 'clip-rec-a' }, { id: 'clip-old-a2' }],
+                },
+                {
+                    id: 'rec-b',
+                    armed: true,
+                    kind: 'midi',
+                    clips: [{ id: 'clip-old-b1' }, { id: 'clip-rec-b' }, { id: 'clip-old-b2' }],
+                },
+            ],
+        };
+        activeRecordingRefState.current = ['clip-rec-b', 'clip-rec-a'];
+        takeLaneStoreState.value = null;
+        transportStoreState.value = playingState({
+            playheadPosition: 3.9,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            isRecording: true,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(2);
+        const laneCalls = arrangementMocks.addTakeLane.mock.calls as unknown as [string][];
+        // One lane per armed track, in either call order.
+        expect(laneCalls).toContainEqual(['rec-a']);
+        expect(laneCalls).toContainEqual(['rec-b']);
+        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(2);
+        const takeCalls = arrangementMocks.addTake.mock.calls as unknown as [string, string, string, number, number][];
+        // Exact id-to-track pairing, in either call order.
+        expect(takeCalls).toContainEqual(['rec-a', 'clip-rec-a', 'Take 1', 0, 4]);
+        expect(takeCalls).toContainEqual(['rec-b', 'clip-rec-b', 'Take 1', 0, 4]);
     });
 
     it('stops playback when a follow action requests a stop', async () => {

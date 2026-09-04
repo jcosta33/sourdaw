@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
+import { trackStore, takeLaneStore, activeRecordingRef } from '#/modules/Arrangement/stores';
 import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
@@ -260,8 +260,19 @@ export function startPlayheadScheduler(): void {
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
             if (current.isRecording) {
+                const recordingClipIds = new Set(activeRecordingRef.current);
                 const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
                 for (const track of armedTracks) {
+                    // The take must reference the clip that is actually recording
+                    // this pass. A synthesized clipId matches no clip in the
+                    // store, and comp resolution silently skips a take whose
+                    // clip lookup fails — so loop-recorded takes never reached
+                    // the comp at all. One clip records across every pass until
+                    // stopRecording; each wrap take names that clip.
+                    const recordingClip = track.clips.find((clip) => recordingClipIds.has(clip.id));
+                    if (!recordingClip) {
+                        continue;
+                    }
                     const laneState = takeLaneStore.value;
                     if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
                         addTakeLane(track.id);
@@ -269,13 +280,7 @@ export function startPlayheadScheduler(): void {
                     const takeNum =
                         (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) +
                         1;
-                    addTake(
-                        track.id,
-                        `take-${Date.now()}-${track.id}`,
-                        `Take ${takeNum}`,
-                        current.loopStart,
-                        current.loopEnd
-                    );
+                    addTake(track.id, recordingClip.id, `Take ${takeNum}`, current.loopStart, current.loopEnd);
                 }
             }
 
