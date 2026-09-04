@@ -1,0 +1,14 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_1228e573df1f42 804-807,1003,1065,1110-1111,1137-1138,1169-1170,1179,1206-1207,1216,1238-1239,1283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "032d09cb0a7c85182525163d727e81bc701e25db",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
