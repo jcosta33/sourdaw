@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_9b530f08172a54::t_f00f022241be48 487-523
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_9d680fbc67fa00::t_52be2d992b45e0 307-323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bd410bf919853425063a33bf5e14b88a65a942d8",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9d680fbc67fa00": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06ed1-dd36-7f70-881e-4e810e8e6742",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
