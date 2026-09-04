@@ -484,6 +484,43 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
+    it('preserves user text case for track names when creating multiple tracks through compound fast path', async () => {
+        vi.mocked(tryCompoundFastPath).mockImplementation(actualParsing.tryCompoundFastPath);
+
+        const result = await parsePromptToActions(
+            'create 2 audio tracks named Lead Vocals, Backing Vocals',
+            baseContext
+        );
+
+        expect(result.actions).toEqual([
+            {
+                type: 'addTrack',
+                payload: { name: 'Lead Vocals', kind: 'audio' },
+            },
+            {
+                type: 'addTrack',
+                payload: { name: 'Backing Vocals', kind: 'audio' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+
+        const upperResult = await parsePromptToActions(
+            'CREATE 2 AUDIO TRACKS NAMED Lead Vocals, Backing Vocals',
+            baseContext
+        );
+        expect(upperResult.actions).toEqual([
+            {
+                type: 'addTrack',
+                payload: { name: 'Lead Vocals', kind: 'audio' },
+            },
+            {
+                type: 'addTrack',
+                payload: { name: 'Backing Vocals', kind: 'audio' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
     it.each([
         {
             name: 'executes one generic semantic bulk selector without per-target prompt grounding',
