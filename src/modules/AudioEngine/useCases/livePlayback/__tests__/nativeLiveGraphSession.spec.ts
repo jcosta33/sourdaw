@@ -857,6 +857,7 @@ describe('startNativeLiveGraphSession', () => {
     });
 
     it('leaves the engine parked when the maps are declined, rather than rolling under a stale pair', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
         mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
 
         const result = await startNativeLiveGraphSession({
@@ -867,19 +868,78 @@ describe('startNativeLiveGraphSession', () => {
 
         // Nothing between sessions clears the engine's maps or its loop region,
         // so a roll here would run this take under the previous take's tempo
-        // map and wrap at a seam this arrangement no longer has — while the Web
-        // Audio transport the musician actually hears plays straight through.
+        // map and wrap at a seam this arrangement no longer has.
         expect(appliedBatches()).toHaveLength(1);
         expect(appliedBatches()[0]?.commands).toContainEqual({
             kind: 'set-transport',
             playing: false,
             positionSeconds: 2.5,
         });
-        // The session still stands: the topology is mirrored and the plugins
-        // host, which is what a session is for while Web Audio is audible.
+        // The session still stands — its topology is mirrored and its plugins
+        // host, which is what stop, reposition and re-map need. What does not
+        // stand is the carrier claim: a parked engine renders no frame, so the
+        // strip it was handed goes back to Web Audio rather than sounding on
+        // neither engine for the whole take.
+        expect(mocks.carriedClaims.at(-1)?.ids).toEqual([]);
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Native audio engine did not start: malformed maps. ' +
+                'Playing through Web Audio; external plugins are silent until it starts.',
+            'warning'
+        );
         expect(result).toMatchObject({ outcome: 'started' });
         expect(nativeLiveGraphSession.backend).not.toBeNull();
         expect(mocks.startPlayheadFeed).toHaveBeenCalled();
+    });
+
+    it('hands the carried strips back when the engine takes the topology but refuses to roll', async () => {
+        // The roll is the last thing that can fail, and failing it is the worst
+        // case of all: every strip is gated out of Web Audio for an engine that
+        // then renders nothing.
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'command-queue-full',
+        });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(nativeLiveGraphSession.rolling).toBe(false);
+        expect(mocks.carriedClaims.at(-1)?.ids).toEqual([]);
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Native audio engine did not start: command-queue-full. ' +
+                'Playing through Web Audio; external plugins are silent until it starts.',
+            'warning'
+        );
+        expect(result).toMatchObject({ outcome: 'started' });
+    });
+
+    it('hands the carried strips back when a step past the claim throws, and lets the error out', async () => {
+        // An unwind is an exit like any other. One that left the gates shut
+        // would silence every carried track with no session standing to account
+        // for it, and no decline for a caller to read either.
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        const bridgeFailure = new Error('the bridge closed while installing the maps');
+        mocks.setEngineTransportMaps.mockRejectedValueOnce(bridgeFailure);
+
+        await expect(
+            startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE })
+        ).rejects.toBe(bridgeFailure);
+
+        expect(mocks.carriedClaims).toEqual([
+            { ids: ['audio-1'], appliesBefore: 0 },
+            { ids: ['audio-1'], appliesBefore: 1 },
+            { ids: [], appliesBefore: 1 },
+        ]);
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
     });
 
     it('does not install maps or open the playhead feed for a session that never started', async () => {

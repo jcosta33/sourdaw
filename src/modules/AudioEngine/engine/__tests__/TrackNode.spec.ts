@@ -103,6 +103,37 @@ describe('TrackNode', () => {
             expect(track.strip.preFaderSendGate.gain.setValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.05);
         });
 
+        it('drops the pending landing before ramping back, so a reversal cannot snap to the stale target', () => {
+            // The session claims its strips before the batch is applied and
+            // hands them back a bridge round trip later when the engine
+            // declines — a reversal well inside the 50 ms landing window. Left
+            // scheduled, the close's landing fires in the middle of the reopen
+            // and pins the gate to zero until this call's own landing releases
+            // it, so the track the musician was promised back stays silent.
+            const track = new TrackNode('track-1', deps);
+            track.setNativeCarried(true);
+
+            const gates = [track.strip.carrierGate.gain, track.strip.preFaderSendGate.gain];
+            for (const gate of gates) {
+                vi.mocked(gate.cancelScheduledValues).mockClear();
+                vi.mocked(gate.setValueAtTime).mockClear();
+                vi.mocked(gate.setTargetAtTime).mockClear();
+            }
+            ctx.currentTime = 0.002;
+
+            track.setNativeCarried(false);
+
+            for (const gate of gates) {
+                expect(gate.cancelScheduledValues).toHaveBeenCalledWith(0.002);
+                // Re-anchored at where the gate actually is, and before the new
+                // ramp — an anchor scheduled after it would overwrite its start.
+                expect(gate.setValueAtTime).toHaveBeenNthCalledWith(1, gate.value, 0.002);
+                expect(vi.mocked(gate.setValueAtTime).mock.invocationCallOrder[0]).toBeLessThan(
+                    vi.mocked(gate.setTargetAtTime).mock.invocationCallOrder[0]!
+                );
+            }
+        });
+
         it('leaves the mute and solo gates alone, so carrying cannot clear either', () => {
             const track = new TrackNode('track-1', deps);
             vi.mocked(track.strip.postFaderGain.gain.setTargetAtTime).mockClear();

@@ -86,7 +86,7 @@ reason.
 A project mixing plugins and built-ins plays, whole, with each track on the engine that can sound
 it — which no single-carrier arrangement does.
 
-Three costs are accepted for the duration of the split, each with a lane of its own:
+Four costs are accepted for the duration of the split, each with a lane of its own:
 
 - The two carriers do not share a roll latency. A native-carried track and a Web Audio one start
   from the same transport position but travel different output paths, so they are aligned only as
@@ -96,6 +96,10 @@ Three costs are accepted for the duration of the split, each with a lane of its 
 - `pnpm desktop:measure` reads the Web Audio master to decide whether audio reached the output. A
   fully native-carried project therefore reports "not reached" while sounding correctly, and the
   measurement stays unreliable until a native master meter lands (#3565).
+- The graph command surface carries no master gain. A native-carried strip leaves through the native
+  device without crossing the Web Audio master fader, so it plays about 1.9 dB hot at the 0.8 default
+  and answers no move of that fader mid-take, until a `set-master-gain` command travels with the
+  topology (#3596).
 
 Each of those is a symptom of the split itself, not of the mechanism chosen for it: they are the
 price of two carriers, and they disappear with the second carrier rather than being fixed

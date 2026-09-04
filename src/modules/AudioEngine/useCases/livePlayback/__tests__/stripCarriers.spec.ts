@@ -99,13 +99,17 @@ function programmeFor(stripIds: readonly string[], bakedStripIds: readonly strin
     };
 }
 
-function carrierOf(overrides: Partial<StripCarriersInput> & { stripTracks: readonly Track[] }, trackId: string) {
+function carriersOf(overrides: Partial<StripCarriersInput> & { stripTracks: readonly Track[] }) {
     return projectStripCarriers({
         attachedInstanceIds: new Set(),
         programme: programmeFor(overrides.stripTracks.map((track) => track.id)),
         inputMonitoredTrackIds: new Set(),
         ...overrides,
-    }).get(trackId);
+    });
+}
+
+function carrierOf(overrides: Partial<StripCarriersInput> & { stripTracks: readonly Track[] }, trackId: string) {
+    return carriersOf(overrides).get(trackId);
 }
 
 describe('projectStripCarriers', () => {
@@ -281,6 +285,35 @@ describe('projectStripCarriers', () => {
         );
 
         expect(carrier).toEqual({ carrier: 'native' });
+    });
+
+    // A track may be routed into another *track*, not only into a bus, and
+    // `resolveOutputTarget` answers `kind: 'track'` for it. The obstruction walk
+    // has to follow that edge too: a rule that only ever looked at buses would
+    // call this track native and let the engine play it through a strip missing
+    // the processing the project puts there.
+    it('follows an output path that targets another track, not a bus', () => {
+        const carriers = carriersOf({
+            stripTracks: [
+                createTrack({ id: 'audio-1', outputId: 'audio-2' }),
+                createTrack({
+                    id: 'audio-2',
+                    name: 'Guitar Sub',
+                    devices: [createDevice({ id: 'd', type: 'builtin-reverb' })],
+                }),
+            ],
+        });
+
+        expect(carriers.get('audio-1')).toEqual({
+            carrier: 'web',
+            reason: 'output path through "Guitar Sub" holds builtin-reverb',
+        });
+        // The target's own reason names its chain rather than its path, which is
+        // what proves the walk stepped onto it instead of stopping at the source.
+        expect(carriers.get('audio-2')).toEqual({
+            carrier: 'web',
+            reason: 'device builtin-reverb has no native body',
+        });
     });
 
     // Rule 5. A send that reaches an unrepresentable bus is audio the native

@@ -424,12 +424,25 @@ export class TrackNode {
      * rather than disappearing under it. Ten time constants later the value is
      * pinned to the target outright, so a carried strip reaches true zero and a
      * released one reaches true unity.
+     *
+     * That landing is also why each call re-anchors first, exactly as
+     * `rampAutomationParam` does. Reversals inside the landing window are the
+     * normal case, not the exotic one: the session claims its strips before the
+     * batch is applied and reopens them a bridge round trip later if the engine
+     * declines. Left scheduled, the previous landing would fire in the middle of
+     * this ramp and snap the gate to the *old* target — a reopened strip would
+     * ramp up, snap silent at the stale landing, and stay there until this
+     * call's own landing released it some 48 ms later. Dropping the future
+     * events and pinning the gate to where it actually is makes the new ramp
+     * start from the truth.
      */
     public setNativeCarried(carried: boolean): void {
         this.strip.nativeCarried = carried;
         const now = this.deps.context.currentTime;
         const target = carried ? 0 : 1;
         for (const gate of [this.strip.carrierGate.gain, this.strip.preFaderSendGate.gain]) {
+            gate.cancelScheduledValues(now);
+            gate.setValueAtTime(gate.value, now);
             gate.setTargetAtTime(target, now, CARRIER_GATE_RAMP_SEC);
             gate.setValueAtTime(target, now + CARRIER_GATE_LANDING_SEC);
         }
