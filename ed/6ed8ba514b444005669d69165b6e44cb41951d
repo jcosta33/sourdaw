@@ -1,0 +1,26 @@
+scripts/__tests__/wasmArtifactsWorkspaceManifest.spec.ts
+  s_28abfd94826e36::t_a41c75697bb75b 130
+  s_28abfd94826e36::t_6afdd42500ed61 59
+  s_28abfd94826e36::t_cf7f250eb50dd5 129,131-137
+scripts/workspaceManifestFingerprint.ts
+  s_28abfd94826e36::t_0256e5b617e2d3 318
+  s_28abfd94826e36::t_7a8db99445959e 141-156,159-160
+  s_28abfd94826e36::t_1c409ba959d906 274-275,278-279
+  s_28abfd94826e36::t_c15e29209c5d83 137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ed6ed8ba514b444005669d69165b6e44cb41951d",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
