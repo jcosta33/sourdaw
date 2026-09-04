@@ -1,0 +1,61 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_9b530f08172a54::t_54cbfb574adf50 80,83,86,93-94,96
+  s_9b530f08172a54::t_2e23b254f52993 18
+  s_9b530f08172a54::t_a47146522f13c2 209
+  s_9b530f08172a54::t_fae85dda89801d 217
+  s_9b530f08172a54::t_f241f61b2c0e31 95
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  s_9b530f08172a54::t_90b1a57dd42b7b 19-22
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  s_9b530f08172a54::t_e9fa24f295b635 12-15
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useProjectMutationRefusal.spec.ts
+  s_9b530f08172a54::t_a520510d2e2c7c 52-71
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  s_9b530f08172a54::t_50ca75285837cd 1,10-16
+  s_9b530f08172a54::t_bbed51fabc57a5 43-52
+  s_9b530f08172a54::t_96c3ba6b9246c7 17
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_9b530f08172a54::t_b00ac8c3c701c5 177-186
+  s_9b530f08172a54::t_d8610ae5e963b6 19
+  s_9b530f08172a54::t_acc065daba1943 36
+  s_9b530f08172a54::t_61e5dcdb7791c1 18,20
+  s_9b530f08172a54::t_c63ae9bf088ca5 208-213
+  s_9b530f08172a54::t_8ea27b53532881 1004-1043
+  s_9b530f08172a54::t_d34787a9d382e3 1
+  s_f36072848fb520::t_00abb41278df5e 552,568,583,599,603,940,944-945,959,965,984,999
+src/modules/WorkspaceShell/presentations/components/__tests__/ProjectMutationRefusedBanner.spec.tsx
+  s_9b530f08172a54::t_1ce9b0c495c368 16,59,73-78,93,108
+  s_9b530f08172a54::t_23b6257db63d14 15,17-20,35-40,54-58,89-92,94-107,127-132
+src/modules/WorkspaceShell/presentations/hooks/useProjectMutationRefusal.ts
+  s_9b530f08172a54::t_80b62e84b35982 13
+  s_9b530f08172a54::t_502c1f652d3435 38
+.agents/decisions/0040-crdt-slot-sanitizers-are-projections.md
+  s_9b530f08172a54::t_2a85109fe5fe9e 57-59,61-76
+  s_9b530f08172a54::t_5d075e99e58ec0 77-79
+src/modules/WorkspaceShell/presentations/components/ProjectMutationRefusedBanner.tsx
+  s_9b530f08172a54::t_a178e4fc2eec9f 21-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "996ad8e5d4ac1e8a24ebe9c4591aeb17ccd6742b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f36072848fb520": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ada543e44cf3229a4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
