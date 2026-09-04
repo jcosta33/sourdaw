@@ -115,16 +115,16 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
 
 // ── Parameterized patterns ──────────────────────────────────────────────
 
-export function tryParameterizedPath(normalized: string, context: ProjectContext): RuntimeAction[] {
+export function tryParameterizedPath(text: string, context: ProjectContext): RuntimeAction[] {
     const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
     const selectedClipId = context.selectedClipId;
 
-    const tempoMatch = normalized.match(/^(?:set\s+)?tempo\s+(?:to\s+)?(\d+)$/i);
+    const tempoMatch = text.match(/^(?:set\s+)?tempo\s+(?:to\s+)?(\d+)$/i);
     if (tempoMatch) {
         return [{ type: 'setTempo', payload: { bpm: parseInt(tempoMatch[1]!, 10) } }];
     }
 
-    const gainMatch = normalized.match(/^(?:set\s+)?(?:track\s+)?(?:gain|volume)\s+(?:to\s+)?(\d+)%?$/i);
+    const gainMatch = text.match(/^(?:set\s+)?(?:track\s+)?(?:gain|volume)\s+(?:to\s+)?(\d+)%?$/i);
     if (gainMatch && selectedTrack) {
         const rawVal = parseInt(gainMatch[1]!, 10);
         const gain = rawVal > 1 ? rawVal / 100 : rawVal;
@@ -136,7 +136,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         ];
     }
 
-    const panMatch = normalized.match(/^(?:set\s+)?pan\s+(?:to\s+)?(-?\d+)$/i);
+    const panMatch = text.match(/^(?:set\s+)?pan\s+(?:to\s+)?(-?\d+)$/i);
     if (panMatch && selectedTrack) {
         return [
             {
@@ -146,25 +146,25 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         ];
     }
 
-    const renameClipMatch = normalized.match(/^rename\s+(?:the\s+)?clip\s+(?:to\s+)?(.+)$/i);
+    const renameClipMatch = text.match(/^rename\s+(?:the\s+)?clip\s+(?:to\s+)?(.+)$/i);
     if (renameClipMatch && selectedClipId) {
         return [{ type: 'renameClip', payload: { clipId: selectedClipId, name: renameClipMatch[1]!.trim() } }];
     }
 
-    const humanizeMatch = normalized.match(/^humanize(?:\s+(\d+)%?)?$/i);
+    const humanizeMatch = text.match(/^humanize(?:\s+(\d+)%?)?$/i);
     if (humanizeMatch && selectedClipId) {
         const amount = humanizeMatch[1] ? parseInt(humanizeMatch[1], 10) / 100 : 0.3;
         return [{ type: 'humanizeNotes', payload: { clipId: selectedClipId, amount } }];
     }
 
-    const fitBeatsMatch = normalized.match(/^stretch\s+(?:the\s+)?clip\s+to\s+(\d+(?:\.\d+)?)\s+beats?$/i);
+    const fitBeatsMatch = text.match(/^stretch\s+(?:the\s+)?clip\s+to\s+(\d+(?:\.\d+)?)\s+beats?$/i);
     if (fitBeatsMatch && selectedClipId) {
         return [
             { type: 'fitClipToBeats', payload: { clipId: selectedClipId, targetBeats: parseFloat(fitBeatsMatch[1]!) } },
         ];
     }
 
-    const stretchRatioMatch = normalized.match(/^set\s+stretch\s+ratio\s+(?:to\s+)?(\d+(?:\.\d+)?)$/i);
+    const stretchRatioMatch = text.match(/^set\s+stretch\s+ratio\s+(?:to\s+)?(\d+(?:\.\d+)?)$/i);
     if (stretchRatioMatch && selectedClipId) {
         return [
             {
@@ -174,12 +174,12 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         ];
     }
 
-    const joinMatch = normalized.match(/^join\s+session\s+(.+)$/i);
+    const joinMatch = text.match(/^join\s+session\s+(.+)$/i);
     if (joinMatch) {
         return [{ type: 'joinCollabSession', payload: { inviteString: joinMatch[1]!.trim(), peerName: 'Peer' } }];
     }
 
-    const muteTrackMatch = normalized.match(/^(mute|unmute)\s+(?:the\s+)?(.+?)(?:\s+track)?$/i);
+    const muteTrackMatch = text.match(/^(mute|unmute)\s+(?:the\s+)?(.+?)(?:\s+track)?$/i);
     if (muteTrackMatch) {
         const track = findTrack(context, muteTrackMatch[2]!.trim());
         if (track) {
@@ -191,7 +191,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
             ];
         }
     }
-    const soloTrackMatch = normalized.match(/^(solo|unsolo)\s+(?:the\s+)?(.+?)(?:\s+track)?$/i);
+    const soloTrackMatch = text.match(/^(solo|unsolo)\s+(?:the\s+)?(.+?)(?:\s+track)?$/i);
     if (soloTrackMatch) {
         const track = findTrack(context, soloTrackMatch[2]!.trim());
         if (track) {
@@ -204,7 +204,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         }
     }
 
-    const addDeviceToTrack = normalized.match(
+    const addDeviceToTrack = text.match(
         /^add\s+(?:a\s+)?(eq|compressor|reverb|delay|gain|chorus|flanger|phaser|distortion|limiter|gate)\s+to\s+(?:the\s+)?(.+?)(?:\s+track)?$/i
     );
     if (addDeviceToTrack) {
@@ -228,7 +228,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
         }
     }
 
-    const deleteTrackMatch = normalized.match(/^(?:delete|remove)\s+(?:the\s+)?(?:track\s+)?(.+?)(?:\s+track)?$/i);
+    const deleteTrackMatch = text.match(/^(?:delete|remove)\s+(?:the\s+)?(?:track\s+)?(.+?)(?:\s+track)?$/i);
     if (deleteTrackMatch) {
         const track = findExactTrackForDeletion(context, deleteTrackMatch[1]!.trim());
         if (track && track.kind !== 'master') {
@@ -241,10 +241,10 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
 
 // ── Compound fast path ──────────────────────────────────────────────────
 
-export function tryCompoundFastPath(normalized: string, context: ProjectContext): RuntimeAction[] | null {
+export function tryCompoundFastPath(text: string, context: ProjectContext): RuntimeAction[] | null {
     const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
 
-    const multiTrackMatch = normalized.match(
+    const multiTrackMatch = text.match(
         /^(?:create|add|make)\s+(\d+)\s+(audio\s+|midi\s+|bus\s+)?tracks?(?:\s+(?:named|called)\s+(.+))?$/i
     );
     if (multiTrackMatch) {
@@ -265,32 +265,32 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
         return actions;
     }
 
-    if (/^mute\s+all\s+tracks$/i.test(normalized)) {
+    if (/^mute\s+all\s+tracks$/i.test(text)) {
         return context.tracks.map((time) => ({
             type: 'muteTrack' as const,
             payload: { trackId: time.id, muted: true },
         }));
     }
-    if (/^unmute\s+all\s+tracks$/i.test(normalized)) {
+    if (/^unmute\s+all\s+tracks$/i.test(text)) {
         return context.tracks.map((time) => ({
             type: 'muteTrack' as const,
             payload: { trackId: time.id, muted: false },
         }));
     }
-    if (/^solo\s+all\s+tracks$/i.test(normalized)) {
+    if (/^solo\s+all\s+tracks$/i.test(text)) {
         return context.tracks.map((time) => ({
             type: 'soloTrack' as const,
             payload: { trackId: time.id, soloed: true },
         }));
     }
-    if (/^unsolo\s+all\s+tracks$/i.test(normalized)) {
+    if (/^unsolo\s+all\s+tracks$/i.test(text)) {
         return context.tracks.map((time) => ({
             type: 'soloTrack' as const,
             payload: { trackId: time.id, soloed: false },
         }));
     }
 
-    const multiDeviceMatch = normalized.match(
+    const multiDeviceMatch = text.match(
         /^add\s+(?:a\s+)?((?:(?:eq|compressor|reverb|delay|gain|chorus|flanger|phaser|distortion|limiter|gate)(?:\s*(?:,|and)\s*)?)+)\s*(?:to\s+(?:the\s+)?(?:(selected|this|tagged)\s+)?(?:track)?)?$/i
     );
     if (multiDeviceMatch && selectedTrack) {
@@ -323,8 +323,8 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
         }
     }
 
-    if (selectedTrack && /\b(make\s+it|give\s+it|sound\s+like)\b/i.test(normalized)) {
-        const recipe = matchSoundDesignRecipe(normalized, selectedTrack.id);
+    if (selectedTrack && /\b(make\s+it|give\s+it|sound\s+like)\b/i.test(text)) {
+        const recipe = matchSoundDesignRecipe(text, selectedTrack.id);
         if (recipe) {
             return recipe;
         }
@@ -335,61 +335,61 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
 
 // ── Sound design recipes ────────────────────────────────────────────────
 
-export function matchSoundDesignRecipe(normalized: string, trackId: string): RuntimeAction[] | null {
-    if (/\b(warm|warmth|warmer)\b/i.test(normalized)) {
+export function matchSoundDesignRecipe(text: string, trackId: string): RuntimeAction[] | null {
+    if (/\b(warm|warmth|warmer)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Compressor' } },
         ];
     }
-    if (/\b(pop\s+out|pop|punch|punchier)\b/i.test(normalized)) {
+    if (/\b(pop\s+out|pop|punch|punchier)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'Compressor' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
         ];
     }
-    if (/\b(radio|telephone|phone|walkie.?talkie)\b/i.test(normalized)) {
+    if (/\b(radio|telephone|phone|walkie.?talkie)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Compressor' } },
         ];
     }
-    if (/\b(lo-?fi|lofi)\b/i.test(normalized)) {
+    if (/\b(lo-?fi|lofi)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'BitCrusher' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Compressor' } },
         ];
     }
-    if (/\b(underwater|submerged)\b/i.test(normalized)) {
+    if (/\b(underwater|submerged)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Reverb' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Delay' } },
         ];
     }
-    if (/\b(wider|stereo|spread)\b/i.test(normalized)) {
+    if (/\b(wider|stereo|spread)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'Chorus' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Delay' } },
         ];
     }
-    if (/\b(bright|crisp|sparkle|air|airy)\b/i.test(normalized)) {
+    if (/\b(bright|crisp|sparkle|air|airy)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Compressor' } },
         ];
     }
-    if (/\b(dark|darker|muddy|dull|muffled)\b/i.test(normalized)) {
+    if (/\b(dark|darker|muddy|dull|muffled)\b/i.test(text)) {
         return [{ type: 'addDevice', payload: { trackId, deviceType: 'EQ' } }];
     }
-    if (/\b(spacious|space|echo|ambient|ethereal|dreamy|hall)\b/i.test(normalized)) {
+    if (/\b(spacious|space|echo|ambient|ethereal|dreamy|hall)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'Reverb' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Delay' } },
         ];
     }
-    if (/\b(vintage|retro|analog|analogue|tape|old.?school)\b/i.test(normalized)) {
+    if (/\b(vintage|retro|analog|analogue|tape|old.?school)\b/i.test(text)) {
         return [
             { type: 'addDevice', payload: { trackId, deviceType: 'EQ' } },
             { type: 'addDevice', payload: { trackId, deviceType: 'Compressor' } },

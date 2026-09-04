@@ -114,6 +114,9 @@ vi.mock('../../transformers/llmActionBridge', async () => {
 const actualBridge = await vi.importActual<typeof import('../agentReference/bridgeGroundedLlmToolCalls')>(
     '../agentReference/bridgeGroundedLlmToolCalls'
 );
+const actualParsing = await vi.importActual<typeof import('../../transformers/promptParser/parsing')>(
+    '../../transformers/promptParser/parsing'
+);
 
 const baseContext: ProjectContext = {
     tempo: 120,
@@ -448,6 +451,37 @@ describe('parsePromptToActions', () => {
             { type: 'setTrackGain', payload: { trackId: 'track-guitar', gain: 0.6, expectedGain: 0.8 } },
         ]);
         expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it('preserves user text case when renaming a clip through deterministic parameterized path', async () => {
+        vi.mocked(tryParameterizedPath).mockImplementation(actualParsing.tryParameterizedPath);
+
+        const context: ProjectContext = {
+            ...baseContext,
+            selectedClipId: 'c1',
+            selectedClipIds: ['c1'],
+        };
+        vi.mocked(getProjectContext).mockReturnValue(context);
+
+        const result = await parsePromptToActions('rename clip to Verse', context);
+
+        expect(result.actions).toEqual([
+            {
+                type: 'renameClip',
+                payload: { clipId: 'c1', name: 'Verse' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+
+        const upperResult = await parsePromptToActions('RENAME THE CLIP TO Chorus 1', context);
+
+        expect(upperResult.actions).toEqual([
+            {
+                type: 'renameClip',
+                payload: { clipId: 'c1', name: 'Chorus 1' },
+            },
+        ]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
     it.each([

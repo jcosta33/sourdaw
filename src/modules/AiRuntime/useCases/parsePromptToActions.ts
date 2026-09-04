@@ -262,6 +262,7 @@ const planPromptIntent = inject({ logger })(
             onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
+            const trimmedPrompt = prompt.trim();
 
             const deniedActionType = findDeniedPromptIntent(normalized);
             if (deniedActionType !== null) {
@@ -281,13 +282,13 @@ const planPromptIntent = inject({ logger })(
             }
 
             // 3. Try parameterized patterns (need value extraction)
-            const paramResult = tryParameterizedPath(normalized, context);
+            const paramResult = tryParameterizedPath(trimmedPrompt, context);
             if (paramResult.length > 0) {
                 return createFastPathResult({ actions: paramResult, context, prompt });
             }
 
             // 4. Try compound fast path (multi-track creation etc.)
-            const compoundResult = tryCompoundFastPath(normalized, context);
+            const compoundResult = tryCompoundFastPath(trimmedPrompt, context);
             if (compoundResult !== null) {
                 return createFastPathResult({ actions: compoundResult, context, prompt });
             }
