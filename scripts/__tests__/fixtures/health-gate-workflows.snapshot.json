@@ -1350,13 +1350,17 @@
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
+            "name": "Test the audio crates",
+            "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
+          },
+          {
             "name": "Test the native crate",
             "run": "cargo test --package sourdaw-native"
           }
         ]
       },
       "native-windows": {
-        "name": "Windows device layer",
+        "name": "Native audio backend (Windows)",
         "needs": "decide",
         "if": "needs.decide.outputs.rust == 'true'",
         "runs-on": "windows-latest",
@@ -1375,8 +1379,8 @@
             "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
           },
           {
-            "name": "Compile-verify the device layer",
-            "run": "cargo check --package daw-engine"
+            "name": "Test the audio crates",
+            "run": "cargo test --package daw-core --package daw-dsp --package daw-engine --all-features"
           }
         ]
       },
