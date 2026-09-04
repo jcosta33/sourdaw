@@ -6606,6 +6606,87 @@ describe('pull-request delivery', () => {
     });
 
     /**
+     * The promotion issue #2924 anticipates: `unit` joins the gate's `needs`, and GitHub reports one
+     * check per shard under the substituted name. The literal name this gate used to derive matched
+     * none of those four, so a shard cancelled with no success beside it merged with no verdict.
+     */
+    const unitMatrixWorkflow = [
+        'name: Health gates',
+        'jobs:',
+        '  unit:',
+        '    name: Unit suite ${{ matrix.shard }}/4',
+        '    strategy:',
+        '      matrix:',
+        '        shard: [1, 2, 3, 4]',
+        '  gate:',
+        '    name: Gate',
+        '    needs: unit',
+    ].join('\n');
+
+    function passingUnitShards(shards: number[]): HeadCheckRun[] {
+        return shards.map((shard) => checkRun({ name: `Unit suite ${shard}/4`, startedAt: REVIEW_RUN_START }));
+    }
+
+    it('refuses a head whose one matrix shard was cancelled and never succeeded', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...passingUnitShards([1, 2, 3]),
+                checkRun({ name: 'Unit suite 4/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Unit suite 4/4 was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('merges a head carrying a success under every matrix shard name', async () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...passingUnitShards([1, 2, 3, 4]),
+                checkRun({ name: 'Unit suite 4/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * Absence is tolerated, and this pins that rather than endorsing it: the rule keys on a name
+     * cancelled with no success beside it, so a required shard that never reported at all leaves
+     * the head with no verdict for that shard and merges anyway.
+     */
+    it('merges a head from which a required matrix shard name is absent altogether', async () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [...passingUnitShards([1, 2, 3]), checkRun()],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
      * The rule keys on a cancellation, not on the absence of a success: a job the workflow simply
      * never ran on this head has nothing to supersede and nothing to prove.
      */
@@ -6969,10 +7050,11 @@ describe('gating check names', () => {
 
     /**
      * `unit` and `e2e` are one line away from joining the gate, and GitHub reports one check per
-     * shard with the expression substituted. The declared name matches none of them, so promoting
-     * such a job silently adds an entry that can never fire. Recorded as issue #2924.
+     * shard with the expression substituted. The gating set is those four names and nothing else:
+     * a name too many matches nothing on the head and tolerates the cancellation it was added to
+     * catch, so the whole set is asserted rather than its membership. Recorded as issue #2924.
      */
-    it('refuses a matrix job promoted into the gate rather than gating on a name GitHub never reports', async () => {
+    it('expands a matrix job into the check name GitHub reports for each shard', async () => {
         const unit = [
             '  unit:',
             '    name: Unit suite ${{ matrix.shard }}/4',
@@ -6981,9 +7063,126 @@ describe('gating check names', () => {
             '        shard: [1, 2, 3, 4]',
         ].join('\n');
 
-        expect(await refusalFor(workflow(unit, gateNeeding('unit')))).toBe(
-            `Error: the unit job in ${WORKFLOW_PATH} names its check Unit suite \${{ matrix.shard }}/4, ` +
-                'which GitHub substitutes per matrix job before reporting it'
+        const names = await gatingNamesFor(workflow(unit, gateNeeding('unit')));
+
+        expect(names).toEqual(new Set(['Unit suite 1/4', 'Unit suite 2/4', 'Unit suite 3/4', 'Unit suite 4/4']));
+        expect(names.size).toBe(4);
+    });
+
+    /** An excluded combination is a job GitHub never runs, so no check ever reports under its name. */
+    it('leaves an excluded combination out of the gating set', async () => {
+        const test = [
+            '  test:',
+            '    name: Test ${{ matrix.os }} ${{matrix.node}}',
+            '    strategy:',
+            '      matrix:',
+            '        os: [ubuntu, macos]',
+            '        node: [20, 22]',
+            '        exclude:',
+            '          - os: macos',
+            '            node: 20',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(test, gateNeeding('test')))).toEqual(
+            new Set(['Test ubuntu 20', 'Test ubuntu 22', 'Test macos 22'])
+        );
+    });
+
+    /**
+     * An include entry naming an axis value the matrix never declared is a job of its own, so the
+     * gate owes it a name.
+     */
+    it('adds a combination for an include entry naming an axis value the matrix does not declare', async () => {
+        const build = [
+            '  build:',
+            '    name: Build ${{ matrix.os }}',
+            '    strategy:',
+            '      matrix:',
+            '        os: [ubuntu]',
+            '        include:',
+            '          - os: windows',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(build, gateNeeding('build')))).toEqual(
+            new Set(['Build ubuntu', 'Build windows'])
+        );
+    });
+
+    /**
+     * An include entry that matches a combination adds its keys to that job rather than adding a
+     * job, so the set stays the size the axes produced.
+     */
+    it('adds keys rather than a combination for an include entry a declared combination matches', async () => {
+        const build = [
+            '  build:',
+            '    name: Build ${{ matrix.os }}',
+            '    strategy:',
+            '      matrix:',
+            '        os: [ubuntu, macos]',
+            '        include:',
+            '          - os: ubuntu',
+            '            experimental: true',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(build, gateNeeding('build')))).toEqual(
+            new Set(['Build ubuntu', 'Build macos'])
+        );
+    });
+
+    /**
+     * The first three include entries of the example on GitHub's "Running variations of jobs in a
+     * workflow": an entry with no axis key reaches every combination, a later entry overwrites what
+     * an earlier one added, and an axis key filters which combinations an entry reaches.
+     */
+    it('applies the documented include entries to the combinations their axis keys match', async () => {
+        const example = [
+            '  example:',
+            '    name: Example ${{ matrix.fruit }} ${{ matrix.animal }} ${{ matrix.color }}',
+            '    strategy:',
+            '      matrix:',
+            '        fruit: [apple, pear]',
+            '        animal: [cat, dog]',
+            '        include:',
+            '          - color: green',
+            '          - color: pink',
+            '            animal: cat',
+            '          - fruit: apple',
+            '            shape: circle',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(example, gateNeeding('example')))).toEqual(
+            new Set([
+                'Example apple cat pink',
+                'Example apple dog green',
+                'Example pear cat pink',
+                'Example pear dog green',
+            ])
+        );
+    });
+
+    /**
+     * The last two include entries of that same example. `banana` matches no combination the axes
+     * produced, so each entry is a job of its own and the second never merges into the first — which
+     * is observable here as two jobs reporting under one name. Merging them would leave two distinct
+     * names and no refusal at all.
+     */
+    it('keeps two include entries naming an undeclared axis value as two matrix jobs', async () => {
+        const example = [
+            '  example:',
+            '    name: Example ${{ matrix.fruit }}',
+            '    strategy:',
+            '      matrix:',
+            '        fruit: [apple]',
+            '        animal: [cat]',
+            '        include:',
+            '          - fruit: banana',
+            '          - fruit: banana',
+            '            animal: cat',
+        ].join('\n');
+
+        expect(await refusalFor(workflow(example, gateNeeding('example')))).toBe(
+            `Error: the example job in ${WORKFLOW_PATH} gives more than one matrix job the check name ` +
+                'Example banana, which GitHub reports as one check name this gate cannot tell apart'
         );
     });
 
@@ -7040,6 +7239,225 @@ describe('gating check names', () => {
             message:
                 `Error: the lint job in ${WORKFLOW_PATH} declares a name that is not text, ` +
                 'which cannot be the name GitHub reports',
+        },
+        {
+            label: 'a gated job whose matrix GitHub builds at run time',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares its matrix as the expression ` +
+                '${{ fromJSON(needs.plan.outputs.matrix) }}, so the names GitHub reports for its jobs ' +
+                'cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix is not a mapping of variations',
+            source: workflow(
+                ['  shard:', '    name: Suite', '    strategy:', '      matrix: [1, 2]'].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares its matrix as something other than ` +
+                'a mapping of variations, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose strategy is not a mapping',
+            source: workflow(['  shard:', '    name: Suite', '    strategy: 4'].join('\n'), gateNeeding('shard')),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares a strategy that is not a mapping, ` +
+                'so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix axis is not a list of plain values',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard:',
+                    '          from: 1',
+                    '          to: 4',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares matrix shard as something other than ` +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix axis value is itself an expression',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: ["${{ github.run_id }}"]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares matrix shard as something other than ` +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose include is not a list of variations',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                    '        include: 7',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares matrix include as something other than ` +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job excluding a matrix key it does not declare',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1, 2]',
+                    '        exclude:',
+                    '          - os: macos',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} excludes matrix os, which its matrix does not declare, ` +
+                'so which jobs GitHub runs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix excludes every combination it declares',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                    '        exclude:',
+                    '          - shard: 1',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares a matrix that runs no job, ` +
+                'so no check of that job can be proven to gate the merge',
+        },
+        {
+            label: 'a gated matrix job whose name carries an expression that is not a matrix value',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}/${{ github.run_id }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} names its check ` +
+                'Suite ${{ matrix.shard }}/${{ github.run_id }}, ' +
+                'which GitHub substitutes per matrix job before reporting it',
+        },
+        {
+            label: 'a gated matrix job naming a matrix key its matrix does not declare',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.missing }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} names its check with matrix.missing, ` +
+                'which its matrix does not declare for every job it runs',
+        },
+        {
+            label: 'a gated matrix job whose name distinguishes no shard',
+            source: workflow(
+                ['  shard:', '    name: Unit', '    strategy:', '      matrix:', '        shard: [1, 2]'].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} gives more than one matrix job the check name Unit, ` +
+                'which GitHub reports as one check name this gate cannot tell apart',
+        },
+        {
+            label: 'a gated matrix job that declares no name',
+            source: workflow(
+                ['  target:', '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose name is declared empty',
+            source: workflow(
+                ['  target:', "    name: ''", '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose name is declared null',
+            source: workflow(
+                ['  target:', '    name: ~', '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job running several combinations under no name',
+            source: workflow(
+                ['  target:', '    strategy:', '      matrix:', '        os: [ubuntu, macos]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose shards render one name',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1, "1"]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} gives more than one matrix job the check name Suite 1, ` +
+                'which GitHub reports as one check name this gate cannot tell apart',
         },
     ])('refuses $label', async ({ source, message }) => {
         expect(await refusalFor(source)).toBe(message);
