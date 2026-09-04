@@ -125,7 +125,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                         transform: 'translateX(-50%)',
                         bottom: 0,
                         height: `${n * 100}%`,
-                        background: `linear-gradient(to top, var(--color-accent-steel), ${fillColor})`,
+                        background: `linear-gradient(to top, #5B8FC4, ${fillColor})`,
                     }}
                 />
 
