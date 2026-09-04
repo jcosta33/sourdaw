@@ -9,7 +9,7 @@
  * nothing is going to paint. So the seam is a poll, driven from the same
  * `animationScheduler` the cursor's own painting runs on: at most one reading
  * per animation frame. That cadence is bridge-wakeup economy, not a claim that
- * a frame this poll skips cost nothing to miss — the live automation writer
+ * a frame this poll skips costs nothing to miss — the live automation writer
  * below reads the same tick, and under the desktop shell the loop this poll
  * rides never stops, hidden window or not (see "Why the writer may ride this
  * loop").

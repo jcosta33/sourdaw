@@ -312,11 +312,13 @@ describe('main window webPreferences', () => {
     });
 
     it('pins sandbox, contextIsolation, nodeIntegration and backgroundThrottling for the real main window', async () => {
-        // The stubbed `loadNativeAddon` throws inside `startNativeSurface`'s
-        // own try/catch, which reports through `console.error`. Spying on it
-        // proves the addon seam was actually reached and stubbed, rather than
-        // skipped for an unrelated reason — a spec that never checks this
-        // could stay green even if the mock above silently stopped applying.
+        // `main.ts`'s catch logs through `console.error` whether the real
+        // `require` failed or our stub threw, so asserting only `did not
+        // load` cannot tell the two apart — it would stay green with this
+        // whole `vi.mock('../native.js', ...)` block deleted. Matching the
+        // stub's own sentinel string, which only our mocked `loadNativeAddon`
+        // throws, is what proves the addon seam was actually reached and
+        // stubbed rather than skipped for an unrelated reason.
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
         // `main.ts` creates its one window inside `app.whenReady().then(...)`,
@@ -327,7 +329,7 @@ describe('main window webPreferences', () => {
         await new Promise((resolve) => setImmediate(resolve));
 
         expect(consoleError).toHaveBeenCalledOnce();
-        expect(consoleError.mock.calls[0]?.[0]).toContain('did not load');
+        expect(consoleError.mock.calls[0]?.[0]).toContain('stubbed: no native addon in this unit spec');
 
         const [options] = mainWindowConstructorCalls;
         const webPreferences = options?.webPreferences as Record<string, unknown> | undefined;
