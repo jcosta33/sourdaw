@@ -1,0 +1,16 @@
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  h_1228e573df1f42 190-198,200
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  h_1228e573df1f42 185-192,474-524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7c0118d07a0b57811d4150003147b4341f168818",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
