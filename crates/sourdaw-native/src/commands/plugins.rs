@@ -2663,7 +2663,7 @@ pub async fn process_plugin_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host::plugin_registry_store::scanned_binary_location;
+    use crate::host::plugin_registry_store::{scanned_binary_location, scanned_file_path};
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::plugin_window::PluginEditorWindow;
     use crate::host::ui_thread::{UiThread, UiThreadTask};
@@ -5927,6 +5927,151 @@ mod tests {
                 .name,
             "Second Edition",
             "the published row must be the updated module's, not the previous scan's"
+        );
+    }
+
+    /// What the persisted registry still resolves on the next launch: a fresh
+    /// store over the same file, hydrated through the same policy. Nothing
+    /// carries over but what reached the disk, which is the property a row has
+    /// to have for a saved project to reopen.
+    fn registry_after_relaunch(root: &Path) -> HashMap<String, PluginRegistryEntry> {
+        let registry = Mutex::new(HashMap::new());
+        PluginRegistryStore::at(root.join("plugin-registry.json")).hydrate_into(
+            &registry,
+            &PluginScanPolicy::with_allowed_roots(vec![root.to_path_buf()]),
+        );
+        registry
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// macOS loads a bundle through `CFBundleCreate`, which takes the
+    /// executable `Info.plist` names and is under no obligation to name it
+    /// after the bundle. Resolving only the stem-named path would leave such a
+    /// plugin with no resolvable binary, and the module that actually changes
+    /// on an update would never be the one fingerprinted.
+    ///
+    /// Mutation this catches: dropping the `Contents/MacOS` fallback from the
+    /// macOS VST3 branch falls back to the bundle directory, whose own
+    /// timestamps do not move when the module is rewritten, so the second scan
+    /// reuses and its call counts stay at zero.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn a_vst3_bundle_whose_executable_is_not_named_after_its_stem_is_fingerprinted_by_it() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-bundle-renamed-module");
+        let bundle = root.join("Reverb.vst3");
+        let executables = bundle.join("Contents").join("MacOS");
+        std::fs::create_dir_all(&executables).expect("the bundle directory should be created");
+        // Named for the product, not the bundle: what `CFBundleExecutable`
+        // points at, and not what `Reverb.vst3` would suggest.
+        let module = executables.join("VendorEngine");
+        std::fs::write(&module, b"vst3-bytes").expect("the fixture module should be written");
+        let state = state_with_registry_file(&root);
+
+        let scan_with = |name: &'static str, descriptors: &ScanCallLog, instances: &ScanCallLog| {
+            crate::block_on_test(scan_plugins_with_backend(
+                vec![root.display().to_string()],
+                false,
+                PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+                UNCONSTRAINED_SCAN_BUDGET,
+                &state,
+                recording_vst3_descriptor_scan(Arc::clone(descriptors), name),
+                recording_instance_scan(Arc::clone(instances)),
+            ))
+            .expect("a scan over an authorized fixture root should succeed")
+        };
+
+        scan_with("First Edition", &scan_call_log(), &scan_call_log());
+        assert!(
+            registry_after_relaunch(&root).contains_key(&scanner::stable_id(&bundle)),
+            "a bundle whose module resolved must leave a row a relaunch can resolve"
+        );
+
+        std::fs::write(&module, b"vst3-bytes-of-the-second-edition")
+            .expect("the module should be updated in place");
+
+        let descriptor_calls = scan_call_log();
+        let instance_calls = scan_call_log();
+        let second_scan = scan_with("Second Edition", &descriptor_calls, &instance_calls);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &bundle),
+            1,
+            "the executable the bundle actually loads is the one that decides staleness"
+        );
+        assert_eq!(
+            scan_calls_for(&instance_calls, &bundle),
+            1,
+            "the rescan must inspect an instance of the updated module"
+        );
+        assert_eq!(
+            second_scan
+                .plugins
+                .first()
+                .expect("the rescan must produce a row")
+                .name,
+            "Second Edition",
+            "the published row must be the updated module's, not the previous scan's"
+        );
+    }
+
+    /// A bundle this build cannot resolve a module inside is still a plugin the
+    /// scan found and published, and dropping its row would mean the next
+    /// launch could not activate it — the exact failure this store exists to
+    /// prevent. It falls back to the weaker directory fingerprint the store
+    /// gave every plugin before modules were resolved at all.
+    ///
+    /// Mutation this catches: removing the candidate-path fallback from
+    /// `scanned_file_path` persists nothing for this bundle, and the relaunch
+    /// resolves no row for it.
+    #[test]
+    fn a_bundle_with_no_resolvable_module_keeps_its_row() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-bundle-unresolvable");
+        let bundle = root.join("Reverb.vst3");
+        // A bundle directory and nothing this build recognises inside it.
+        std::fs::create_dir_all(&bundle).expect("the bundle directory should be created");
+        let state = state_with_registry_file(&root);
+
+        let scan_with = |descriptors: &ScanCallLog, instances: &ScanCallLog| {
+            crate::block_on_test(scan_plugins_with_backend(
+                vec![root.display().to_string()],
+                false,
+                PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+                UNCONSTRAINED_SCAN_BUDGET,
+                &state,
+                recording_vst3_descriptor_scan(Arc::clone(descriptors), "Unresolvable Edition"),
+                recording_instance_scan(Arc::clone(instances)),
+            ))
+            .expect("a scan over an authorized fixture root should succeed")
+        };
+
+        let first_scan = scan_with(&scan_call_log(), &scan_call_log());
+        assert_eq!(
+            first_scan.plugins.len(),
+            1,
+            "the scan must publish the bundle it found: {:?}",
+            first_scan.plugins
+        );
+        assert!(
+            scanned_file_path(&first_scan.plugins[0]).is_some(),
+            "a bundle with no resolvable module still has a path to fingerprint"
+        );
+
+        scan_with(&scan_call_log(), &scan_call_log());
+        let relaunched = registry_after_relaunch(&root);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            relaunched.contains_key(&scanner::stable_id(&bundle)),
+            "the row must survive both scans and be there for the next launch: {:?}",
+            relaunched.keys().collect::<Vec<_>>()
         );
     }
 
