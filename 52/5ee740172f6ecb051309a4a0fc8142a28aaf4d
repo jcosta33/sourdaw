@@ -1,0 +1,27 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_7825bf0d75d1ce 558-563,571,573-577,590-631,634,641-662
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_19454640db4e46 48-56,212-223,229-230,252,256-257,260-262,264,371,373,380,388-391,393-401,403,469-473
+src/modules/PluginHost/stores/externalPluginParameterStore.ts
+  s_9b530f08172a54::t_9befd9ce67d654 122-173
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/unloadPlugin.spec.ts
+  s_9b530f08172a54::t_d2d922d01e1904 3-6,8,15-26,33-34,62-133
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_268397446b2342 20-29,37-41,92,99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "525ee740172f6ecb051309a4a0fc8142a28aaf4d",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
