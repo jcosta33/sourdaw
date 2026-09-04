@@ -1,0 +1,28 @@
+scripts/transportClockRecord.ts
+  s_9b530f08172a54::t_41b288950eb196 1-178
+scripts/measureTransportClock.ts
+  s_9b530f08172a54::t_f99ede5234c5d5 749-764
+  s_9b530f08172a54::t_552459ad827553 600-601
+  s_9b530f08172a54::t_e4a5c9ac2c11e6 104-108
+  s_9b530f08172a54::t_49725a0fa0e767 111,119,121
+scripts/__tests__/transportClockRecord.spec.ts
+  s_9b530f08172a54::t_21c727f18cef07 1-170
+measurements/transport-clock/pre-cutover-web.json
+  s_9b530f08172a54::t_d9350aa3239c28 1-431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4736a66fa9e99bfd42496ed1c54abe6824caaaa0",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
