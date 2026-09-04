@@ -142,7 +142,7 @@ export const BounceOptionsDialog = ({
                     <Grid cols={2} gap={4}>
                         <DawDialogSection title="Normalization">
                             <DawCompactSelect
-                                className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                                 value={options.normalization}
                                 onChange={(event) => {
                                     if (isNormalization(event.target.value)) {
@@ -158,7 +158,7 @@ export const BounceOptionsDialog = ({
 
                         <DawDialogSection title="Tail Handling">
                             <DawCompactSelect
-                                className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                                 value={options.tailHandling}
                                 onChange={(event) => {
                                     if (isTailHandling(event.target.value)) {

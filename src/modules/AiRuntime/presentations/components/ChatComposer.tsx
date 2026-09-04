@@ -105,7 +105,7 @@ export const ChatComposer = ({
 
             <Row
                 align="stretch"
-                className="relative rounded-lg border border-border bg-surface-base shadow-sm transition-all focus-within:border-[var(--color-accent-lavender)]/50 focus-within:ring-1 focus-within:ring-[var(--color-accent-lavender)]/50"
+                className="relative rounded-lg border border-border bg-surface-base shadow-sm transition-colors focus-within:ring-1 focus-within:ring-border-focus/70 focus-within:border-border-focus/70"
             >
                 <textarea
                     ref={textareaRef}
@@ -115,7 +115,7 @@ export const ChatComposer = ({
                     placeholder={placeholderText}
                     aria-label="Chat message input"
                     data-testid="chat-composer-input"
-                    className="max-h-32 min-h-[44px] w-full flex-1 resize-none bg-transparent p-3 text-xs text-foreground placeholder:text-muted-foreground scrollbar-thin scrollbar-thumb-white/10 focus:outline-none"
+                    className="max-h-32 min-h-[44px] w-full flex-1 resize-none bg-transparent p-3 text-xs text-foreground placeholder:text-muted-foreground scrollbar-thin scrollbar-thumb-white/10 outline-none focus-visible:outline-none"
                     disabled={isGenerating || !isLlmAvailable}
                     rows={1}
                 />

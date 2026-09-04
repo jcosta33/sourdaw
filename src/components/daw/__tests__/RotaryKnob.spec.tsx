@@ -652,4 +652,10 @@ describe('RotaryKnob', () => {
             unmount();
         }
     });
+
+    it('applies focus-visible ring styles on root element', () => {
+        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} aria-label="Gain" />);
+        const root = getRoot(container);
+        expect(root).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-border-focus');
+    });
 });

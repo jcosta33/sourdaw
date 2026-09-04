@@ -582,7 +582,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                         }
                                     }}
                                     placeholder="Name…"
-                                    className="fermenter-window h-8 w-24 px-2 text-[10px] outline-none"
+                                    className="fermenter-window h-8 w-24 px-2 text-[10px] outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                                     autoFocus
                                 />
                                 <Button

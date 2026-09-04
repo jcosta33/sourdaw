@@ -461,7 +461,7 @@ export const PianoRoll = ({
                          */}
                         <canvas
                             ref={canvasRef}
-                            className="sticky outline-none"
+                            className="sticky outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                             style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor }}
                             tabIndex={0}
                             // Marks this surface as a canvas editor that owns

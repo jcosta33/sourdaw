@@ -728,4 +728,10 @@ describe('ValueField', () => {
             expect(calls).toEqual(['set:65', 'release:65']);
         });
     });
+
+    it('applies focus-visible ring styles on spinbutton', () => {
+        render(<ValueField value={50} onChange={vi.fn()} />);
+        const spinbutton = screen.getByRole('spinbutton');
+        expect(spinbutton).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-border-focus');
+    });
 });

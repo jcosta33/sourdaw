@@ -101,7 +101,7 @@ export const PresetBrowser = ({
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search presets…"
-                    className="w-full h-6 rounded border border-border/40 bg-surface-inset pl-7 pr-2 text-[9px] text-foreground outline-none focus:border-[var(--color-accent-lavender)]"
+                    className="w-full h-6 rounded border border-border/40 bg-surface-inset pl-7 pr-2 text-[9px] text-foreground outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70 focus:border-[var(--color-accent-lavender)]"
                 />
             </div>
             {/* Category pills */}

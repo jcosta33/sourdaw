@@ -110,7 +110,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                     </Stack>
                                     <Stack align="center" gap={1}>
                                         <DawCompactSelect
-                                            className="bg-surface-base text-[10px] rounded border border-border/50 px-1 outline-none"
+                                            className="bg-surface-base text-[10px] rounded border border-border/50 px-1 outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                                             value={fx.parameterValues.mode || 0}
                                             onChange={(event) =>
                                                 handleParamChange(fx.id, 'mode', parseInt(event.target.value))
