@@ -1429,7 +1429,7 @@ mod tests {
     use std::sync::mpsc;
     use std::sync::Arc;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     struct ThreadBoundResource {
         created_on: thread::ThreadId,
@@ -1506,6 +1506,21 @@ mod tests {
             let _ = self.entered_tx.send(thread_name);
             let _ = self.release_rx.recv();
         }
+    }
+
+    struct DropNotifier(mpsc::Sender<()>);
+
+    impl Drop for DropNotifier {
+        fn drop(&mut self) {
+            let _ = self.0.send(());
+        }
+    }
+
+    /// Declaration order drops `_stream` before `_notifier`, so the notification
+    /// is sent only once the owner's stream teardown has returned.
+    struct NotifyingStream {
+        _stream: StreamWithReclaimerShutdown<()>,
+        _notifier: DropNotifier,
     }
 
     #[test]
@@ -1696,17 +1711,20 @@ mod tests {
             .expect("reclaimer should enter the blocking destructor");
         assert_eq!(drop_thread, "sourdaw-plugin-reclaimer");
 
+        let (dropped_tx, dropped_rx) = mpsc::channel();
         let handle = spawn_owned_audio_stream(move || {
-            Ok(StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx))
+            Ok(NotifyingStream {
+                _stream: StreamWithReclaimerShutdown(Some(()), reclaimer_shutdown_tx),
+                _notifier: DropNotifier(dropped_tx),
+            })
         })
         .expect("audio owner should start");
-        let started_at = Instant::now();
         drop(handle);
-        // The reclaimer is still blocked here: its release is sent only after
-        // this assertion, so the ceiling only tells a return from a hang.
-        assert!(
-            started_at.elapsed() < Duration::from_secs(1),
-            "dropping the audio owner handle must not wait for the reclaimer"
+        // The reclaimer is still blocked here, because its release is sent only
+        // afterwards, so receiving the drop notification proves the owner's
+        // teardown did not wait on it.
+        dropped_rx.recv_timeout(Duration::from_secs(1)).expect(
+            "the owner must finish dropping its stream while the reclaimer is still blocked",
         );
 
         release_tx.send(()).unwrap();
@@ -1725,7 +1743,7 @@ mod tests {
         assert_eq!(error, "audio device unavailable");
     }
 
-    /// The flag proves the timeout returned before the stall released; the bound is only a ceiling.
+    /// The release thread sets the flag before releasing the stall, so a call that waited the stall out sees it set.
     #[test]
     fn stalled_stream_startup_times_out_without_stranding_the_owner_resource() {
         let (release_tx, release_rx) = mpsc::channel();
@@ -1740,7 +1758,6 @@ mod tests {
                 .expect("owner thread should still be waiting");
         });
 
-        let started_at = Instant::now();
         let result = spawn_owned_audio_stream_with_timeout(
             move || {
                 release_rx
@@ -1754,7 +1771,6 @@ mod tests {
             },
             Duration::from_millis(100),
         );
-        let startup_duration = started_at.elapsed();
         let error = match result {
             Ok(handle) => {
                 drop(handle);
@@ -1768,10 +1784,6 @@ mod tests {
             !released.load(Ordering::SeqCst),
             "the 100 ms startup timeout must return before the stall releases"
         );
-        assert!(
-            startup_duration < Duration::from_secs(1),
-            "the 100 ms startup timeout must not wait the stall out"
-        );
         release_thread.join().expect("release thread should finish");
         let (created_on, dropped_on) = dropped_rx
             .recv_timeout(Duration::from_secs(1))
@@ -1779,7 +1791,7 @@ mod tests {
         assert_eq!(dropped_on, created_on);
     }
 
-    /// The flag proves the timeout returned before the stall released; the bound is only a ceiling.
+    /// The release thread sets the flag before releasing the stall, so a call that waited the stall out sees it set.
     #[test]
     fn stalled_stream_teardown_cannot_block_handle_drop_indefinitely() {
         let (release_tx, release_rx) = mpsc::channel();
@@ -1802,17 +1814,11 @@ mod tests {
                 .expect("owner thread should still be waiting");
         });
 
-        let started_at = Instant::now();
         drop(handle);
-        let drop_duration = started_at.elapsed();
 
         assert!(
             !released.load(Ordering::SeqCst),
             "the 100 ms shutdown timeout must return before the stall releases"
-        );
-        assert!(
-            drop_duration < Duration::from_secs(1),
-            "the 100 ms shutdown timeout must not wait the stall out"
         );
         release_thread.join().expect("release thread should finish");
         dropped_rx
