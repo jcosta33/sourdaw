@@ -1,0 +1,22 @@
+src/modules/Arrangement/stores/index.ts
+  h_1228e573df1f42 27-28
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  h_1228e573df1f42 93-95
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  h_1228e573df1f42 24-26,75-79,238,542-546,565-568,572-575,584-585,587-592,594-615,617,626
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  h_1228e573df1f42 48-50
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_1228e573df1f42 2,263,266-275,283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4b4c7eaea83537a3082604915a6c72373f04d467",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
