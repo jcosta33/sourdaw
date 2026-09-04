@@ -1610,7 +1610,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-                'src/app/bootstrap.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
@@ -1621,7 +1621,7 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-                'src/app/bootstrap.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
@@ -2387,15 +2387,68 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
     };
 }
 
+function digestEntryLabel(entry: string): string {
+    return entry.slice(entry.lastIndexOf(':') + 1);
+}
+
+// Only Grand Boule's boundaries currently produce `tracked-set-sha256:` digests,
+// so this is the one place a differing label can resolve to a tracked set of
+// paths worth printing; every other surface's digests stay unannotated.
+function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly string[] | undefined {
+    return GRAND_BOULE_RELEASE_REGISTRY.boundaries.find((boundary) => boundary.digestLabel === digestLabel)
+        ?.gitPathspecs;
+}
+
+// A `digests` mismatch on its own names neither the offending boundary nor the
+// remedy, and a `tracked-set-sha256` value differs from an unrelated file's
+// `sha256` digest by nothing a caller can eyeball, so `field does not match
+// provenance` alone leaves whoever hits it grepping the boundary registry by
+// hand. Pairing recorded and current entries by their trailing label instead
+// names exactly what drifted and where to fix it.
+function formatDigestsMismatch(recorded: unknown, current: readonly string[], label: string): string {
+    const recordedEntries = Array.isArray(recorded) ? (recorded as string[]) : [];
+    const recordedByLabel = new Map(recordedEntries.map((entry) => [digestEntryLabel(entry), entry]));
+    const currentByLabel = new Map(current.map((entry) => [digestEntryLabel(entry), entry]));
+    const orderedLabels = [
+        ...currentByLabel.keys(),
+        ...[...recordedByLabel.keys()].filter((digestLabel) => !currentByLabel.has(digestLabel)),
+    ];
+
+    const lines = [`${label} release inventory digests does not match provenance`];
+    for (const digestLabel of orderedLabels) {
+        const recordedEntry = recordedByLabel.get(digestLabel);
+        const currentEntry = currentByLabel.get(digestLabel);
+        if (recordedEntry === currentEntry) {
+            continue;
+        }
+        lines.push(
+            `  ${digestLabel}: recorded ${recordedEntry ?? 'nothing'} but the tree now yields ${currentEntry ?? 'nothing'}`
+        );
+        const trackedSetPathspecs = grandBouleTrackedSetPathspecsForLabel(digestLabel);
+        if (trackedSetPathspecs !== undefined) {
+            lines.push(`    tracked set: ${trackedSetPathspecs.join(', ')}`);
+        }
+    }
+    lines.push(
+        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes.`
+    );
+    return lines.join('\n');
+}
+
 function assertSurfaceContract(
     surface: Partial<ReleaseSurface> | undefined,
     expected: Partial<ReleaseSurface>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
-        if (JSON.stringify(surface?.[field as keyof ReleaseSurface]) !== JSON.stringify(value)) {
-            throw new Error(`${label} release inventory ${field} does not match provenance`);
+        const recorded = surface?.[field as keyof ReleaseSurface];
+        if (JSON.stringify(recorded) === JSON.stringify(value)) {
+            continue;
         }
+        if (field === 'digests' && Array.isArray(value)) {
+            throw new Error(formatDigestsMismatch(recorded, value, label));
+        }
+        throw new Error(`${label} release inventory ${field} does not match provenance`);
     }
 }
 

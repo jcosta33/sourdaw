@@ -112,6 +112,7 @@ const {
     repairRuntimeGraphFromProjectMock,
     sessionUndoWitnessStampPortMock,
     stampSessionUndoWitnessMock,
+    composeGrandBouleMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -187,6 +188,7 @@ const {
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
         stampSessionUndoWitnessMock: vi.fn(),
+        composeGrandBouleMock: vi.fn(),
     };
 });
 
@@ -383,8 +385,6 @@ vi.mock('#/modules/Gluten/stores', () => ({
 
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
-    initGrandBouleSubscribers: () => noop,
-    setGrandBouleEventBus: noop,
     prepareOfflineGrandBoule: noop,
 }));
 
@@ -537,6 +537,10 @@ vi.mock('../registerDependencies', () => ({
 
 vi.mock('../registerGlobalErrorHandlers', () => ({
     registerGlobalErrorHandlers: registerGlobalErrorHandlersMock,
+}));
+
+vi.mock('../composeGrandBoule', () => ({
+    composeGrandBoule: composeGrandBouleMock,
 }));
 
 // Side-effect import: this is what runs the composition root under test.
@@ -774,6 +778,13 @@ describe('bootstrap', () => {
         expect(sessionUndoWitnessStampPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             stampSessionUndoWitnessMock
         );
+    });
+
+    it('composes Grand Boule with the shared event bus and logger', () => {
+        expect(composeGrandBouleMock).toHaveBeenCalledExactlyOnceWith({
+            eventBus: eventBusMock,
+            logger: loggerMock,
+        });
     });
 
     it('wires Automation lane ranges to Arrangement descriptor truth', () => {
