@@ -1,0 +1,21 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_28abfd94826e36::t_b657772243d8ac 7406-7445
+scripts/deliverPullRequest.ts
+  s_28abfd94826e36::t_7d6d91110a141c 687,689,696-711,949-953
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "732b0d3591e146dfda0076083e72c41aacd29215",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
