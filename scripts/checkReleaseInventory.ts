@@ -1790,8 +1790,10 @@ type DecodedRgbaPng = {
     width: number;
 };
 
+const OWNER_ICON_BACKGROUND = [12, 10, 9] as const;
 const OWNER_ICON_ICNS_MAGIC = Buffer.from('icns', 'ascii');
 const OWNER_ICON_LEGACY_ARGB_MAGIC = Buffer.from('ARGB', 'ascii');
+const OWNER_ICON_PARTIAL_EDGE_SHA256 = 'cdfc19f49aa90f8433c5377a54f5b732584a91ea12c11ecec9341abf8dcfaddd';
 const OWNER_ICON_PNG_FILE_BYTE_LIMIT = 2 * 1024 * 1024;
 const OWNER_ICON_PNG_IDAT_BYTE_LIMIT = 1024 * 1024;
 const OWNER_ICON_PNG_PIXEL_BYTE_LIMIT = 5 * 1024 * 1024;
@@ -1821,26 +1823,25 @@ const OWNER_ICON_ICNS_FRAME_SIZES: Readonly<Record<(typeof OWNER_ICON_REQUIRED_I
     ic13: 256,
     ic14: 512,
 };
-const OWNER_ICON_CANONICAL_PIXEL_SHA256 = 'df64d234b2fe81e6bd7f3b27c4693b25cd6a3fd386c70e014f573a19f1a293aa';
 const OWNER_ICON_ICNS_PIXEL_SHA256: Readonly<Record<(typeof OWNER_ICON_REQUIRED_ICNS_FRAMES)[number], string>> = {
-    ic04: '0c05a640b4346aac77d2679fa491a2138af41b6902758bcf790de3abd78377c8',
-    ic05: 'ed1a498196931aee8c80f949c84ce3103d16307e0e86ae0e0121337f28ee4533',
-    ic07: '543654b1ddc7d4b42bebb757410410856fc3bedd9fa425bfd79585814b794bd1',
-    ic08: 'd588241c43aba42d6402bfce996a3c0897d06a1f723cd4b97e4d874a04ffb581',
-    ic09: 'b853eeb5486c2d0b57fcf72bae8f6feef156d1d6ee5b6f58539f1d27ad10c33c',
-    ic10: 'e823d45911b4fd730003628f4347aa828eff37c6402c556c66b6b29bf735e3fa',
-    ic11: 'ed1a498196931aee8c80f949c84ce3103d16307e0e86ae0e0121337f28ee4533',
-    ic12: '126cf6ca24987a08000069f5c03ec55411b20a15644a66a5ef3445bdde658249',
-    ic13: 'd588241c43aba42d6402bfce996a3c0897d06a1f723cd4b97e4d874a04ffb581',
-    ic14: 'b853eeb5486c2d0b57fcf72bae8f6feef156d1d6ee5b6f58539f1d27ad10c33c',
+    ic04: 'dad6d4cd341455afa867953317af20faa2cb9c7ae55ed38f41ac9fd47805a9c7',
+    ic05: '46bd1317d8ae06eb40bb2c1828be0ff3aa764f35390ab39a4fe1e6d310ae60ba',
+    ic07: '917f3eb1b7179f2e8b26636c9a9a9066cf50417a606835b2a3f6eb8a30f77a86',
+    ic08: '9ee0b42cc473c9c1b2c3740ce214f02aa3e816f93c58db6b6775b7b0c6bba4d3',
+    ic09: '141174800302682358ca3b3df507f1727de78e6c9d6a75d99a69c9408f5fc856',
+    ic10: 'fe46f7854c2bc8809892019b7a6764791da9b26677e3b12b94184616439ae7c5',
+    ic11: '46bd1317d8ae06eb40bb2c1828be0ff3aa764f35390ab39a4fe1e6d310ae60ba',
+    ic12: '2f25d01ff8c83cab4cdb71c25c06a373e58e1af32e78fc4f2ff6a87a120d1932',
+    ic13: '9ee0b42cc473c9c1b2c3740ce214f02aa3e816f93c58db6b6775b7b0c6bba4d3',
+    ic14: '141174800302682358ca3b3df507f1727de78e6c9d6a75d99a69c9408f5fc856',
 };
 const OWNER_ICON_ICO_PIXEL_SHA256: Readonly<Record<number, string>> = {
-    16: '0c05a640b4346aac77d2679fa491a2138af41b6902758bcf790de3abd78377c8',
-    24: 'a881a6078aa3a3ded7827ad66ad64b16571b4b7e9482c287bc44d9b7d105931f',
-    32: 'ed1a498196931aee8c80f949c84ce3103d16307e0e86ae0e0121337f28ee4533',
-    48: '771a681fb2fd52de876f4686838e06f90641f185cb0990b1695c35cf5e6381e7',
-    64: '126cf6ca24987a08000069f5c03ec55411b20a15644a66a5ef3445bdde658249',
-    256: 'd588241c43aba42d6402bfce996a3c0897d06a1f723cd4b97e4d874a04ffb581',
+    16: 'dad6d4cd341455afa867953317af20faa2cb9c7ae55ed38f41ac9fd47805a9c7',
+    24: '11ec7c63ee95116c449dc272d103c010de4dfc652a1de2ef01d2aece13c69cbf',
+    32: '46bd1317d8ae06eb40bb2c1828be0ff3aa764f35390ab39a4fe1e6d310ae60ba',
+    48: 'bf5fa4ce327a7deaf688e71ccc8912b43a91594f13d73dfba74f365eb38eb250',
+    64: '2f25d01ff8c83cab4cdb71c25c06a373e58e1af32e78fc4f2ff6a87a120d1932',
+    256: '9ee0b42cc473c9c1b2c3740ce214f02aa3e816f93c58db6b6775b7b0c6bba4d3',
 };
 
 function paethPredictor(left: number, above: number, upperLeft: number): number {
@@ -2062,6 +2063,21 @@ function decodeOwnerRgbaPng(data: Buffer, label: string): DecodedRgbaPng {
     return { height, pixels, width };
 }
 
+function rgbaPixel(image: DecodedRgbaPng, x: number, y: number): readonly [number, number, number, number] {
+    if (x < 0 || x >= image.width || y < 0 || y >= image.height) {
+        throw new Error('owner visual asset pixel coordinate is out of bounds');
+    }
+    const offset = (y * image.width + x) * 4;
+    const red = image.pixels[offset];
+    const green = image.pixels[offset + 1];
+    const blue = image.pixels[offset + 2];
+    const alpha = image.pixels[offset + 3];
+    if (red === undefined || green === undefined || blue === undefined || alpha === undefined) {
+        throw new Error('owner visual asset pixel data is truncated');
+    }
+    return [red, green, blue, alpha];
+}
+
 function assertCanonicalOwnerIcon(root: string): void {
     const canonicalPath = resolve(root, 'public/icon.png');
     const authorityPath = resolve(root, 'public/icon-transparent.png');
@@ -2079,6 +2095,71 @@ function assertCanonicalOwnerIcon(root: string): void {
     if (authority.width !== 346 || authority.height !== 427) {
         throw new Error('owner visual asset public/icon-transparent.png must be 346x427 RGBA');
     }
+    for (let index = 3; index < canonical.pixels.length; index += 4) {
+        if (canonical.pixels[index] !== 255) {
+            throw new Error('owner visual asset public/icon.png must be fully opaque');
+        }
+    }
+    let opaqueMarkPixels = 0;
+    const partialEdgeHash = createHash('sha256');
+    for (let y = 0; y < authority.height; y += 1) {
+        for (let x = 0; x < authority.width; x += 1) {
+            const source = rgbaPixel(authority, x, y);
+            if (source[3] === 0) {
+                continue;
+            }
+            const target = rgbaPixel(canonical, x + 66, y + 24);
+            if (source[3] === 255) {
+                opaqueMarkPixels += 1;
+                if (source.some((channel, index) => channel !== target[index])) {
+                    throw new Error(
+                        'owner visual asset public/icon.png mark does not align with public/icon-transparent.png'
+                    );
+                }
+                continue;
+            }
+            // These edges were matte-authored rather than straight-alpha composited.
+            // Pin their exact source/target relationship so validation cannot alter the mark.
+            const evidence = Buffer.alloc(12);
+            evidence.writeUInt16BE(x, 0);
+            evidence.writeUInt16BE(y, 2);
+            for (let channel = 0; channel < 4; channel += 1) {
+                evidence[4 + channel] = source[channel]!;
+                evidence[8 + channel] = target[channel]!;
+            }
+            partialEdgeHash.update(evidence);
+        }
+    }
+    if (partialEdgeHash.digest('hex') !== OWNER_ICON_PARTIAL_EDGE_SHA256) {
+        throw new Error(
+            'owner visual asset public/icon.png partial edges do not match public/icon-transparent.png authority'
+        );
+    }
+    if (opaqueMarkPixels === 0) {
+        throw new Error('owner visual asset public/icon-transparent.png contains no opaque mark pixels');
+    }
+    for (let y = 0; y < canonical.height; y += 1) {
+        for (let x = 0; x < canonical.width; x += 1) {
+            const sourceX = x - 66;
+            const sourceY = y - 24;
+            const sourceAlpha =
+                sourceX >= 0 && sourceX < authority.width && sourceY >= 0 && sourceY < authority.height
+                    ? rgbaPixel(authority, sourceX, sourceY)[3]
+                    : 0;
+            if (sourceAlpha !== 0) {
+                continue;
+            }
+            const pixel = rgbaPixel(canonical, x, y);
+            if (
+                pixel[0] !== OWNER_ICON_BACKGROUND[0] ||
+                pixel[1] !== OWNER_ICON_BACKGROUND[1] ||
+                pixel[2] !== OWNER_ICON_BACKGROUND[2] ||
+                pixel[3] !== 255
+            ) {
+                throw new Error('owner visual asset public/icon.png background must be opaque #0c0a09');
+            }
+        }
+    }
     const sourdawBytes = readBoundedOwnerAsset(
         resolve(root, 'sourdaw.png'),
         'sourdaw.png',
@@ -2087,7 +2168,6 @@ function assertCanonicalOwnerIcon(root: string): void {
     if (!sourdawBytes.equals(canonicalBytes)) {
         throw new Error('owner visual asset sourdaw.png must match public/icon.png');
     }
-    assertOwnerFramePixels(canonical, OWNER_ICON_CANONICAL_PIXEL_SHA256, 'public/icon.png');
 }
 
 function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: number): DecodedRgbaPng {
