@@ -1,0 +1,16 @@
+scripts/__tests__/removeLane.spec.ts
+  h_1228e573df1f42 21-23,42,95,116,167-182,206-263,538-622,856-930,1370-1418
+scripts/removeLane.ts
+  h_1228e573df1f42 64,100-127,239-244,264,323,345-390,778-816
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "50e8c81be32df3799c9050169d1aeb80810425a0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
