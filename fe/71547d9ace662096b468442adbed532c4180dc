@@ -1,0 +1,28 @@
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  h_1228e573df1f42 168,188
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  h_1228e573df1f42 332-339
+src/modules/Proof/presentations/views/ProofPanel.tsx
+  h_1228e573df1f42 475,481
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  h_1228e573df1f42 1587-1594
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  h_1228e573df1f42 512
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  h_1228e573df1f42 194-201
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  h_1228e573df1f42 158
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  h_1228e573df1f42 483-490
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fe71547d9ace662096b468442adbed532c4180dc",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
