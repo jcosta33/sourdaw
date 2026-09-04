@@ -7,6 +7,7 @@ import { parseStylesheet, selectorDeclaring, selectorDeclaringIn, stylesheetRule
 
 const DRAG_RULE = '.desktop-titlebar-region { app-region: drag; }';
 const mainStylesheet = readFileSync(resolve(process.cwd(), 'src/styles/main.css'), 'utf8');
+const tokensStylesheet = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 
 function utilityBody(name: string): string {
     const utility = new RegExp(`@utility ${name} \\{([^{}]*)\\}`, 'u').exec(mainStylesheet)?.[1];
@@ -134,5 +135,13 @@ describe('mainStylesheetRules', () => {
             '.desktop-titlebar-region',
         ]);
         expect(() => parseStylesheet('.desktop-titlebar-region { app-region: drag;')).toThrow('unclosed block');
+    });
+
+    it('defines canonical DAW micro-typography scale tokens in @theme', () => {
+        expect(tokensStylesheet).toContain('--text-nano: 7px;');
+        expect(tokensStylesheet).toContain('--text-micro: 8px;');
+        expect(tokensStylesheet).toContain('--text-caption: 9px;');
+        expect(tokensStylesheet).toContain('--text-dense: 10px;');
+        expect(tokensStylesheet).toContain('--text-compact: 11px;');
     });
 });

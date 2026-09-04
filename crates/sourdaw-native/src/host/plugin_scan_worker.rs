@@ -878,23 +878,54 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert_eq!(error, "Plugin scan helper timed out");
     }
     #[cfg(unix)]
+    /// A killed process stays visible to `kill(pid, 0)` until its parent
+    /// reaps it, so "the group was killed" is only provable over a reap
+    /// window: keep polling until the signal probe reports ESRCH.
+    fn process_is_gone_within(pid: i32, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            let probe = unsafe { libc::kill(pid, 0) };
+            let gone =
+                probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+            if gone {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    #[cfg(unix)]
     #[test]
     fn timeout_kills_the_helper_process_group() {
         let pid_path =
             std::env::temp_dir().join(format!("sourdaw-scan-child-{}", std::process::id()));
+        // A stale file from an earlier run under the same test-binary pid
+        // must never be mistaken for this run's helper.
+        let _ = fs::remove_file(&pid_path);
         let mut command = Command::new("sh");
         command.args([
             "-c",
             &format!("sleep 30 & echo $! > {}; wait", pid_path.display()),
         ]);
-        assert!(run_bounded(&mut command, Duration::from_millis(50)).is_err());
-        let pid = fs::read_to_string(&pid_path).unwrap();
-        let _ = fs::remove_file(pid_path);
-        assert!(!Command::new("kill")
-            .args(["-0", pid.trim()])
-            .status()
-            .unwrap()
-            .success());
+        // Long enough for `sh` to fork `sleep` and write its pid even on a
+        // loaded runner; the orphaned `sleep 30` still outlives this
+        // deadline, so the group kill below is still what gets exercised.
+        assert!(run_bounded(&mut command, Duration::from_secs(2)).is_err());
+        let pid = fs::read_to_string(&pid_path).expect(
+            "the helper must write its child's pid before the deadline; \
+             a missing file means the deadline fired first",
+        );
+        let _ = fs::remove_file(&pid_path);
+        let pid: i32 = pid.trim().parse().expect(
+            "the helper's pid file must hold the child's pid; an empty file means the \
+             deadline fired between creating and writing it",
+        );
+        assert!(
+            process_is_gone_within(pid, Duration::from_secs(2)),
+            "sleep {pid} is still alive after the group kill's reap window"
+        );
     }
 
     /// The only two shapes crash quarantine exists to catch.

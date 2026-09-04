@@ -504,8 +504,8 @@ describe('FermenterPanel', () => {
             storeState.value = makeState({ uiLevel: 3, numLayers: 2, activeLayer: 0 });
             renderPanel();
             // Click the "+" button to increment numLayers (2 → 3).
-            const plusBtn = screen.getAllByRole('button').find((b) => b.querySelector('svg.lucide-plus'));
-            fireEvent.click(plusBtn!);
+            const plusBtn = screen.getByRole('button', { name: 'Increase layer count' });
+            fireEvent.click(plusBtn);
             expectRouted('numLayers', 3);
             // Click "Layer 2" to set activeLayer.
             fireEvent.click(screen.getByText('Layer 2'));
@@ -585,6 +585,18 @@ describe('FermenterPanel', () => {
 
             const rightRail = container.querySelector('aside.min-h-\\[220px\\]');
             expect(rightRail).toBeInTheDocument();
+        });
+    });
+
+    describe('accessible toolbar actions', () => {
+        it('renders accessible patch and preset action buttons', () => {
+            renderPanel();
+            expect(screen.getByRole('button', { name: 'Open save preset dialog' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Reset patch to default' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Randomize patch' })).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Open save preset dialog' }));
+            expect(screen.getByRole('button', { name: 'Save preset' })).toBeInTheDocument();
         });
     });
 });

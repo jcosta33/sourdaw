@@ -17,6 +17,7 @@ export const RailBackBar = ({ title, onBack, icon: Icon, iconColor }: RailBackBa
             size="icon-xs"
             onClick={onBack}
             className="h-5 w-5 shrink-0 text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+            aria-label="Back"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"

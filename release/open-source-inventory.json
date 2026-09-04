@@ -1192,12 +1192,12 @@
             "digests": [
                 "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:e285a2588b0c9fa7b9c20c7b901d4570814bc9c43d1892e24fe10cdbe1aac6cc:grand-boule-discovery-catalog",
+                "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:0a082d27ff81cdeaec63073694854c0fc1a65353d9a42cd5f13098b0033b30fb:grand-boule-live-runtime",
                 "tracked-set-sha256:41f17f76ef9725c2a6d9ce2ea7c787f9bd6651c35c1143e86a3310152c349ba7:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:4a905323e4ead734b33a63f20e75935efaf9986063cf792aa7ce8a41fa213e4f:grand-boule-release-proof"
+                "tracked-set-sha256:4c2da2367bac2b8b220ab507900ec9583ae14cf2bbeae8e955af8327cd96cbaf:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1328,13 +1328,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:6cc38fc068774b964c23046f4a8abdeda9b316c2b87101992537605028d96beb",
+                "daw-dsp sha256:2a142c54350d4310de8219100ca628687dbf068647a763d68411609668003c3c",
                 "daw-wasm-decoder sha256:5b265f5b68d99951d7e6b73ec0f3daf7b52bbdd56971f12d08d4065e51c44dfe",
                 "proof-chamber sha256:58963155c2097b67a0ba353dffed639e1fdde1b7805e004b211cb6a729f02f8b",
                 "scoring sha256:42025a2d92a929504c3593d074d04e0f75e758c1bc42c50d99e6a457bfb78a36"
             ],
             "digests": [
-                "sha256:19b5d4cfb30647aa3d13fccea5eddf7f9b192ebf21f3110643d978b9f66d3663:public/wasm/manifest.json"
+                "sha256:120a12ed41a7d28f341a86fbf57031a548f02a52e55673b698cc9bf14f2f4ea4:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1460,13 +1460,13 @@
                 "derived renditions"
             ],
             "digests": [
-                "sha256:5538c2a47e15ed3a4457e026274620fbdc493ac4d0ec7c45760aa6313afdbc1d:public/favicon.ico",
-                "sha256:c266c541e95f02db79b78620f7c425059694026d2f0e809afde63782f0b319d5:public/icon-192.png",
+                "sha256:517fc1306f4c8efaf3c10ef65745658d014ad68725c5f8218877d36288d64cf4:public/favicon.ico",
+                "sha256:0f5f1435a632f0fac52ed7cf59f60387be55a597235bdee96df2fa2ac1cddbbb:public/icon-192.png",
                 "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
-                "sha256:e05b026de6c10e974dea2086061f694970d1a9a3874142595ab0ad7df85e3457:public/icon.png",
-                "sha256:e05b026de6c10e974dea2086061f694970d1a9a3874142595ab0ad7df85e3457:sourdaw.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
+                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:9c0580b110ea4d3d19f761c101023679e9ef14a7567c8988a18b26e35e0c0390:build/icons"
+                "tree-sha256:296936aec862140877137df4f5cdc57306b70a24804fa89100d4aa905b019dc2:build/icons"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1718,7 +1718,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "19b5d4cfb30647aa3d13fccea5eddf7f9b192ebf21f3110643d978b9f66d3663"
+            "sha256": "120a12ed41a7d28f341a86fbf57031a548f02a52e55673b698cc9bf14f2f4ea4"
         }
     ],
     "externalReferences": [

@@ -22,24 +22,20 @@ describe('LayerStack', () => {
     describe('layer count controls', () => {
         it('disables the remove button when only one layer remains', () => {
             render(<LayerStack {...defaultProps({ numLayers: 1 })} />);
-            // The Minus button is the first icon button in the header.
-            const buttons = screen.getAllByRole('button');
-            const minusBtn = buttons.find((b) => b.querySelector('svg.lucide-minus')) ?? buttons[0]!;
+            const minusBtn = screen.getByRole('button', { name: 'Decrease layer count' });
             expect(minusBtn).toBeDisabled();
         });
 
         it('disables the add button when four layers exist', () => {
             render(<LayerStack {...defaultProps({ numLayers: 4 })} />);
-            const buttons = screen.getAllByRole('button');
-            const plusBtn = buttons.find((b) => b.querySelector('svg.lucide-plus'))!;
+            const plusBtn = screen.getByRole('button', { name: 'Increase layer count' });
             expect(plusBtn).toBeDisabled();
         });
 
         it('emits the decremented layer count when remove is clicked', () => {
             const onNumLayersChange = vi.fn();
             render(<LayerStack {...defaultProps({ numLayers: 3, onNumLayersChange })} />);
-            const buttons = screen.getAllByRole('button');
-            const minusBtn = buttons.find((b) => b.querySelector('svg.lucide-minus'))!;
+            const minusBtn = screen.getByRole('button', { name: 'Decrease layer count' });
             fireEvent.click(minusBtn);
             expect(onNumLayersChange).toHaveBeenLastCalledWith(2);
         });
@@ -47,8 +43,7 @@ describe('LayerStack', () => {
         it('emits the incremented layer count when add is clicked', () => {
             const onNumLayersChange = vi.fn();
             render(<LayerStack {...defaultProps({ numLayers: 2, onNumLayersChange })} />);
-            const buttons = screen.getAllByRole('button');
-            const plusBtn = buttons.find((b) => b.querySelector('svg.lucide-plus'))!;
+            const plusBtn = screen.getByRole('button', { name: 'Increase layer count' });
             fireEvent.click(plusBtn);
             expect(onNumLayersChange).toHaveBeenLastCalledWith(3);
         });
