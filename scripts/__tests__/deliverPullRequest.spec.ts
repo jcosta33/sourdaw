@@ -6549,16 +6549,14 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * `Gate`'s own `needs` names twelve jobs; of those, `Lint`, `Module boundaries`,
-     * `Offline browser smoke`, `Production build`, `Rust workspace and collaboration server`,
-     * `Native audio backend (macOS)`, `Windows device layer`, and `Native parity (macOS)` carry a
-     * job-level `if:` on `decide`'s scope output. `unit` is not among `Gate`'s needs at all, and a
-     * skipped matrix job reports under its unexpanded template name rather than a shard name, so this
-     * rule cannot decide a shard either way. A scope-gated leg is skipped by the workflow's own
-     * path-filter decision, re-evaluated on the current diff, and a fixed head's changed-file set only
-     * shrinks as the merge base advances, so that decision only ever moves true to false. A later
-     * `SKIPPED` under a cancelled name is therefore the scope decision of record, and the head is
-     * green by design and merges.
+     * The rule serves the legs `Gate` needs that carry a job-level `if:` on `decide`'s scope output,
+     * which the fixtures below derive from the live workflow rather than list. The unit shards are
+     * not among `Gate`'s needs, and a skipped matrix job reports under its unexpanded template name
+     * rather than a shard name, so this rule cannot decide a shard either way. A scope-gated leg is
+     * skipped by the workflow's own path-filter decision, re-evaluated on the current diff, and a
+     * fixed head's changed-file set only shrinks as the merge base advances, so that decision only
+     * ever moves true to false. A later `SKIPPED` under a cancelled name is therefore the scope
+     * decision of record, and the head is green by design and merges.
      */
     it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
         expect(gatingCheckNames.has('Lint')).toBe(true);
