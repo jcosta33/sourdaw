@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
-import { digestPayloadComponents, type PayloadComponent } from '../desktopLatencyRecord.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { digestPayloadComponents, writeRecord, type PayloadComponent } from '../desktopLatencyRecord.ts';
 
 const asar: PayloadComponent = { path: 'Contents/Resources/app.asar', bytes: Buffer.from('renderer bundle') };
 const addon: PayloadComponent = { path: 'Contents/Resources/sourdaw-native.node', bytes: Buffer.from('native addon') };
@@ -48,5 +52,43 @@ describe('digestPayloadComponents', () => {
         ]);
 
         expect(atAnotherPath).not.toBe(atItsOwnPath);
+    });
+});
+
+describe('writeRecord', () => {
+    let root: string | undefined;
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        if (root !== undefined) {
+            rmSync(root, { recursive: true, force: true });
+            root = undefined;
+        }
+    });
+
+    // Every baseline driver (desktop latency, transport clock, and any later
+    // addition) shares this one writer, so a regression here is silent in
+    // every driver's own spec until a real run trips over it. This pins the
+    // four things a caller actually depends on in one written file:
+    // - the `jsonSafe` replacer turning `NaN`/`Infinity` into strings (fails
+    //   if the replacer is swapped for `null` or dropped),
+    // - `mkdirSync` creating the parent directories the path needs (fails if
+    //   that call is deleted and the write throws ENOENT instead),
+    // - the exact four-space indentation (fails if it drifts to two spaces
+    //   or tabs), and
+    // - the single trailing newline (fails if it is dropped or doubled).
+    it('creates missing parent directories and writes four-space JSON with the non-finite replacer and a trailing newline', () => {
+        root = mkdtempSync(join(tmpdir(), 'sourdaw-record-'));
+        const path = join(root, 'one', 'two', 'record.json');
+        const printed = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+        writeRecord(path, { schemaVersion: 1, mean: Number.NaN, nested: { max: Number.POSITIVE_INFINITY } });
+
+        expect(existsSync(dirname(path))).toBe(true);
+        expect(readFileSync(path, 'utf8')).toBe(
+            '{\n    "schemaVersion": 1,\n    "mean": "NaN",\n    "nested": {\n        "max": "Infinity"\n    }\n}\n'
+        );
+        expect(printed).toHaveBeenCalledTimes(1);
+        expect(printed).toHaveBeenCalledWith(expect.stringContaining('record written to'));
     });
 });

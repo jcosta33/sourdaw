@@ -352,7 +352,7 @@ function jsonSafe(_key: string, value: unknown): unknown {
  * `jsonSafe` non-finite replacer, and the same printed confirmation line,
  * rather than each driver growing its own copy of `mkdirSync`/`writeFileSync`.
  */
-export function writeRecord<TRecord extends object>(jsonPath: string, record: TRecord): void {
+export function writeRecord<TRecord extends Record<string, unknown>>(jsonPath: string, record: TRecord): void {
     mkdirSync(dirname(resolve(jsonPath)), { recursive: true });
     writeFileSync(resolve(jsonPath), `${JSON.stringify(record, jsonSafe, 4)}\n`);
     process.stdout.write(`\nrecord written to ${jsonPath}\n`);
