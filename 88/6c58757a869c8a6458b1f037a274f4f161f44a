@@ -1,0 +1,30 @@
+crates/proof-chamber/src/lib.rs
+  h_1228e573df1f42 653-663
+crates/proof-chamber/src/proof_chamber.rs
+  h_1228e573df1f42 807-810,901
+crates/proof-chamber/tests/algorithm_switch_parameter_retention.rs
+  h_1228e573df1f42 526-532,534-536
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  h_1228e573df1f42 80,103-112,233,235,237,242-246,248-250,461-464,479-505
+public/wasm/manifest.json
+  h_1228e573df1f42 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_1228e573df1f42 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_1228e573df1f42 1
+release/open-source-inventory.json
+  h_1228e573df1f42 1333,1337,1721
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_1228e573df1f42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "886c58757a869c8a6458b1f037a274f4f161f44a",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
