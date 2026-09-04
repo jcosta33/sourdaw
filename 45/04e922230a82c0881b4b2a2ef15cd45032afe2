@@ -1,0 +1,21 @@
+crates/daw-engine/src/audio_thread.rs
+  s_28abfd94826e36::t_b64885c353312e 1717-1718
+  s_28abfd94826e36::t_f5616997f8e6b6 1519-1523
+  s_28abfd94826e36::t_b29eae46d03909 1432,1511-1518,1524-1525,1714,1716,1719,1723-1727,1746,1794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4504e922230a82c0881b4b2a2ef15cd45032afe2",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
