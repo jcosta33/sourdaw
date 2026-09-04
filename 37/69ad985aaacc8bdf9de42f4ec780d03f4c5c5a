@@ -1,0 +1,45 @@
+src/modules/AudioEngine/useCases/livePlayback/repositionNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_ef2234394bf5b6 70
+  s_9b530f08172a54::t_39dc4a443fa854 45
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_200508337cd5f5 54
+  s_9b530f08172a54::t_a025d471e9a63a 383
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_9b530f08172a54::t_cf2147f8f4aaae 634,638-640,642-649
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_ccab461d27d09e 332-353
+  s_9b530f08172a54::t_2bc5b3def2cf3b 972-990
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_a2342bf55bf6a7 50
+  s_9b530f08172a54::t_ab8f14b7f0f762 17
+src/modules/AudioEngine/useCases/livePlayback/reportAttachedPlugins.ts
+  s_9b530f08172a54::t_c15c0f512e57c6 1-32
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_61007a69cb6f70 288-294
+  s_9b530f08172a54::t_810ec9428ec271 61
+  s_9b530f08172a54::t_854ef8e161183a 212
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_eec814aca93cc5 1455-1465
+  s_9b530f08172a54::t_f11cfdf28cdfa0 4069-4129
+  s_9b530f08172a54::t_bf1e26c50d866a 1567-1570,1573
+  s_9b530f08172a54::t_8927695703d554 1751-1754,1760-1762
+  s_9b530f08172a54::t_7a7f6eb5146e63 4007-4068
+  s_9b530f08172a54::t_e1a15f4039d5fe 1222-1233
+  s_9b530f08172a54::t_bec7cba8bad493 4130-4132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3769ad985aaacc8bdf9de42f4ec780d03f4c5c5a",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
