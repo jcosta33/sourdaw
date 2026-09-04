@@ -1,0 +1,33 @@
+src/components/ui/DragResizeHandle.tsx
+  s_9b530f08172a54::t_b2938b3e585950 1-9,14,279,328
+src/components/ui/__tests__/DragResizeHandle.spec.tsx
+  s_9b530f08172a54::t_02034ba5530edb 70-75,195-214
+src/modules/Arrangement/presentations/views/TrackHeader/__tests__/ResizeHandle.spec.tsx
+  s_9b530f08172a54::t_175a32a331c04a 1,4,76-160
+src/modules/Arrangement/presentations/views/TrackHeader/ResizeHandle.tsx
+  s_71651fa5c901b0::t_0ac4ceef401d5a 12-18,22,26-27,30-31,34-40,42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "816b4c5a6537d1ab5620f4356e360b1011f200b7",
+  "prompts": {},
+  "sessions": {
+    "s_71651fa5c901b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aea1b168a15d8c06b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
