@@ -1419,7 +1419,7 @@ mod tests {
     use super::{
         new_bridge_round_trip_slot, publish_bridge_round_trip, spawn_owned_audio_stream,
         spawn_owned_audio_stream_with_timeout, spawn_retirement_reclaimer, AudioThreadHandle,
-        StreamWithReclaimerShutdown,
+        StreamWithReclaimerShutdown, AUDIO_STREAM_SHUTDOWN_TIMEOUT,
     };
     use crate::audio_bridge::settled_round_trip_frames;
     use cpal::{BufferSize, SupportedBufferSize};
@@ -1430,6 +1430,10 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    /// The stall is this many timeouts long, so a timeout that returns is
+    /// unambiguously distinguished from one that waited the stall out, on any runner.
+    const STALL_MULTIPLE: u32 = 20;
 
     struct ThreadBoundResource {
         created_on: thread::ThreadId,
@@ -1746,12 +1750,14 @@ mod tests {
     /// The release thread sets the flag before releasing the stall, so a call that waited the stall out sees it set.
     #[test]
     fn stalled_stream_startup_times_out_without_stranding_the_owner_resource() {
+        const STALLED_STARTUP_TIMEOUT: Duration = Duration::from_millis(100);
+
         let (release_tx, release_rx) = mpsc::channel();
         let (dropped_tx, dropped_rx) = mpsc::channel();
         let released = Arc::new(AtomicBool::new(false));
         let release_flag = Arc::clone(&released);
         let release_thread = thread::spawn(move || {
-            thread::sleep(Duration::from_secs(2));
+            thread::sleep(STALLED_STARTUP_TIMEOUT * STALL_MULTIPLE);
             release_flag.store(true, Ordering::SeqCst);
             release_tx
                 .send(())
@@ -1769,7 +1775,7 @@ mod tests {
                     _not_send: Rc::new(()),
                 })
             },
-            Duration::from_millis(100),
+            STALLED_STARTUP_TIMEOUT,
         );
         let error = match result {
             Ok(handle) => {
@@ -1782,13 +1788,21 @@ mod tests {
         assert_eq!(error, "Timed out waiting for audio stream startup");
         assert!(
             !released.load(Ordering::SeqCst),
-            "the 100 ms startup timeout must return before the stall releases"
+            "the startup timeout must return before the stall releases"
         );
         release_thread.join().expect("release thread should finish");
         let (created_on, dropped_on) = dropped_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("late owner resource should still be dropped");
         assert_eq!(dropped_on, created_on);
+    }
+
+    /// This is how long a handle drop may block on a stalled stream teardown, which is what quitting
+    /// or switching devices waits on, so raising it is a product decision that must be made here
+    /// rather than inherited from an unrelated edit.
+    #[test]
+    fn audio_stream_shutdown_timeout_is_a_deliberate_product_bound() {
+        assert_eq!(AUDIO_STREAM_SHUTDOWN_TIMEOUT, Duration::from_millis(100));
     }
 
     /// The release thread sets the flag before releasing the stall, so a call that waited the stall out sees it set.
@@ -1807,7 +1821,7 @@ mod tests {
         let released = Arc::new(AtomicBool::new(false));
         let release_flag = Arc::clone(&released);
         let release_thread = thread::spawn(move || {
-            thread::sleep(Duration::from_secs(2));
+            thread::sleep(AUDIO_STREAM_SHUTDOWN_TIMEOUT * STALL_MULTIPLE);
             release_flag.store(true, Ordering::SeqCst);
             release_tx
                 .send(())
@@ -1818,7 +1832,7 @@ mod tests {
 
         assert!(
             !released.load(Ordering::SeqCst),
-            "the 100 ms shutdown timeout must return before the stall releases"
+            "the shutdown timeout must return before the stall releases"
         );
         release_thread.join().expect("release thread should finish");
         dropped_rx
