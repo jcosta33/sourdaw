@@ -2399,6 +2399,49 @@ function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly st
         ?.gitPathspecs;
 }
 
+// `recorded` comes straight from parsed JSON, so an element can be anything;
+// a typeof guard keeps a non-string entry out of digestEntryLabel instead of
+// laundering it through a cast.
+function labelableRecordedEntries(recorded: unknown): { entries: string[]; invalidIndexes: number[] } {
+    const entries: string[] = [];
+    const invalidIndexes: number[] = [];
+    if (!Array.isArray(recorded)) {
+        return { entries, invalidIndexes };
+    }
+    for (const [index, entry] of (recorded as unknown[]).entries()) {
+        if (typeof entry === 'string') {
+            entries.push(entry);
+        } else {
+            invalidIndexes.push(index);
+        }
+    }
+    return { entries, invalidIndexes };
+}
+
+// Folding entries into a Map by label is lossy: a duplicated label keeps only
+// its last write, and a pure reordering produces the same Map either way. So
+// when assertSurfaceContract has already decided the two arrays differ but no
+// per-label line was emitted, the difference is one of those two shapes —
+// name it directly rather than leaving a bare header and remedy with nothing
+// between them.
+function describeUnlabeledDigestsDifference(recordedEntries: readonly string[], current: readonly string[]): string[] {
+    const recordedLabels = recordedEntries.map(digestEntryLabel);
+    const duplicateLabels = [
+        ...new Set(recordedLabels.filter((digestLabel, index) => recordedLabels.indexOf(digestLabel) !== index)),
+    ];
+    if (duplicateLabels.length > 0) {
+        return duplicateLabels.map((digestLabel) => {
+            const count = recordedLabels.filter((candidate) => candidate === digestLabel).length;
+            return `  ${digestLabel}: recorded ${count} entries where one is expected`;
+        });
+    }
+    return [
+        `  recorded order differs from the tree; recorded: [${recordedLabels.join(', ')}] current: [${current
+            .map(digestEntryLabel)
+            .join(', ')}]`,
+    ];
+}
+
 // A `digests` mismatch on its own names neither the offending boundary nor the
 // remedy, and a `tracked-set-sha256` value differs from an unrelated file's
 // `sha256` digest by nothing a caller can eyeball, so `field does not match
@@ -2406,7 +2449,7 @@ function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly st
 // hand. Pairing recorded and current entries by their trailing label instead
 // names exactly what drifted and where to fix it.
 function formatDigestsMismatch(recorded: unknown, current: readonly string[], label: string): string {
-    const recordedEntries = Array.isArray(recorded) ? (recorded as string[]) : [];
+    const { entries: recordedEntries, invalidIndexes } = labelableRecordedEntries(recorded);
     const recordedByLabel = new Map(recordedEntries.map((entry) => [digestEntryLabel(entry), entry]));
     const currentByLabel = new Map(current.map((entry) => [digestEntryLabel(entry), entry]));
     const orderedLabels = [
@@ -2415,12 +2458,17 @@ function formatDigestsMismatch(recorded: unknown, current: readonly string[], la
     ];
 
     const lines = [`${label} release inventory digests does not match provenance`];
+    for (const index of invalidIndexes) {
+        lines.push(`  ${index}: recorded entry is not a string`);
+    }
+    let namedADifference = invalidIndexes.length > 0;
     for (const digestLabel of orderedLabels) {
         const recordedEntry = recordedByLabel.get(digestLabel);
         const currentEntry = currentByLabel.get(digestLabel);
         if (recordedEntry === currentEntry) {
             continue;
         }
+        namedADifference = true;
         lines.push(
             `  ${digestLabel}: recorded ${recordedEntry ?? 'nothing'} but the tree now yields ${currentEntry ?? 'nothing'}`
         );
@@ -2428,6 +2476,9 @@ function formatDigestsMismatch(recorded: unknown, current: readonly string[], la
         if (trackedSetPathspecs !== undefined) {
             lines.push(`    tracked set: ${trackedSetPathspecs.join(', ')}`);
         }
+    }
+    if (!namedADifference) {
+        lines.push(...describeUnlabeledDigestsDifference(recordedEntries, current));
     }
     lines.push(
         `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes.`

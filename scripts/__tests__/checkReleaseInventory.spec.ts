@@ -930,6 +930,9 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/AudioEngine/repositories/createWebAudioEngine.ts', 'export const engine = 1;'],
         ['src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts', 'export const schedule = 1;'],
         ['src/app/composeGrandBoule.ts', 'export const composeGrandBoule = 1;'],
+        // Tracked so the boundary-exclusion test mutates real committed bytes
+        // instead of creating the file from nothing — see #3089 repair notes.
+        ['src/app/bootstrap.ts', 'export const bootstrap = 1;'],
         ['src/app/getProductionCommandHandlerMaps.ts', 'export const handlers = 1;'],
         ['src/utils/handlerContract.ts', 'export type Action = unknown;'],
         ['src/modules/Command/useCases/versionedCommandArgumentKeys.ts', 'export const keys = [];'],
@@ -1033,6 +1036,19 @@ function findDigestByLabel(digests: readonly string[], label: string): string {
         throw new Error(`missing digest label ${label}`);
     }
     return digest;
+}
+
+function digestLabelFromEntry(entry: string): string {
+    return entry.slice(entry.lastIndexOf(':') + 1);
+}
+
+function thrownMessage(assertion: () => void): string {
+    try {
+        assertion();
+    } catch (error) {
+        return (error as Error).message;
+    }
+    throw new Error('expected assertion to throw');
 }
 
 function initializeIsolatedGitFixture(root: string): void {
@@ -2683,9 +2699,11 @@ describe('release inventory', () => {
             const baseline = grandBouleReleaseInventoryContract(root).digests;
 
             const bootstrapPath = join(root, 'src/app/bootstrap.ts');
-            writeFileSync(bootstrapPath, 'export const bootstrap = 1;');
+            const originalBootstrap = readFileSync(bootstrapPath, 'utf8');
+            writeFileSync(bootstrapPath, `${originalBootstrap}\n// mutated`);
             execFileSync('git', ['add', '.'], { cwd: root });
             expect(grandBouleReleaseInventoryContract(root).digests).toEqual(baseline);
+            writeFileSync(bootstrapPath, originalBootstrap);
 
             const composePath = join(root, 'src/app/composeGrandBoule.ts');
             const originalCompose = readFileSync(composePath, 'utf8');
@@ -3196,6 +3214,55 @@ describe('release inventory', () => {
                 }
                 expect(assertStaleSingleLabel).not.toThrow(`${boundary.digestLabel}: recorded`);
             }
+
+            // Folding recorded entries into a Map by label is lossy: a duplicated
+            // label keeps only its last write, so the per-label loop finds nothing
+            // to report even though assertSurfaceContract already knows the arrays
+            // differ (9 entries instead of 8). Deleting the duplicate-label branch
+            // in `describeUnlabeledDigestsDifference` turns this red.
+            const duplicateLabelDigests = current.digests.flatMap((entry) =>
+                entry === realProjectStateEntry ? [staleProjectStateEntry, realProjectStateEntry] : [entry]
+            );
+            const duplicateLabelLines = thrownMessage(() =>
+                assertGrandBouleReleaseInventory(root, { ...current, digests: duplicateLabelDigests })
+            ).split('\n');
+            expect(duplicateLabelLines[0]).toBe('Grand Boule release inventory digests does not match provenance');
+            expect(duplicateLabelLines.at(-1)).toBe(
+                'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
+                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+            );
+            expect(duplicateLabelLines.slice(1, -1)).toContain(
+                '  grand-boule-project-state: recorded 2 entries where one is expected'
+            );
+
+            // Reordering two entries with no content change also produces zero
+            // per-label diffs (the Map lookup is order-independent), so the
+            // fallback must name the labels involved rather than staying silent.
+            // Deleting the order-differs branch in `describeUnlabeledDigestsDifference`
+            // turns this red.
+            const swappedDigests = [current.digests[1]!, current.digests[0]!, ...current.digests.slice(2)];
+            const swappedOrderLines = thrownMessage(() =>
+                assertGrandBouleReleaseInventory(root, { ...current, digests: swappedDigests })
+            ).split('\n');
+            expect(swappedOrderLines[0]).toBe('Grand Boule release inventory digests does not match provenance');
+            expect(swappedOrderLines.at(-1)).toBe(
+                'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
+                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+            );
+            expect(swappedOrderLines.slice(1, -1)).toContain(
+                `  recorded order differs from the tree; recorded: [${swappedDigests
+                    .map(digestLabelFromEntry)
+                    .join(', ')}] current: [${current.digests.map(digestLabelFromEntry).join(', ')}]`
+            );
+
+            // A non-string recorded entry (malformed JSON) must be reported by
+            // index rather than reaching digestEntryLabel, which assumes a string.
+            const numericEntryDigests = current.digests.map((entry, index) =>
+                index === 0 ? (123 as unknown as string) : entry
+            );
+            expect(() => assertGrandBouleReleaseInventory(root, { ...current, digests: numericEntryDigests })).toThrow(
+                '0: recorded entry is not a string'
+            );
 
             for (const [field, value] of [
                 ['retention', 'defer-behind-admission'],
