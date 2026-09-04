@@ -241,10 +241,8 @@ const K = (props: KProps): ReactElement => {
                 tone="mint"
                 aria-label={label}
             />
-            <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
-            {unit ? (
-                <span className="font-mono text-[7px] text-muted-foreground/45">{formatValue(v, unit)}</span>
-            ) : null}
+            <span className="text-micro leading-none text-muted-foreground">{label}</span>
+            {unit ? <span className="font-mono text-nano text-muted-foreground/45">{formatValue(v, unit)}</span> : null}
         </Stack>
     );
 };
@@ -262,7 +260,7 @@ const SectionHeader = ({
 }): ReactElement => (
     <Row align="start" justify="between" gap={3}>
         <Stack gap={1}>
-            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
+            <div className="text-micro font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
                 {eyebrow}
             </div>
             <div className="text-[13px] font-semibold tracking-[0.02em] text-foreground">{title}</div>
@@ -290,7 +288,7 @@ const BChip = ({
 
 const MetricCell = ({ label, value }: { label: string; value: string }): ReactElement => (
     <Stack gap={1} className="bacteria-window min-w-[92px] px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
+        <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
         <span className="font-mono text-[12px] text-foreground">{value}</span>
     </Stack>
 );
@@ -298,8 +296,8 @@ const MetricCell = ({ label, value }: { label: string; value: string }): ReactEl
 const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
     <Stack gap={2} className="bacteria-window px-3 py-2">
         <Row justify="between" gap={2}>
-            <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band energy</span>
-            <span className="text-[8px] text-muted-foreground/45">{state.patch.bandCount} active lanes</span>
+            <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">Band energy</span>
+            <span className="text-micro text-muted-foreground/45">{state.patch.bandCount} active lanes</span>
         </Row>
         <Row gap={2}>
             {Array.from({ length: state.patch.bandCount }, (_, index) => {
@@ -312,7 +310,7 @@ const BandMeters = ({ state }: { state: BacteriaState }): ReactElement => (
                                 style={{ width: `${Math.max(6, level * 100)}%` }}
                             />
                         </div>
-                        <Row justify="between" gap={2} className="text-[8px] text-muted-foreground/45">
+                        <Row justify="between" gap={2} className="text-micro text-muted-foreground/45">
                             <span>B{index + 1}</span>
                             <span className="font-mono">{formatValue(state.bandLevels[index] ?? -100, 'dB')}</span>
                         </Row>
@@ -377,7 +375,7 @@ const PresetRail = ({
                     value={query}
                     onChange={(event) => onQueryChange(event.target.value)}
                     placeholder="Search cultures"
-                    className="w-full bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
+                    className="w-full bg-transparent text-compact text-foreground outline-none placeholder:text-muted-foreground/45"
                 />
             </Row>
 
@@ -395,10 +393,10 @@ const PresetRail = ({
 
             <Stack grow className="bacteria-window min-h-0 overflow-hidden">
                 <Row justify="between" gap={2} className="border-b border-white/6 px-3 py-2">
-                    <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                    <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
                         Preset drawer
                     </span>
-                    <span className="text-[8px] text-muted-foreground/45">{state.patch.name}</span>
+                    <span className="text-micro text-muted-foreground/45">{state.patch.name}</span>
                 </Row>
                 <Stack grow gap={1} className="min-h-0 overflow-y-auto px-2 py-2">
                     {filteredPresets.length > 0 ? (
@@ -416,8 +414,8 @@ const PresetRail = ({
                                     }`}
                                     onClick={() => loadBacteriaPatchWithAudio(deviceId, preset.patch)}
                                 >
-                                    <span className="text-[11px] font-medium text-foreground">{preset.name}</span>
-                                    <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
+                                    <span className="text-compact font-medium text-foreground">{preset.name}</span>
+                                    <span className="text-micro uppercase tracking-[0.22em] text-muted-foreground/50">
                                         {preset.category}
                                     </span>
                                 </Stack>
@@ -427,7 +425,7 @@ const PresetRail = ({
                         <Stack
                             align="center"
                             justify="center"
-                            className="h-full px-4 text-center text-[11px] text-muted-foreground"
+                            className="h-full px-4 text-center text-compact text-muted-foreground"
                         >
                             Nothing matches that jar label yet.
                         </Stack>
@@ -468,10 +466,10 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
             <Grid cols={4} gap={2}>
                 {state.patch.snapshots.slice(0, 4).map((snapshot) => (
                     <Stack key={snapshot.id} gap={1} className="bacteria-window px-3 py-2">
-                        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                        <span className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
                             Snap {snapshot.id}
                         </span>
-                        <span className="truncate text-[11px] text-foreground">{snapshot.name}</span>
+                        <span className="truncate text-compact text-foreground">{snapshot.name}</span>
                     </Stack>
                 ))}
             </Grid>
@@ -668,7 +666,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             <Stack grow gap={3} className="bacteria-window min-h-0 p-3">
                 <Row justify="between" gap={3}>
                     <Stack gap={1}>
-                        <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
+                        <div className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">
                             Band broth
                         </div>
                         <div className="text-[12px] font-medium text-foreground">Zoomed strips</div>
@@ -735,7 +733,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
         <Stack grow gap={3} className="bacteria-window min-h-0 p-3">
             <Row justify="between" gap={2}>
                 <Stack gap={1}>
-                    <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
+                    <div className="text-micro uppercase tracking-[0.24em] text-muted-foreground/55">Band cards</div>
                     <div className="text-[12px] font-medium text-foreground">The organism split open</div>
                 </Stack>
                 <DawPluginLed tone="mint">{state.patch.crossoverMode}</DawPluginLed>
@@ -1547,7 +1545,7 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
             <Stack gap={2}>
                 {Array.from({ length: state.patch.bandCount }, (_, index) => (
                     <Row key={index} justify="between" gap={3} className="bacteria-window px-3 py-2">
-                        <span className="text-[11px] font-medium text-foreground">Band {index + 1}</span>
+                        <span className="text-compact font-medium text-foreground">Band {index + 1}</span>
                         <Row wrap gap={1}>
                             {ROUTING_MODES.map((mode) => (
                                 <BChip
@@ -1820,7 +1818,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
             <Stack gap={2.5} grow className="min-w-0">
                 <Row as="header" gap={2.5} className="bacteria-window shrink-0 flex-wrap px-3 py-2">
                     <Stack gap={1}>
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
+                        <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-mint-bright)]/70">
                             {activeLevel.eyebrow}
                         </div>
                         <div className="text-[13px] font-semibold text-foreground">Bacteria</div>
@@ -1860,10 +1858,10 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                     <Row gap={2} className="ml-auto">
                         <DawPluginLed tone="mint">{moduleMeta.label}</DawPluginLed>
                         <Stack align="end" className="text-right">
-                            <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
+                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">
                                 In {formatValue(state.inputDb, 'dB')} / Out {formatValue(state.outputDb, 'dB')}
                             </div>
-                            <div className="text-[10px] text-muted-foreground">
+                            <div className="text-dense text-muted-foreground">
                                 {countEnabledEffects(activeBand)} active effects in band {state.activeBand + 1}
                             </div>
                         </Stack>

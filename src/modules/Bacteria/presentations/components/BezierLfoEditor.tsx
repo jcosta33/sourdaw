@@ -235,7 +235,7 @@ export const BezierLfoEditor = ({
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
-            <span className="absolute top-1 left-1 text-[7px] text-muted-foreground/30 font-mono">
+            <span className="absolute top-1 left-1 text-nano text-muted-foreground/30 font-mono">
                 {tempoSync ? 'LFO (Tempo Sync)' : 'LFO Shape'}
             </span>
         </div>

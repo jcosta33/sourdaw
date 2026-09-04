@@ -43,7 +43,7 @@ const ModelSelector = ({
     onSelect: (id: string) => void;
 }): ReactElement => (
     <Stack gap={1}>
-        <div className="text-[8px] uppercase tracking-[0.2em] text-neutral-400/50">{label}</div>
+        <div className="text-micro uppercase tracking-[0.2em] text-neutral-400/50">{label}</div>
         <Stack gap={0.5}>
             {BUILTIN_PIANO_MODELS.map((model: GrandBoulePianoModel) => {
                 const active = model.id === selectedId;
@@ -54,7 +54,7 @@ const ModelSelector = ({
                         key={model.id}
                         type="button"
                         onClick={() => onSelect(model.id)}
-                        className={`rounded-sm px-2 py-1 text-left text-[10px] transition-colors ${
+                        className={`rounded-sm px-2 py-1 text-left text-dense transition-colors ${
                             active
                                 ? 'bg-neutral-300/15 text-neutral-200 font-medium'
                                 : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
@@ -99,8 +99,8 @@ const MorphKnob = ({
             aria-label={label}
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
-            <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
+            <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
+            <div className="font-mono text-caption text-foreground/85">{readout}</div>
         </div>
     </Stack>
 );
@@ -120,7 +120,7 @@ const BlendIndicator = ({
     modelBName: string;
 }): ReactElement => (
     <Stack gap={1}>
-        <Row justify="between" className="text-[8px] text-muted-foreground/50">
+        <Row justify="between" className="text-micro text-muted-foreground/50">
             <span className="truncate max-w-[5rem]">{modelAName}</span>
             <span className="truncate max-w-[5rem] text-right">{modelBName}</span>
         </Row>
@@ -174,7 +174,7 @@ export const MorphPanel = ({
             <Stack gap={3}>
                 {/* Enable toggle */}
                 <Row justify="between" gap={2}>
-                    <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/60">
+                    <span className="text-caption uppercase tracking-[0.18em] text-muted-foreground/60">
                         Enable morph
                     </span>
                     <DawPluginToggle

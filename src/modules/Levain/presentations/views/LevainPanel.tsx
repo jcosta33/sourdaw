@@ -102,7 +102,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     <Stack as="section" gap={3} className="levain-window p-3">
                         <Row align="start" justify="between" gap={3}>
                             <Stack gap={1}>
-                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
+                                <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
                                     Lineup
                                 </div>
                                 <div className="text-[15px] font-semibold text-foreground">Levain</div>
@@ -123,7 +123,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
                                 placeholder="Find a section"
-                                className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
+                                className="min-w-0 flex-1 bg-transparent text-compact text-foreground outline-none placeholder:text-muted-foreground/45"
                                 aria-label="Search Levain instruments"
                             />
                         </Row>
@@ -166,10 +166,10 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         onClick={() => loadInstrument(deviceId, instrument.id)}
                                     >
                                         <Row justify="between" gap={2} className="w-full">
-                                            <span className="text-[11px] font-medium text-foreground">
+                                            <span className="text-compact font-medium text-foreground">
                                                 {instrument.label}
                                             </span>
-                                            <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/45">
+                                            <span className="text-micro uppercase tracking-[0.22em] text-muted-foreground/45">
                                                 {instrument.family}
                                             </span>
                                         </Row>
@@ -180,7 +180,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </Stack>
 
                     <section className="levain-window min-h-0 overflow-y-auto p-2">
-                        <div className="px-2 pb-2 text-[8px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
+                        <div className="px-2 pb-2 text-micro uppercase tracking-[0.24em] text-[var(--color-accent-amber)]/70">
                             Articulation rail
                         </div>
                         <ArticulationList
@@ -194,7 +194,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={2}>
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
+                            <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
                                 Phrase stage
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{instLabel}</div>
@@ -321,10 +321,10 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             tone="amber"
                                             aria-label="Master"
                                         />
-                                        <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                        <span className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">
                                             Master
                                         </span>
-                                        <span className="font-mono text-[9px] text-foreground/85">
+                                        <span className="font-mono text-caption text-foreground/85">
                                             {(patch.masterGain * 100).toFixed(0)}%
                                         </span>
                                     </Stack>

@@ -182,7 +182,7 @@ export const CrossoverDisplay = ({
                         }}
                     >
                         <span
-                            className="absolute top-1 left-1 text-[7px] font-bold pointer-events-none"
+                            className="absolute top-1 left-1 text-nano font-bold pointer-events-none"
                             style={{ color: BAND_BORDER_COLORS[i % BAND_BORDER_COLORS.length] }}
                         >
                             {i + 1}

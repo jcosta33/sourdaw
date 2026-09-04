@@ -88,7 +88,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 borderRight: '1px solid var(--color-border-soft)',
             }}
         >
-            <span className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest">Gain</span>
+            <span className="text-nano font-semibold text-muted-foreground/40 uppercase tracking-widest">Gain</span>
 
             {/* Drag track */}
             <Row
@@ -169,7 +169,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
 
             {/* Numeric readout */}
             <span
-                className="text-[9px] font-mono tabular-nums font-semibold"
+                className="text-caption font-mono tabular-nums font-semibold"
                 style={{ color: valueColor }}
                 aria-hidden="true"
             >

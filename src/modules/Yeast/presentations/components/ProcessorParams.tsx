@@ -287,7 +287,7 @@ export const ProcessorParams = ({
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="px-2 py-1 text-[7px] rounded border border-border/30 cursor-pointer hover:text-foreground text-muted-foreground"
+                        className="px-2 py-1 text-nano rounded border border-border/30 cursor-pointer hover:text-foreground text-muted-foreground"
                         onClick={() => handleCommand('learn')}
                     >
                         Learn
@@ -304,7 +304,7 @@ export const ProcessorParams = ({
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="px-2 py-1 text-[7px] rounded border border-[var(--color-state-danger)]/30 cursor-pointer text-muted-foreground hover:text-[var(--color-state-danger)]"
+                        className="px-2 py-1 text-nano rounded border border-[var(--color-state-danger)]/30 cursor-pointer text-muted-foreground hover:text-[var(--color-state-danger)]"
                         onClick={() => handleCommand('clear')}
                     >
                         Clear All

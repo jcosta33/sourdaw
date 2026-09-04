@@ -119,8 +119,8 @@ const Knob = ({
             aria-label={label}
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
-            <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
+            <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
+            <div className="font-mono text-caption text-foreground/85">{readout}</div>
         </div>
     </Stack>
 );
@@ -341,8 +341,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
                                     >
-                                        <span className="text-[11px] font-medium text-foreground">{preset.name}</span>
-                                        <span className="text-[9px] leading-tight text-muted-foreground">
+                                        <span className="text-compact font-medium text-foreground">{preset.name}</span>
+                                        <span className="text-caption leading-tight text-muted-foreground">
                                             {preset.description}
                                         </span>
                                     </Button>
@@ -454,12 +454,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <Stack
                                 as="label"
                                 gap={1}
-                                className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60"
+                                className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60"
                             >
                                 Microphone
                                 <DawCompactSelect
                                     aria-label="Microphone position"
-                                    className="grand-boule-window min-h-8 bg-black/20 px-2 font-mono text-[10px] text-foreground"
+                                    className="grand-boule-window min-h-8 bg-black/20 px-2 font-mono text-dense text-foreground"
                                     value={config.micPosition}
                                     onChange={(event) =>
                                         setGrandBouleRadiationParam({
@@ -567,7 +567,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={2}>
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-neutral-400/80">
+                            <div className="text-micro uppercase tracking-[0.26em] text-neutral-400/80">
                                 Grand Boule
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">Physical Modeling Piano</div>
@@ -620,7 +620,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 readout={`${Math.round(pedals.sustain * 100)}%`}
                             />
                             <Row justify="between" gap={2}>
-                                <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/60">
+                                <span className="text-caption uppercase tracking-[0.18em] text-muted-foreground/60">
                                     Una corda
                                 </span>
                                 <DawPluginToggle
@@ -636,7 +636,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 />
                             </Row>
                             <Row justify="between" gap={2}>
-                                <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/60">
+                                <span className="text-caption uppercase tracking-[0.18em] text-muted-foreground/60">
                                     Sostenuto
                                 </span>
                                 <DawPluginToggle
@@ -671,7 +671,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                                 temperament: option.value,
                                             })
                                         }
-                                        className={`rounded-sm px-2 py-1 text-left text-[10px] transition-colors ${
+                                        className={`rounded-sm px-2 py-1 text-left text-dense transition-colors ${
                                             active
                                                 ? 'bg-neutral-300/15 text-neutral-200 font-medium'
                                                 : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'
