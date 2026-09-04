@@ -1657,22 +1657,25 @@ describe('AutomergeSync', () => {
     it('retries sanitation on the merged document in hand instead of dropping the delivery', async () => {
         const exchange = setupLiveExchange();
         await exchange.connect();
-        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementationOnce(() => {
-            throw new Error('transient allocation fault');
+        // Aimed only at the round that carries the peer edit, so a chased
+        // empty round (see `chaseConvergenceAfterEmptyRound`) cannot absorb
+        // the scripted failure and leave the retry this test targets
+        // unexercised.
+        let peer_edit_sanitized_once = false;
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => {
+            if ((document as Doc<SeededDoc>).peerProbe === PEER_EDIT && !peer_edit_sanitized_once) {
+                peer_edit_sanitized_once = true;
+                throw new Error('transient allocation fault');
+            }
+            return document;
         });
 
         await exchange.deliverOne();
 
-        // At least the in-delivery retry this test targets: a Bloom-filter
-        // false positive can cost `deliverOne` a leading empty round (see
-        // `chaseConvergenceAfterEmptyRound`), which spends the scripted
-        // failure on a round that carries nothing and adds a call the exact
-        // count below owed only to a single-round delivery. What the retry
-        // loop must still guarantee — regardless of how many physical
-        // rounds this logical delivery took — is captured by the assertions
-        // that follow: the edit arrived, and the channel was not quarantined
-        // for a fault that a second attempt clears.
-        expect(vi.mocked(sanitizeIncomingCrdtDocument).mock.calls.length).toBeGreaterThanOrEqual(2);
+        const peerEditSanitizeCalls = vi
+            .mocked(sanitizeIncomingCrdtDocument)
+            .mock.calls.filter(([document]) => (document as Doc<SeededDoc>).peerProbe === PEER_EDIT).length;
+        expect(peerEditSanitizeCalls).toBe(2);
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.probeValue()).toBe(PEER_EDIT);
     });
