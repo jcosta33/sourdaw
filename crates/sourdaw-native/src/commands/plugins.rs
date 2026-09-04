@@ -2663,6 +2663,7 @@ pub async fn process_plugin_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_registry_store::scanned_binary_location;
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::plugin_window::PluginEditorWindow;
     use crate::host::ui_thread::{UiThread, UiThreadTask};
@@ -5457,6 +5458,29 @@ mod tests {
         }
     }
 
+    /// The row a scanned VST3 bundle produces, as far as the module resolver
+    /// reads it: the bundle path and the format. Nothing else about a row
+    /// decides where its binary lives.
+    fn vst3_bundle_row(bundle: &Path) -> ScannedPlugin {
+        ScannedPlugin {
+            id: scanner::stable_id(bundle),
+            name: "Vendor Reverb".to_string(),
+            vendor: "Vendor".to_string(),
+            format: "vst3".to_string(),
+            category: "effect".to_string(),
+            path: bundle.display().to_string(),
+            version: "1.0.0".to_string(),
+            descriptor_id: "com.vendor.bundled".to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 0,
+            has_custom_ui: true,
+            parameters: Some(Vec::new()),
+            parameter_metadata_reason: None,
+            capability_metadata_reason: None,
+        }
+    }
+
     /// A descriptor whose identity is the file's own stem, so two fixture
     /// plugins are two identities and neither deduplicates the other away.
     fn descriptor_for(path: &Path) -> scanner::ScannedDescriptor {
@@ -5789,6 +5813,245 @@ mod tests {
             2,
             "both files belong in the retry's result: {:?}",
             retry_scan.plugins
+        );
+    }
+
+    /// A descriptor backend for a bundle whose factory declares two plugins, in
+    /// a fixed order. Their identities differ, so both survive the scan's
+    /// per-identity retention and the order they came back in is observable.
+    fn recording_two_plugin_descriptor_scan(
+        log: ScanCallLog,
+    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String> + Send + 'static
+    {
+        move |_format, path, timeout| {
+            record_scan_call(&log, path, timeout);
+            Ok(vec![
+                descriptor("com.vendor.first"),
+                descriptor("com.vendor.second"),
+            ])
+        }
+    }
+
+    /// A VST3 descriptor backend that records every call and answers with the
+    /// name the caller chose, so a replaced row is visible in the result.
+    fn recording_vst3_descriptor_scan(
+        log: ScanCallLog,
+        name: &'static str,
+    ) -> impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String> + Send + 'static
+    {
+        move |_format, path, timeout| {
+            record_scan_call(&log, path, timeout);
+            let mut answered = descriptor("com.vendor.bundled");
+            answered.format = "vst3".to_string();
+            answered.name = Some(name.to_string());
+            Ok(vec![answered])
+        }
+    }
+
+    /// The path a scan records is the candidate the walk found, and for a VST3
+    /// bundle that candidate is a directory. A directory's size and
+    /// modification time describe its own listing, so rewriting the module
+    /// inside it — which is what an in-place plugin update is — moves neither.
+    /// Fingerprinting the candidate would therefore call an updated plugin
+    /// unchanged and republish the old version's metadata for as long as the
+    /// bundle's entries stayed put.
+    ///
+    /// Mutation this catches: fingerprinting `plugin.path` instead of
+    /// `scanned_file_path`'s answer leaves the second scan's call count at zero
+    /// and its row at the first scan's name.
+    #[test]
+    fn a_bundle_whose_module_changed_is_rescanned_though_its_directory_did_not() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-bundle-module");
+        let bundle = root.join("Reverb.vst3");
+        std::fs::create_dir_all(&bundle).expect("the bundle directory should be created");
+
+        // Where this platform's loader expects the module. Asked rather than
+        // spelled out, so the fixture is the layout the product resolves and
+        // not a second copy of it that can drift.
+        let module = scanned_binary_location(&vst3_bundle_row(&bundle))
+            .expect("every supported platform names where a VST3 module belongs");
+        std::fs::create_dir_all(module.parent().expect("a module path has a parent"))
+            .expect("the module's directory should be created");
+        std::fs::write(&module, b"vst3-bytes").expect("the fixture module should be written");
+        let state = state_with_registry_file(&root);
+
+        let scan_with = |name: &'static str, descriptors: &ScanCallLog, instances: &ScanCallLog| {
+            crate::block_on_test(scan_plugins_with_backend(
+                vec![root.display().to_string()],
+                false,
+                PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+                UNCONSTRAINED_SCAN_BUDGET,
+                &state,
+                recording_vst3_descriptor_scan(Arc::clone(descriptors), name),
+                recording_instance_scan(Arc::clone(instances)),
+            ))
+            .expect("a scan over an authorized fixture root should succeed")
+        };
+
+        let first_scan = scan_with("First Edition", &scan_call_log(), &scan_call_log());
+        assert_eq!(
+            first_scan.plugins.len(),
+            1,
+            "the bundle fixture must leave a reusable row behind: {:?}",
+            first_scan.plugins
+        );
+
+        // An in-place update: the module is rewritten at a different length,
+        // and no entry of any directory in the bundle is created or removed.
+        std::fs::write(&module, b"vst3-bytes-of-the-second-edition")
+            .expect("the module should be updated in place");
+
+        let descriptor_calls = scan_call_log();
+        let instance_calls = scan_call_log();
+        let second_scan = scan_with("Second Edition", &descriptor_calls, &instance_calls);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &bundle),
+            1,
+            "a bundle whose module changed must be read again"
+        );
+        assert_eq!(
+            scan_calls_for(&instance_calls, &bundle),
+            1,
+            "the rescan must inspect an instance of the updated module"
+        );
+        assert_eq!(
+            second_scan
+                .plugins
+                .first()
+                .expect("the rescan must produce a row")
+                .name,
+            "Second Edition",
+            "the published row must be the updated module's, not the previous scan's"
+        );
+    }
+
+    /// The row a targeted activation rescan leaves behind: a descriptor was
+    /// read and no instance was ever created, so there is neither a parameter
+    /// contract nor a reason for its absence. Nobody asked — which is not the
+    /// same as asked and refused, and it must not pin an un-inspected plugin
+    /// out of every future scan.
+    ///
+    /// Mutation this catches: relaxing `instance_inspection_answered` from
+    /// `&&` to `||` makes this row reusable, leaving the instance call count at
+    /// zero and the plugin's parameters unknown forever.
+    #[test]
+    fn a_row_no_instance_inspection_ever_ran_for_is_rescanned() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-uninspected-row");
+        let plugin_path = root.join("Reverb.clap");
+        std::fs::write(&plugin_path, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        let uninspected = ScannedPlugin {
+            id: scanner::stable_id(&plugin_path),
+            name: "Vendor Reverb".to_string(),
+            vendor: "Vendor".to_string(),
+            format: "clap".to_string(),
+            category: "effect".to_string(),
+            path: plugin_path.display().to_string(),
+            version: "1.0.0".to_string(),
+            descriptor_id: "com.vendor.reverb".to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 0,
+            has_custom_ui: true,
+            parameters: None,
+            parameter_metadata_reason: None,
+            capability_metadata_reason: None,
+        };
+        state.plugin_registry_store.persist(&[ScanRow {
+            keys: vec![uninspected.id.clone()],
+            plugin: uninspected,
+        }]);
+
+        let instance_calls = scan_call_log();
+        let scan = scan_fixture_root(&root, false, &state, &scan_call_log(), &instance_calls);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&instance_calls, &plugin_path),
+            1,
+            "a row nothing ever inspected an instance for must be inspected now"
+        );
+        assert!(
+            scan.plugins
+                .first()
+                .expect("the rescan must produce a row")
+                .parameters
+                .is_some(),
+            "the scan that finally inspects the plugin must record its parameters: {:?}",
+            scan.plugins
+        );
+    }
+
+    /// One file can declare several plugins, and their order is the factory's,
+    /// not the registry's. The rows are keyed by identity, so nothing in the
+    /// stored map recovers that order — only the recorded position does. A
+    /// browse list that reordered a multi-plugin bundle on the first scan that
+    /// reused it would move plugins under the user's cursor for no reason.
+    ///
+    /// Mutation this catches: sorting `reusable_rows` by
+    /// `Reverse(bundle_position)`, or dropping the sort for the map's own key
+    /// order, reverses or scrambles the second scan's rows against the first's.
+    #[test]
+    fn a_reused_files_plugins_come_back_in_the_order_its_factory_declared() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("reuse-bundle-order");
+        let bundle_path = root.join("Duo.clap");
+        std::fs::write(&bundle_path, b"clap-bytes").expect("fixture plugin should be written");
+        let state = state_with_registry_file(&root);
+
+        let scan_with = |descriptors: &ScanCallLog, instances: &ScanCallLog| {
+            crate::block_on_test(scan_plugins_with_backend(
+                vec![root.display().to_string()],
+                false,
+                PluginScanPolicy::with_allowed_roots(vec![root.clone()]),
+                UNCONSTRAINED_SCAN_BUDGET,
+                &state,
+                recording_two_plugin_descriptor_scan(Arc::clone(descriptors)),
+                recording_instance_scan(Arc::clone(instances)),
+            ))
+            .expect("a scan over an authorized fixture root should succeed")
+        };
+
+        let first_scan = scan_with(&scan_call_log(), &scan_call_log());
+        assert_eq!(
+            first_scan.plugins.len(),
+            2,
+            "the fixture bundle must declare two plugins: {:?}",
+            first_scan.plugins
+        );
+
+        let descriptor_calls = scan_call_log();
+        let second_scan = scan_with(&descriptor_calls, &scan_call_log());
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &bundle_path),
+            0,
+            "an unchanged multi-plugin bundle must not be read again"
+        );
+        assert_eq!(
+            second_scan
+                .plugins
+                .iter()
+                .map(|plugin| plugin.descriptor_id.as_str())
+                .collect::<Vec<_>>(),
+            first_scan
+                .plugins
+                .iter()
+                .map(|plugin| plugin.descriptor_id.as_str())
+                .collect::<Vec<_>>(),
+            "a reused file's plugins keep the order its factory declared them in"
         );
     }
 

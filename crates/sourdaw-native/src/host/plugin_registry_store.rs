@@ -46,7 +46,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
-use daw_plugin_host::scanner::ScannedPlugin;
+use daw_plugin_host::scanner::{self, PluginFormat, ScannedPlugin};
+use daw_plugin_host::vst3_module;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::filesystem::APP_DIR_NAME;
@@ -94,9 +95,19 @@ const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
 const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
 
 /// Refuse to parse a registry file larger than a scan could have written.
-/// A bounded scan yields at most a few hundred entries of a few hundred bytes;
-/// anything past this is not this file's content and is not worth the parse.
-const MAX_REGISTRY_FILE_BYTES: u64 = 4 * 1024 * 1024;
+///
+/// Derived rather than chosen, because a bound below what this build can write
+/// is not a safety limit — it is a file the user cannot recover from without
+/// deleting it by hand, refused identically at every launch. The derivation:
+/// [`MAX_REGISTRY_ENTRIES`] rows, which is [`MAX_SCAN_CANDIDATES`] times the
+/// two keys a scanned plugin claims, each holding a whole [`ScannedPlugin`] at
+/// the scanner's own caps — 256 parameter descriptors with names and modules at
+/// the per-parameter byte cap, a little over 100 KB serialised. That product
+/// lands in the high fifties of MiB, so the bound is the next power of two
+/// above it and the row has room to grow before this has to be revisited.
+/// `the_byte_bound_admits_a_registry_full_of_maximal_rows` measures the row
+/// rather than trusting this arithmetic, and fails if either side moves.
+const MAX_REGISTRY_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Refuse a document carrying more rows than a completed scan could index.
 ///
@@ -176,9 +187,11 @@ pub struct PersistedPluginEntry {
     /// by position. Recorded so a reused file comes back in the order a fresh
     /// scan of it would have produced.
     pub bundle_position: u32,
-    /// Size of the plugin file, in bytes, when it was scanned.
+    /// Size, in bytes, of the binary this plugin loads from — which is the file
+    /// inside the bundle, not the bundle directory the walk found. See
+    /// [`scanned_binary_location`].
     pub file_size_bytes: u64,
-    /// Modification time of the plugin file when it was scanned, in
+    /// Modification time of that same binary when it was scanned, in
     /// milliseconds since the unix epoch.
     ///
     /// Millisecond resolution is the fingerprint's floor: a replacement written
@@ -623,7 +636,7 @@ impl PluginRegistryStore {
             let path = row.plugin.path.as_str();
             let fingerprint = *fingerprints
                 .entry(path)
-                .or_insert_with(|| file_fingerprint(Path::new(path)));
+                .or_insert_with(|| scanned_file_fingerprint(&row.plugin));
             let Some((file_size_bytes, file_modified_ms)) = fingerprint else {
                 continue;
             };
@@ -709,9 +722,88 @@ fn entry_is_still_the_scanned_file(
         return false;
     }
 
-    file_fingerprint(path).is_some_and(|(size, modified)| {
+    scanned_file_fingerprint(&entry.plugin).is_some_and(|(size, modified)| {
         size == entry.file_size_bytes && modified == entry.file_modified_ms
     })
+}
+
+/// The fingerprint of the file this plugin is actually loaded from, or nothing.
+///
+/// The one reader and writer of a row's fingerprint. Both sides go through it
+/// so that a stored fingerprint and a compared fingerprint always describe the
+/// same file: a capture that stats one file and a comparison that stats another
+/// answers "unchanged" about a question nobody asked.
+///
+/// `None` means this plugin has no fingerprintable file right now, and that is
+/// a refusal on both sides — the row is not written with a fingerprint it could
+/// never be checked against, and a row already holding one is neither hydrated
+/// nor reused. The scan re-inspects the candidate instead, which is what it did
+/// before any row was reusable.
+pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<(u64, u64)> {
+    file_fingerprint(&scanned_file_path(plugin)?)
+}
+
+/// The existing file [`scanned_file_fingerprint`] describes.
+pub(crate) fn scanned_file_path(plugin: &ScannedPlugin) -> Option<PathBuf> {
+    let location = scanned_binary_location(plugin)?;
+    location.is_file().then_some(location)
+}
+
+/// Where this plugin's binary belongs, whether or not it is there yet.
+///
+/// A scanned path is the candidate the walk found, and for both hosted formats
+/// that candidate is a bundle *directory* on at least one platform. A directory
+/// carries the size and modification time of its own listing, and rewriting a
+/// binary inside it moves neither: fingerprinting the candidate would read an
+/// in-place plugin update as unchanged for as long as the bundle's own entries
+/// stayed put, which on macOS is forever. So the fingerprint follows the file
+/// the loader opens, resolved through the same public resolvers the loaders
+/// themselves use rather than a second copy of each layout.
+///
+/// Separate from [`scanned_file_path`] because existence is a different
+/// question from location: a bundle whose executable is missing has a location
+/// and no file, and only the caller that wants to *write* there cares about the
+/// difference.
+pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf> {
+    let candidate = Path::new(&plugin.path);
+    if !candidate.is_dir() {
+        return Some(candidate.to_path_buf());
+    }
+    match PluginFormat::from_wire_name(&plugin.format)? {
+        PluginFormat::Clap => scanner::clap_library_path(candidate).ok(),
+        PluginFormat::Vst3 => vst3_bundle_binary_location(candidate),
+        PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
+    }
+    .filter(|location| !location.is_dir())
+}
+
+/// The VST3 module inside a bundle, by this platform's layout.
+#[cfg(target_os = "macos")]
+fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    vst3_module::macos_executable_path(bundle).ok()
+}
+
+/// The VST3 module inside a bundle, by this platform's layout.
+///
+/// Windows names several architecture directories a host tries in order, so an
+/// existing module decides; with none present the preferred one is still the
+/// place the module belongs, and the existence gate above rejects it.
+#[cfg(target_os = "windows")]
+fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    let candidates = vst3_module::windows_module_paths(bundle, std::env::consts::ARCH).ok()?;
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .or_else(|| candidates.first())
+        .cloned()
+}
+
+/// The VST3 module inside a bundle, by this platform's layout.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    vst3_module::linux_module_path(bundle, std::env::consts::ARCH)
+        .ok()
+        .flatten()
 }
 
 fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
@@ -1641,6 +1733,100 @@ mod tests {
         assert!(
             store.is_quarantined(quarantined_path).is_none(),
             "a predicate that keeps nothing must clear the row"
+        );
+    }
+
+    /// A bundle is a directory, and a directory is not a thing a plugin loads.
+    /// A row pointing at a bundle whose module is not there describes a plugin
+    /// that cannot be instantiated, so republishing it would put an unloadable
+    /// entry in the browse list without anything ever re-reading the file.
+    ///
+    /// Mutation this catches: dropping the `is_file` gate from
+    /// `scanned_file_path` lets the bundle directory's own fingerprint stand in
+    /// for the missing module's, and the row becomes reusable.
+    #[test]
+    fn a_bundle_whose_resolved_executable_is_absent_is_never_reused() {
+        let test_root = TestRegistryRoot::create("registry-absent-module");
+        let bundle = test_root.root.join("plugins").join("Reverb.vst3");
+        fs::create_dir_all(&bundle).expect("the bundle directory should be created");
+        let mut plugin = scanned_plugin(&bundle, "aaaa1111");
+        plugin.format = "vst3".to_string();
+
+        let store = test_root.store();
+        store.persist(&rows_for(vec![("aaaa1111", plugin.clone())]));
+
+        assert!(
+            scanned_binary_location(&plugin).is_some(),
+            "every supported platform names where a VST3 bundle's module belongs"
+        );
+        assert!(
+            scanned_file_path(&plugin).is_none(),
+            "a module that is not there is not a file to fingerprint"
+        );
+        assert!(
+            store
+                .reusable_rows(&bundle, &test_root.scan_policy())
+                .is_none(),
+            "a bundle with no loadable module must be re-inspected, not republished"
+        );
+    }
+
+    /// The largest parameter contract the scanner will emit, at its own caps:
+    /// 256 descriptors (`MAX_SCANNED_PARAMETER_DESCRIPTORS`) whose names and
+    /// modules are each 128 bytes (`MAX_SCANNED_PARAMETER_NAME_BYTES`). Both
+    /// are private to the scanner, so they are spelled out here; the assertion
+    /// they feed is an upper bound, and over-stating them only makes it safer.
+    fn maximal_scanned_plugin(path: &Path) -> ScannedPlugin {
+        let filler = "p".repeat(128);
+        let mut plugin = scanned_plugin(path, "aaaa1111");
+        plugin.num_parameters = 256;
+        plugin.parameters = Some(
+            (0..256)
+                .map(|id| ScannedParameterDescriptor {
+                    id,
+                    name: filler.clone(),
+                    module: Some(filler.clone()),
+                    min_value: f64::MIN,
+                    max_value: f64::MAX,
+                    default_value: 0.0,
+                    is_automatable: true,
+                    is_modulatable: true,
+                    is_stepped: true,
+                    is_enum: true,
+                })
+                .collect(),
+        );
+        plugin.capability_metadata_reason = Some(filler);
+        plugin
+    }
+
+    /// The row now carries the scan's whole answer rather than the few columns
+    /// activation reads, so the byte bound is no longer a round number with
+    /// slack in it — it is a number the row size decides. A bound the largest
+    /// legal registry exceeds is not a limit but a permanent refusal: every
+    /// launch reads the file, rejects it, and the user's only recovery is
+    /// deleting it by hand.
+    ///
+    /// Mutation this catches: restoring `MAX_REGISTRY_FILE_BYTES` to 4 MiB, or
+    /// growing the persisted row without revisiting the bound.
+    #[test]
+    fn the_byte_bound_admits_a_registry_full_of_maximal_rows() {
+        let entry = PersistedPluginEntry {
+            plugin: maximal_scanned_plugin(Path::new("/plugins/Reverb.clap")),
+            bundle_position: 0,
+            file_size_bytes: u64::MAX,
+            file_modified_ms: u64::MAX,
+        };
+        let row_bytes = serde_json::to_vec(&entry)
+            .expect("a persisted row should serialize")
+            .len() as u64;
+
+        let largest_document = MAX_REGISTRY_ENTRIES as u64 * row_bytes;
+        assert!(
+            largest_document <= MAX_REGISTRY_FILE_BYTES,
+            "the byte bound must admit the largest registry a scan can write: \
+             {MAX_REGISTRY_ENTRIES} rows of {row_bytes} bytes is {largest_document}, \
+             over a bound of {MAX_REGISTRY_FILE_BYTES}"
         );
     }
 
