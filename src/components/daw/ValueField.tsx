@@ -429,7 +429,7 @@ export const ValueField = ({
                     // pointercancel, zero `onChange`. `RotaryKnob` already carries
                     // it. `select-none` only stops text selection; it does not
                     // surrender the gesture.
-                    'daw-inset-surface flex items-center justify-center rounded-micro px-1.5 py-0.5 font-mono tabular-nums select-none touch-none',
+                    'daw-inset-surface flex items-center justify-center rounded-micro px-1.5 py-0.5 font-mono tabular-nums select-none touch-none outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                     'transition-[color,box-shadow,border-color,filter] duration-fast',
                     'cursor-ns-resize',
                     isDragging

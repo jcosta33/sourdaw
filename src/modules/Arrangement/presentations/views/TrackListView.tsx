@@ -310,7 +310,9 @@ export const TrackListView = ({
                                 onDragEnd={handleDragEnd}
                                 onClick={() => selectTrack(track.id)}
                                 className={
-                                    dragOverIndex === index ? 'border-t-2 border-ring outline-none' : 'outline-none'
+                                    dragOverIndex === index
+                                        ? 'border-t-2 border-ring outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70'
+                                        : 'outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70'
                                 }
                             >
                                 <TrackHeader track={track} isSelected={track.id === selectedTrackId} />

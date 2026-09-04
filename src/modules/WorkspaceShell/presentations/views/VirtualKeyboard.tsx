@@ -556,7 +556,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     return (
         <Stack
-            className="h-full w-full select-none overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none"
+            className="h-full w-full select-none overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
             ref={panelRef} // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- application role requires programmatic focus for keyboard input
             tabIndex={0}
             onKeyDown={onKeyDown}

@@ -439,7 +439,7 @@ export const RotaryKnob = ({
             aria-disabled={disabled || undefined}
             title={title}
             className={cn(
-                'group/knob relative flex flex-col items-center select-none touch-none',
+                'group/knob relative flex flex-col items-center select-none touch-none outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                 disabled ? 'cursor-not-allowed opacity-45' : 'cursor-ns-resize',
                 label && 'min-w-fit',
                 className

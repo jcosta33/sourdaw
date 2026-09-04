@@ -8,4 +8,12 @@ describe('DawCompactTextarea', () => {
         render(<DawCompactTextarea monospace defaultValue="x" aria-label="Notes" />);
         expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveClass('font-mono');
     });
+
+    it('applies focus-visible ring styles for keyboard navigation', () => {
+        render(<DawCompactTextarea aria-label="Notes" />);
+        expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveClass(
+            'focus-visible:ring-1',
+            'focus-visible:ring-border-focus/70'
+        );
+    });
 });
