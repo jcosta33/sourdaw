@@ -1683,7 +1683,8 @@ pub struct AttachedPlugin {
     pub bridge_round_trip_frames: u32,
 }
 
-/// Register every instance that was loaded while no engine was running.
+/// Register the instances that were loaded while no engine was running, up to
+/// the `limit` the caller reserved room for.
 ///
 /// The engine starts lazily, on the first graph batch, so a plugin loaded
 /// before the first Play is parked in `state.plugins` with no engine plugin id.
@@ -1691,6 +1692,13 @@ pub struct AttachedPlugin {
 /// session, and the relay answered every block for it with "No engine plugin
 /// for instance". This is what moves it, called by `apply_graph_commands` right
 /// after the crumbs slot it mirrors.
+///
+/// Each attach pushes one command onto the ring the caller's batch just filled,
+/// so the caller reserves that many slots before sending it and passes the same
+/// number here. Honouring it is what makes the reservation exact: an instance
+/// parked after the caller counted is left dormant rather than pushed onto a
+/// ring with no room for it, and the next batch — the roll that follows a
+/// topology within one start sequence — counts it and takes it.
 ///
 /// Synchronous, unlike every other lifecycle path here, because its caller
 /// holds the graph registry guard across its own body and so cannot await: the
@@ -1703,7 +1711,14 @@ pub struct AttachedPlugin {
 /// holds `plugins` across the engine lock — nor `engine` across anything else.
 /// No path here nests those two at all, which is what leaves no order for a
 /// cycle to close.
-pub fn attach_dormant_plugins(state: &AppState) -> Result<Vec<AttachedPlugin>, String> {
+pub fn attach_dormant_plugins(
+    state: &AppState,
+    limit: usize,
+) -> Result<Vec<AttachedPlugin>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+
     let Ok(_runtime_guard) = PLUGIN_RUNTIME_GATE.try_read() else {
         return Err("the plugin runtime gate is held by another operation".to_string());
     };
@@ -1718,6 +1733,11 @@ pub fn attach_dormant_plugins(state: &AppState) -> Result<Vec<AttachedPlugin>, S
 
     let mut attached = Vec::new();
     for instance_id in dormant_instance_ids {
+        // Refusals cost the caller nothing, so only an instance actually taken
+        // spends a reserved slot.
+        if attached.len() == limit {
+            break;
+        }
         match attach_one_dormant_plugin(state, &instance_id) {
             Ok(Some(plugin)) => attached.push(plugin),
             Ok(None) => {}
@@ -3856,7 +3876,7 @@ mod tests {
             );
 
         let attached =
-            attach_dormant_plugins(&state).expect("the dormant instance must reach the engine");
+            attach_dormant_plugins(&state, 1).expect("the dormant instance must reach the engine");
 
         let taken: Vec<&str> = attached
             .iter()
@@ -3876,6 +3896,80 @@ mod tests {
             engine_free_at_install.load(std::sync::atomic::Ordering::SeqCst),
             "the wake must be installed with the engine lock free: the wait is \
              the plugin's, and everything behind that lock would wait with it"
+        );
+    }
+
+    /// The attach takes at most the number of instances its caller reserved
+    /// ring slots for, and leaves the rest parked.
+    ///
+    /// The caller counts the dormant instances before it sends its batch, and
+    /// the batch fills the ring it sizes. An instance parked between that count
+    /// and this call has no slot behind the batch, so taking it would push onto
+    /// a full ring and re-park it anyway — a wasted registration and a wasted
+    /// engine id. Left alone, it is counted by the next batch: the roll that
+    /// follows a topology within one start sequence.
+    #[test]
+    fn the_attach_takes_no_more_instances_than_its_caller_reserved_room_for() {
+        let state = AppState::default();
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        for instance_id in ["counted-instance", "parked-after-the-count"] {
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock should be available")
+                .insert(
+                    instance_id.to_string(),
+                    crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(
+                        ClapWrapper::new_engine_owned_command_fixture(
+                            "Dormant Fixture",
+                            Vec::new(),
+                            false,
+                        ),
+                    )),
+                );
+        }
+
+        let attached =
+            attach_dormant_plugins(&state, 1).expect("the reserved instance must reach the engine");
+
+        assert_eq!(
+            attached.len(),
+            1,
+            "one slot was reserved, so one instance may be taken: {:?}",
+            attached
+                .iter()
+                .map(|plugin| plugin.instance_id.as_str())
+                .collect::<Vec<_>>()
+        );
+        let taken = attached[0].instance_id.clone();
+        let left = state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available");
+        assert_eq!(
+            left.len(),
+            1,
+            "the instance beyond the reservation stays parked for the next batch"
+        );
+        assert!(
+            !left.contains_key(&taken),
+            "and the one still parked is not the one that was taken"
+        );
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        assert!(
+            engine_plugins.contains_key(&taken),
+            "the engine holds exactly the instance the attach reported"
+        );
+        assert_eq!(
+            engine_plugins.len(),
+            1,
+            "and nothing else was handed over on the way"
         );
     }
 

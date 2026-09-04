@@ -149,8 +149,7 @@ use crate::commands::crumbs::{self, CrumbsState};
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
-    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, HOSTED_PLUGIN_RESERVE,
-    TIMELINE_CHAIN_SLOT_BUDGET,
+    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -2503,6 +2502,14 @@ pub async fn apply_graph_commands(
         Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
     }
 
+    // Read outside the engine lock, in the load path's order, and spent as both
+    // the batch's reservation and the attach's limit.
+    let dormant_plugin_count = state
+        .plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock plugins: {error}"))?
+        .len();
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -2539,12 +2546,14 @@ pub async fn apply_graph_commands(
     // refuses to drain past until every command is visible — the engine
     // applies the batch whole or does not observe it at all. Only this
     // thread pushes onto the ring (the engine mutex is held).
-    // The attach below pushes one `AddPluginWithBridge` per dormant instance,
-    // onto a ring this batch sizes to exactly itself and then fills, so it
-    // reserves the whole population the session ceiling can ever admit —
-    // counting the dormant instances instead would race a load that parks one
-    // after the count is read, and over-reserving only makes the ring larger.
-    match engine.send_graph_batch_with_headroom(mapped.ops, HOSTED_PLUGIN_RESERVE) {
+    // The attach below pushes one `AddPluginWithBridge` per instance it takes,
+    // onto a ring this batch sizes to exactly itself and then fills, so the
+    // batch leaves exactly that many slots free. The count and the limit are the
+    // same number: an instance parked after the count is read is left dormant
+    // for the next batch rather than pushed onto a ring with no room, which is
+    // what keeps the reservation exact and a batch with nothing parked as small
+    // as it was before any of this existed.
+    match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
             // Nothing was pushed: a refusal here is a clean rejection.
@@ -2595,13 +2604,14 @@ pub async fn apply_graph_commands(
     // The engine lock goes first: `attach_dormant_plugins` takes it itself, and
     // this one is not reentrant.
     drop(engine_guard);
-    let attached_plugins = match crate::commands::plugins::attach_dormant_plugins(state) {
-        Ok(attached) => attached,
-        Err(error) => {
-            eprintln!("[Plugin] dormant instances could not be attached: {error}");
-            Vec::new()
-        }
-    };
+    let attached_plugins =
+        match crate::commands::plugins::attach_dormant_plugins(state, dormant_plugin_count) {
+            Ok(attached) => attached,
+            Err(error) => {
+                eprintln!("[Plugin] dormant instances could not be attached: {error}");
+                Vec::new()
+            }
+        };
     let attached_plugins: Vec<AttachedPluginPayload> = attached_plugins
         .into_iter()
         .map(|attached| AttachedPluginPayload {
@@ -4594,12 +4604,8 @@ mod tests {
     #[test]
     fn an_applied_batch_reports_the_fence_it_published() {
         let state = AppState::default();
-        // The boot ring's own capacity, because every batch reserves the
-        // attach's whole population behind it: a smaller ring is provisioned
-        // larger mid-batch, and the fence then lands on the replacement rather
-        // than on the consumer this test holds.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(256);
+            daw_engine::engine_handle_for_command_capture(64);
         // Filling the slot first is what makes this a capture engine: the
         // lazy bootstrap in `apply_graph_commands` starts one only into an
         // empty slot, so it reuses this handle rather than opening a device.
@@ -4988,6 +4994,61 @@ mod tests {
                 .expect("engine_plugins lock")
                 .contains_key("attached-behind-a-full-batch"),
             "and the engine must actually hold it"
+        );
+    }
+
+    /// A batch with nothing parked reserves nothing, and so publishes onto the
+    /// ring it was handed rather than onto a replacement.
+    ///
+    /// The reservation is the attach's, and a session with no dormant instance
+    /// has no attach to make. Reserving a fixed population instead would make
+    /// every start sequence provision a new channel — `startNativeLiveGraphSession`
+    /// sends its topology and its roll back to back, so that is two allocations,
+    /// two fence swaps and two audio-thread adoptions per Play, under the engine
+    /// and graph locks, for plugins that are not there. The consumer this test
+    /// holds is the one the engine was built with: a provisioned batch lands on
+    /// its replacement and this one drains nothing.
+    #[test]
+    fn a_batch_with_nothing_parked_publishes_onto_the_ring_it_was_given() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let commands: Vec<Value> = (0..8)
+            .map(|index| track_strip(&format!("t{index}")))
+            .collect();
+        let sent = commands.len();
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": commands }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(result["application"], "applied", "got: {result:?}");
+        assert!(
+            state.plugins.lock().expect("plugins lock").is_empty(),
+            "the reservation under test is the one a session with no dormant \
+             instance makes"
+        );
+
+        let mut drained = 0;
+        let mut fences = 0;
+        while let Ok(command) = command_rx.pop() {
+            drained += 1;
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        assert_eq!(
+            fences, 1,
+            "the fence must reach the ring the engine was built with"
+        );
+        assert!(
+            drained > sent,
+            "and the batch's own commands with it: {drained} drained behind one \
+             fence, for {sent} commands sent"
         );
     }
 
