@@ -346,6 +346,7 @@ stays unrestricted and is how you check live tracker state.
 | Post `review.json`          | `pnpm review:publish <pr>`                                                                                       |
 | Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                            |
 | Squash-merge                | `pnpm deliver <pr>`                                                                                              |
+| Recover a crashed delivery  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                 |
 | Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
 | Prune spent remote branches | `pnpm branch:prune [--apply] [--limit <n>]`                                                                      |
 | Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
@@ -364,8 +365,12 @@ The ref points to a strict owner blob; acquisition is a zero-ref Git compare-and
 requires the acquired object ID. Delivery holds that ownership from before authentication through
 merge or already-merged recovery and tracker completion. Any existing owner is validated and then
 refused without waiting or automatic takeover, regardless of process liveness. A crashed delivery
-leaves its ref in place: recovery requires separate remote reconciliation and fencing before that
-ref is cleared.
+leaves its ref in place, and `deliver --recover-lock` is the only route that clears one: it refuses
+while the owner's recorded process fence still probes live, adopts the lock under its own fence
+before reading anything, and then reads the remote twice and requires the two observations to
+agree. Recovery never merges, retargets, posts, or closes, and it refuses a pull request merged by
+any actor other than the author App. Clearing the ref records a receipt keyed by the dead owner, so
+repeating the recovery replays that receipt instead of reaching GitHub again.
 
 Already-merged recovery proceeds only when GitHub's immutable merged-by actor is the author App.
 Same-head delivery receipts retain the issue-comment REST endpoint's ascending comment-ID order;

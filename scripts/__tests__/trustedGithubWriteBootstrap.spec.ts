@@ -139,7 +139,7 @@ describe('snapshotImportSpecifiers', () => {
 
 describe('trusted GitHub write snapshot launcher', () => {
     it.each([
-        ['deliver', false],
+        ['deliver', true],
         ['issue:reconcile', false],
         ['lane:publish', false],
         ['review:publish', true],
@@ -147,6 +147,7 @@ describe('trusted GitHub write snapshot launcher', () => {
         ['review:resolve', false],
     ] as const)('uses a detached POSIX process group only for %s: %s', (command, expected) => {
         expect(trustedSnapshotRunsDetached(command, 'linux')).toBe(expected);
+        expect(trustedSnapshotRunsDetached(command, 'darwin')).toBe(expected);
         expect(trustedSnapshotRunsDetached(command, 'win32')).toBe(false);
     });
 

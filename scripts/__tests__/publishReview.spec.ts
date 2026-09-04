@@ -22,13 +22,13 @@ import {
 } from '../publishReview.ts';
 import {
     type PullRequestMutationLockOwner,
-    currentReviewPublicationOwnerFence,
+    currentMutationOwnerFence,
     pullRequestMutationLockRef,
     reviewPublicationRecoveryReceiptRef,
     readPullRequestMutationLockReceipt,
     readPullRequestMutationLockOwner,
     readPullRequestMutationLockOid,
-    reviewPublicationOwnerFenceIsLive,
+    mutationOwnerFenceIsLive,
     withPullRequestReviewPublicationMutationLock,
     withPullRequestMutationLock,
     writePullRequestMutationLockOwner,
@@ -258,7 +258,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
 }
 
 function publicationLivenessOwner(
-    ownerFence: Extract<Parameters<typeof reviewPublicationOwnerFenceIsLive>[0]['ownerFence'], { kind: string }>
+    ownerFence: Extract<Parameters<typeof mutationOwnerFenceIsLive>[0]['ownerFence'], { kind: string }>
 ) {
     let pid: number;
     if (ownerFence.kind === 'pgid') {
@@ -637,7 +637,7 @@ describe('review publish', () => {
                             expectedHead: expectedHeadAtLock,
                             payloadDigest: digestAtLock,
                             reviewerActorNodeId: actorAtLock,
-                            ownerFence: currentReviewPublicationOwnerFence,
+                            ownerFence: currentMutationOwnerFence,
                         },
                     }
                 )
@@ -1539,6 +1539,7 @@ describe('shellPort postReview state verification', () => {
         runGit(primaryRoot, ['init', '-b', 'main']);
         const number = 7819;
         const ref = `refs/sourdaw/delivery/pr-${number}`;
+        const restorePs = writeTrustedPsFixture(primaryRoot);
         let postAttempted = false;
         let reacquired = false;
 
@@ -1580,6 +1581,7 @@ describe('shellPort postReview state verification', () => {
             expect(reacquired).toBe(false);
             expect(runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref])).toBe(retainedOwnerOid);
         } finally {
+            restorePs();
             removeTemporaryDirectory(primaryRoot);
         }
     });
@@ -3225,23 +3227,23 @@ describe('shellPort postReview state verification', () => {
             };
             const groupOwner = publicationLivenessOwner({ kind: 'pgid', pgid: 42, leaderStartedAt: 'leader-start' });
             writePsOutput('42 42 leader-start\n99 42 child-start\n1 1 unrelated-start\n');
-            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(true);
+            expect(mutationOwnerFenceIsLive(groupOwner)).toBe(true);
             writePsOutput('99 42 child-start\n1 1 unrelated-start\n');
-            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(true);
+            expect(mutationOwnerFenceIsLive(groupOwner)).toBe(true);
             writePsOutput('42 42 reused-leader-start\n99 42 child-start\n');
-            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(false);
+            expect(mutationOwnerFenceIsLive(groupOwner)).toBe(false);
             writePsOutput('1 1 unrelated-start\n');
-            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(false);
+            expect(mutationOwnerFenceIsLive(groupOwner)).toBe(false);
             writePsOutput('not a ps row\n');
-            expect(() => reviewPublicationOwnerFenceIsLive(groupOwner)).toThrow(/process-group liveness is unreadable/);
+            expect(() => mutationOwnerFenceIsLive(groupOwner)).toThrow(/process-group liveness is unreadable/);
 
             const pidOwner = publicationLivenessOwner({ kind: 'pid', pid: 999_999, startedAt: 'original-pid-start' });
             writePsOutput('original-pid-start\n');
-            expect(reviewPublicationOwnerFenceIsLive(pidOwner)).toBe(true);
+            expect(mutationOwnerFenceIsLive(pidOwner)).toBe(true);
             writePsOutput('reused-pid-start\n');
-            expect(reviewPublicationOwnerFenceIsLive(pidOwner)).toBe(false);
+            expect(mutationOwnerFenceIsLive(pidOwner)).toBe(false);
             writePsOutput('', 2);
-            expect(() => reviewPublicationOwnerFenceIsLive(pidOwner)).toThrow(/process liveness is unreadable/);
+            expect(() => mutationOwnerFenceIsLive(pidOwner)).toThrow(/process liveness is unreadable/);
         } finally {
             if (previous === undefined) {
                 delete process.env.SOURDAW_TRUSTED_PS_PATH;
@@ -3270,41 +3272,39 @@ describe('shellPort postReview state verification', () => {
                 rootStartedAt: startedAt,
             });
             writePowerShellOutput(JSON.stringify({ ProcessId: 42, ParentProcessId: 1, CreationDate: startedAt }));
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(true);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T09:59:59.0000000Z' })
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify([
                     { ProcessId: 42, ParentProcessId: 1, CreationDate: '2026-09-02T11:00:00.0000000Z' },
                     { ProcessId: 98, ParentProcessId: 42, CreationDate: '2026-09-02T10:30:00.0000000Z' },
                 ])
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(true);
             writePowerShellOutput(
                 JSON.stringify([
                     { ProcessId: 42, ParentProcessId: 1, CreationDate: '2026-09-02T11:00:00.0000000Z' },
                     { ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T11:00:01.0000000Z' },
                 ])
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 1, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput('{');
-            expect(() => reviewPublicationOwnerFenceIsLive(owner, 'win32')).toThrow(
-                /Windows process liveness is unreadable/
-            );
+            expect(() => mutationOwnerFenceIsLive(owner, 'win32')).toThrow(/Windows process liveness is unreadable/);
         } finally {
             if (previous === undefined) {
                 delete process.env.SOURDAW_TRUSTED_POWERSHELL_PATH;
