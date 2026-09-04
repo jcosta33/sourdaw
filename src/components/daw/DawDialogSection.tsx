@@ -16,7 +16,7 @@ type DawDialogSectionProps = HTMLAttributes<HTMLElement> & {
 const TONE_CLASS_NAMES: Record<NonNullable<DawDialogSectionProps['tone']>, string> = {
     neutral:
         'border-white/8 bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),inset_0_-1px_0_rgba(0,0,0,0.22)]',
-    warm: 'border-orange-900/30 bg-stone-950/50 shadow-[inset_0_1px_0_rgba(251,146,60,0.05)]',
+    warm: 'border-orange-900/30 bg-surface-base/50 shadow-[inset_0_1px_0_rgba(251,146,60,0.05)]',
 };
 
 const HEADER_TONE_CLASS_NAMES: Record<NonNullable<DawDialogSectionProps['tone']>, string> = {
