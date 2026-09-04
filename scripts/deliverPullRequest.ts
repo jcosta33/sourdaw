@@ -529,6 +529,22 @@ function startedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
 }
 
 /**
+ * A skip never retires a failure — that stays `retiresAttempt`'s rule alone, unreached from here. It
+ * can only speak for a cancellation, and only as the newest attempt under that name: one that started
+ * strictly after the cancellation it stands beside, per the same `startedAfter` recency test
+ * `retiresAttempt` uses. A skip GitHub reports no start for, or one that started at or before the
+ * cancellation, cannot prove it is the later word and so decides nothing.
+ */
+function skippedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+    return (
+        candidate.name === attempt.name &&
+        candidate.status === SETTLED_CHECK_STATUS &&
+        candidate.conclusion === SKIPPED_CONCLUSION &&
+        startedAfter(candidate, attempt)
+    );
+}
+
+/**
  * A cancelled run is the only tolerated corpse. Anything else that settled without a passing
  * conclusion — an unrecognized one included — is a real result the merge must not step over.
  */
@@ -541,14 +557,19 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
 }
 
 /**
- * Tolerating a cancellation rests on some later run having re-run that same job on the same commit,
- * which is only observable as a success under the same check name. A name that was cancelled and
- * never succeeded on the head therefore carries no verdict at all, and a skipped sibling does not
- * supply one: jobs gated on the pull-request payload can still skip on a later run, and `Gate`
- * passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
- * `Dependency review` has exactly this shape when its cancellation is followed only by skips beside
- * it, with no success anywhere. This rule consequently refuses such a head rather than merging with
- * no dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ * Tolerating a cancellation rests on some later attempt under the same name having decided the check
+ * on this head. GitHub reports two shapes of later decision: a success, and — for a leg the workflow
+ * scope-gates on its own path filters — a skip. Health gates answers only `pull_request`, never
+ * `pull_request_review`, so every attempt this repository ever reports on a head evaluates the same
+ * diff from scratch; a later `SKIPPED` under a cancelled name is that same evaluation choosing to run
+ * nothing, not the absence of one. That is the scope decision of record for this head, and admitting
+ * it is the honest read, exactly as admitting a later success is.
+ *
+ * A cancellation itself says nothing: it was killed before it could report the leg's own verdict.
+ * Only a skip that is itself the newer attempt speaks for it, which `skippedAfter` proves the same
+ * way `retiresAttempt` proves a later success. A skip with no recorded start, or one that started at
+ * or before the cancellation, cannot prove it is the later word, so it decides nothing and the
+ * cancelled name stays undecided.
  *
  * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
  * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
@@ -560,7 +581,11 @@ function undecidedCancelledCheckName(checks: HeadCheckRun[], required: ReadonlyS
         checks.filter((check) => check.conclusion === PASSING_CONCLUSION).map((check) => check.name)
     );
     return checks.find(
-        (check) => check.conclusion === SUPERSEDED_CONCLUSION && required.has(check.name) && !passed.has(check.name)
+        (check) =>
+            check.conclusion === SUPERSEDED_CONCLUSION &&
+            required.has(check.name) &&
+            !passed.has(check.name) &&
+            !checks.some((candidate) => skippedAfter(candidate, check))
     )?.name;
 }
 

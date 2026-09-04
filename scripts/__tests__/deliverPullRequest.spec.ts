@@ -6549,18 +6549,41 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * The live shape of `Dependency review` when a cancelled attempt is followed only by later skips.
-     * `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not
-     * one either. `Gate` needs that job, so this is why `deliver` refuses PR #2795's head today.
+     * A scope-gated leg (Lint, the unit shards, the production build, the Rust legs, the offline
+     * browser smoke) is skipped by the workflow's own path-filter decision, re-evaluated on the
+     * current diff. Health gates answers only `pull_request`, so that skip is a full scope
+     * evaluation of this head, not an absence of one, and it is the newest attempt under the name —
+     * the scope decision of record — so the head is green by design and merges.
      */
-    it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
+    it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * A skip only speaks for the cancellation beside it when it is the newer attempt. One that
+     * started before the cancellation it stands beside proves nothing about what the workflow
+     * decided afterward, so the cancelled name stays undecided.
+     */
+    it('refuses an UNSTABLE head whose scope-gated skip started before its cancellation', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                ...supersededRunCheckRuns(),
-                checkRun({ name: 'Dependency review', conclusion: 'CANCELLED' }),
-                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
-                checkRun({ name: 'Dependency review', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun(),
             ],
         });
 
@@ -6572,7 +6595,35 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Dependency review was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A skip GitHub reports no start for cannot prove it is the later word either, so it cannot
+     * retire the cancellation beside it.
+     */
+    it('refuses an UNSTABLE head whose later scope-gated skip carries no start', () => {
+        expect(gatingCheckNames.has('Lint')).toBe(true);
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: null }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
