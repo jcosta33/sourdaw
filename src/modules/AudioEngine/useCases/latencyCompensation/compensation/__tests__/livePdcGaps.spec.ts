@@ -33,7 +33,11 @@ function makeDevice(device: DeviceInput) {
     return {
         id: device.id,
         name: device.id,
-        type: device.type ?? 'external-plugin',
+        // A WASM built-in, because that is what Web Audio still hosts and still
+        // delays for. An `external-plugin` device is a pass-through here and
+        // costs this graph nothing (#3564), so a latency hung on one could never
+        // move the figures these gaps are about.
+        type: device.type ?? 'knead',
         bypassed: device.bypassed ?? false,
         parameterValues: {},
     };
@@ -150,7 +154,7 @@ describe('FX-5 — the sidechain key is time-aligned to the program it ducks', (
     });
 
     it('cancels the source chain latency that PDC has already compensated for', () => {
-        // `kick` runs a 10 ms plugin, so its post-fader key tap is 10 ms late —
+        // `kick` runs a 10 ms device, so its post-fader key tap is 10 ms late —
         // but PDC has already pushed `bass` back by that same 10 ms, so the owed
         // alignment is still the full 30 ms of program latency. A naive
         // `upstream - sourceChain` would answer 20 ms and duck 10 ms early.

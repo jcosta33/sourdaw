@@ -1,21 +1,20 @@
 export const externalLatencyRegistry = new Map<string, number>();
 
 /**
- * Frames the worklet↔plugin audio bridge adds for one external-plugin device,
- * at the engine rate that device's plugin was activated with.
+ * Frames the native host measures for its own plugin round trip, at the engine
+ * rate that device's plugin was activated with.
  *
- * A bridged plugin is late by more than it reports for itself: its audio is
- * relayed to the native host over IPC, queued for the audio thread, processed,
- * and queued back. The host measures that round trip against the device period
- * it actually runs on and reports it at load — the frontend cannot derive it,
- * which is why this is a reported number and not a constant.
+ * It is no longer a term in Web Audio's plugin-delay compensation (#3564): the
+ * native engine hosts and sounds the plugin, and what stands in its place in the
+ * Web Audio chain is a pass-through that delays nothing. The figure is still
+ * reported and still recorded, and it is cleared with the reported-latency map
+ * it sits beside — an entry surviving its device would describe a plugin that is
+ * no longer loaded, under an id that does not recur.
  *
- * Kept beside the reported-latency map rather than in one of its own so the two
- * are cleared together; an entry surviving its device is a track compensated
- * for a plugin that is no longer there.
- *
- * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet relay
- * with the native graph, and this map goes with it.
+ * Temporary, with the reporting chain that fills it: retiring it means retiring
+ * `activateExternalPlugin`'s frames callback and the native attach report's own
+ * `bridge_round_trip_frames` field, which is a change to the engine protocol
+ * rather than to this map.
  */
 export const externalBridgeRoundTripFrames = new Map<string, number>();
 

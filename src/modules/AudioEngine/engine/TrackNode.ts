@@ -6,7 +6,7 @@ import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRun
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
-import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
+import { createHostedPluginControls, type HostedPluginControls } from './hostedPluginControls';
 import { findReleasedWasmDescriptor } from './wasmDeviceRegistry';
 
 import type {
@@ -33,6 +33,12 @@ const AUTOMATION_RAMP_MIN_SEC = 0.01;
  */
 const MAX_NATIVE_PLUGIN_PARAMETER_ID = 0xffff_ffff;
 
+/** Time constant of the carrier gate's glide — short enough to be a gate, long enough not to click. */
+const CARRIER_GATE_RAMP_SEC = 0.005;
+
+/** Ten time constants, where an exponential approach is closer than any sample can represent. */
+const CARRIER_GATE_LANDING_SEC = 0.05;
+
 /**
  * The native parameter a device-parameter name addresses, or `null` when it
  * addresses none.
@@ -44,6 +50,16 @@ const MAX_NATIVE_PLUGIN_PARAMETER_ID = 0xffff_ffff;
  * unsigned-integer spelling addresses a parameter now: `parseInt` would also
  * accept `'3abc'` and `'3.7'`, both of which name a parameter nobody meant.
  */
+/**
+ * An external-plugin device with no instance id names no native plugin, so
+ * every control it carries has nowhere to send and must not reach IPC at all.
+ */
+const NO_HOSTED_PLUGIN_CONTROLS: HostedPluginControls = Object.freeze({
+    setParam: () => {},
+    setBypass: () => {},
+    destroy: () => {},
+});
+
 function toNativePluginParameterId(name: string): number | null {
     if (!/^\d+$/.test(name)) {
         return null;
@@ -117,7 +133,6 @@ type PendingParameterWrite =
 
 type PendingDeviceLoad = {
     abortController: AbortController;
-    externalInstanceId?: string;
     bypassed?: boolean;
     parameterIds: readonly string[];
     parameterWrites: PendingParameterWrite[];
@@ -401,12 +416,36 @@ export class TrackNode {
      * Reopening is therefore just a gain ramp: when the native side declines the
      * track mid-stream, Web Audio resumes sounding it in place, with no chain
      * rebuild and no restart of anything already playing.
+     *
+     * The ramp is followed by an exact landing. `setTargetAtTime` approaches its
+     * target asymptotically and never reaches it, and what a closed gate is
+     * holding back here is not noise but a *correlated copy* of what the native
+     * engine is playing — a residual at −60 dB against its own original combs
+     * rather than disappearing under it. Ten time constants later the value is
+     * pinned to the target outright, so a carried strip reaches true zero and a
+     * released one reaches true unity.
+     *
+     * That landing is also why each call re-anchors first, exactly as
+     * `rampAutomationParam` does. Reversals inside the landing window are the
+     * normal case, not the exotic one: the session claims its strips before the
+     * batch is applied and reopens them a bridge round trip later if the engine
+     * declines. Left scheduled, the previous landing would fire in the middle of
+     * this ramp and snap the gate to the *old* target — a reopened strip would
+     * ramp up, snap silent at the stale landing, and stay there until this
+     * call's own landing released it some 48 ms later. Dropping the future
+     * events and pinning the gate to where it actually is makes the new ramp
+     * start from the truth.
      */
     public setNativeCarried(carried: boolean): void {
         this.strip.nativeCarried = carried;
         const now = this.deps.context.currentTime;
-        this.strip.carrierGate.gain.setTargetAtTime(carried ? 0 : 1, now, 0.005);
-        this.strip.preFaderSendGate.gain.setTargetAtTime(carried ? 0 : 1, now, 0.005);
+        const target = carried ? 0 : 1;
+        for (const gate of [this.strip.carrierGate.gain, this.strip.preFaderSendGate.gain]) {
+            gate.cancelScheduledValues(now);
+            gate.setValueAtTime(gate.value, now);
+            gate.setTargetAtTime(target, now, CARRIER_GATE_RAMP_SEC);
+            gate.setValueAtTime(target, now + CARRIER_GATE_LANDING_SEC);
+        }
     }
 
     public getPeakLevel(): number {
@@ -788,7 +827,6 @@ export class TrackNode {
         let promotionPublished = false;
         try {
             finalDn.parameterIds = pendingLoad.parameterIds;
-            finalDn.externalInstanceId = pendingLoad.externalInstanceId;
             for (const pending of pendingLoad.parameterWrites) {
                 if (pending.kind === 'scheduled') {
                     finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
@@ -1039,87 +1077,52 @@ export class TrackNode {
                 destroy: () => {},
             };
         } else if (deviceType === 'external-plugin') {
-            // Native plugin bridge: relays audio between Web Audio and the Rust
-            // cpal audio thread. A SharedArrayBuffer cannot reach the host
-            // process, so the hop to Rust is IPC; the instance id is the key.
-            let loadingBypass: GainNode;
+            // The native engine hosts and sounds this plugin; Web Audio keeps
+            // only a pass-through in its place, so the device occupies its slot
+            // in the chain without moving any audio across the process
+            // boundary. Nothing is loaded, so the device is ready the moment it
+            // is added, exactly like a builtin. Parameters and bypass still have
+            // to reach the instance, and that is all the controls below do.
+            let passThrough: GainNode;
             try {
-                loadingBypass = context.createGain();
+                passThrough = context.createGain();
             } catch (error) {
                 this.failDeviceConstruction(readinessToken, error);
             }
-            const pendingLoad: PendingDeviceLoad = {
-                abortController: new AbortController(),
-                ...(externalInstanceId !== undefined ? { externalInstanceId } : {}),
-                parameterIds: Object.freeze([...parameterIds]),
-                parameterWrites: [],
-                readinessToken,
-                resolved: false,
+            const hostedControls = externalInstanceId
+                ? createHostedPluginControls(externalInstanceId)
+                : NO_HOSTED_PLUGIN_CONTROLS;
+            // One report per name: a refused write arrives from the scheduler's
+            // tick grid, so logging every occurrence would bury the session log
+            // under one repeated fault.
+            const reportedParameterNames = new Set<string>();
+            const controls = {
+                setParam: (name: string, value: number) => {
+                    const parameterId = toNativePluginParameterId(name);
+                    if (parameterId === null) {
+                        if (!reportedParameterNames.has(name)) {
+                            reportedParameterNames.add(name);
+                            logger.warn(
+                                `[WebAudioEngine] Native plugin parameter "${name}" on device ${deviceId} is not a parameter id; the write was refused`
+                            );
+                        }
+                        return;
+                    }
+                    hostedControls.setParam(parameterId, value);
+                },
+                setBypass: hostedControls.setBypass,
+                destroy: hostedControls.destroy,
             };
-            awaitsAsyncNode = true;
             dn = {
                 deviceId,
                 type: deviceType,
-                nodes: [loadingBypass],
-                inputNode: loadingBypass,
-                outputNode: loadingBypass,
+                nodes: [passThrough],
+                inputNode: passThrough,
+                outputNode: passThrough,
+                nativeDspControls: controls,
+                controller: controls,
+                dispose: hostedControls.destroy,
             };
-
-            const loadingControls = this.createPlaceholderController(deviceId, pendingLoad, {
-                setParam: () => {},
-                setBypass: () => {},
-                destroy: () => {},
-            });
-            dn.nativeDspControls = {
-                setParam: loadingControls.setParam,
-                setBypass: (bypassed) => loadingControls.setBypass?.(bypassed),
-            };
-            dn.controller = loadingControls;
-            pendingLoad.placeholder = dn;
-
-            let loadPromise: Promise<void>;
-            try {
-                loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
-                    .then((result) => {
-                        // One report per name: a refused write arrives from the
-                        // scheduler's tick grid, so logging every occurrence
-                        // would bury the session log under one repeated fault.
-                        const reportedParameterNames = new Set<string>();
-                        const controls = {
-                            setParam: (name: string, value: number) => {
-                                const parameterId = toNativePluginParameterId(name);
-                                if (parameterId === null) {
-                                    if (!reportedParameterNames.has(name)) {
-                                        reportedParameterNames.add(name);
-                                        logger.warn(
-                                            `[WebAudioEngine] Native plugin parameter "${name}" on device ${deviceId} is not a parameter id; the write was refused`
-                                        );
-                                    }
-                                    return;
-                                }
-                                result.setParam(parameterId, value);
-                            },
-                            setBypass: result.setBypass,
-                            destroy: result.destroy,
-                        };
-                        const bridgeDn: BuiltinDeviceNode = {
-                            deviceId,
-                            type: deviceType,
-                            nodes: [result.workletNode],
-                            inputNode: result.workletNode,
-                            outputNode: result.workletNode,
-                            nativeDspControls: controls,
-                            controller: controls,
-                            dispose: result.destroy,
-                        };
-                        this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
-                        return;
-                    })
-                    .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
-            } catch (error) {
-                this.failDeviceConstruction(readinessToken, error, dn);
-            }
-            this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
         } else {
             let factoryNode: ReturnType<typeof createBuiltinDeviceNode>;
             try {
