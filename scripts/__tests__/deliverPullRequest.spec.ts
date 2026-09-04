@@ -992,6 +992,10 @@ describe('pull-request delivery', () => {
                 expect(readDeliveryLockOid(root, 42)).not.toBe(prepared);
                 expect(readDeliveryLockOwner(root, 42)).toMatchObject({
                     version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
                     mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
                 });
             });

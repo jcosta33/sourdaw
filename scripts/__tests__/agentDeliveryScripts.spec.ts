@@ -1043,9 +1043,26 @@ describe('package scripts and gitignore', () => {
         );
     });
 
-    it('pins complete and exact reviewer-mutation source closures', async () => {
+    it('pins complete and exact mutation-command source closures', async () => {
         const repositoryRoot = join(import.meta.dirname, '..', '..');
         const cases = [
+            {
+                command: 'deliver' as const,
+                entry: 'scripts/deliverPullRequest.ts',
+                required: 'scripts/deliveryRemoteInspection.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/deliverPullRequest.ts',
+                    'scripts/recoverDeliveryLock.ts',
+                    'scripts/deliveryLockLegacyIncidents.ts',
+                    'scripts/deliveryRemoteInspection.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/reconcileTrackerIssue.ts',
+                    'scripts/trackerIssueReconciliation.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
             {
                 command: 'review:publish' as const,
                 entry: 'scripts/publishReview.ts',

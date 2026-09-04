@@ -92,9 +92,12 @@ export type DeliveryLockRecoveryDependencies = {
     readLockOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
     readLockOwner?: (primaryRoot: string, oid: string, number: number) => PullRequestMutationLockOwner;
     releaseLock?: (primaryRoot: string, number: number, ownerOid: string) => void;
+    /** Fault-injection seam for the window between a persisted recovery receipt and its release. */
+    afterRecoveryReceiptPersisted?: (number: number, ownerOid: string, adoptedOid: string) => void;
 };
 
-type ResolvedDependencies = Required<DeliveryLockRecoveryDependencies>;
+type ResolvedDependencies = Required<Omit<DeliveryLockRecoveryDependencies, 'afterRecoveryReceiptPersisted'>> &
+    Pick<DeliveryLockRecoveryDependencies, 'afterRecoveryReceiptPersisted'>;
 
 function defaultProcessIsDead(pid: number): boolean {
     try {
@@ -136,6 +139,7 @@ function resolveDependencies(dependencies: DeliveryLockRecoveryDependencies | un
         readLockOid: dependencies.readLockOid ?? readPullRequestMutationLockOid,
         readLockOwner: dependencies.readLockOwner ?? readPullRequestMutationLockOwner,
         releaseLock: dependencies.releaseLock ?? releasePullRequestMutationLockExact,
+        afterRecoveryReceiptPersisted: dependencies.afterRecoveryReceiptPersisted,
     };
 }
 
@@ -346,7 +350,15 @@ function journaledRecoveryReceipt(
 
 function assertRecoverableMergeActor(number: number, remote: JournaledRecoveryRemoteState): void {
     const actorNodeId = remote.mergedByActorNodeId;
-    if (actorNodeId !== undefined && !isAuthorBotNodeId(actorNodeId)) {
+    if (actorNodeId === undefined) {
+        // `deliver` itself refuses a merge it cannot attribute to the author App, so a merge with no
+        // actor must stop here rather than clear the lock for a command that will refuse anyway.
+        if (remote.merged) {
+            fail(`PR #${number} is merged with no merge actor, so the author App cannot be proven`);
+        }
+        return;
+    }
+    if (!isAuthorBotNodeId(actorNodeId)) {
         fail(`PR #${number} was merged by ${actorNodeId}, which is not the author App`);
     }
 }
@@ -379,24 +391,67 @@ async function recoverJournaledOwner(
             ownerOid,
             adoptedDeliveryOwner(number, owner, resolved.currentOwnerFence())
         );
-        const before = resolved.readJournaledRemoteState(repository, auth.session, primaryRoot, number);
-        const after = resolved.readJournaledRemoteState(repository, auth.session, primaryRoot, number);
-        if (!sameJournaledRemoteState(before, after)) {
-            fail(`PR #${number} remote state changed between reads`);
+        try {
+            return reconcileAdoptedDeliveryOwner({
+                primaryRoot,
+                number,
+                ownerOid,
+                adoptedOid,
+                owner,
+                repository,
+                session: auth.session,
+                resolved,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(
+                `${message}; PR #${number} delivery recovery preserved exact lock owner ${adoptedOid}: ` +
+                    `pnpm deliver --recover-lock ${number} --owner ${adoptedOid}`,
+                { cause: error }
+            );
         }
-        assertRecoverableMergeActor(number, after);
-        recordDeliveryRecoveryReceipt(
-            primaryRoot,
-            number,
-            ownerOid,
-            journaledRecoveryReceipt(number, ownerOid, adoptedOid, owner, after)
-        );
-        resolved.releaseLock(primaryRoot, number, adoptedOid);
-        reportRecoveredLock(number, ownerOid, observedDeliveryState(after));
-        return 0;
     } finally {
         auth.session.dispose();
     }
+}
+
+type AdoptedDeliveryRecovery = {
+    primaryRoot: string;
+    number: number;
+    ownerOid: string;
+    adoptedOid: string;
+    owner: DeliveryLockOwner;
+    repository: string;
+    session: GhSession;
+    resolved: ResolvedDependencies;
+};
+
+function reconcileAdoptedDeliveryOwner({
+    primaryRoot,
+    number,
+    ownerOid,
+    adoptedOid,
+    owner,
+    repository,
+    session,
+    resolved,
+}: AdoptedDeliveryRecovery): number {
+    const before = resolved.readJournaledRemoteState(repository, session, primaryRoot, number);
+    const after = resolved.readJournaledRemoteState(repository, session, primaryRoot, number);
+    if (!sameJournaledRemoteState(before, after)) {
+        fail(`PR #${number} remote state changed between reads`);
+    }
+    assertRecoverableMergeActor(number, after);
+    recordDeliveryRecoveryReceipt(
+        primaryRoot,
+        number,
+        ownerOid,
+        journaledRecoveryReceipt(number, ownerOid, adoptedOid, owner, after)
+    );
+    resolved.afterRecoveryReceiptPersisted?.(number, ownerOid, adoptedOid);
+    resolved.releaseLock(primaryRoot, number, adoptedOid);
+    reportRecoveredLock(number, ownerOid, observedDeliveryState(after));
+    return 0;
 }
 
 async function recoverPinnedIncident(

@@ -3,7 +3,7 @@ import {
     type RecoveryIncident,
     type RejectedMergeIncident,
 } from './deliveryLockLegacyIncidents.ts';
-import { isAuthorBotNodeId, spawnCapture, type GhSession } from './githubAppIdentity.ts';
+import { isAuthorBotNodeId, parseJson, spawnCapture, type GhSession } from './githubAppIdentity.ts';
 import { parseDeliveryReceipt, fail } from './prContract.ts';
 
 export type RejectedMergeRecoveryRemoteState = {
@@ -42,14 +42,6 @@ export type JournaledRecoveryRemoteState = {
     receipts: IssueCommentObservation[];
 };
 
-function readJson(value: string, label: string): unknown {
-    try {
-        return JSON.parse(value) as unknown;
-    } catch {
-        return fail(`delivery lock recovery could not read ${label}`);
-    }
-}
-
 function record(value: unknown, label: string): Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         fail(`delivery lock recovery could not read ${label}`);
@@ -80,12 +72,12 @@ function mergedState(value: unknown): boolean {
 
 function readPullRequestRecord(repository: string, session: GhSession, primaryRoot: string, number: number) {
     const pullRequest = record(
-        readJson(
+        parseJson<unknown>(
             spawnCapture('gh', ['api', `repos/${repository}/pulls/${number}`], {
                 cwd: primaryRoot,
                 env: session.env,
             }),
-            'pull-request state'
+            'delivery lock recovery pull-request state'
         ),
         'pull-request state'
     );
@@ -100,12 +92,12 @@ function readRejectedMergeRemoteState(
 ): RejectedMergeRecoveryRemoteState {
     const { pullRequest, head } = readPullRequestRecord(repository, session, primaryRoot, incident.number);
     const comment = record(
-        readJson(
+        parseJson<unknown>(
             spawnCapture('gh', ['api', `repos/${repository}/issues/comments/${incident.receiptId}`], {
                 cwd: primaryRoot,
                 env: session.env,
             }),
-            'delivery receipt'
+            'delivery lock recovery delivery receipt'
         ),
         'delivery receipt'
     );
@@ -141,13 +133,13 @@ function readIssueComments(
     primaryRoot: string,
     number: number
 ): IssueCommentObservation[] {
-    const pages = readJson(
+    const pages = parseJson<unknown>(
         spawnCapture(
             'gh',
             ['api', '--paginate', '--slurp', `repos/${repository}/issues/${number}/comments?per_page=100`],
             { cwd: primaryRoot, env: session.env }
         ),
-        'issue comments'
+        'delivery lock recovery issue comments'
     );
     if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
         fail('delivery lock recovery could not read issue comments');

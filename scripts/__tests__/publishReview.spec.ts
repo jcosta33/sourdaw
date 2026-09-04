@@ -3273,16 +3273,16 @@ describe('shellPort postReview state verification', () => {
             });
             writePowerShellOutput(JSON.stringify({ ProcessId: 42, ParentProcessId: 1, CreationDate: startedAt }));
             expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            // An exited root whose tree survives is still holding the lock, whether the surviving
+            // child started after the root or in the same tick.
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
-            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            writePowerShellOutput(JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: startedAt }));
+            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(true);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T09:59:59.0000000Z' })
-            );
-            expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
-            writePowerShellOutput(
-                JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
             expect(mutationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(

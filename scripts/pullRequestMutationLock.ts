@@ -801,17 +801,32 @@ function windowsProcessTreeIsLive(
     }
     const rows = readTrustedWindowsProcessRows();
     const root = rows.find((row) => row.pid === ownerFence.rootPid);
-    if (root !== undefined) {
-        const rootStartedAt = parseWindowsProcessStartedAt(root.startedAt);
-        if (rootStartedAt === undefined) {
+    if (root === undefined) {
+        // The root can exit while the tree it started keeps working, and on Windows that tree is the
+        // whole fence, so a surviving child is the same in-flight proof the pid-reuse branch reads.
+        return hasSurvivingWindowsDescendant(rows, ownerFence.rootPid, ownerStartedAt);
+    }
+    const rootStartedAt = parseWindowsProcessStartedAt(root.startedAt);
+    if (rootStartedAt === undefined) {
+        fail('mutation lock Windows process liveness is unreadable');
+    }
+    if (rootStartedAt === ownerStartedAt) {
+        return true;
+    }
+    return hasPreReuseWindowsDescendant(rows, ownerFence.rootPid, ownerStartedAt, rootStartedAt);
+}
+
+function hasSurvivingWindowsDescendant(rows: WindowsProcessRow[], rootPid: number, ownerStartedAt: bigint): boolean {
+    return rows.some((row) => {
+        if (row.parentPid !== rootPid) {
+            return false;
+        }
+        const startedAt = parseWindowsProcessStartedAt(row.startedAt);
+        if (startedAt === undefined) {
             fail('mutation lock Windows process liveness is unreadable');
         }
-        if (rootStartedAt === ownerStartedAt) {
-            return true;
-        }
-        return hasPreReuseWindowsDescendant(rows, ownerFence.rootPid, ownerStartedAt, rootStartedAt);
-    }
-    return false;
+        return startedAt >= ownerStartedAt;
+    });
 }
 
 function hasPreReuseWindowsDescendant(

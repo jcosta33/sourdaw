@@ -79,7 +79,12 @@ type Harness = {
     authentications: () => number;
 };
 
-function harness(root: string, states: JournaledRecoveryRemoteState[], fenceIsLive = false): Harness {
+function harness(
+    root: string,
+    states: JournaledRecoveryRemoteState[],
+    fenceIsLive = false,
+    afterRecoveryReceiptPersisted?: () => void
+): Harness {
     let remoteReads = 0;
     let authentications = 0;
     return {
@@ -102,6 +107,7 @@ function harness(root: string, states: JournaledRecoveryRemoteState[], fenceIsLi
             },
             ownerFenceIsLive: () => fenceIsLive,
             currentOwnerFence: () => RECOVERING_FENCE,
+            afterRecoveryReceiptPersisted,
         },
     };
 }
@@ -205,21 +211,34 @@ describe('deliver --recover-lock on a journaled delivery owner', () => {
             new RegExp(`was merged by ${REVIEWER_BOT_NODE_ID}, which is not the author App`),
         ],
         [
+            'a merge GitHub attributes to no actor',
+            () => {
+                const state = remoteState({ state: 'closed', merged: true });
+                return [state, state];
+            },
+            new RegExp(`PR #${NUMBER} is merged with no merge actor`),
+        ],
+        [
             'a head that moves between the two reads',
             () => [remoteState(), remoteState({ head: 'd'.repeat(40) })],
             /remote state changed between reads/,
         ],
-    ])('refuses %s and keeps the adopted owner', async (_label, states, expectedError) => {
+    ])('refuses %s and names the adopted owner it kept', async (_label, states, expectedError) => {
         const root = temporaryRoot();
         const ownerOid = initialize(root);
         const { dependencies } = harness(root, states());
 
         try {
-            await expect(
-                runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], dependencies)
-            ).rejects.toThrow(expectedError);
+            const thrown = await runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], dependencies).then(
+                () => expect.fail('expected the recovery to refuse'),
+                (error: unknown) => error
+            );
+            const message = thrown instanceof Error ? thrown.message : String(thrown);
+            expect(message).toMatch(expectedError);
             const adoptedOid = git(root, ['rev-parse', '--verify', REF]);
             expect(adoptedOid).not.toBe(ownerOid);
+            expect(message).toContain(`preserved exact lock owner ${adoptedOid}`);
+            expect(message).toContain(`pnpm deliver --recover-lock ${NUMBER} --owner ${adoptedOid}`);
             expect(JSON.parse(git(root, ['cat-file', 'blob', adoptedOid]))).toMatchObject({
                 version: 4,
                 operation: 'delivery',
@@ -229,6 +248,66 @@ describe('deliver --recover-lock on a journaled delivery owner', () => {
                 mutation: { phase: 'prepared', epoch: 1 },
             });
             expect(() => recoveryReceipt(root, ownerOid)).toThrow();
+        } finally {
+            removeTemporaryRoot(root);
+        }
+    });
+
+    it('releases the adopted owner a crash left behind after the receipt was persisted', async () => {
+        const root = temporaryRoot();
+        const ownerOid = initialize(root);
+        const state = remoteState();
+        const crashed = harness(root, [state, state], false, () => {
+            throw new Error('crashed before releasing the adopted owner');
+        });
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        try {
+            await expect(
+                runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], crashed.dependencies)
+            ).rejects.toThrow(/crashed before releasing the adopted owner/);
+            expect(log).not.toHaveBeenCalled();
+            expect(git(root, ['rev-parse', '--verify', REF])).not.toBe(ownerOid);
+
+            const replay = harness(root, [state, state]);
+            await expect(
+                runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], replay.dependencies)
+            ).resolves.toBe(0);
+
+            expect(log.mock.calls.map(([line]) => line)).toEqual([
+                `delivery-lock-recovered:${NUMBER}:${ownerOid}:OPEN`,
+                `pnpm deliver ${NUMBER}`,
+            ]);
+            expect(replay.remoteReads()).toBe(0);
+            expect(replay.authentications()).toBe(0);
+            expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+        } finally {
+            log.mockRestore();
+            removeTemporaryRoot(root);
+        }
+    });
+
+    it('refuses to replay a receipt when the ref holds neither the recorded nor the adopted owner', async () => {
+        const root = temporaryRoot();
+        const ownerOid = initialize(root);
+        const state = remoteState();
+        const crashed = harness(root, [state, state], false, () => {
+            throw new Error('crashed before releasing the adopted owner');
+        });
+
+        try {
+            await expect(
+                runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], crashed.dependencies)
+            ).rejects.toThrow(/crashed before releasing the adopted owner/);
+            const foreignOid = git(root, ['hash-object', '-w', '--stdin'], journaledOwner('prepared', 7));
+            git(root, ['update-ref', REF, foreignOid]);
+
+            const replay = harness(root, [state, state]);
+            await expect(
+                runRecoverDeliveryLockCli([String(NUMBER), '--owner', ownerOid], replay.dependencies)
+            ).rejects.toThrow(/delivery lock ownership changed before recovery/);
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(foreignOid);
+            expect(replay.remoteReads()).toBe(0);
         } finally {
             removeTemporaryRoot(root);
         }
