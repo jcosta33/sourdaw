@@ -1,0 +1,14 @@
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  h_1228e573df1f42 13-25,27-34,37,43-44,95,177,180,185-187,193,323-328,342-346,358-414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f715f537c6adf3aedf67959338e3594c22cf1211",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
