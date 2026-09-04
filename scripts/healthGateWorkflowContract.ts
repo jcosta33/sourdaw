@@ -129,12 +129,18 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Install server dependencies',
             'Server and Rust workspace health gates',
         ],
-        'native-macos': ['Checkout', 'Install the pinned Rust toolchain', 'Cache cargo build', 'Test the native crate'],
+        'native-macos': [
+            'Checkout',
+            'Install the pinned Rust toolchain',
+            'Cache cargo build',
+            'Test the audio crates',
+            'Test the native crate',
+        ],
         'native-windows': [
             'Checkout',
             'Install the pinned Rust toolchain',
             'Cache cargo build',
-            'Compile-verify the device layer',
+            'Test the audio crates',
         ],
         'native-parity': [
             'Checkout',
