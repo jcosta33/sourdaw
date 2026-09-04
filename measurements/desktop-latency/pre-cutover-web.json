@@ -1,0 +1,1516 @@
+{
+    "schemaVersion": 1,
+    "measuredAt": "2026-09-04T02:16:33.836Z",
+    "machine": {
+        "checkoutGitSha": "756521f6f387929bae9d8f81243792c5347896fe",
+        "workingTree": "clean",
+        "host": {
+            "platform": "darwin",
+            "release": "25.6.0",
+            "arch": "arm64",
+            "cores": 12
+        },
+        "loadAverage1m": 3.91
+    },
+    "app": {
+        "path": "release/desktop/mac-arm64/Sourdaw.app",
+        "bundleVersion": "0.1.0",
+        "payloadSha256": "b931e15f3390591bf38a7e814c1f1fbdbd9b4b7d49348bfb0f2dd089fbce0135",
+        "payloadMtime": "2026-09-04T02:09:34.000Z",
+        "payloadFiles": [
+            "Contents/Resources/app.asar",
+            "Contents/Resources/sourdaw-native.node",
+            "Contents/Resources/sourdaw-plugin-scan-helper"
+        ],
+        "browser": "Chrome/150.0.7871.224",
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) sourdaw/0.1.0 Chrome/150.0.7871.224 Electron/43.4.1 Safari/537.36",
+        "startedAt": "launch-screen",
+        "profile": "isolated"
+    },
+    "plugin": {
+        "path": "/Users/josecosta/Library/Audio/Plug-Ins/CLAP/Sourdaw Harness/Sourdaw Harness Tone.clap"
+    },
+    "legs": [
+        {
+            "name": "idle",
+            "seconds": 20,
+            "load": "playback running, no main-thread work beyond the app itself",
+            "samples": [
+                {
+                    "t": 0,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-∞ dB",
+                    "masterLevelDb": "-Infinity",
+                    "diagnostics": {
+                        "running": false,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 1002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 2001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 3002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 4001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 5002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 6002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 7002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 8001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 9001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 10001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 11002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 12001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 13002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 14002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 15002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 16002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 17002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 18002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 19002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 20002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                }
+            ],
+            "counterDeltas": {
+                "schedulerEventBufferOverflows": 0,
+                "arpeggiatorActiveNoteExhaustions": 0,
+                "effectIdCollisions": 0,
+                "unsupportedEffectAdditions": 0,
+                "unmappedSetParamCalls": 0,
+                "bridgeOutputBlocksDropped": 0,
+                "unmatchedBridgeBlocks": 0,
+                "bridgeBacklogBlocksShed": 0,
+                "callbackFramesOverBridgeReach": 0,
+                "bridgeInputBlocksRefused": 0,
+                "captureConsumerRefusals": 0,
+                "captureBlocksDropped": 0,
+                "captureInputUnderruns": 0
+            },
+            "gaugeReadings": {
+                "inputLatencyFrames": {
+                    "first": 0,
+                    "last": 0
+                }
+            },
+            "streamErrors": {
+                "drained": [],
+                "console": [
+                    "[Sourdaw][WARN] [AudioEngine] native engine streamError on the input stream: backendSpecific"
+                ]
+            },
+            "masterLevelDbMax": -15.9
+        },
+        {
+            "name": "ui-load",
+            "seconds": 20,
+            "load": "6 ms synchronous spin every animation frame, plus a 40 ms burst every 500 ms",
+            "samples": [
+                {
+                    "t": 0,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 1003,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 2001,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 3002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-∞ dB",
+                    "masterLevelDb": "-Infinity",
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 4002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 5002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 6002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 7002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-∞ dB",
+                    "masterLevelDb": "-Infinity",
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 8002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 9003,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 10002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 11002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 12002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 13002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 14002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 15002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 16002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 17002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 18002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 19002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                },
+                {
+                    "t": 20002,
+                    "sampleRateText": "48kHz",
+                    "latencyMs": 22.3,
+                    "latencyTitle": "Output latency 22.3 ms = context 5.3 ms + device 17.0 ms. Hardware output path only — excludes plug-in delay compensation.",
+                    "engineState": "running",
+                    "missedRenderDeadlines": {
+                        "count": 0,
+                        "ms": 0
+                    },
+                    "engineDetectedDropouts": 0,
+                    "masterLevelText": "-15.9 dB",
+                    "masterLevelDb": -15.9,
+                    "diagnostics": {
+                        "running": true,
+                        "counters": {
+                            "arpeggiatorActiveNoteExhaustions": 0,
+                            "bridgeBacklogBlocksShed": 0,
+                            "bridgeInputBlocksRefused": 0,
+                            "bridgeOutputBlocksDropped": 0,
+                            "callbackFramesOverBridgeReach": 0,
+                            "captureBlocksDropped": 0,
+                            "captureConsumerRefusals": 0,
+                            "captureInputUnderruns": 0,
+                            "effectIdCollisions": 0,
+                            "inputLatencyFrames": 0,
+                            "schedulerEventBufferOverflows": 0,
+                            "unmappedSetParamCalls": 0,
+                            "unmatchedBridgeBlocks": 0,
+                            "unsupportedEffectAdditions": 0
+                        }
+                    }
+                }
+            ],
+            "counterDeltas": {
+                "schedulerEventBufferOverflows": 0,
+                "arpeggiatorActiveNoteExhaustions": 0,
+                "effectIdCollisions": 0,
+                "unsupportedEffectAdditions": 0,
+                "unmappedSetParamCalls": 0,
+                "bridgeOutputBlocksDropped": 0,
+                "unmatchedBridgeBlocks": 0,
+                "bridgeBacklogBlocksShed": 0,
+                "callbackFramesOverBridgeReach": 0,
+                "bridgeInputBlocksRefused": 0,
+                "captureConsumerRefusals": 0,
+                "captureBlocksDropped": 0,
+                "captureInputUnderruns": 0
+            },
+            "gaugeReadings": {
+                "inputLatencyFrames": {
+                    "first": 0,
+                    "last": 0
+                }
+            },
+            "streamErrors": {
+                "drained": [],
+                "console": []
+            },
+            "masterLevelDbMax": -15.9
+        }
+    ],
+    "diagnostics": {
+        "pageErrors": [],
+        "consoleWarningsAndErrors": [
+            {
+                "at": "2026-09-04T02:15:24.515Z",
+                "step": "open a new project from the launch screen",
+                "text": "using deprecated parameters for `initSync()`; pass a single object instead"
+            },
+            {
+                "at": "2026-09-04T02:15:43.212Z",
+                "step": "load the harness plugin onto a new track",
+                "text": "[Sourdaw][WARN] External plugin cfd38b59a556454d instance cfd38b59a556454d-ef036718-767f-4680-afed-ca86422948b9: Loaded without a running native engine — this plugin processes no audio yet."
+            },
+            {
+                "at": "2026-09-04T02:15:43.214Z",
+                "step": "confirm the plugin is live on a track",
+                "text": "[Sourdaw][WARN] Native plugin audio processing failed: Error: Error invoking remote method 'sourdaw:invoke:process_plugin_audio': Error: No engine plugin for instance cfd38b59a556454d-ef036718-767f-4680-afed-ca86422948b9"
+            },
+            {
+                "at": "2026-09-04T02:15:44.513Z",
+                "step": "",
+                "text": "[Sourdaw][WARN] [AudioEngine] native engine streamError on the input stream: backendSpecific"
+            }
+        ]
+    },
+    "verdict": "measured",
+    "reason": "the plugin reached the master meter and both legs completed"
+}
