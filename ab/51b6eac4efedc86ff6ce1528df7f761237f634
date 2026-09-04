@@ -1,0 +1,14 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  h_1228e573df1f42 3723,3738-3754,3779-3812
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ab51b6eac4efedc86ff6ce1528df7f761237f634",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
