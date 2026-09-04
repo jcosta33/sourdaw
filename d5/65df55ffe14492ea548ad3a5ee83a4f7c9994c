@@ -1,0 +1,34 @@
+scripts/__tests__/resolveVercelDeploymentAliases.spec.ts
+  s_28abfd94826e36::t_789d296c8a8451 1-201
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_28abfd94826e36::t_c631649c3831b6 196-197
+  s_28abfd94826e36::t_bd35c8269f5788 1841
+  s_28abfd94826e36::t_e1c0fd23dae927 145-152
+  s_28abfd94826e36::t_be10ba7045359d 1639,1641-1642,1644-1693
+  s_28abfd94826e36::t_d59e3121f7cc2b 906-923,933
+  s_28abfd94826e36::t_b35ad6884d4722 924,934-935,1638,1840
+scripts/resolveVercelDeploymentAliases.ts
+  s_28abfd94826e36::t_9fa403c1bf7eb6 1-142
+scripts/test-health-gate-scripts.sh
+  s_28abfd94826e36::t_e5213ea8b9595c 781
+  s_28abfd94826e36::t_5dee0c7d02302f 812-834
+  s_28abfd94826e36::t_c04276bb5cc7d8 950
+.github/workflows/nightly.yml
+  s_28abfd94826e36::t_8f0b422cbe1c4f 940-941,944-945,947-952,955-983,986-994,996-999
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d565df55ffe14492ea548ad3a5ee83a4f7c9994c",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
