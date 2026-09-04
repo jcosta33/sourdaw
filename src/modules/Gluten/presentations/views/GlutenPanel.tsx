@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
-import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
+import { Activity, Flame, Radio, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
@@ -12,6 +12,7 @@ import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -615,16 +616,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         <DawPluginLed tone="lavender">{filteredPresets.length} ready</DawPluginLed>
                     </Row>
 
-                    <Row as="label" gap={2} className="gluten-window px-3 py-2">
-                        <Search className="size-3.5 text-muted-foreground/55" />
-                        <input
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Find a squeeze"
-                            className="min-w-0 flex-1 bg-transparent text-compact text-foreground outline-none placeholder:text-muted-foreground/45"
-                            aria-label="Search Gluten presets"
-                        />
-                    </Row>
+                    <DawSearchInput
+                        value={search}
+                        onChange={setSearch}
+                        placeholder="Find a squeeze"
+                        aria-label="Search Gluten presets"
+                        variant="ghost"
+                        className="gluten-window px-3 py-2"
+                    />
 
                     <Row wrap gap={1.5}>
                         {CATEGORIES.map((entry) => {

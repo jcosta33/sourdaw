@@ -5,6 +5,7 @@ import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
@@ -967,16 +968,14 @@ function BrowserRail({
                 <div className="mt-1 text-[22px] font-semibold tracking-[0.03em] text-white/92">Presets</div>
             </div>
             <Stack grow gap={2.5} className="grinder-window p-3">
-                <Row as="label" gap={2} className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2">
-                    <Search className="size-4 text-white/40" />
-                    <input
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        className="w-full bg-transparent text-sm text-white/84 outline-none placeholder:text-white/28"
-                        placeholder="Search presets"
-                        aria-label="Search Grinder presets"
-                    />
-                </Row>
+                <DawSearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Search presets"
+                    aria-label="Search Grinder presets"
+                    variant="ghost"
+                    className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2"
+                />
                 <Row justify="between" className="text-dense uppercase tracking-[0.22em] text-white/34">
                     <span>{category}</span>
                     <span>{filteredPresets.length} shown</span>
