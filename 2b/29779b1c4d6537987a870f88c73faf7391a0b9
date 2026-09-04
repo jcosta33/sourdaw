@@ -1,0 +1,26 @@
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  h_1228e573df1f42 470
+src/modules/Arrangement/presentations/views/__tests__/AdjustmentLayerStrip.spec.tsx
+  h_1228e573df1f42 171-173
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_1228e573df1f42 388-393,441-446
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_1228e573df1f42 417-419
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  h_1228e573df1f42 485
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  h_1228e573df1f42 95,97,102,437,451
+tests/e2e/flowCoverage.spec.ts
+  h_1228e573df1f42 2,67,90-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2b29779b1c4d6537987a870f88c73faf7391a0b9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
