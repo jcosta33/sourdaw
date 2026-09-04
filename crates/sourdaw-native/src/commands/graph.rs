@@ -5950,6 +5950,51 @@ mod tests {
         assert!(pool.contains_key("oversized_multi"));
     }
 
+    #[test]
+    fn timeline_sample_pool_lowering_max_bytes_evicts_oldest_samples() {
+        let mut pool = TimelineSamplePool::new(256);
+        let make_sample = || TimelineSample {
+            left: vec![0.0; 8].into(),
+            right: vec![0.0; 8].into(),
+            sample_rate: 48_000.0,
+        }; // 16 * 4 = 64 bytes
+
+        assert_eq!(make_sample().byte_len(), 64);
+
+        pool.insert("s1".to_string(), make_sample());
+        pool.insert("s2".to_string(), make_sample());
+        pool.insert("s3".to_string(), make_sample());
+
+        assert!(pool.contains_key("s1"));
+        assert!(pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+        assert_eq!(pool.len(), 3);
+        assert_eq!(pool.total_bytes(), 192);
+
+        pool.set_max_bytes(128);
+        assert_eq!(pool.max_bytes(), 128);
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(!pool.contains_key("s1"));
+        assert!(pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+
+        pool.set_max_bytes(64);
+        assert_eq!(pool.max_bytes(), 64);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 64);
+        assert!(!pool.contains_key("s1"));
+        assert!(!pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+
+        pool.set_max_bytes(0);
+        assert_eq!(pool.max_bytes(), 0);
+        assert!(pool.is_empty());
+        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.total_bytes(), 0);
+        assert!(!pool.contains_key("s3"));
+    }
+
     /// The wire result is a hand-maintained mirror of `AudioGraphApplyResult`;
     /// pin its spellings the way `engine_diagnostics` pins its own payload.
     #[test]
