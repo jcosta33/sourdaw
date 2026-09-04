@@ -441,15 +441,14 @@ mod tests {
             .expect("plugins lock should be available")
             .insert(
                 instance_id.to_string(),
-                crate::state::PluginInstanceData {
-                    plugin: Box::new(
-                        daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
-                            "Command Fixture",
-                            Vec::new(),
-                            false,
-                        ),
-                    ),
-                },
+                crate::state::PluginInstanceData::dormant_fixture(
+                    daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                        "Command Fixture",
+                        Vec::new(),
+                        false,
+                    )
+                    .into(),
+                ),
             );
     }
 

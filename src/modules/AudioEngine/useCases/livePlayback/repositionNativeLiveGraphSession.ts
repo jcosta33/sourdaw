@@ -42,6 +42,7 @@
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { reportAttachedPlugins } from './reportAttachedPlugins';
 
 export type RepositionNativeLiveGraphSessionInput = Readonly<{
     /** Where the playhead is being moved to, on the engine's clock. */
@@ -66,6 +67,7 @@ export function repositionNativeLiveGraphSession(
             schemaVersion: 1,
             commands: [{ kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds }],
         });
+        reportAttachedPlugins(result);
         if (result.application !== 'applied') {
             // The session and its topology stand: a refused locate means the
             // engine is still where it was, not that the graph went away.

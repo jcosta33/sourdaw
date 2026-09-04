@@ -388,6 +388,18 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
         }
     }
 
+    /// Take the wrapper back out of an owner that is being discarded.
+    ///
+    /// Consumes the owner, so the caller has already proven — by holding it by
+    /// value, which past construction means an `Arc::try_unwrap` that succeeded
+    /// — that no audio thread and no control path can be inside the wrapper.
+    /// That is what makes a registration the engine refused recoverable rather
+    /// than spent: the runtime goes back to the caller instead of dying with
+    /// the owner it was briefly moved into.
+    pub fn into_inner(self) -> Runtime {
+        self.wrapper.into_inner()
+    }
+
     /// The plugin's processing gate. Held here as well as inside the wrapper so
     /// the control path can state its intent, and read whether the audio thread
     /// has acted on it, without touching the wrapper at all.

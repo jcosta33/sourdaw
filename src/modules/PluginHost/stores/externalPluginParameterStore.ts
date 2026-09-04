@@ -94,6 +94,32 @@ export function patchExternalPluginParameters(
 }
 
 /**
+ * Record that the engine has taken an instance that was loaded without one.
+ *
+ * Only the attachment fact moves. The parameters were published at activation —
+ * the plugin declared them whether or not an engine was there to render it — and
+ * replacing them here would drop settings a plugin-side edit has since recorded.
+ *
+ * An instance with no snapshot is not created, for the same reason
+ * `patchExternalPluginParameters` does not create one: it was never activated in
+ * this generation, and a snapshot with no parameter list offers an empty
+ * automation menu that reads as a plugin with no controls.
+ */
+export function markExternalPluginParameterSnapshotAttached(instanceId: string): void {
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot || snapshot.engineAttached) {
+            return current;
+        }
+        return {
+            ...current,
+            byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, engineAttached: true } },
+        };
+    });
+}
+
+/**
  * Record the setting a plugin reported for one of its own parameters.
  *
  * Only the value moves: a plugin-side edit says what the control is now set to

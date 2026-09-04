@@ -78,6 +78,12 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn<(message: string) => void>(),
     /** Every bridge call this session made, in order. */
     wireCalls: [] as string[],
+    /**
+     * PluginHost's correction for an instance the engine has just taken over.
+     * Doubled because what this file owns is which instances the session
+     * forwards, not what PluginHost then writes.
+     */
+    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
 }));
 
 vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
@@ -98,6 +104,10 @@ vi.mock('../stopNativeEnginePlayheadFeed', () => ({
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return { ...actual, markExternalPluginEngineAttached: mocks.markExternalPluginEngineAttached };
+});
 vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../readLiveGraphProgramme')>();
     return {
@@ -250,6 +260,7 @@ beforeEach(() => {
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
     mocks.warn.mockClear();
+    mocks.markExternalPluginEngineAttached.mockClear();
     mocks.wireCalls = [];
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
@@ -291,6 +302,63 @@ describe('startNativeLiveGraphSession', () => {
 
         expect(result).toEqual({ outcome: 'declined', reason: 'no desktop bridge (browser runtime)' });
         expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+    });
+
+    // This batch is what starts the native engine, so it is also what takes over
+    // every plugin instance loaded before there was one. Those instances were
+    // reported to their devices as loaded but processing no audio, and this
+    // result is the only correction that report ever gets.
+    it('forwards every instance the engine start took over', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [
+                { instanceId: 'inst-1', bridgeRoundTripFrames: 512 },
+                { instanceId: 'inst-2', bridgeRoundTripFrames: 1024 },
+            ],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-1', bridgeRoundTripFrames: 512 }],
+            [{ instanceId: 'inst-2', bridgeRoundTripFrames: 1024 }],
+        ]);
+    });
+
+    // A batch takes only the instances it reserved command-ring slots for, so
+    // one loaded while the topology was in flight is taken by the next batch —
+    // within a start sequence, the roll. Read on the topology alone, that
+    // instance runs natively and stays reported as degraded for the whole
+    // session.
+    it('forwards the instances the roll took, not only the topology’s', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+        ]);
+    });
+
+    it('corrects nothing when the start attached no instances', async () => {
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached).not.toHaveBeenCalled();
     });
 
     it('starts the engine on desktop by applying the session topology', async () => {
@@ -824,6 +892,26 @@ describe('stopNativeLiveGraphSession', () => {
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
     });
 
+    // A stop is a batch like any other, and an instance loaded while the
+    // transport was rolling is taken by whichever batch comes next. When that
+    // batch is the stop, nothing else follows it until the next start, so a
+    // correction dropped here leaves the device reporting a plugin that
+    // processes no audio while the engine has been rendering it all along.
+    it('forwards the instances the stop’s batch took over', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.markExternalPluginEngineAttached.mockClear();
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+        });
+
+        await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+        ]);
+    });
+
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
@@ -899,6 +987,25 @@ describe('repositionNativeLiveGraphSession', () => {
         // A locate that replaced would tear down the topology the plugin
         // runtimes are standing on to move the playhead a few beats.
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
+    });
+
+    // Every route that applies a batch carries the correction, because any
+    // batch may be the one that finds an instance parked: a plugin loaded while
+    // the session was already rolling is taken by whatever batch comes next,
+    // and a locate is a batch.
+    it('forwards the instances a locate’s batch took over', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.markExternalPluginEngineAttached.mockClear();
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+        });
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+        ]);
     });
 
     it('refuses to roll an engine the session parked because its maps were declined', async () => {

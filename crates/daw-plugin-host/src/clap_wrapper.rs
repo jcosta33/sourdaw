@@ -186,6 +186,15 @@ pub struct ClapWrapper {
 struct EngineOwnedCommandFixture {
     state: Vec<u8>,
     has_gui: bool,
+    /// The answer the fixture's open editor gives to "do you accept a size the
+    /// host chose".
+    ///
+    /// Separate from `has_gui` because the two are independent in every real
+    /// plugin — a fixed-layout editor has a GUI and refuses host sizing — and a
+    /// fixture that derived one from the other could only ever be driven through
+    /// the arm that says yes. Defaults to `has_gui`, so a fixture nobody
+    /// configures answers exactly as it did before this knob existed.
+    editor_resizable: bool,
     /// Values the fixture answers `get_parameters` with. Writable so a test can
     /// stage a change the host never made — the plugin-side edit a user performs
     /// in the plugin's own editor.
@@ -203,6 +212,23 @@ struct EngineOwnedCommandFixture {
     /// capability commands, the lifecycle only by the open/close path, and a
     /// host may be wrong about one and right about the other.
     editor_support_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    /// Run at the top of this wrapper's teardown, standing in for the plugin
+    /// calls a real drop makes — `deactivate`, `destroy`, the entry point's
+    /// `deinit`.
+    ///
+    /// Which is third-party code of unbounded duration, so *when* a host drops a
+    /// runtime is a contract and not an implementation detail: dropping one
+    /// inside a lock the rest of the app takes stalls everything behind it. A
+    /// fixture has no plugin to be slow, so the only way a host can prove it
+    /// drops in the clear is to be told the moment it does.
+    teardown_observer: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run as this fixture's host-request wake is installed.
+    ///
+    /// Installing one reaches the runtime through the host's own access seam,
+    /// which waits on whatever holds the instance — so *where* a host installs
+    /// is a contract for the same reason teardown is, and the only way to prove
+    /// it is to be told what the installing thread was holding at the time.
+    notifier_install_observer: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -884,9 +910,12 @@ impl ClapWrapper {
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
                 has_gui,
+                editor_resizable: has_gui,
                 parameters: Vec::new(),
                 gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
+                teardown_observer: None,
+                notifier_install_observer: None,
             }),
         }
     }
@@ -931,6 +960,73 @@ impl ClapWrapper {
     ) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.parameters = parameters;
+        }
+    }
+
+    /// Stage the answer the fixture's open editor gives to a host-chosen size.
+    ///
+    /// Stands in for a fixed-layout editor, which is the arm no fixture could
+    /// otherwise reach: `open_gui` refuses a fixture with no GUI, so a host
+    /// driving the open path end to end could only ever see the resizable
+    /// answer, and a window told the wrong thing gives every fixed editor a
+    /// draggable frame the plugin will refuse.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_editor_resizable(&mut self, editor_resizable: bool) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.editor_resizable = editor_resizable;
+        }
+    }
+
+    /// Be told the moment this fixture is torn down.
+    ///
+    /// Stands in for the plugin's own `deactivate`/`destroy`/`deinit`, which is
+    /// where a host pays for dropping a runtime in the wrong place: those calls
+    /// run on the dropping thread, take as long as the plugin takes, and a host
+    /// that makes them inside a lock another thread needs has hung that thread
+    /// for the duration. The observer runs at the top of the teardown, so it can
+    /// read what the dropping thread still holds.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_teardown(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.teardown_observer = Some(observe);
+        }
+    }
+
+    /// Be told the moment this fixture's host-request wake is installed.
+    ///
+    /// The install crosses the host's access seam, which waits on the control
+    /// gate an open editor holds and then on the audio thread's own claim. A
+    /// host that installs under a lock the rest of the app takes has parked
+    /// everything behind that wait, and no other answer of this wrapper's shows
+    /// it — so the observer runs during the install, where it can read what the
+    /// installing thread still holds.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_notifier_install(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.notifier_install_observer = Some(observe);
+        }
+    }
+
+    /// Leave a fixture unactivated, as a plugin whose `activate` failed is.
+    ///
+    /// A fixture has no plugin to fail an activation, and a host cannot make one
+    /// fail from outside: the wrapper activates during construction. This is the
+    /// only way a downstream host can drive the path that refuses to register an
+    /// unactivated runtime with the engine.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn deactivate_engine_owned_command_fixture(&mut self) {
+        if self.command_fixture.is_some() {
+            self.activated = false;
         }
     }
 
@@ -1367,7 +1463,7 @@ impl ClapWrapper {
     pub fn editor_can_resize(&self) -> bool {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
-            return fixture.has_gui && self.gui_open;
+            return fixture.editor_resizable && self.gui_open;
         }
 
         // SAFETY: control path only; the extension outlives this borrow.
@@ -1535,6 +1631,14 @@ impl ClapWrapper {
     /// thread that answers them serves exactly the instances the native engine
     /// took, which is exactly where this is installed.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.notifier_install_observer.as_ref())
+        {
+            observe();
+        }
         self.host_state.set_request_notifier(notifier)
     }
 
@@ -5889,6 +5993,17 @@ mod tests {
 
 impl Drop for ClapWrapper {
     fn drop(&mut self) {
+        // First, so the observer sees what the dropping thread holds before any
+        // of the teardown below has run.
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.teardown_observer.as_ref())
+        {
+            observe();
+        }
+
         // Close GUI if it's still open
         if self.gui_open {
             self.close_gui();

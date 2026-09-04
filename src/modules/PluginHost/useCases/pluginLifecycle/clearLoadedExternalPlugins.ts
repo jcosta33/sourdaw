@@ -7,6 +7,7 @@ import {
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
 
+import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
     externalPluginActivationEpoch,
@@ -20,13 +21,14 @@ import { loadedExternalInstances } from './loadedExternalInstances';
  * down (project open/switch), so the next generation re-activates the incoming
  * project's persisted native plugins instead of treating them as already live.
  *
- * The latency sinks go with them: they close over the outgoing project's device
- * ids, so keeping them would route the next generation's latency pushes into a
- * registry entry for a device that no longer exists.
+ * The latency and bridge-cost sinks go with them: they close over the outgoing
+ * project's device ids, so keeping them would route the next generation's
+ * pushes into a registry entry for a device that no longer exists.
  */
 export function clearLoadedExternalPlugins(): void {
     loadedExternalInstances.clear();
     externalLatencyReporters.clear();
+    externalBridgeFramesReporters.clear();
     externalPluginActivationEpoch.current += 1;
     externalPluginActivationTasks.clear();
     externalPluginActivationOutcomes.clear();
