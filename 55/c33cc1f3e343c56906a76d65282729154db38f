@@ -1,0 +1,55 @@
+src/modules/Arrangement/handlers/clip/handleSetClipColor.ts
+  s_689d8f55870ce7::t_368df99364b985 8-11
+src/modules/Arrangement/handlers/clip/handleSetClipFade.ts
+  s_689d8f55870ce7::t_02dac9308c8f3b 8-11
+src/modules/Arrangement/handlers/track/handleSetTrackGain.ts
+  s_689d8f55870ce7::t_20734baf525714 28-31
+src/modules/Arrangement/handlers/track/muteTrack.ts
+  s_689d8f55870ce7::t_ae8304b9d2c7fc 9-12
+src/modules/Command/useCases/undo.ts
+  s_8537615d6b7238::t_9eff969854500c 9-10,44-47,181-205,320-383,398-405,410-420,434,437-439
+src/utils/createHandler.ts
+  s_f8e595e0f0d932::t_57aef3a94cf2f5 26-27,78
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_74742b727e1b63 2368-2380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "55c33cc1f3e343c56906a76d65282729154db38f",
+  "prompts": {},
+  "sessions": {
+    "s_689d8f55870ce7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06eb3-dd53-7970-a4d8-783e06487bc7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8537615d6b7238": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa5b0e4cd887e9e10",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f8e595e0f0d932": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2f4a9df9ae4be7b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
