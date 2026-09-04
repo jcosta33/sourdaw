@@ -675,7 +675,9 @@ type FakeInput = {
     primary?: Array<PullRequestSnapshot | Error>;
     review?: ReviewState;
     reviewStates?: ReviewState[];
+    dependents?: StackedPullRequest[];
     dependentSets?: StackedPullRequest[][];
+    pullRequests?: Array<PullRequestSnapshot | StackedPullRequest>;
     dirty?: boolean;
     headCheckRuns?: HeadCheckRun[] | Error;
     headCheckRunReads?: Array<HeadCheckRun[] | Error>;
@@ -787,15 +789,31 @@ function sameReceiptAuthorityExpectation(
     return sameReceiptAuthority(current, expected.authority);
 }
 
+function initialPrimarySnapshots(input: FakeInput): Array<PullRequestSnapshot | Error> {
+    if (input.primary === undefined) {
+        return [pullRequest(), pullRequest()];
+    }
+    const firstPrimary = input.primary[0];
+    if (
+        input.primary.length === 1 &&
+        firstPrimary !== undefined &&
+        !(firstPrimary instanceof Error) &&
+        firstPrimary.state === 'OPEN'
+    ) {
+        return [firstPrimary, firstPrimary];
+    }
+    return [...input.primary];
+}
+
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
-    const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
+    const primary = initialPrimarySnapshots(input);
     const reviewStates = [...(input.reviewStates ?? [])];
     const dependentSets = input.dependentSets?.map((set) => [...set]) ?? [[stacked()], [stacked()]];
     const headCheckRunReads = input.headCheckRunReads?.map((entry) => (entry instanceof Error ? entry : [...entry]));
     const pullRequests = new Map<number, PullRequestSnapshot>();
-    for (const set of dependentSets) {
-        for (const dependent of set) {
+    if (input.dependents !== undefined) {
+        for (const dependent of input.dependents) {
             pullRequests.set(
                 dependent.number,
                 pullRequest({
@@ -803,6 +821,27 @@ function fakePort(input: FakeInput = {}) {
                     baseRefOid: 'base',
                 })
             );
+        }
+    }
+    if (input.pullRequests !== undefined) {
+        for (const item of input.pullRequests) {
+            pullRequests.set(
+                item.number,
+                'headRefName' in item && !('mergeable' in item) ? pullRequest({ ...item, baseRefOid: 'base' }) : item
+            );
+        }
+    }
+    for (const set of dependentSets) {
+        for (const dependent of set) {
+            if (!pullRequests.has(dependent.number)) {
+                pullRequests.set(
+                    dependent.number,
+                    pullRequest({
+                        ...dependent,
+                        baseRefOid: 'base',
+                    })
+                );
+            }
         }
     }
     let lastDependents = dependentSets.at(-1) ?? [];
@@ -891,16 +930,37 @@ function fakePort(input: FakeInput = {}) {
                 input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
             );
         },
-        dependents: () => {
+        dependents: (baseBranch) => {
             const next = dependentSets.shift();
             if (next !== undefined) {
                 lastDependents = next;
+                for (const dependent of next) {
+                    if (!pullRequests.has(dependent.number)) {
+                        pullRequests.set(
+                            dependent.number,
+                            pullRequest({
+                                ...dependent,
+                                baseRefOid: 'base',
+                            })
+                        );
+                    }
+                }
             }
-            return [...lastDependents];
+            return lastDependents.filter((dependent) => {
+                const pr = pullRequests.get(dependent.number);
+                if (pr !== undefined && baseBranch !== undefined) {
+                    return pr.baseRefName === baseBranch;
+                }
+                if (baseBranch !== undefined) {
+                    return dependent.baseRefName === baseBranch;
+                }
+                return true;
+            });
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        merge: (number, head, _hasDependents, expectedTitle) => {
+        merge: (number, head, hasDependents, expectedTitle) => {
             calls.push(`merge:${number}:${head}`);
+            calls.push(`merge-has-dependents:${hasDependents}`);
             calls.push(`merge-title:${expectedTitle ?? 'none'}`);
             if (lastPrimary === undefined) {
                 throw new Error('merge requires a primary snapshot');
@@ -1001,6 +1061,7 @@ function fakePort(input: FakeInput = {}) {
         tracker,
         receipts,
         persistedReceiptAuthority: () => persistedReceiptAuthority,
+        pullRequests,
     };
 }
 
@@ -1207,6 +1268,134 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('merge:42:head'));
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+    });
+
+    it('retargets late dependents opened against the delivered branch immediately before squash merge', () => {
+        const child = stacked({ number: 43 });
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            dependents: [child],
+            dependentSets: [[], [], [child]],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toEqual(expect.arrayContaining(['merge:42:head', 'retarget:43:main', 'complete:2372']));
+        expect(calls).toContain('merge-has-dependents:true');
+        const mergeIndex = calls.indexOf('merge:42:head');
+        const retargetIndex = calls.indexOf('retarget:43:main');
+        const completeIndex = calls.indexOf('complete:2372');
+        expect(retargetIndex).toBeGreaterThan(mergeIndex);
+        expect(completeIndex).toBeGreaterThan(retargetIndex);
+        expect(persistedReceiptAuthority()?.phase).toBe('terminal');
+    });
+
+    it('records hasDependents=false when delivering a branch with no dependents', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            dependentSets: [[], []],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('merge-has-dependents:false');
+    });
+
+    it('drains multiple batches of late dependents in a loop until none remain before completing issue', () => {
+        const child1 = stacked({ number: 43, headRefName: 'feat/child1' });
+        const child2 = stacked({ number: 44, headRefName: 'feat/child2' });
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            pullRequests: [child1, child2],
+            dependentSets: [[], [], [child1], [child1], [child2], []],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toEqual(
+            expect.arrayContaining(['merge:42:head', 'retarget:43:main', 'retarget:44:main', 'complete:2372'])
+        );
+        expect(calls).toContain('merge-has-dependents:true');
+        const mergeIndex = calls.indexOf('merge:42:head');
+        const retarget1Index = calls.indexOf('retarget:43:main');
+        const retarget2Index = calls.indexOf('retarget:44:main');
+        const completeIndex = calls.indexOf('complete:2372');
+        expect(retarget1Index).toBeGreaterThan(mergeIndex);
+        expect(retarget2Index).toBeGreaterThan(retarget1Index);
+        expect(completeIndex).toBeGreaterThan(retarget2Index);
+        expect(persistedReceiptAuthority()?.phase).toBe('terminal');
+    });
+
+    it('does not repeatedly retarget pre-merge dependents when dependents port returns cached PRs', () => {
+        const child = stacked({ number: 43 });
+        const closes = relationshipBody('Closes #2372');
+        let callCount = 0;
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            dependents: [child],
+        });
+        port.dependents = () => {
+            callCount += 1;
+            if (callCount > 10) {
+                throw new Error('infinite loop in retargetAllRemainingDependents');
+            }
+            return [child];
+        };
+
+        deliverPullRequest(42, port, tracker);
+
+        const retargetCalls = calls.filter((c) => c === 'retarget:43:main');
+        expect(retargetCalls).toHaveLength(1);
+        expect(persistedReceiptAuthority()?.phase).toBe('terminal');
+    });
+
+    it('does not repeatedly retarget already-retargeted dependents when dependents port returns cached PRs', () => {
+        const child = stacked({ number: 43 });
+        const closes = relationshipBody('Closes #2372');
+        let preMergeReads = 0;
+        let loopReads = 0;
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            pullRequests: [child],
+            dependentSets: [[], []],
+        });
+        port.dependents = () => {
+            preMergeReads += 1;
+            if (preMergeReads <= 2) {
+                return [];
+            }
+            loopReads += 1;
+            if (loopReads > 10) {
+                throw new Error('infinite loop in retargetAllRemainingDependents');
+            }
+            return [child];
+        };
+
+        deliverPullRequest(42, port, tracker);
+
+        const retargetCalls = calls.filter((c) => c === 'retarget:43:main');
+        expect(retargetCalls).toHaveLength(1);
+        expect(persistedReceiptAuthority()?.phase).toBe('terminal');
+    });
+
+    it('refuses to merge when automatic branch deletion is enabled and a late dependent was opened immediately before squash merge', () => {
+        const child = stacked({ number: 43 });
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            dependents: [child],
+            dependentSets: [[], [], [child]],
+            deletesMergedBranches: true,
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /automatic merged-branch deletion must be disabled before delivering a stacked PR/
+        );
+        expect(calls).not.toContain('merge:42:head');
     });
 
     it.each(['Related #2372', 'None.'])('does not complete an issue for %s', (relationship) => {

@@ -2582,6 +2582,28 @@ function retargetDependents(dependents: StackedPullRequest[], baseBranch: string
     }
 }
 
+function retargetAllRemainingDependents(
+    headRefName: string,
+    baseRefName: string,
+    deliveringNumber: number,
+    port: DeliveryPort,
+    alreadyRetargeted: Iterable<number> = []
+): void {
+    const retargeted = new Set<number>(alreadyRetargeted);
+    while (true) {
+        const remaining = port
+            .dependents(headRefName)
+            .filter((candidate) => candidate.number !== deliveringNumber && !retargeted.has(candidate.number));
+        if (remaining.length === 0) {
+            break;
+        }
+        retargetDependents(remaining, baseRefName, port);
+        for (const candidate of remaining) {
+            retargeted.add(candidate.number);
+        }
+    }
+}
+
 function completeIssueAfterMerge(
     pullRequestNumber: number,
     issueNumber: number | undefined,
@@ -2646,6 +2668,13 @@ function deliverPullRequestWithCiAdmission(
         }
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
+        retargetAllRemainingDependents(
+            initial.headRefName,
+            initial.baseRefName,
+            number,
+            port,
+            remaining.map((dependent) => dependent.number)
+        );
         completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
         persistTerminalDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
@@ -2696,6 +2725,13 @@ function deliverPullRequestWithCiAdmission(
             validateDependent(port.pullRequest(dependent.number), dependent);
         }
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
+        retargetAllRemainingDependents(
+            finalSnapshot.headRefName,
+            finalSnapshot.baseRefName,
+            number,
+            port,
+            finalDependents.map((dependent) => dependent.number)
+        );
         completeIssueAfterMerge(number, recoveredPayload.closingIssue, tracker);
         persistTerminalDeliveryReceiptAuthority(number, recoveredReceipt, preparedPostMergeValidation, port);
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
@@ -2750,8 +2786,15 @@ function deliverPullRequestWithCiAdmission(
                 };
             }
         );
+    const preMergeDependents = port
+        .dependents(finalSnapshot.headRefName)
+        .filter((candidate) => candidate.number !== number);
+    const hasDependents = finalDependents.length > 0 || preMergeDependents.length > 0;
+    if (hasDependents && port.repositoryDeletesMergedBranches()) {
+        fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
+    }
     try {
-        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
+        port.merge(number, finalSnapshot.headRefOid, hasDependents, `${finalSnapshot.title} (#${number})`);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             if (error.certainty === 'definitive-no-merge') {
@@ -2779,6 +2822,13 @@ function deliverPullRequestWithCiAdmission(
         port
     );
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
+    retargetAllRemainingDependents(
+        finalSnapshot.headRefName,
+        finalSnapshot.baseRefName,
+        number,
+        port,
+        finalDependents.map((dependent) => dependent.number)
+    );
     completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
     persistTerminalDeliveryReceiptAuthority(
         number,
