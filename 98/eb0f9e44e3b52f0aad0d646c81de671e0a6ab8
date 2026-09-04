@@ -1,0 +1,19 @@
+scripts/__tests__/wasmArtifactsWorkspaceManifest.spec.ts
+  s_28abfd94826e36::t_7750ec5570df22 251-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "98eb0f9e44e3b52f0aad0d646c81de671e0a6ab8",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
