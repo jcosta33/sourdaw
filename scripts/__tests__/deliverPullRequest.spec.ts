@@ -7404,6 +7404,46 @@ describe('gating check names', () => {
                 'which GitHub reports as one check name this gate cannot tell apart',
         },
         {
+            label: 'a gated matrix job that declares no name',
+            source: workflow(
+                ['  target:', '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose name is declared empty',
+            source: workflow(
+                ['  target:', "    name: ''", '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose name is declared null',
+            source: workflow(
+                ['  target:', '    name: ~', '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job running several combinations under no name',
+            source: workflow(
+                ['  target:', '    strategy:', '      matrix:', '        os: [ubuntu, macos]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
             label: 'a gated matrix job whose shards render one name',
             source: workflow(
                 [

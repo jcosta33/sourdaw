@@ -682,15 +682,31 @@ function requiredCheckNames(jobId: string, jobs: WorkflowJobs): string[] {
                 `whose checks GitHub reports as one name per inner job rather than the one name this gate derives`
         );
     }
-    const declared = declaredCheckName(jobId, job.name);
     const combinations = matrixCombinations(jobId, job.strategy);
     if (combinations === undefined) {
-        return [reportedCheckName(jobId, declared, undefined)];
+        return [reportedCheckName(jobId, declaredCheckName(jobId, job.name), undefined)];
     }
+    const declared = matrixCheckName(jobId, job.name);
     return distinctCheckNames(
         jobId,
         combinations.map((combination) => reportedCheckName(jobId, declared, combination))
     );
+}
+
+/**
+ * GitHub labels a matrix job that declares no name `<job id> (<value>, <value>)` rather than the
+ * bare job id, so the fallback a job without a matrix answers with is a name no check on the head
+ * carries. Rendering that parenthesised form would mean reproducing which keys GitHub puts in it and
+ * in which order, so this refuses instead.
+ */
+function matrixCheckName(jobId: string, name: unknown): string {
+    if (name === undefined || name === null || name === '') {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a matrix and no name, ` +
+                `so GitHub labels its checks with values this gate does not render`
+        );
+    }
+    return declaredCheckName(jobId, name);
 }
 
 /** The declared name with this combination substituted into it, or a refusal for any other expression. */
@@ -930,7 +946,11 @@ function substituteMatrixValues(jobId: string, declared: string, combination: Ma
     });
 }
 
-/** A job that declares no name is labelled with its job id, which is what GitHub reports for it. */
+/**
+ * A job that declares no name is labelled with its job id, which is what GitHub reports for a job
+ * that runs no matrix. A matrix job is labelled from its combination instead, and never reaches the
+ * fallback here.
+ */
 function declaredCheckName(jobId: string, name: unknown): string {
     if (name === undefined || name === null || name === '') {
         return jobId;
