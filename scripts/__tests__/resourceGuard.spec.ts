@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -822,23 +822,18 @@ describe('default budgets', () => {
     it('wires the resolved default budget through runGuardedCommand', async () => {
         const root = fixtureRoot('default-budget');
         try {
-            writeFileSync(
-                join(root, 'package.json'),
-                JSON.stringify({
-                    name: 'guard-budget-fixture',
-                    private: true,
-                    scripts: {
-                        'typecheck:test': 'node -e "process.exit(0)"',
-                        other: 'node -e "process.exit(0)"',
-                    },
-                })
-            );
+            // A real pnpm cold start costs over a second on a loaded CI runner; this shim
+            // stands in for the binary so the test observes the resolver's budget wiring,
+            // not pnpm's startup time.
+            writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            const shimEnv = { ...process.env, PATH: `${root}${delimiter}${process.env.PATH ?? ''}` };
 
             const typecheckResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
                 args: ['typecheck:test'],
                 profile: 'focused',
                 cwd: root,
+                env: shimEnv,
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(typecheckResult.code).toBe(0);
@@ -849,6 +844,7 @@ describe('default budgets', () => {
                 args: ['other'],
                 profile: 'focused',
                 cwd: root,
+                env: shimEnv,
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(otherResult.code).toBe(0);
@@ -860,6 +856,7 @@ describe('default budgets', () => {
                 profile: 'focused',
                 cwd: root,
                 maxRssBytes: 5 * 1024 ** 3,
+                env: shimEnv,
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(explicitResult.code).toBe(0);
