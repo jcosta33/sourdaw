@@ -1790,10 +1790,12 @@ type DecodedRgbaPng = {
     width: number;
 };
 
-const OWNER_ICON_BACKGROUND = [12, 10, 9] as const;
+const OWNER_ICON_BACKGROUND_TOP = [38, 34, 30] as const;
+const OWNER_ICON_BACKGROUND_BOTTOM = [8, 7, 6] as const;
+const OWNER_ICON_BACKGROUND_SHA256 = '9eb7c9370d1729bb55529e9fb6b5262397060ab4ea384bb6cf824d4320f526b6';
 const OWNER_ICON_ICNS_MAGIC = Buffer.from('icns', 'ascii');
 const OWNER_ICON_LEGACY_ARGB_MAGIC = Buffer.from('ARGB', 'ascii');
-const OWNER_ICON_PARTIAL_EDGE_SHA256 = 'cdfc19f49aa90f8433c5377a54f5b732584a91ea12c11ecec9341abf8dcfaddd';
+const OWNER_ICON_PARTIAL_EDGE_SHA256 = 'fc033502f9d39b7fa77460f0a0b1cd985a8c33f60d18922ba1fc4c08754f4032';
 const OWNER_ICON_PNG_FILE_BYTE_LIMIT = 2 * 1024 * 1024;
 const OWNER_ICON_PNG_IDAT_BYTE_LIMIT = 1024 * 1024;
 const OWNER_ICON_PNG_PIXEL_BYTE_LIMIT = 5 * 1024 * 1024;
@@ -1824,24 +1826,24 @@ const OWNER_ICON_ICNS_FRAME_SIZES: Readonly<Record<(typeof OWNER_ICON_REQUIRED_I
     ic14: 512,
 };
 const OWNER_ICON_ICNS_PIXEL_SHA256: Readonly<Record<(typeof OWNER_ICON_REQUIRED_ICNS_FRAMES)[number], string>> = {
-    ic04: 'dad6d4cd341455afa867953317af20faa2cb9c7ae55ed38f41ac9fd47805a9c7',
-    ic05: '46bd1317d8ae06eb40bb2c1828be0ff3aa764f35390ab39a4fe1e6d310ae60ba',
-    ic07: '917f3eb1b7179f2e8b26636c9a9a9066cf50417a606835b2a3f6eb8a30f77a86',
-    ic08: '9ee0b42cc473c9c1b2c3740ce214f02aa3e816f93c58db6b6775b7b0c6bba4d3',
-    ic09: '141174800302682358ca3b3df507f1727de78e6c9d6a75d99a69c9408f5fc856',
-    ic10: 'fe46f7854c2bc8809892019b7a6764791da9b26677e3b12b94184616439ae7c5',
-    ic11: '46bd1317d8ae06eb40bb2c1828be0ff3aa764f35390ab39a4fe1e6d310ae60ba',
-    ic12: '2f25d01ff8c83cab4cdb71c25c06a373e58e1af32e78fc4f2ff6a87a120d1932',
-    ic13: '9ee0b42cc473c9c1b2c3740ce214f02aa3e816f93c58db6b6775b7b0c6bba4d3',
-    ic14: '141174800302682358ca3b3df507f1727de78e6c9d6a75d99a69c9408f5fc856',
+    ic04: 'beda916de38c12fc078f9745250b5bc013a854dff7a1abb1177e7700baa54565',
+    ic05: 'e15e623926793edbe99cc8f220470987fb2bb291aa553df7d35922112819b6b9',
+    ic07: '13ee69d1a290dba3daa026195476f24e18dd05e5dcaeb4d8d852bd7121317e89',
+    ic08: '110e5bb558dd0bf6a90c0ad7ec86eecccfe06fecaad4915067f2ebfd8b8256bc',
+    ic09: 'ee13f2afdb5933b64787cf8b2882e03a54734d322034e7e55f894210374ec2d9',
+    ic10: 'ee3c22c36cf84070524be4efaf57b07aa9e081033280cb91c6ab0787521b679e',
+    ic11: 'e15e623926793edbe99cc8f220470987fb2bb291aa553df7d35922112819b6b9',
+    ic12: '1fd5a8487ed52098cd2a4b089529ccc08801cd724841976a239d4753bbb85cbc',
+    ic13: '110e5bb558dd0bf6a90c0ad7ec86eecccfe06fecaad4915067f2ebfd8b8256bc',
+    ic14: 'ee13f2afdb5933b64787cf8b2882e03a54734d322034e7e55f894210374ec2d9',
 };
 const OWNER_ICON_ICO_PIXEL_SHA256: Readonly<Record<number, string>> = {
-    16: 'dad6d4cd341455afa867953317af20faa2cb9c7ae55ed38f41ac9fd47805a9c7',
-    24: '11ec7c63ee95116c449dc272d103c010de4dfc652a1de2ef01d2aece13c69cbf',
-    32: '46bd1317d8ae06eb40bb2c1828be0ff3aa764f35390ab39a4fe1e6d310ae60ba',
-    48: 'bf5fa4ce327a7deaf688e71ccc8912b43a91594f13d73dfba74f365eb38eb250',
-    64: '2f25d01ff8c83cab4cdb71c25c06a373e58e1af32e78fc4f2ff6a87a120d1932',
-    256: '9ee0b42cc473c9c1b2c3740ce214f02aa3e816f93c58db6b6775b7b0c6bba4d3',
+    16: 'beda916de38c12fc078f9745250b5bc013a854dff7a1abb1177e7700baa54565',
+    24: 'c25836e9b0507fde1f30433577ace4272c6d66ad152c9d4d207308c6bf74f08b',
+    32: 'e15e623926793edbe99cc8f220470987fb2bb291aa553df7d35922112819b6b9',
+    48: '9a793fb6f9a3bdb951ce0d1ce2782d8bd6bc49e8e6a0faf709731a7d300c1ee8',
+    64: '1fd5a8487ed52098cd2a4b089529ccc08801cd724841976a239d4753bbb85cbc',
+    256: '110e5bb558dd0bf6a90c0ad7ec86eecccfe06fecaad4915067f2ebfd8b8256bc',
 };
 
 function paethPredictor(left: number, above: number, upperLeft: number): number {
@@ -2138,6 +2140,19 @@ function assertCanonicalOwnerIcon(root: string): void {
     if (opaqueMarkPixels === 0) {
         throw new Error('owner visual asset public/icon-transparent.png contains no opaque mark pixels');
     }
+    const topPixel = rgbaPixel(canonical, 0, 0);
+    const bottomPixel = rgbaPixel(canonical, 0, canonical.height - 1);
+    if (
+        topPixel[0] !== OWNER_ICON_BACKGROUND_TOP[0] ||
+        topPixel[1] !== OWNER_ICON_BACKGROUND_TOP[1] ||
+        topPixel[2] !== OWNER_ICON_BACKGROUND_TOP[2] ||
+        bottomPixel[0] !== OWNER_ICON_BACKGROUND_BOTTOM[0] ||
+        bottomPixel[1] !== OWNER_ICON_BACKGROUND_BOTTOM[1] ||
+        bottomPixel[2] !== OWNER_ICON_BACKGROUND_BOTTOM[2]
+    ) {
+        throw new Error('owner visual asset public/icon.png background must be top-lit gradient #26221e -> #080706');
+    }
+    const backgroundHash = createHash('sha256');
     for (let y = 0; y < canonical.height; y += 1) {
         for (let x = 0; x < canonical.width; x += 1) {
             const sourceX = x - 66;
@@ -2150,15 +2165,21 @@ function assertCanonicalOwnerIcon(root: string): void {
                 continue;
             }
             const pixel = rgbaPixel(canonical, x, y);
-            if (
-                pixel[0] !== OWNER_ICON_BACKGROUND[0] ||
-                pixel[1] !== OWNER_ICON_BACKGROUND[1] ||
-                pixel[2] !== OWNER_ICON_BACKGROUND[2] ||
-                pixel[3] !== 255
-            ) {
-                throw new Error('owner visual asset public/icon.png background must be opaque #0c0a09');
+            if (pixel[3] !== 255) {
+                throw new Error('owner visual asset public/icon.png background must be fully opaque');
             }
+            const evidence = Buffer.alloc(8);
+            evidence.writeUInt16BE(x, 0);
+            evidence.writeUInt16BE(y, 2);
+            evidence[4] = pixel[0];
+            evidence[5] = pixel[1];
+            evidence[6] = pixel[2];
+            evidence[7] = pixel[3];
+            backgroundHash.update(evidence);
         }
+    }
+    if (backgroundHash.digest('hex') !== OWNER_ICON_BACKGROUND_SHA256) {
+        throw new Error('owner visual asset public/icon.png background does not match top-lit gradient');
     }
     const sourdawBytes = readBoundedOwnerAsset(
         resolve(root, 'sourdaw.png'),

@@ -3713,7 +3713,22 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { canonical });
 
             expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
-                'owner visual asset public/icon.png background must be opaque #0c0a09'
+                'owner visual asset public/icon.png background must be top-lit gradient #26221e -> #080706'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a canonical owner icon with drifted gradient or shadow pixels', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-gradient-drift-'));
+
+        try {
+            const canonical = mutatePngPixel(repositoryOwnerCanonical, 10, 10, [13, 10, 9, 255]);
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
+                'owner visual asset public/icon.png background does not match top-lit gradient'
             );
         } finally {
             removeTemporaryDirectory(root);
