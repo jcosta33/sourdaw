@@ -24,6 +24,8 @@ export {
 } from './timelineViewStore';
 export type { TimelineViewState } from './timelineViewStore';
 
+export { activeRecordingRef } from './activeRecordingRef';
+
 export { trackStore, defaultTrackState, sanitizeTrackSnapshot } from './trackStore';
 export type {
     TrackStoreState,
