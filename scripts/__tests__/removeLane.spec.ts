@@ -18,6 +18,9 @@ import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { supersessionCommentBody } from '../prContract.ts';
 import {
     disposableIgnored,
+    isExpectedReviewLaneName,
+    isExpectedReviewLanePath,
+    parseReviewLanePrNumber,
     parseStrandArgs,
     parseWorktrees,
     removeLane,
@@ -36,6 +39,7 @@ import {
 
 const root = '/repo';
 const target = '/repo/.agents/worktrees/feature';
+const reviewTarget = '/repo/.agents/worktrees/review-1976';
 
 function worktree(overrides: Partial<Worktree> = {}): Worktree {
     return {
@@ -88,6 +92,7 @@ type FakeInput = {
     operation?: string;
     remoteHead?: string | null;
     pullRequests?: PullRequest[];
+    commitPullRequests?: PullRequest[];
     comments?: IssueComment[];
     replacement?: Partial<ReplacementPullRequest>;
 };
@@ -108,6 +113,7 @@ function fakePort(input: FakeInput = {}) {
         operation: () => input.operation,
         remoteHead: () => (input.remoteHead === null ? undefined : (input.remoteHead ?? 'head')),
         pullRequests: () => input.pullRequests ?? [pullRequest()],
+        commitPullRequests: () => input.commitPullRequests ?? input.pullRequests ?? [pullRequest()],
         comments: (number) => {
             calls.push(`comments:${number}`);
             return input.comments ?? [];
@@ -158,6 +164,22 @@ function fakeStrandPort(input: FakeInput = {}) {
     return { port, calls: base.calls, receipts, receiptFiles };
 }
 
+function withGitFixture(fn: (context: { repository: string; git: (args: string[], cwd?: string) => string }) => void) {
+    const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-fixture-'));
+    const git = (args: string[], cwd = repository) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    try {
+        git(['init', '-b', 'main']);
+        git(['config', 'user.name', 'Fixture']);
+        git(['config', 'user.email', 'fixture@example.com']);
+        writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
+        git(['add', '.']);
+        git(['commit', '-m', 'fixture']);
+        fn({ repository, git });
+    } finally {
+        rmSync(repository, { recursive: true, force: true });
+    }
+}
+
 describe('disposableIgnored', () => {
     it.each([
         ['node_modules/', true],
@@ -178,6 +200,64 @@ describe('disposableIgnored', () => {
         ['.env', false],
     ])('treats %s as disposable: %s', (path, expected) => {
         expect(disposableIgnored(path)).toBe(expected);
+    });
+});
+
+describe('isExpectedReviewLaneName', () => {
+    it.each([
+        ['review', true],
+        ['review-1976', true],
+        ['review_1976', true],
+        ['review-1976-slug', true],
+        ['review-provider-stream', true],
+        ['agent-1976-review', true],
+        ['agent_1976_review', true],
+        ['REVIEW-1976', true],
+        ['feature', false],
+        ['agent-1976', false],
+        ['review1976', false],
+        ['1976review', false],
+        ['', false],
+    ])('evaluates %s as expected review lane name: %s', (name, expected) => {
+        expect(isExpectedReviewLaneName(name)).toBe(expected);
+    });
+});
+
+describe('isExpectedReviewLanePath', () => {
+    it.each([
+        ['/repo/.agents/worktrees/review', true],
+        ['/repo/.agents/worktrees/review-1976', true],
+        ['/repo/.agents/worktrees/review_1976', true],
+        ['/repo/.agents/worktrees/review-1976-slug', true],
+        ['/repo/.agents/worktrees/review-provider-stream', true],
+        ['/repo/.agents/worktrees/agent-1976-review', true],
+        ['/repo/.agents/worktrees/review/1976', true],
+        ['/repo/.agents/worktrees/review/provider-stream', true],
+        ['/repo/.agents/worktrees/feature', false],
+        ['/repo/.agents/worktrees/agent-1976', false],
+        ['/repo/.agents/worktrees', false],
+        ['/repo', false],
+        ['/tmp/review-1976', false],
+        ['/repo/.agents/worktrees/other/1976', false],
+        ['/repo/.agents/worktrees/review/1976/nested', false],
+    ])('evaluates %s as expected review lane path under /repo: %s', (path, expected) => {
+        expect(isExpectedReviewLanePath(path, '/repo')).toBe(expected);
+    });
+});
+
+describe('parseReviewLanePrNumber', () => {
+    it.each([
+        ['review-1976', 1976],
+        ['review_1976', 1976],
+        ['review-1976-slug', 1976],
+        ['agent-1976-review', 1976],
+        ['1976', 1976],
+        ['review', undefined],
+        ['review-provider-stream', undefined],
+        ['feature', undefined],
+        ['', undefined],
+    ])('parses PR number from %s: %s', (name, expected) => {
+        expect(parseReviewLanePrNumber(name)).toBe(expected);
     });
 });
 
@@ -455,6 +535,91 @@ describe('lane removal', () => {
             },
             /ownership is unproven/,
         ],
+        [
+            'open PR on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, state: 'OPEN', mergedAt: null })],
+            },
+            /still active/,
+        ],
+        [
+            'unmerged closed PR on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, state: 'CLOSED', mergedAt: null })],
+            },
+            /not merged/,
+        ],
+        [
+            'foreign repository PR on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, headRepository: 'jcosta33/fork' })],
+            },
+            /foreign/,
+        ],
+        [
+            'head mismatch on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 1976, headRefOid: 'ahead' })],
+            },
+            /head ownership is unproven/,
+        ],
+        [
+            'lane PR number mismatch on detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                commitPullRequests: [pullRequest({ number: 9999, headRefOid: 'head' })],
+            },
+            /does not match lane PR/,
+        ],
+        [
+            'dirty detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                dirty: true,
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /dirty/,
+        ],
+        [
+            'active detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                active: true,
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /active in another process/,
+        ],
+        [
+            'unsafe ignored data in detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                ignored: ['.env'],
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /ignored data/,
+        ],
+        [
+            'active operation in detached review',
+            reviewTarget,
+            {
+                lane: worktree({ path: reviewTarget, branch: undefined, detached: true }),
+                operation: 'rebase',
+                commitPullRequests: [pullRequest({ number: 1976 })],
+            },
+            /active/,
+        ],
     ])('rejects a %s lane', (_case, path, input, message) => {
         const { port, calls } = fakePort(input);
 
@@ -687,6 +852,81 @@ describe('lane removal', () => {
         removeLane(target, port);
 
         expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`]);
+    });
+
+    it.each([
+        ['review-1976', 1976],
+        ['review-1976-slug', 1976],
+        ['review-provider-stream', 100],
+        ['agent-1976-review', 1976],
+    ])('removes a clean detached review worktree %s with matching merged PR', (laneName, prNumber) => {
+        const lanePath = `${root}/.agents/worktrees/${laneName}`;
+        const { port, calls } = fakePort({
+            lane: worktree({
+                path: lanePath,
+                branch: undefined,
+                detached: true,
+            }),
+            commitPullRequests: [pullRequest({ number: prNumber, headRefOid: 'head' })],
+        });
+
+        removeLane(lanePath, port);
+
+        expect(calls).toEqual(['fetch', `lock:${lanePath}`, `unlock:${lanePath}`, `remove:${lanePath}`]);
+    });
+
+    it('removes a real detached review worktree with matching merged PR', () => {
+        withGitFixture(({ repository, git }) => {
+            const reviewLane = join(repository, '.agents/worktrees/review-1976');
+            mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
+            const head = git(['rev-parse', 'HEAD']);
+            git(['worktree', 'add', '--detach', reviewLane, head]);
+            const resolvedLane = realpathSync(reviewLane);
+            const port: LaneRemovalPort = {
+                fetch: () => undefined,
+                repository: () => 'jcosta33/sourdaw',
+                currentDirectory: () => repository,
+                worktrees: () => parseWorktrees(git(['worktree', 'list', '--porcelain', '-z'])),
+                active: () => false,
+                processAlive: () => true,
+                dirty: (path) => git(['status', '--porcelain=v1', '--untracked-files=all'], path) !== '',
+                ignored: () => [],
+                operation: () => undefined,
+                remoteHead: () => undefined,
+                commitPullRequests: () => [
+                    pullRequest({
+                        number: 1976,
+                        headRefOid: head,
+                        state: 'MERGED',
+                        mergedAt: '2026-08-20T00:00:00Z',
+                    }),
+                ],
+                pullRequests: () => [
+                    pullRequest({
+                        number: 1976,
+                        headRefOid: head,
+                        state: 'MERGED',
+                        mergedAt: '2026-08-20T00:00:00Z',
+                    }),
+                ],
+                comments: () => [],
+                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
+                lock: (path) => {
+                    git(['worktree', 'lock', '--reason', 'test', path]);
+                },
+                unlock: (path) => {
+                    git(['worktree', 'unlock', path]);
+                },
+                remove: (path) => {
+                    git(['worktree', 'remove', path]);
+                },
+            };
+
+            removeLane(resolvedLane, port);
+
+            expect(existsSync(reviewLane)).toBe(false);
+            expect(git(['worktree', 'list', '--porcelain', '-z'])).not.toContain(resolvedLane);
+        });
     });
 });
 
@@ -1125,6 +1365,55 @@ describe('lane-removal shell boundary', () => {
                 (entry) => entry.command === 'gh' && entry.args.includes('--paginate') && entry.args.includes('--slurp')
             )
         ).toBe(true);
+    });
+
+    it('queries commit pull requests and handles SHA not found', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        let shouldFail = false;
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                if (args.includes('nameWithOwner')) {
+                    return 'jcosta33/sourdaw';
+                }
+                if (shouldFail) {
+                    throw new Error('gh: No commit found for SHA: missing (HTTP 422)');
+                }
+                if (args.includes('--slurp')) {
+                    return JSON.stringify([
+                        [
+                            {
+                                number: 1976,
+                                state: 'closed',
+                                draft: false,
+                                head: {
+                                    ref: 'feat/1976',
+                                    sha: 'head-sha',
+                                    repo: { full_name: 'jcosta33/sourdaw' },
+                                },
+                                merged_at: '2026-08-12T00:00:00Z',
+                            },
+                        ],
+                    ]);
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort(shell);
+
+        expect(port.commitPullRequests?.('head-sha')).toEqual([
+            pullRequest({
+                number: 1976,
+                state: 'MERGED',
+                headRefName: 'feat/1976',
+                headRefOid: 'head-sha',
+                mergedAt: '2026-08-12T00:00:00Z',
+            }),
+        ]);
+
+        shouldFail = true;
+        expect(port.commitPullRequests?.('missing')).toEqual([]);
     });
 
     it('preserves ignored data and removes disposable output in a real worktree', () => {
