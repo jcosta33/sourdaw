@@ -21,6 +21,10 @@ import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 
+import {
+    GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+    grandBouleMeasurementSourcePaths,
+} from '../crates/daw-dsp/benches/wasm/measurementCensus.mjs';
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
 
@@ -1273,12 +1277,6 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
     }
 }
 
-const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
-    'crates/daw-dsp/benches/quantum.rs',
-    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-] as const;
 const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
 function assertGrandBouleRevisionIsCommit(root: string, revision: string): void {
@@ -1346,8 +1344,6 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         sourceRevision?: string;
         sourceDigests?: Record<string, string>;
         machine?: { gitSha?: string; workingTree?: string };
-        budgetMs?: number;
-        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
         options?: { measureQuanta?: number };
         rows?: Array<{
             id?: string;
@@ -1365,18 +1361,22 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     if (revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
         throw new Error('Grand Boule measurement must name one clean implementation source revision');
     }
+    const censusPaths = grandBouleMeasurementSourcePaths(root);
     const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
-    if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
-        throw new Error('Grand Boule measurement source-digest census is incomplete');
+    if (JSON.stringify(digestPaths) !== JSON.stringify(censusPaths)) {
+        throw new Error(
+            'Grand Boule measurement source-digest census disagrees with the compile-time closure census (#3005); ' +
+                'regenerate quantum-cost-table.json by reference-machine re-measurement'
+        );
     }
     try {
         ensureGrandBouleRevisionFetched(root, revision);
     } catch {
         throw new Error(
-            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_PATHS[0]}`
+            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_FILES[0]}`
         );
     }
-    for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
+    for (const path of censusPaths) {
         let sourceAtRevision: Buffer;
         try {
             sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
@@ -1409,15 +1409,6 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
     assertGrandBouleMeasurementPopulation(data);
-    if (
-        typeof data.budgetMs !== 'number' ||
-        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        typeof data.referenceProject.workerMedianMs !== 'number' ||
-        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        data.referenceProject.workerMedianMs >= data.budgetMs
-    ) {
-        throw new Error('Grand Boule measured reference project exceeds its render budget');
-    }
     const markdown = readFileSync(resolve(root, markdownPath), 'utf8');
     assertGeneratedRegionMatches(markdown, data);
     for (const required of [revision, row.warmVerify.detail!, row.lateVerify.detail!]) {
@@ -1429,6 +1420,28 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         if (!markdown.includes(path) || !markdown.includes(`sha256:${digest}`)) {
             throw new Error(`Grand Boule Markdown measurement provenance omits ${path}`);
         }
+    }
+}
+
+/**
+ * The measured reference project is an eleven-device audio-thread mix, so its
+ * render budget is a whole-engine capability gate, never grand-boule-specific
+ * (ADR 0038). Kept out of the Grand Boule admission so no surviving assertion
+ * there claims provenance over bytes the narrowed census no longer pins.
+ */
+export function assertWholeEngineQuantumCapability(root: string): void {
+    const data = JSON.parse(readFileSync(resolve(root, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')) as {
+        budgetMs?: number;
+        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+    };
+    if (
+        typeof data.budgetMs !== 'number' ||
+        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
+        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
+        data.referenceProject.workerMedianMs >= data.budgetMs
+    ) {
+        throw new Error('Whole-engine measured reference project exceeds its render budget');
     }
 }
 
@@ -1679,6 +1692,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -1691,6 +1706,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -3090,6 +3107,7 @@ export function checkReleaseInventory(
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     assertGrandBouleMeasurementAdmission(root);
+    assertWholeEngineQuantumCapability(root);
     const wasmSurface = currentInventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')

@@ -98,21 +98,15 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 import { COST_SITE, DUTY_CYCLE } from './deviceRecipes.js';
+import { grandBouleMeasurementSourcePaths } from './measurementCensus.mjs';
 import { startServer } from './server.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
 
-const MEASUREMENT_SOURCE_PATHS = [
-    'crates/daw-dsp/benches/quantum.rs',
-    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-];
-
 function measurementSourceDigests() {
     return Object.fromEntries(
-        MEASUREMENT_SOURCE_PATHS.map((path) => [
+        grandBouleMeasurementSourcePaths(repoRoot).map((path) => [
             path,
             createHash('sha256')
                 .update(readFileSync(resolve(repoRoot, path)))
