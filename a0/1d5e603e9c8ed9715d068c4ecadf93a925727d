@@ -1,0 +1,87 @@
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_28abfd94826e36::t_7dcfa2163c97a3 244-245,263,291,299-300,313,378,396,399,417-418,428,469,472,669,736,1548,1821,1861,1864
+src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx
+  s_28abfd94826e36::t_f01e78e5b21356 129-130,312-314
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_28abfd94826e36::t_d0140f501265f0 426-427,435,486,571,607,643,668,677,688,721,758,760,785,797,825,830,836,842,892,924,966,980,999,1035,1039,1055,1072,1116,1199,1241,1244,1408,1448,1461,1542,1565,1576,1585,1596,1605,1616,1632,1682,1716,1748,1760,1767,1809,1933,1940,1976,2008,2112
+src/modules/Bacteria/presentations/components/BandStrip.tsx
+  s_71651fa5c901b0::t_6eaa28f2d825c9 41
+src/modules/Bacteria/presentations/components/BezierLfoEditor.tsx
+  s_71651fa5c901b0::t_cf55b9d5c62fac 238
+src/modules/Bacteria/presentations/components/CrossoverDisplay.tsx
+  s_71651fa5c901b0::t_104daae55c3dcf 185
+src/modules/Bacteria/presentations/components/ModulationDock.tsx
+  s_71651fa5c901b0::t_1a4ca746917e7b 46,59,67,89,93
+src/modules/Bacteria/presentations/components/SpectralBinEditor.tsx
+  s_71651fa5c901b0::t_66a1dca5642f56 188
+src/modules/Bacteria/presentations/components/StepSequencerEditor.tsx
+  s_71651fa5c901b0::t_8f026aab110126 170
+src/modules/Bacteria/presentations/components/WaveshaperEditor.tsx
+  s_71651fa5c901b0::t_39139da2e50134 226
+src/modules/Bacteria/presentations/components/XYMorphPad.tsx
+  s_71651fa5c901b0::t_a9a3eba05aba54 94
+src/modules/Crust/presentations/components/CrustControlZone.tsx
+  s_71651fa5c901b0::t_b1756e21cdcee7 43,97,142,169,184,246-247,288,595-596
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  s_71651fa5c901b0::t_19d2e1fcb10a8d 91,172
+src/modules/Crust/presentations/components/CrustMeteringStrip.tsx
+  s_71651fa5c901b0::t_96548ded37fdfa 149,151,157,170,173,189,196,206-207,233
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_71651fa5c901b0::t_5e80b1956622aa 128,153,159,172,199,205,211,228,261-262,297,303-304,310-311,368
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_71651fa5c901b0::t_9d5b1e2056d601 286,288,413-414,598,610,624,667,678,740,743,758,1176,1368,1392
+src/modules/GrandBoule/presentations/components/MorphPanel.tsx
+  s_71651fa5c901b0::t_5fe44ebe72910f 46,57,102-103,123,177
+src/modules/GrandBoule/presentations/components/PerNoteEditor.tsx
+  s_71651fa5c901b0::t_b0249a6df50a28 70,84,108,112
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_71651fa5c901b0::t_c0d47a0593e3c9 122-123,344-345,457,462,570,623,639,674
+src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx
+  s_71651fa5c901b0::t_b79728a480c663 44,49,58,67,74
+src/modules/Levain/presentations/components/ArticulationList.tsx
+  s_71651fa5c901b0::t_6f17c962bb809f 45,47,61,72,77
+src/modules/Levain/presentations/components/ExpressionPanel.tsx
+  s_71651fa5c901b0::t_ae49975467067c 174,192,214,230,247
+src/modules/Levain/presentations/components/HumanizePanel.tsx
+  s_71651fa5c901b0::t_69dda144167ec3 38-39,57,74,91,108
+src/modules/Levain/presentations/components/LegatoTuning.tsx
+  s_71651fa5c901b0::t_54a5e213479962 151,166,181
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_71651fa5c901b0::t_e74de1d57c9e7a 86
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_71651fa5c901b0::t_b56be04d45882e 105,126,169,172,183,197,324,327
+src/modules/Yeast/presentations/components/ProcessorParams.tsx
+  s_71651fa5c901b0::t_f398529b4b302b 290,307
+src/modules/Yeast/presentations/components/StepPatternEditor.tsx
+  s_71651fa5c901b0::t_d83c2aa2dee040 221,230,235,244,255
+src/modules/Yeast/presentations/views/GrooveDropTarget.tsx
+  s_71651fa5c901b0::t_3b7dec5d29e62b 201
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_71651fa5c901b0::t_a3ce08976bd408 257,312,319,329,343,367,399,414,485,488,513,568,571,581,626,651,666,780,813,852,867,881,884,925,936
+src/modules/Yeast/presentations/views/YeastPreviewSurface.tsx
+  s_71651fa5c901b0::t_f43e4028ab3d46 297-298,300,328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a01d5e603e9c8ed9715d068c4ecadf93a925727d",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_71651fa5c901b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aea1b168a15d8c06b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
