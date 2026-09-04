@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_0bfea916524b71::t_1e53d1afbaaf81 1198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5c2b01de8d4ef8adb5bd8dd71a7617d4e3c6c9fb",
+  "prompts": {},
+  "sessions": {
+    "s_0bfea916524b71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bc5-0169-7d31-8f56-d7fc43b79d98",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
