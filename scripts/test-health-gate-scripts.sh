@@ -182,6 +182,7 @@ const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import
 // vitest spec can never drift apart: the whole-file snapshot, the shard
 // matrices, the permission-free files, and every job's step inventory.
 const {
+    assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
@@ -959,6 +960,20 @@ try {
 expect(
     snapshotError === undefined,
     `the four gate workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
+);
+
+// The snapshot pins the four files' contents; the directory SET is pinned
+// beside them, because a fifth workflow the parse never reads can mint a
+// passing Gate over a red head.
+let inventoryError;
+try {
+    assertWorkflowFileInventory(readRecordedWorkflowSnapshot(process.env.REPO_ROOT), process.env.REPO_ROOT);
+} catch (error) {
+    inventoryError = error;
+}
+expect(
+    inventoryError === undefined,
+    `the workflows directory must match the recorded file inventory: ${inventoryError?.message ?? ''}`
 );
 
 const workflowsByFile = {

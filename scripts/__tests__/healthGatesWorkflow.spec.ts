@@ -14,7 +14,9 @@ import {
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
+    assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
+    HEALTH_GATE_WORKFLOW_FILES,
     JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
@@ -1042,6 +1044,24 @@ function assertStepInventory(set: WorkflowSet): void {
             }
         }
     }
+}
+
+// Runs the file-inventory assertion against a throwaway repository root whose
+// .github/workflows holds exactly `files`, so the mutation-kills below
+// exercise the real directory read rather than a stubbed listing.
+function withWorkflowFiles(files: readonly string[]): () => void {
+    return () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-inventory-'));
+        try {
+            mkdirSync(join(directory, '.github/workflows'), { recursive: true });
+            for (const file of files) {
+                writeFileSync(join(directory, '.github/workflows', file), 'name: stub\n');
+            }
+            assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), directory);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    };
 }
 
 // The SARIF upload is the only write this job needs: `contents: write` would
@@ -2195,6 +2215,26 @@ describe('health gates workflow contract', () => {
         removeStepNamed(jobAt(deletedStep.validation, 'static'), 'Health gate infrastructure');
         expect(() => assertStepInventory(deletedStep)).toThrow(
             'validation.yml job static steps drifted from the pinned inventory'
+        );
+    });
+
+    it('refuses a workflows directory that drifts from the recorded file inventory', () => {
+        expect(() =>
+            assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), repositoryRoot)
+        ).not.toThrow();
+        expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES])).not.toThrow();
+
+        // Mutation-kill: a fifth workflow the four-file parse never reads can
+        // still mint a passing Gate over a red head — the review-found hole —
+        // so the directory listing itself is pinned.
+        expect(withWorkflowFiles([...HEALTH_GATE_WORKFLOW_FILES, 'shadow.yml'])).toThrow(
+            'shadow.yml is not in the recorded workflow file inventory'
+        );
+
+        // Mutation-kill: deleting a pinned workflow leaves the record pointing
+        // at a gate that no longer exists.
+        expect(withWorkflowFiles(HEALTH_GATE_WORKFLOW_FILES.slice(1))).toThrow(
+            'health-gates.yml is pinned in the recorded workflow file inventory but missing from .github/workflows'
         );
     });
 

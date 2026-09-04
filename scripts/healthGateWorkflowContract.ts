@@ -14,12 +14,19 @@
  * suite must fan out across, the files whose jobs must inherit workflow-level
  * permissions, and every job's ordered step names.
  *
+ * The snapshot pins the four files' CONTENTS; GitHub runs whatever the
+ * directory holds, and a required check is satisfied by the newest run of its
+ * name — a `skipped` conclusion included. A fifth workflow the parse never
+ * reads could therefore mint a passing `Gate` over a red head, so the sorted
+ * *.yml/*.yaml directory listing is pinned beside the contents under
+ * `workflowFileInventory`.
+ *
  * The same parse feeds both harnesses and the record script, so the pin can
  * never diverge from the files by parser drift: a deliberate workflow edit is
  * recorded with `pnpm test:health-gates:record` and reviewed as a JSON diff.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseDocument } from 'yaml';
@@ -32,6 +39,8 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
 ] as const;
 
 export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
+
+export const WORKFLOW_FILE_INVENTORY_KEY = 'workflowFileInventory';
 
 // A matrix shard list no pin reads can shrink, and the unsharded portion of
 // the suite simply never runs: every shard in the list reports green because
@@ -321,6 +330,44 @@ export function readRecordedWorkflowSnapshot(repositoryRoot: string): WorkflowSn
         throw new TypeError(`${WORKFLOW_SNAPSHOT_PATH} must be a mapping of workflow file to parsed workflow`);
     }
     return parsed as WorkflowSnapshot;
+}
+
+// GitHub runs every *.yml/*.yaml file in the directory, so the file SET is a
+// dimension the four-file parse never reads: an unpinned workflow can mint a
+// Gate check no pin reads, and a deleted one leaves the record pointing at a
+// gate that no longer exists. Both directions refuse the drift, naming the
+// file.
+export function listWorkflowFiles(repositoryRoot: string): string[] {
+    return readdirSync(join(repositoryRoot, '.github/workflows'))
+        .filter((entry) => entry.endsWith('.yml') || entry.endsWith('.yaml'))
+        .sort();
+}
+
+export function assertWorkflowFileInventory(recorded: WorkflowSnapshot, repositoryRoot: string): void {
+    const pinned: unknown = recorded[WORKFLOW_FILE_INVENTORY_KEY];
+    if (!Array.isArray(pinned) || pinned.some((entry) => typeof entry !== 'string')) {
+        throw new TypeError(
+            `${WORKFLOW_SNAPSHOT_PATH} must record ${WORKFLOW_FILE_INVENTORY_KEY} as a list of workflow file names`
+        );
+    }
+    const pinnedFiles = pinned as string[];
+    const liveFiles = listWorkflowFiles(repositoryRoot);
+    for (const file of liveFiles) {
+        if (!pinnedFiles.includes(file)) {
+            throw new Error(
+                `${file} is not in the recorded workflow file inventory: an unpinned workflow can mint a Gate check no pin reads. ` +
+                    'If it is deliberate, regenerate the pin with `pnpm test:health-gates:record` and review the snapshot diff'
+            );
+        }
+    }
+    for (const file of pinnedFiles) {
+        if (!liveFiles.includes(file)) {
+            throw new Error(
+                `${file} is pinned in the recorded workflow file inventory but missing from .github/workflows. ` +
+                    'If the removal is deliberate, regenerate the pin with `pnpm test:health-gates:record` and review the snapshot diff'
+            );
+        }
+    }
 }
 
 function firstDifference(recorded: unknown, fresh: unknown, path: string): string | undefined {

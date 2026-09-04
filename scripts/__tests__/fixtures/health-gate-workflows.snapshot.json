@@ -1,4 +1,10 @@
 {
+  "workflowFileInventory": [
+    "health-gates.yml",
+    "heavy-gates.yml",
+    "nightly.yml",
+    "validation.yml"
+  ],
   "health-gates.yml": {
     "name": "Health gates",
     "on": {
