@@ -1,0 +1,118 @@
+src/modules/AudioEngine/presentations/views/__tests__/PluginBrowser.spec.tsx
+  s_9b530f08172a54::t_cc61e1912d607c 40
+  s_9b530f08172a54::t_b3b16f18f21631 90-94
+  s_9b530f08172a54::t_fb035f75322248 2,4-5
+  s_9b530f08172a54::t_2de9cf17afd31c 237,255,308
+  s_9b530f08172a54::t_f03593bfeae56c 268-284,292
+  s_9b530f08172a54::t_506f4d0081e243 72-76,80
+  s_9b530f08172a54::t_16bfc71f87b80e 57,59-62
+  s_9b530f08172a54::t_3df3527673247d 1,3,6
+  s_9b530f08172a54::t_c5d4617f7f1fe5 261-267,285-291,293-297
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_9b530f08172a54::t_87281ea3f47096 439
+  s_9b530f08172a54::t_29682302bef648 516
+  s_9b530f08172a54::t_fbc2a96dc09c6f 18
+  s_9b530f08172a54::t_80066206067cff 162
+src/modules/Project/useCases/isProjectWideScope.ts
+  s_9b530f08172a54::t_2bc8642fb4b382 1-14
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  s_9b530f08172a54::t_0918980edcc0f4 575
+  s_9b530f08172a54::t_2af419b6e004f2 11-12
+  s_9b530f08172a54::t_1075e979a7fdf1 566
+  s_9b530f08172a54::t_1d6e2bdf7408cf 13
+src/modules/AudioEngine/presentations/views/PluginBrowser.tsx
+  s_9b530f08172a54::t_76492aae2141bd 117
+  s_9b530f08172a54::t_305fa93de8eb14 26
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  s_9b530f08172a54::t_9507f5f4542cf7 33
+  s_9b530f08172a54::t_a75cefcfb32551 3
+src/modules/Command/useCases/executeUserAppAction.ts
+  s_9b530f08172a54::t_d965f7acc3c313 2
+  s_9b530f08172a54::t_6884f9d6285ca9 1,3-37
+src/modules/Project/useCases/__tests__/getProjectScopedBriefLock.spec.ts
+  s_9b530f08172a54::t_06cc15d2c18653 1-91
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_9b530f08172a54::t_0160d9a2a0d976 88
+src/modules/Project/useCases/index.ts
+  s_9b530f08172a54::t_c83f7daa5dcbc0 33
+src/modules/Project/useCases/getProjectScopedBriefLock.ts
+  s_9b530f08172a54::t_0c27bd30529c14 3-4
+  s_9b530f08172a54::t_d4f08e28ff893a 1-2,5-28
+src/modules/WorkspaceShell/AGENTS.md
+  s_9b530f08172a54::t_65fcceb69fc191 30-31
+  s_9b530f08172a54::t_f5703ba86494fe 15
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_9b530f08172a54::t_5c0fd553dd5169 1104-1131
+  s_9b530f08172a54::t_64d6afb6e24d35 332
+  s_9b530f08172a54::t_c2946625b32e7b 16
+  s_9b530f08172a54::t_ad32684e5c3f28 352
+  s_9b530f08172a54::t_85efb7eef926df 376-378
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  s_9b530f08172a54::t_7261e1fff80f31 799-832
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_9b530f08172a54::t_b774d28a5037c8 226
+  s_9b530f08172a54::t_0f738e638b4d26 18-25
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useProjectMutationRefusal.spec.ts
+  s_9b530f08172a54::t_475a2bdb4c2d14 5
+  s_9b530f08172a54::t_97f05320db1d42 1-4,6-35,37-41,43-71
+  s_28abfd94826e36::t_454166a97b5588 36,42
+src/modules/CrdtDocument/stores/index.ts
+  s_9b530f08172a54::t_3a0d9db88e1972 3
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  s_9b530f08172a54::t_1adb1cc8af22a7 9
+  s_9b530f08172a54::t_c89de246f0640e 44
+src/modules/WorkspaceShell/presentations/components/ProjectMutationRefusedBanner.tsx
+  s_9b530f08172a54::t_343325689eca9f 1-80
+src/modules/Command/useCases/__tests__/executeUserAppAction.spec.ts
+  s_9b530f08172a54::t_2da8a9bf804a2c 1-82
+src/modules/Project/AGENTS.md
+  s_9b530f08172a54::t_3a783e3c0c6761 18
+  s_9b530f08172a54::t_586d401266b154 39
+src/modules/Command/useCases/executeAppAction.ts
+  s_9b530f08172a54::t_a83245a571e2d1 33
+src/modules/Command/useCases/index.ts
+  s_9b530f08172a54::t_ee89dc5053948f 63
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_9b530f08172a54::t_166d0d488bd7cc 103
+  s_9b530f08172a54::t_aafbb83f2dc96a 96
+  s_9b530f08172a54::t_e730be99aaf726 228
+  s_9b530f08172a54::t_d239efa8ac9b85 651-658
+src/modules/WorkspaceShell/presentations/hooks/useProjectMutationRefusal.ts
+  s_9b530f08172a54::t_75c0bca9587c24 4-7
+  s_9b530f08172a54::t_e53b5bcce1fb73 1-3,8-53
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  s_9b530f08172a54::t_4b9833840860b4 3,8-11
+  s_9b530f08172a54::t_70ddfb2159c3fd 36-38
+src/modules/Command/AGENTS.md
+  s_9b530f08172a54::t_7b2c0737cb5ff8 8
+  s_9b530f08172a54::t_f5ff1be8756368 27
+src/modules/WorkspaceShell/presentations/components/__tests__/ProjectMutationRefusedBanner.spec.tsx
+  s_9b530f08172a54::t_95aadf96116332 4,7-9
+  s_9b530f08172a54::t_72b2b8b4e5e96a 1-3,5-6,10-97
+src/modules/Project/useCases/collectProtectedScopes.ts
+  s_9b530f08172a54::t_d813f4e2269360 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "58bf32a5dd9e7b2575e52b8d89d9dbb8829505b9",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
