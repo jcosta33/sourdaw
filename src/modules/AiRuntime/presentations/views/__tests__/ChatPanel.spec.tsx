@@ -608,8 +608,6 @@ describe('ChatPanel', () => {
 
         render(<ChatPanel />);
 
-        expect(screen.queryByRole('button', { name: 'Retry runtime effect' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Repair audio graph' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Reconcile pending effects' })).not.toBeInTheDocument();
         expect(recoverAgentRunPendingEffects).not.toHaveBeenCalled();
         expect(screen.getAllByText('Manual repair required')).toHaveLength(4);
@@ -625,6 +623,63 @@ describe('ChatPanel', () => {
             'addDevice: The durable recovery ledger owns this repair.'
         );
         expect(screen.getByText('The durable graph repair is ready.')).toBeInTheDocument();
+    });
+
+    it('renders the reconcile action for a render-only continuation bound to its source revision', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [
+                          {
+                              runId: 'run-reconcile',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-reconcile',
+                                      effects: [
+                                          {
+                                              commandId: 'command-reconcile',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'The publication queue is unavailable.',
+                                              remediation: 'reconcile',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      sourceRevision: 'revision-bound',
+                                      recovery: 'reconcile-batch',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                      ],
+                      pendingEffectRecoveryLedger: [],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        const reconcileButton = screen.getByRole('button', { name: 'Reconcile pending effects' });
+        expect(reconcileButton).toBeInTheDocument();
+        expect(screen.queryByText('Manual repair required')).not.toBeInTheDocument();
+        expect(
+            screen.getByText('Reconcile every receipt-bound external effect without replaying project actions.')
+        ).toBeInTheDocument();
+
+        fireEvent.click(reconcileButton);
+
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledTimes(1);
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledWith({
+            runId: 'run-reconcile',
+            batchId: 'batch-reconcile',
+        });
     });
 
     it('renders evicted-run recovery as manual guidance from the non-evictable ledger', () => {

@@ -23,7 +23,9 @@ function projectRecovery(
     runId: string,
     continuation: AgentRunPendingEffectContinuation
 ): AgentRunPendingEffectRecoveryProjection {
-    const policy = getPendingEffectRecoveryPolicy(continuation.effects);
+    const policy = getPendingEffectRecoveryPolicy(continuation.effects, {
+        ...(continuation.sourceRevision === undefined ? {} : { sourceRevision: continuation.sourceRevision }),
+    });
     return {
         runId,
         batchId: continuation.batchId,

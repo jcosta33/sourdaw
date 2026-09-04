@@ -1154,6 +1154,19 @@ function failAgentRunPendingEffectContinuation(input: {
     return structuredClone(next);
 }
 
+/**
+ * Strips a bound `sourceRevision` from a continuation. Escalating a preserved-effects
+ * continuation to manual repair withdraws its exact-revision evidence — the store would
+ * otherwise recompute `recovery` from policy(effects, sourceRevision) as `reconcile-batch`
+ * on the next read, silently erasing the escalation.
+ */
+function withoutSourceRevision<TContinuation extends AgentRunPendingEffectContinuation>(
+    continuation: TContinuation
+): Omit<TContinuation, 'sourceRevision'> {
+    const { sourceRevision: _sourceRevision, ...next } = continuation;
+    return next;
+}
+
 function requireAgentRunPendingEffectManualRepair(input: {
     runId: string;
     batchId: string;
@@ -1206,7 +1219,7 @@ function requireAgentRunPendingEffectManualRepair(input: {
         pendingEffectContinuations: run.pendingEffectContinuations.map((candidate) =>
             candidate.batchId === input.batchId
                 ? {
-                      ...candidate,
+                      ...(input.preserveEffects ? withoutSourceRevision(candidate) : candidate),
                       effects: requireManualRepairEffects(candidate.effects),
                       recovery: 'manual-repair',
                       lastError: input.reason,
@@ -1220,7 +1233,7 @@ function requireAgentRunPendingEffectManualRepair(input: {
         (candidate): AgentRunPendingEffectRecovery =>
             isPendingEffectRecovery(candidate, input)
                 ? {
-                      ...candidate,
+                      ...(input.preserveEffects ? withoutSourceRevision(candidate) : candidate),
                       effects: requireManualRepairEffects(candidate.effects),
                       recovery: 'manual-repair',
                       lastError: input.reason,
