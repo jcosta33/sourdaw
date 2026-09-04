@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -13,6 +13,7 @@ import {
     parseCliArgs,
     parseMemAvailableBytes,
     psSamplingArgs,
+    resolveDefaultMaxRssBytes,
     RESOURCE_ROOT_ENV,
     RESOURCE_SESSION_ENV,
     runGuardedCommand,
@@ -790,6 +791,76 @@ describe('resource CLI', () => {
             expect(hasExplicitTarget(['--maxWorkers', '2'])).toBe(false);
             expect(hasExplicitTarget(['src'])).toBe(false);
             expect(hasExplicitTarget(['--dir', directory])).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('default budgets', () => {
+    it.each([
+        { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
+        {
+            profile: 'broad' as const,
+            command: 'pnpm',
+            args: ['run', 'typecheck:test'],
+            expected: 6 * 1024 ** 3,
+        },
+        { profile: 'focused' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['test:run', 'src/x.spec.ts'],
+            expected: 4 * 1024 ** 3,
+        },
+        { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
+    ])('resolves $profile/$command/$args to $expected bytes', ({ profile, command, args, expected }) => {
+        expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
+    });
+
+    it('wires the resolved default budget through runGuardedCommand', async () => {
+        const root = fixtureRoot('default-budget');
+        try {
+            // A real pnpm cold start costs over a second on a loaded CI runner; this shim
+            // stands in for the binary so the test observes the resolver's budget wiring,
+            // not pnpm's startup time.
+            writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            const shimEnv = { ...process.env, PATH: `${root}${delimiter}${process.env.PATH ?? ''}` };
+
+            const typecheckResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['typecheck:test'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(typecheckResult.code).toBe(0);
+            expect(typecheckResult.maxRssBytes).toBe(6 * 1024 ** 3);
+
+            const otherResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['other'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(otherResult.code).toBe(0);
+            expect(otherResult.maxRssBytes).toBe(4 * 1024 ** 3);
+
+            const explicitResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['typecheck:test'],
+                profile: 'focused',
+                cwd: root,
+                maxRssBytes: 5 * 1024 ** 3,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(explicitResult.code).toBe(0);
+            expect(explicitResult.maxRssBytes).toBe(5 * 1024 ** 3);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

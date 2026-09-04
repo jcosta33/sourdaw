@@ -11,7 +11,7 @@ export const RESOURCE_SESSION_ENV = 'SOURDAW_RESOURCE_SESSION';
 export const RESOURCE_ROOT_ENV = 'SOURDAW_RESOURCE_ROOT';
 const PROCESS_SESSION_ENV = 'SOURDAW_PROCESS_SESSION';
 
-type ResourceProfile = 'focused' | 'broad' | 'extended';
+export type ResourceProfile = 'focused' | 'broad' | 'extended';
 
 type LockOwner = {
     token: string;
@@ -59,6 +59,7 @@ export type GuardedCommandResult = {
     output: string;
     omittedBytes: number;
     peakRssBytes: number;
+    maxRssBytes: number;
     durationMs: number;
 };
 
@@ -86,6 +87,29 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
     broad: { maxRssBytes: 4 * 1024 ** 3, timeoutMs: 30 * 60_000 },
     extended: { maxRssBytes: 4 * 1024 ** 3, timeoutMs: 60 * 60_000 },
 };
+
+// Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
+const measuredScriptBudgets = new Map<string, number>([['typecheck:test', 6 * 1024 ** 3]]);
+
+function pnpmScriptName(command: string, args: readonly string[]): string | undefined {
+    if (command !== 'pnpm') {
+        return undefined;
+    }
+    if (args[0] === 'run') {
+        return args[1];
+    }
+    return args[0];
+}
+
+export function resolveDefaultMaxRssBytes(input: {
+    profile: ResourceProfile;
+    command: string;
+    args: readonly string[];
+}): number {
+    const script = pnpmScriptName(input.command, input.args);
+    const measuredBudgetBytes = script === undefined ? undefined : measuredScriptBudgets.get(script);
+    return Math.max(profiles[input.profile].maxRssBytes, measuredBudgetBytes ?? 0);
+}
 
 const lockName = 'sourdaw-validation.lock';
 const reservationName = 'sourdaw-validation.reservations';
@@ -891,7 +915,9 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             : new OutputTail(input.outputLimitBytes ?? defaultOutputLimitBytes);
     const memoryReserveBytes = input.memoryReserveBytes ?? defaultMemoryReserveBytes;
     const readAvailableMemory = input.memorySampler ?? (() => input.availableMemoryBytes ?? availableMemoryBytes());
-    const maxRssBytes = input.maxRssBytes ?? profile.maxRssBytes;
+    const maxRssBytes =
+        input.maxRssBytes ??
+        resolveDefaultMaxRssBytes({ profile: input.profile, command: input.command, args: input.args });
     const processToken = randomUUID();
     let session: ResourceSession | undefined;
     let recheckWaitReported = false;
@@ -951,6 +977,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
                     : `available memory leaves less than ${Math.ceil(requiredBudgetBytes / 1024 ** 2)} MiB after the system reserve`,
             omittedBytes: 0,
             peakRssBytes: 0,
+            maxRssBytes,
             durationMs: 0,
         };
     }
@@ -965,6 +992,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             output: 'process memory monitoring is unavailable',
             omittedBytes: 0,
             peakRssBytes: 0,
+            maxRssBytes,
             durationMs: 0,
         };
     }
@@ -1138,6 +1166,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             reason,
             ...tail,
             peakRssBytes,
+            maxRssBytes,
             durationMs: Date.now() - startedAt,
         };
     } finally {
@@ -1168,6 +1197,12 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
 
     const outcome = result.reason ?? `exit ${result.code ?? result.signal ?? 'unknown'}`;
     console.error(`${label}: FAILED (${outcome}, ${durationSeconds}s, peak ${peakMiB} MiB)`);
+    if (result.reason === 'memory') {
+        const budgetMiB = Math.ceil(result.maxRssBytes / 1024 ** 2);
+        console.error(
+            `${label}: peak ${peakMiB} MiB exceeded the ${budgetMiB} MiB RSS budget; rerun with --max-rss-mib above the peak, or record a budget above it in measuredScriptBudgets`
+        );
+    }
     if (result.omittedBytes > 0) {
         console.error(`[${result.omittedBytes} earlier output bytes suppressed]`);
     }

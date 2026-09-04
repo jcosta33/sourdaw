@@ -697,10 +697,12 @@ coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 sequentially within each lane through `package.json`. Other lanes may validate concurrently when
 RAM permits. Wrap compute-heavy agent runs with
 `pnpm guard --profile <p> [--max-rss-mib <estimate>] -- <command>`. Estimate peak RAM from the
-latest observed guard peak or the nearest command; use the profile ceiling without evidence.
-The guard reserves that budget and waits until measured free RAM covers active unused headroom,
-the new command, and the 2 GiB system reserve. It still enforces timeouts, process cleanup, host
-pressure, and the command RSS ceiling. Never bypass it.
+latest observed guard peak or the nearest command; without an estimate the guard applies the
+profile ceiling, raised to the measured budget it records for known heavy scripts, and an RSS
+kill prints the budget it applied — record a budget above the observed peak in the guard's
+`measuredScriptBudgets`, never in a note. The guard reserves that budget and waits until measured
+free RAM covers active unused headroom, the new command, and the 2 GiB system reserve. It still
+enforces timeouts, process cleanup, host pressure, and the command RSS ceiling. Never bypass it.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
