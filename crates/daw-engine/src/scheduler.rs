@@ -143,6 +143,46 @@ pub(crate) fn transport_position_channel(
     (input, TransportPositionReader { output })
 }
 
+/// What the engine's master output measured, for a meter drawn from it.
+///
+/// Its own channel rather than a field on [`TransportPositionSnapshot`]: that
+/// one answers "where is the transport", and the batch count riding on it is
+/// paired with the playhead beside it on purpose. A level is not part of that
+/// pairing — nothing dates a meter reading against a command — so carrying it
+/// there would widen a contract to hold a number that makes no claim under it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MasterMeterSnapshot {
+    /// The loudest sample the device was handed, linear and non-negative,
+    /// held for [`AudioScheduler::publish_master_meter`]'s hold window so a
+    /// UI-rate poll landing between callbacks cannot under-read a transient.
+    ///
+    /// It measures what reached the device, not what the graph rendered: a
+    /// shadowed monitor writes zeros, and a meter that reported the silenced
+    /// render would show a level nobody can hear.
+    pub peak: f32,
+}
+
+pub struct MasterMeterReader {
+    output: Output<MasterMeterSnapshot>,
+}
+
+impl MasterMeterReader {
+    pub fn snapshot(&mut self) -> MasterMeterSnapshot {
+        *self.output.read()
+    }
+}
+
+pub(crate) fn master_meter_channel() -> (Input<MasterMeterSnapshot>, MasterMeterReader) {
+    let (input, output) = triple_buffer::triple_buffer(&MasterMeterSnapshot::default());
+    (input, MasterMeterReader { output })
+}
+
+/// How many times a second the held peak may fall on its own — 50, so a
+/// transient stands for ~20 ms. Fast enough that a meter still reads as a
+/// meter, slow enough that a 60 Hz poll landing between callbacks sees the
+/// peak that happened rather than the block that followed it.
+pub(crate) const PEAK_HOLD_RELEASES_PER_SECOND: f32 = 50.0;
+
 /// Timeline spans one callback can be split into.
 ///
 /// A callback renders at most [`MAX_CALLBACK_FRAMES`] frames and the engine
@@ -1421,6 +1461,15 @@ pub struct AudioScheduler {
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
+    /// The master peak currently being held, for [`MasterMeterSnapshot`].
+    held_peak: f32,
+    /// Frames rendered since `held_peak` was last taken, against
+    /// `peak_hold_frames`.
+    held_frames: u64,
+    /// How long a peak stands before a quieter callback may replace it, in
+    /// frames on this engine's own clock.
+    peak_hold_frames: u64,
+    master_meter_tx: Input<MasterMeterSnapshot>,
     #[cfg(test)]
     rt_work: RtWorkCounters,
 }
@@ -1454,6 +1503,7 @@ impl AudioScheduler {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, _transport_position_reader) = transport_position_channel();
+        let (master_meter_tx, _master_meter_reader) = master_meter_channel();
         Self::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -1462,9 +1512,11 @@ impl AudioScheduler {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
+            master_meter_tx,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn with_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
         retired_tx: Producer<RetiredGraphObjects>,
@@ -1473,6 +1525,7 @@ impl AudioScheduler {
         timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
         graph_progress_tx: Input<GraphProgressSnapshot>,
         transport_position_tx: Input<TransportPositionSnapshot>,
+        master_meter_tx: Input<MasterMeterSnapshot>,
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
@@ -1513,6 +1566,13 @@ impl AudioScheduler {
             batches_applied: 0,
             graph_progress_tx,
             transport_position_tx,
+            held_peak: 0.0,
+            held_frames: 0,
+            // Derived from the rate the stream actually opened at, so the hold
+            // lasts the same wall-clock span on a 44.1 kHz device as on a
+            // 96 kHz one.
+            peak_hold_frames: (sample_rate / PEAK_HOLD_RELEASES_PER_SECOND) as u64,
+            master_meter_tx,
             #[cfg(test)]
             rt_work: RtWorkCounters::default(),
         }
@@ -1575,6 +1635,29 @@ impl AudioScheduler {
     pub(crate) fn publish_transport_position(&mut self) {
         let snapshot = self.transport_position();
         self.transport_position_tx.write(snapshot);
+    }
+
+    /// Hold this callback's device peak and publish what is being held.
+    ///
+    /// A meter is polled at UI rate and fed at callback rate, so most peaks
+    /// are never seen by the reader that samples between them. The hold is
+    /// what makes the published number the loudest thing that actually
+    /// happened rather than whichever block the poll happened to land on: a
+    /// peak stands until something louder arrives or the window expires, and a
+    /// quieter callback inside the window advances the window rather than the
+    /// level. `>=` rather than `>` restarts the window on a repeated peak, so
+    /// steady material holds at its own level instead of decaying under it.
+    #[inline]
+    pub(crate) fn publish_master_meter(&mut self, callback_peak: f32, frames: u64) {
+        if callback_peak >= self.held_peak || self.held_frames >= self.peak_hold_frames {
+            self.held_peak = callback_peak;
+            self.held_frames = 0;
+        } else {
+            self.held_frames += frames;
+        }
+        self.master_meter_tx.write(MasterMeterSnapshot {
+            peak: self.held_peak,
+        });
     }
 
     /// The routed graph, for callers proving what a command did to it.

@@ -35,6 +35,7 @@ const rollingAt = (positionSeconds: number) => ({
     tempo: 120,
     timeSigNum: 4,
     timeSigDenom: 4,
+    masterPeak: 0.5,
 });
 
 describe('the native engine playhead feed', () => {

@@ -24,6 +24,7 @@ const NATIVE_PAYLOAD = {
     tempo: 128,
     timeSigNum: 5,
     timeSigDenom: 4,
+    masterPeak: 0.5,
 };
 
 describe('getEngineTransportPosition', () => {
@@ -60,5 +61,6 @@ describe('getEngineTransportPosition', () => {
         expect(position.positionSeconds).toBe(0);
         expect(position.loopWraps).toBe(0);
         expect(position.batchesApplied).toBe(0);
+        expect(position.masterPeak).toBe(0);
     });
 });
