@@ -887,8 +887,8 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
     }
 }`,
         ],
-        ['src/modules/GrandBoule/AGENTS.md', 'fixture provider policy'],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
+        ['src/modules/GrandBoule/useCases/__tests__/fixture.spec.ts', "it('covers the fixture', () => {});"],
         [
             'src/modules/GrandBoule/models/GrandBouleMorphState.ts',
             `export const voicings = [
@@ -988,6 +988,8 @@ const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
     'src/app/getProductionCommandHandlerMaps.ts',
     'src/utils/handlerContract.ts',
     ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+    ':(exclude,glob)src/modules/GrandBoule/**/__tests__/**',
+    ':(exclude)src/modules/GrandBoule/AGENTS.md',
 ];
 
 function readIndependentTrackedEntry(absolutePath: string): Buffer {
@@ -2719,6 +2721,79 @@ describe('release inventory', () => {
                 ),
             ]);
             writeFileSync(composePath, originalCompose);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    // #2931: a module spec is not part of what the Grand Boule surface
+    // distributes, so editing one must leave the released provenance alone.
+    // Deleting the `:(exclude,glob)src/modules/GrandBoule/**/__tests__/**`
+    // pathspec from GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state`
+    // boundary (checkReleaseInventory.ts) turns this red.
+    it('holds the project-state digest byte-identical when a tracked Grand Boule spec changes (#2931)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-spec-exclusion-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const released = grandBouleReleaseInventoryContract(root);
+            const specPath = join(root, 'src/modules/GrandBoule/useCases/__tests__/fixture.spec.ts');
+            const originalSpec = readFileSync(specPath, 'utf8');
+            writeFileSync(specPath, `${originalSpec}\nit('covers one more case', () => {});`);
+
+            expect(
+                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
+            ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
+            expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    // #2931: the module AGENTS.md is agent guidance, not a distributed artifact.
+    // Deleting the `:(exclude)src/modules/GrandBoule/AGENTS.md` pathspec from
+    // GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state` boundary
+    // (checkReleaseInventory.ts) turns this red.
+    it('holds the project-state digest byte-identical when the Grand Boule module AGENTS.md changes (#2931)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-agents-exclusion-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const released = grandBouleReleaseInventoryContract(root);
+            const agentsPath = join(root, 'src/modules/GrandBoule/AGENTS.md');
+            const originalAgents = readFileSync(agentsPath, 'utf8');
+            writeFileSync(agentsPath, `${originalAgents}\nAdditional module guidance.`);
+
+            expect(
+                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
+            ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
+            expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    // #2931: narrowing the boundary must not stop it binding the sources the
+    // surface does distribute. Widening the exclusions past specs and the module
+    // AGENTS.md in GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state`
+    // boundary (checkReleaseInventory.ts) turns this red.
+    it('moves the project-state digest and refuses when a distributed Grand Boule source changes (#2931)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-distributed-source-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const released = grandBouleReleaseInventoryContract(root);
+            const sourcePath = join(root, 'src/modules/GrandBoule/models/GrandBouleConfig.ts');
+            const originalSource = readFileSync(sourcePath, 'utf8');
+            writeFileSync(sourcePath, `${originalSource}\nexport type GrandBouleAddition = {};`);
+
+            const changedLabels = grandBouleReleaseInventoryContract(root).digests.flatMap((digest, index) =>
+                digest === released.digests[index] ? [] : [digestLabelFromEntry(digest)]
+            );
+            expect(changedLabels).toEqual(['grand-boule-project-state']);
+            expect(thrownMessage(() => assertGrandBouleReleaseInventory(root, released))).toContain(
+                'grand-boule-project-state'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
