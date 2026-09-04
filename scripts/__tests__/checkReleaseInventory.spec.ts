@@ -130,7 +130,7 @@ function sha256(value: string): string {
 
 type Rgba = readonly [red: number, green: number, blue: number, alpha: number];
 
-const ownerIconBackground: Rgba = [12, 10, 9, 255];
+const ownerIconBackground: Rgba = [38, 34, 30, 255];
 const ownerIcnsFrames = ['ic04', 'ic05', 'ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
 const ownerPngIcnsFrames = ['ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
 const ownerIcoFrames = [16, 24, 32, 48, 64, 256] as const;
@@ -3713,7 +3713,39 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { canonical });
 
             expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
-                'owner visual asset public/icon.png background must be opaque #0c0a09'
+                'owner visual asset public/icon.png background must be top-lit gradient #26221e -> #080706'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a canonical owner icon with drifted gradient pixels', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-gradient-drift-'));
+
+        try {
+            const canonical = mutatePngPixel(repositoryOwnerCanonical, 10, 10, [13, 10, 9, 255]);
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
+                'owner visual asset public/icon.png background does not match top-lit gradient'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a canonical owner icon with drifted tactile shadow pixels', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-shadow-drift-'));
+
+        try {
+            const authority = decodePngFixture(repositoryOwnerAuthority);
+            expect(authority.pixels[(26 * authority.width + 231) * 4 + 3]).toBe(3);
+            const canonical = incrementPngPixelChannel(repositoryOwnerCanonical, 231, 26, 0);
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset public/icon.png partial edges do not match public/icon-transparent.png authority'
             );
         } finally {
             removeTemporaryDirectory(root);
@@ -3744,12 +3776,46 @@ describe('release inventory', () => {
         }
     });
 
+    it.each([
+        ['wrong geometry', rgbaPng(1, 1, () => [0, 0, 0, 0]), 'public/icon-transparent.png must be 480x480 RGBA'],
+        [
+            'non-transparent top border',
+            mutatePngPixel(repositoryOwnerAuthority, 10, 0, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+        [
+            'non-transparent bottom border',
+            mutatePngPixel(repositoryOwnerAuthority, 10, 479, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+        [
+            'non-transparent left border',
+            mutatePngPixel(repositoryOwnerAuthority, 0, 10, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+        [
+            'non-transparent right border',
+            mutatePngPixel(repositoryOwnerAuthority, 479, 10, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+    ] as const)('rejects authority owner icon %s', (_label, authority, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-authority-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { authority });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
     it('rejects a single-pixel change at a matte-authored partial edge', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-partial-edge-'));
 
         try {
             const authority = decodePngFixture(repositoryOwnerAuthority);
-            expect(authority.pixels[(81 * authority.width + 105) * 4 + 3]).toBe(128);
+            expect(authority.pixels[(105 * authority.width + 171) * 4 + 3]).toBe(131);
             const canonical = incrementPngPixelChannel(repositoryOwnerCanonical, 171, 105, 0);
             writeOwnerVisualAssetFixture(root, { canonical });
 
@@ -3909,7 +3975,7 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { seamIcnsFrame: seamFrame });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
-                `owner visual asset build/icons/icon.icns ${seamFrame} frame contains #0c0a00 seam pixels`
+                `owner visual asset build/icons/icon.icns ${seamFrame} frame contains blue-tail seam pixels`
             );
         } finally {
             removeTemporaryDirectory(root);

@@ -1197,7 +1197,7 @@
                 "tracked-set-sha256:0a082d27ff81cdeaec63073694854c0fc1a65353d9a42cd5f13098b0033b30fb:grand-boule-live-runtime",
                 "tracked-set-sha256:b72f9d64ad9eb8e52202b1f93002a84967069362d995876ed55d627fedf7bbb8:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:4c2da2367bac2b8b220ab507900ec9583ae14cf2bbeae8e955af8327cd96cbaf:grand-boule-release-proof"
+                "tracked-set-sha256:caf5312f14d452331b13fcae0905df20f3b932cd8ed95dafe03a99f5408ffbaf:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1460,13 +1460,13 @@
                 "derived renditions"
             ],
             "digests": [
-                "sha256:517fc1306f4c8efaf3c10ef65745658d014ad68725c5f8218877d36288d64cf4:public/favicon.ico",
-                "sha256:0f5f1435a632f0fac52ed7cf59f60387be55a597235bdee96df2fa2ac1cddbbb:public/icon-192.png",
-                "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
-                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
-                "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
+                "sha256:daac6d094850453336793c9dd57f23b34adfd63287d40e44328e2f2b7d2259c3:public/favicon.ico",
+                "sha256:554d992b1b7b80c270d15ba95b2e4ccf420fb45bf87796a41eac9e1e99ee9e65:public/icon-192.png",
+                "sha256:d057dd5e35dad454ee62e6b4d25e2eb8da583253543c97d1f6576581bc0c73d3:public/icon-transparent.png",
+                "sha256:8378019f3eb00c9f7537d02975fdfc32253f26e29e63c0760385f90ca71992f0:public/icon.png",
+                "sha256:8378019f3eb00c9f7537d02975fdfc32253f26e29e63c0760385f90ca71992f0:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:296936aec862140877137df4f5cdc57306b70a24804fa89100d4aa905b019dc2:build/icons"
+                "tree-sha256:6d0e2f337a283b4702e5c9b3b85bfbc4fe67a0d626c3391065e15d3ede2d4bc3:build/icons"
             ],
             "licenses": [
                 "Apache-2.0"
