@@ -1,0 +1,16 @@
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  h_1228e573df1f42 339-342
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  h_1228e573df1f42 1588,1594-1598
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "842485e4b56ab8eb541174f8550a7c4b20de99af",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
