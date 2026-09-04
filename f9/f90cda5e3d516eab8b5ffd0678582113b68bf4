@@ -1,0 +1,41 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_28abfd94826e36::t_8fec380756de73 2672-2691,2693-2708
+  s_28abfd94826e36::t_ed465e27aaf9bc 2636
+  s_28abfd94826e36::t_3ddcc0e21e7883 932
+  s_28abfd94826e36::t_b52e3fecbaf0d9 2692
+  s_28abfd94826e36::t_bd3dde1cf787e2 3164-3199
+  s_28abfd94826e36::t_b124aa4bed3559 984
+scripts/checkReleaseInventory.ts
+  s_28abfd94826e36::t_4fb515ca64eca8 1613,1624
+  s_28abfd94826e36::t_6a509a958b19fa 2424-2426
+  s_28abfd94826e36::t_e820598e7e5dcd 2390-2423,2427-2437,2444-2449,2451
+release/open-source-inventory.json
+  s_28abfd94826e36::t_e2c1f30fe30dcc 1195,1197
+  s_28abfd94826e36::t_c63c9a31bcc991 1156
+src/app/composeGrandBoule.ts
+  s_28abfd94826e36::t_215a87663cdd1d 1-19
+src/app/bootstrap.ts
+  s_28abfd94826e36::t_f075b652af7b94 480
+  s_28abfd94826e36::t_dd020c10d3f4b9 182
+src/app/__tests__/bootstrap.spec.ts
+  s_28abfd94826e36::t_f3b716771cbc6b 191
+  s_28abfd94826e36::t_dbea289f530994 783-789
+  s_28abfd94826e36::t_b41ffff6013d7a 542-545
+  s_28abfd94826e36::t_28afac85ab3f2d 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f9f90cda5e3d516eab8b5ffd0678582113b68bf4",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
