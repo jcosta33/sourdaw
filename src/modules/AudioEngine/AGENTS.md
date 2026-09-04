@@ -36,6 +36,7 @@ Owns the WebAudio runtime graph (`AudioContext`, track/bus strips, send/sidechai
 - **Single AudioContext**: Exactly one live `AudioContext` app-wide.
 - **Faust synchronization**: Faust is wired in AudioEngine and PluginHost; changes in one require matching updates in the other.
 - **Native plugin bridge**: Native-plugin bridge worklets are raw JS in `public/audio/worklets/`, separate from the WASM glue.
+- **Live topology attach state**: An `external-plugin` device has a native body exactly when the engine reports its instance attached, so the live topology producer takes that attach state as an input (read from PluginHost's parameter store) rather than deriving it from the device. `apply_graph_commands` captures its plugin lookup before mapping and attaches dormant instances behind the fence, so the batch that attaches an instance is always mapped before the engine holds it: binding it takes one further batch. A session start therefore sends its topology a second time when the first batch reports attachments — once, never in a loop, and only while the engine is parked, because a `replaceTopology` batch tears every strip down inside one fence and must never reach a rolling engine.
 
 ## Verification
 

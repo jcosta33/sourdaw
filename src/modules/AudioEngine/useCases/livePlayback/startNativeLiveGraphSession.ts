@@ -22,6 +22,29 @@
  * lookup rather than a transfer. The prime is the optimisation; this call is
  * the contract.
  *
+ * ── Why the topology can go out twice ─────────────────────────────────────
+ *
+ * `apply_graph_commands` captures the engine's plugin lookup before it maps the
+ * batch and attaches dormant instances behind the fence, so the batch that
+ * attaches an instance is mapped while the engine does not yet hold it and its
+ * strip is built with no body for that device
+ * (`a_plugin_attached_by_a_batch_binds_on_the_next_one`). One further batch is
+ * what binds it. So when the topology reports attachments, this sends the
+ * topology once more — rebuilt against the attach state those reports created,
+ * with the same transport, monitor and programme — and the session is the
+ * second batch's.
+ *
+ * Exactly one re-send, and only while parked. A `replaceTopology` batch tears
+ * every strip down inside one fence (`GraphRegistry::take_topology_down`), so
+ * it must never be sent to a rolling engine; both batches here go out with
+ * `playing: false`, ahead of the maps and the roll, which is what makes the
+ * teardown inaudible. Bounding it at one is not an optimisation either: a
+ * second re-send would be a loop whose fixed point is whatever the engine
+ * happens to attach next, and the batch that carries the rest is the roll,
+ * which reports through `reportAttachedPlugins` like every other route. An
+ * instance attached late therefore waits for the next play, and splicing or
+ * releasing one mid-roll is #3575's work.
+ *
  * ── Declining is an outcome, not a failure ────────────────────────────────
  *
  * A browser has no bridge, a desktop build whose addon cannot answer has no
@@ -44,10 +67,15 @@ import {
 } from '#/modules/Arrangement/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
-import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphApplyResult,
+    type AudioGraphCommand,
+    type AudioGraphStripReport,
+} from '../../models/AudioGraphBackend';
 import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
+import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
@@ -56,6 +84,7 @@ import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWr
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
+import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
@@ -109,10 +138,11 @@ export type NativeLiveGraphSessionResult =
     | Readonly<{ outcome: 'declined'; reason: string }>;
 
 /**
- * The strips the live engine builds, and the solo gate over them.
+ * The strips the live engine builds, the solo gate over them, and the plugin
+ * instances the engine already owns.
  *
- * Both read the Arrangement projections the live Web Audio path reads —
- * `shouldCreateLiveTrackStrip` for eligibility and `deriveEffectiveAudibility`
+ * The first two read the Arrangement projections the live Web Audio path reads
+ * — `shouldCreateLiveTrackStrip` for eligibility and `deriveEffectiveAudibility`
  * for the solo law — so the two engines cannot disagree about which strips a
  * session has or which of them solo is silencing.
  */
@@ -120,6 +150,7 @@ function readSessionTopology(): Readonly<{
     stripTracks: readonly Track[];
     soloGatedTrackIds: ReadonlySet<string>;
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
+    attachedInstanceIds: ReadonlySet<string>;
 }> {
     const projectTracks = trackStore.value?.tracks ?? [];
     const stripTracks = readLiveStripTracks();
@@ -148,6 +179,7 @@ function readSessionTopology(): Readonly<{
                 deriveVcaMultiplier({ vcaGroupId: track.vcaGroupId, groups: vcaGroups }),
             ])
         ),
+        attachedInstanceIds: readAttachedExternalInstanceIds(),
     };
 }
 
@@ -166,6 +198,56 @@ function programmeEndSeconds(programme: LiveGraphProgramme): number {
         }
     }
     return end;
+}
+
+/** An applied whole-topology batch, and the commands it was built from. */
+type AppliedTopologyBatch =
+    | Readonly<{
+          outcome: 'applied';
+          result: Extract<AudioGraphApplyResult, { application: 'applied' }>;
+          commands: readonly AudioGraphCommand[];
+      }>
+    | Readonly<{ outcome: 'declined'; reason: string }>;
+
+/**
+ * Send one whole-topology batch: its material, then the batch that names it,
+ * then whatever it says it attached.
+ *
+ * Every topology a session sends goes through here, so the ordering contract
+ * holds for a re-send exactly as it does for the first batch, and no route
+ * drops an attach report. The registration is a memo lookup once the prime has
+ * run (`primeNativeTimelineSamples`), which is what makes asking a second time
+ * cost nothing.
+ *
+ * It replaces rather than adds. The native registry lives as long as the
+ * process and has no remove-strip command, so an additive batch would collide
+ * with its own strip ids the second time; replacing also means topology the
+ * engineer changed between plays actually reaches the engine, rather than only
+ * the transport doing so.
+ */
+async function applyTopologyBatch(input: {
+    transport: NativeGraphTransport;
+    backend: ReturnType<typeof createNativeLiveGraphBackend>;
+    commands: readonly AudioGraphCommand[];
+}): Promise<AppliedTopologyBatch> {
+    const { transport, backend, commands } = input;
+    const material = await registerNativeTimelineSamples({ transport, commands });
+    if (material.outcome === 'declined') {
+        return { outcome: 'declined', reason: material.reason };
+    }
+    const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
+    if (result.application !== 'applied') {
+        // Both non-applied outcomes carry a reason: a refusal names the command
+        // it could not hold, a partial application names what it could not
+        // finish. Neither leaves a session worth keeping.
+        return { outcome: 'declined', reason: result.reason };
+    }
+    // A batch that starts the engine takes over the plugin instances loaded
+    // before there was one — reported to their devices as loaded but processing
+    // no audio, and corrected nowhere else. Reported before the session
+    // bookkeeping, because a device told late has already been read as degraded.
+    reportAttachedPlugins(result);
+    return { outcome: 'applied', result, commands };
 }
 
 /**
@@ -250,48 +332,42 @@ export function startNativeLiveGraphSession(
                     `${exclusion.stripId}: ${exclusion.reason}`
             );
         }
-        const commands = projectLiveGraphTopology({
-            ...topology,
-            transport: { playing: false, positionSeconds: input.positionSeconds },
-            monitor,
-            programme,
-        });
-
         // Material before the batch that names it, always: the native side
         // refuses a `schedule-clip` whose sample the pool does not hold, and it
-        // refuses the whole batch with it. The prime pass has normally left
-        // nothing to send (`primeNativeTimelineSamples`), so this is a memo
-        // lookup at the gesture rather than a transfer — but the guarantee is
-        // this call's, not the prime's, because a prime is an optimisation and
-        // an ordering is a contract.
-        const material = await registerNativeTimelineSamples({ transport: availability.transport, commands });
-        if (material.outcome === 'declined') {
-            return { outcome: 'declined', reason: material.reason };
-        }
+        // refuses the whole batch with it. That ordering lives in
+        // `applyTopologyBatch`, so both of this session's topology batches keep
+        // it.
+        const parked = { playing: false, positionSeconds: input.positionSeconds } as const;
+        const projectTopology = (attachedInstanceIds: ReadonlySet<string>): readonly AudioGraphCommand[] =>
+            projectLiveGraphTopology({ ...topology, attachedInstanceIds, transport: parked, monitor, programme });
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
-        // Every play sends the session's whole topology, so every play replaces
-        // the one before it. The native registry lives as long as the process
-        // and has no remove-strip command, so an additive batch would collide
-        // with its own strip ids the second time; replacing also means topology
-        // the engineer changed between plays actually reaches the engine, rather
-        // than only the transport doing so.
-        const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
-        if (result.application !== 'applied') {
+        const started = await applyTopologyBatch({
+            transport: availability.transport,
+            backend,
+            commands: projectTopology(topology.attachedInstanceIds),
+        });
+        if (started.outcome === 'declined') {
             backend.dispose();
-            // Both non-applied outcomes carry a reason: a refusal names the
-            // command it could not hold, a partial application names what it
-            // could not finish. Neither leaves a session worth keeping.
-            return { outcome: 'declined', reason: result.reason };
+            return started;
         }
-        // This batch is what starts the native engine, so it is also what takes
-        // over the plugin instances loaded before there was one — reported to
-        // their devices as loaded but processing no audio, and corrected
-        // nowhere else. It takes as many as it reserved ring slots for, so the
-        // roll below may carry the rest; every route reports, and this one
-        // reports before the session bookkeeping, because a device told late has
-        // already been read as degraded.
-        reportAttachedPlugins(result);
+        // The batch that attached those instances was mapped before the engine
+        // held them, so their strips went out with no body for the plugin. One
+        // more parked batch, built against the attach state the reports above
+        // have just written, is what binds them — see the header for why there
+        // is never a third.
+        const rebound =
+            (started.result.attachedPlugins ?? []).length > 0
+                ? await applyTopologyBatch({
+                      transport: availability.transport,
+                      backend,
+                      commands: projectTopology(readAttachedExternalInstanceIds()),
+                  })
+                : started;
+        if (rebound.outcome === 'declined') {
+            backend.dispose();
+            return rebound;
+        }
         // The previous session's handle is closed only once its replacement is
         // applied: a decline must leave the engine reachable through the handle
         // that was already working.
@@ -303,7 +379,7 @@ export function startNativeLiveGraphSession(
         // mode, and a shadowed engine writes true zeros at the device however
         // full its timeline is.
         const shadowed = monitor === 'shadowed';
-        const schedulesClips = commands.some((command) => command.kind === 'schedule-clip');
+        const schedulesClips = rebound.commands.some((command) => command.kind === 'schedule-clip');
         nativeLiveGraphSession.monitorShadowed = shadowed;
         nativeLiveGraphSession.audibleCarrier = schedulesClips && !shadowed;
         // The topology went out parked (see the batch above), so this session
@@ -357,6 +433,9 @@ export function startNativeLiveGraphSession(
             });
         }
         startNativeEnginePlayheadFeed();
-        return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };
+        // The last topology batch applied, not the first: a re-send replaced
+        // every strip the first one built, so its reports are the only ones
+        // that describe the graph the engine now holds.
+        return { outcome: 'started', runtimeRevision: rebound.result.runtimeRevision, reports: rebound.result.reports };
     });
 }

@@ -1,3 +1,24 @@
+/**
+ * Retire one external plugin instance, and everything this process recorded
+ * about it.
+ *
+ * ── What the native audio graph does with the hole ────────────────────────
+ *
+ * An unload drops the instance's parameter snapshot, so the live producer stops
+ * reading it as attached (`readAttachedExternalInstanceIds`). What that means
+ * for the running engine depends on where the session is.
+ *
+ * Parked, the release is the next play's topology batch: that batch replaces the
+ * whole topology, and the strip it rebuilds names no effect for the unloaded
+ * device, so nothing survives the fence.
+ *
+ * Rolling, nothing here reaches the graph. The engine's registry goes on naming
+ * the freed effect until some later batch replaces the topology, and the
+ * scheduler passes it through and counts it in the meantime. Releasing an
+ * instance from a rolling graph needs a command that does not tear the topology
+ * down, which is #3575's work; this module deliberately has no route to one.
+ */
+
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
 import {
     defaultExternalPluginActivationState,

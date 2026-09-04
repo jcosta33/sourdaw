@@ -17,7 +17,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
@@ -84,6 +85,13 @@ const mocks = vi.hoisted(() => ({
      * forwards, not what PluginHost then writes.
      */
     markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
+    /**
+     * One entry per live backend handle the session opened, flipped when that
+     * handle is closed. A declined batch has to close the handle it opened, and
+     * a leaked one is invisible from the session state — which records only the
+     * handle that is *kept*.
+     */
+    openedBackends: [] as { disposed: boolean }[],
 }));
 
 vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
@@ -114,6 +122,25 @@ vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
         readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) =>
             (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
             actual.readLiveGraphProgramme(input),
+    };
+});
+vi.mock('../../../repositories/nativeGraph/createNativeLiveGraphBackend', async (importOriginal) => {
+    const actual =
+        await importOriginal<typeof import('../../../repositories/nativeGraph/createNativeLiveGraphBackend')>();
+    return {
+        ...actual,
+        createNativeLiveGraphBackend: (deps: Parameters<typeof actual.createNativeLiveGraphBackend>[0]) => {
+            const backend = actual.createNativeLiveGraphBackend(deps);
+            const handle = { disposed: false };
+            mocks.openedBackends.push(handle);
+            return {
+                ...backend,
+                dispose: () => {
+                    handle.disposed = true;
+                    backend.dispose();
+                },
+            };
+        },
     };
 });
 vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
@@ -249,6 +276,76 @@ function appliedBatches(): AudioGraphCommandBatch[] {
     return mocks.applyGraphCommands.mock.calls.map(([input]) => input.batch as AudioGraphCommandBatch);
 }
 
+/** The whole-topology batches, which are the only ones that rebuild strips. */
+function topologyBatches(): AudioGraphCommandBatch[] {
+    return appliedBatches().filter((batch) => batch.replaceTopology === true);
+}
+
+/** How one batch built the strip for `trackId`, or `undefined` if it built none. */
+function stripCreation(batch: AudioGraphCommandBatch | undefined, trackId: string) {
+    return batch?.commands.find((command) => command.kind === 'create-track-strip' && command.trackId === trackId);
+}
+
+/** A device the host has resolved to an external plugin instance. */
+function externalPluginDevice(instanceId: string): Device {
+    return {
+        id: `device-${instanceId}`,
+        name: `device-${instanceId}`,
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalPluginId: 'clap:com.example.reverb',
+        externalInstanceId: instanceId,
+    };
+}
+
+/**
+ * A programme that gives `audio-1` something to play, which is what makes
+ * `contributesAudio` a question about that strip's chain at all.
+ */
+const PLAYING_PROGRAMME = {
+    playbacksByStripId: new Map([
+        [
+            'audio-1',
+            [
+                {
+                    trackId: 'audio-1',
+                    source: { sourceId: 'sample-1', buffer: MATERIAL },
+                    startTime: 0,
+                    sourceOffsetSeconds: 0,
+                    durationSeconds: 1,
+                    playbackRate: 1,
+                    gain: 1,
+                    fade: { microFadeSeconds: 0.005 },
+                },
+            ],
+        ],
+    ]),
+    bakedStripIds: new Set<string>(),
+    exclusions: [],
+};
+
+/**
+ * PluginHost's real write, doubled: `markExternalPluginEngineAttached` records
+ * the attachment in the parameter snapshot, and that snapshot is what the
+ * producer reads. Without it the re-send would rebuild the same topology and
+ * this file would be asserting a batch count rather than a binding.
+ */
+function attachReportedInstancesInStore(): void {
+    mocks.markExternalPluginEngineAttached.mockImplementation(({ instanceId }) => {
+        externalPluginParameterStore.update((state) => {
+            const current = state ?? defaultExternalPluginParameterState;
+            return {
+                ...current,
+                byInstanceId: {
+                    ...current.byInstanceId,
+                    [instanceId]: { engineAttached: true, parameters: [] },
+                },
+            };
+        });
+    });
+}
+
 beforeEach(() => {
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
@@ -260,8 +357,13 @@ beforeEach(() => {
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
     mocks.warn.mockClear();
-    mocks.markExternalPluginEngineAttached.mockClear();
+    mocks.markExternalPluginEngineAttached.mockReset();
+    mocks.openedBackends = [];
     mocks.wireCalls = [];
+    // Attach state is process-wide store state, so a case inheriting the
+    // previous one's would build strips against an engine that never took
+    // those instances.
+    externalPluginParameterStore.set(defaultExternalPluginParameterState);
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
     registeredNativeTimelineSampleIds.clear();
@@ -359,6 +461,132 @@ describe('startNativeLiveGraphSession', () => {
         });
 
         expect(mocks.markExternalPluginEngineAttached).not.toHaveBeenCalled();
+    });
+
+    // `apply_graph_commands` captures its plugin lookup before mapping and
+    // attaches dormant instances behind the fence, so the batch that attaches an
+    // instance is mapped while the engine does not yet hold it: read once, the
+    // first play after loading a plugin renders the strip without it.
+    it('sends the topology again, bound to the instances the first batch attached', async () => {
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const boundReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: ['device-i1'] }];
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({
+                ...APPLIED,
+                attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+            })
+            .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2, reports: boundReports });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        const [first, second] = topologyBatches();
+        expect(topologyBatches()).toHaveLength(2);
+        // The first batch could not have a body for an instance the engine was
+        // not yet holding; the second is built against the attach state that
+        // batch's own report created.
+        expect(stripCreation(first, 'audio-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'audio-1')).toMatchObject({ contributesAudio: true });
+        // Both go out parked, ahead of the roll: `replaceTopology` tears every
+        // strip down inside one fence, which a rolling engine would be heard
+        // doing.
+        expect(appliedBatches()[2]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 0, locate: false },
+        ]);
+        // The second batch replaced every strip the first built, so its reports
+        // are the only ones describing the graph the engine now holds.
+        expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
+    });
+
+    it('sends the topology once when the first batch attached nothing to bind', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(topologyBatches()).toHaveLength(1);
+    });
+
+    it('never sends a third topology, however much the re-send attaches', async () => {
+        // The re-send is bounded, not iterated: a loop's fixed point is whatever
+        // the engine happens to attach next, and the roll already reports what
+        // this batch left dormant.
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1'), externalPluginDevice('i2')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i2', bridgeRoundTripFrames: 256 }] });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(topologyBatches()).toHaveLength(2);
+        // Bounded is not silent: the instance the re-send took is still
+        // corrected on its device, it simply waits for the next play to be
+        // spliced into the chain.
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+            [{ instanceId: 'i2', bridgeRoundTripFrames: 256 }],
+        ]);
+    });
+
+    it('declines with the native reason when the re-send is refused, and keeps no session', async () => {
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'engine-not-running: no default output device',
+            });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // The refused batch replaced the topology the first one built, so what
+        // the engine holds is not a session — and a half-torn graph must not be
+        // reported as one.
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'engine-not-running: no default output device',
+        });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([true]);
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
     });
 
     it('starts the engine on desktop by applying the session topology', async () => {
