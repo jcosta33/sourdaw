@@ -16,10 +16,12 @@ import {
     DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
     readLegalFile,
+    selectCanonicalSpdxLicenses,
     SERVER_THIRD_PARTY_NOTICES_PATH,
     type DependencyLicenseProof,
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
+import { writeDependencyLicenseArtifacts } from '../generateDependencyLicenseReport';
 import {
     RELEASE_INVENTORY_PATH,
     restampDependencyBump,
@@ -30,6 +32,13 @@ import {
 
 const GRAND_BOULE_DIGEST_PATH = 'crates/daw-dsp/src/grand_boule';
 const CARGO_REGISTRY = 'index.crates.io-6f17d22bba15001f';
+const GENERATED_ARTIFACT_SNAPSHOT_PATHS = [
+    'public/wasm/manifest.json',
+    'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
+] as const;
+const MIT_TEXT_PATH = 'release/spdx-license-texts/MIT.txt';
+const SPDX_TEXT_PATHS = [MIT_TEXT_PATH, 'release/spdx-license-texts/Apache-2.0.txt'] as const;
+const repositoryRoot = join(import.meta.dirname, '../..');
 const staleDigest = 'c'.repeat(64);
 
 const roots: string[] = [];
@@ -158,6 +167,10 @@ function createFixture(packages: Record<string, DependencyLicenseProof> = {}): s
     write(root, DEPENDENCY_LICENSE_REPORT_PATH, 'fixture dependency licenses\n');
     write(root, SERVER_THIRD_PARTY_NOTICES_PATH, 'fixture server notices\n');
     write(root, GRAND_BOULE_DIGEST_PATH, 'fixture grand boule source\n');
+    // The canonical SPDX texts are what an assembled proof's elected licenses are read back from.
+    for (const path of SPDX_TEXT_PATHS) {
+        write(root, path, readFileSync(join(repositoryRoot, path), 'utf8'));
+    }
     writeProofs(root, packages);
     writeInventory(root, currentInventory(root));
     return root;
@@ -422,6 +435,114 @@ describe('restamp dependency bump', () => {
         expect(result).toEqual({ ok: true, output: 'restamped: nothing to rewrite\n' });
         expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(inventory);
         expect(readFileSync(join(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8')).toBe(proofs);
+    });
+
+    it('leaves a drifted generated-artifact snapshot to a person', () => {
+        const root = createFixture();
+        for (const path of GENERATED_ARTIFACT_SNAPSHOT_PATHS) {
+            write(root, path, `rebuilt ${path}\n`);
+        }
+        const recorded = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+        const drifted = GENERATED_ARTIFACT_SNAPSHOT_PATHS.map((path) => `${path}: snapshot drifted`);
+        expect(digestDriftErrors(root)).toEqual(expect.arrayContaining(drifted));
+
+        expect(restamp(root).ok).toBe(true);
+
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(recorded);
+        expect(digestDriftErrors(root)).toEqual(expect.arrayContaining(drifted));
+        expect(UNRESTAMPED_DIGEST_CLASSES).toContain('public/wasm/manifest.json');
+    });
+
+    it('keeps the licenses the predecessor proof elected when the bumped expression still admits them', () => {
+        const root = createFixture({ 'cargo:demo@1.0.0': staleAssembledProof });
+        const sourceDirectory = writeCrateFixture(root, { archive: true });
+
+        const result = restamp(root, {
+            cargoHome: join(root, 'cargo-home'),
+            resolveInstalled: () => ({
+                records: [cargoRecord(sourceDirectory, 'Zlib OR Apache-2.0 OR MIT')],
+                cargoSourceDirectories: { 'cargo:demo@2.0.0': sourceDirectory },
+            }),
+        });
+
+        expect(result.ok).toBe(true);
+        expect(readProofPackages(root)['cargo:demo@2.0.0']?.assembled?.licenses).toEqual(['MIT']);
+        expect(selectCanonicalSpdxLicenses('Zlib OR Apache-2.0 OR MIT')).toEqual(['Apache-2.0']);
+    });
+
+    it('drops a stale proof key once the bumped package substantiates its own license', () => {
+        const root = createFixture({ 'cargo:demo@1.0.0': staleAssembledProof });
+        const sourceDirectory = writeCrateFixture(root, { archive: true });
+
+        const result = restamp(root, {
+            cargoHome: join(root, 'cargo-home'),
+            resolveInstalled: () => ({
+                records: [
+                    {
+                        ...cargoRecord(sourceDirectory, 'MIT'),
+                        legalFiles: [readLegalFile(join(root, MIT_TEXT_PATH), 'LICENSE')],
+                    },
+                ],
+                cargoSourceDirectories: { 'cargo:demo@2.0.0': sourceDirectory },
+            }),
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.output).toContain('dropped cargo:demo@1.0.0');
+        expect(readProofPackages(root)).toEqual({});
+    });
+
+    it('writes the regenerated dependency-license artifacts to disk', () => {
+        const root = createFixture();
+        const artifacts = {
+            proofManifest: '{ "schemaVersion": 4, "packages": {} }\n',
+            report: 'regenerated dependency licenses\n',
+            serverNotices: 'regenerated server notices\n',
+        };
+
+        const result = restamp(root, {
+            writeArtifacts: (target) => {
+                writeDependencyLicenseArtifacts(target, () => artifacts);
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(readFileSync(join(root, DEPENDENCY_LICENSE_PROOFS_PATH), 'utf8')).toBe(artifacts.proofManifest);
+        expect(readFileSync(join(root, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8')).toBe(artifacts.report);
+        expect(readFileSync(join(root, SERVER_THIRD_PARTY_NOTICES_PATH), 'utf8')).toBe(artifacts.serverNotices);
+    });
+
+    it('restores every file it wrote when verification refuses', () => {
+        const root = createFixture();
+        write(root, 'pnpm-lock.yaml', 'bumped pnpm lock\n');
+        const inventory = readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8');
+        const notices = readFileSync(join(root, SERVER_THIRD_PARTY_NOTICES_PATH), 'utf8');
+
+        const result = restamp(root, {
+            writeArtifacts: (target) => {
+                writeFileSync(join(target, SERVER_THIRD_PARTY_NOTICES_PATH), 'regenerated server notices\n');
+            },
+            verify: () => ['project-wasm: release inventory digests does not match provenance'],
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.output).toContain('project-wasm: release inventory digests does not match provenance');
+        expect(readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8')).toBe(inventory);
+        expect(readFileSync(join(root, SERVER_THIRD_PARTY_NOTICES_PATH), 'utf8')).toBe(notices);
+    });
+
+    it('refuses on what the real project-license and release-inventory checks report', () => {
+        const root = createFixture();
+
+        const result = restampDependencyBump(root, {
+            resolveInstalled: () => ({ records: [], cargoSourceDirectories: {} }),
+            writeArtifacts: () => undefined,
+        });
+
+        expect(result.ok).toBe(false);
+        expect(
+            result.output.split('\n').filter((line) => line.startsWith('Command failed: cargo metadata'))
+        ).toHaveLength(2);
     });
 
     it('is reachable as pnpm release:restamp', () => {

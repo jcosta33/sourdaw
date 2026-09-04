@@ -9,6 +9,7 @@ import {
     DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
     SERVER_THIRD_PARTY_NOTICES_PATH,
+    type GeneratedDependencyLicenseArtifacts,
 } from './dependencyLicenseReport.ts';
 
 export const DEPENDENCY_LICENSE_ARTIFACT_PATHS = [
@@ -18,8 +19,11 @@ export const DEPENDENCY_LICENSE_ARTIFACT_PATHS = [
 ] as const;
 
 /** Builds every artifact before writing any, so a rejected proof leaves the tree as it was. */
-export function writeDependencyLicenseArtifacts(root: string): void {
-    const artifacts = buildDependencyLicenseArtifactsFromInstalledMetadata(root);
+export function writeDependencyLicenseArtifacts(
+    root: string,
+    build: (root: string) => GeneratedDependencyLicenseArtifacts = buildDependencyLicenseArtifactsFromInstalledMetadata
+): void {
+    const artifacts = build(root);
     writeFileSync(resolve(root, DEPENDENCY_LICENSE_PROOFS_PATH), artifacts.proofManifest, 'utf8');
     writeFileSync(resolve(root, DEPENDENCY_LICENSE_REPORT_PATH), artifacts.report, 'utf8');
     writeFileSync(resolve(root, SERVER_THIRD_PARTY_NOTICES_PATH), artifacts.serverNotices, 'utf8');

@@ -18,23 +18,25 @@ import {
 } from './checkReleaseInventory.ts';
 import {
     assertLicenseExpressionEvidence,
+    canonicalSpdxLicensesSatisfy,
     cargoRegistryArchiveSource,
     collectCargoDependencyLicensesFromInstalledMetadata,
     collectNpmDependencyLicenses,
     collectNpmLockDependencyLicenses,
     DEPENDENCY_LICENSE_PROOFS_PATH,
-    DEPENDENCY_LICENSE_REPORT_PATH,
     expectedProofIdentities,
     mergeDependencyLicenseRecords,
     readDependencyLicenseProofSourceManifest,
     readLegalFile,
     selectCanonicalSpdxLicenses,
-    SERVER_THIRD_PARTY_NOTICES_PATH,
     type DependencyLicenseProof,
     type DependencyLicenseProofSourceManifest,
     type DependencyLicenseRecord,
 } from './dependencyLicenseReport.ts';
-import { writeDependencyLicenseArtifacts } from './generateDependencyLicenseReport.ts';
+import {
+    DEPENDENCY_LICENSE_ARTIFACT_PATHS,
+    writeDependencyLicenseArtifacts,
+} from './generateDependencyLicenseReport.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
 export const RELEASE_INVENTORY_PATH = 'release/open-source-inventory.json';
@@ -44,15 +46,17 @@ export const RELEASE_INVENTORY_PATH = 'release/open-source-inventory.json';
  * one would bless a change nobody decided to make.
  */
 export const UNRESTAMPED_DIGEST_CLASSES =
-    'not restamped: Grand Boule tracked-set, WASM, DDSP, Electron, Levain, trademark, and owner-asset digests — drift there is a release-surface change rather than dependency-bump drift, and it needs a person.';
+    'not restamped: Grand Boule tracked-set, WASM, DDSP, Electron, Levain, trademark, and owner-asset digests, and the public/wasm/manifest.json and WebLLM artifact-manifest snapshots — drift there is a release-surface change rather than dependency-bump drift, and it needs a person.';
 
 const PROJECT_LICENSE_SURFACE_ID = 'project-license-distribution';
-const REQUIRED_SNAPSHOT_PATH_SET = new Set<string>(REQUIRED_SNAPSHOT_PATHS);
-const DEPENDENCY_LICENSE_ARTIFACT_PATHS = [
-    DEPENDENCY_LICENSE_PROOFS_PATH,
-    DEPENDENCY_LICENSE_REPORT_PATH,
-    SERVER_THIRD_PARTY_NOTICES_PATH,
-] as const;
+/** These two required snapshots pin generated wasm and model artifacts, which no dependency bump moves. */
+const GENERATED_ARTIFACT_SNAPSHOT_PATHS = new Set<string>([
+    'public/wasm/manifest.json',
+    'src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json',
+]);
+const RESTAMPED_SNAPSHOT_PATHS = new Set<string>(
+    REQUIRED_SNAPSHOT_PATHS.filter((path) => !GENERATED_ARTIFACT_SNAPSHOT_PATHS.has(path))
+);
 const RESTAMPED_DIGEST_PATHS = new Set<string>([
     ...DEPENDENCY_LICENSE_ARTIFACT_PATHS,
     ...Object.keys(SNAPSHOT_DIGEST_SURFACES),
@@ -146,7 +150,24 @@ function crateArchivePath(cargoHome: string, record: DependencyLicenseRecord): s
     return undefined;
 }
 
-function assembledEvidence(record: DependencyLicenseRecord, sourceDirectory: string | undefined): AssembledEvidence {
+/** The predecessor's election is one of several the expression may admit; keep it so a bump moves nothing else. */
+function electLicenses(
+    root: string,
+    record: DependencyLicenseRecord,
+    carried: readonly string[] | undefined
+): string[] {
+    if (carried !== undefined && canonicalSpdxLicensesSatisfy(root, carried, record.license)) {
+        return [...carried];
+    }
+    return selectCanonicalSpdxLicenses(record.license);
+}
+
+function assembledEvidence(
+    root: string,
+    record: DependencyLicenseRecord,
+    sourceDirectory: string | undefined,
+    carried: readonly string[] | undefined
+): AssembledEvidence {
     const id = packageId(record);
     const metadataFiles = record.metadataFiles ?? [];
     if (metadataFiles.length === 0) {
@@ -165,16 +186,18 @@ function assembledEvidence(record: DependencyLicenseRecord, sourceDirectory: str
         metadata.push({ sourcePath: file.label, sha256: readLegalFile(path, file.label).sha256 });
     }
     try {
-        return { assembled: { metadata, licenses: selectCanonicalSpdxLicenses(record.license) } };
+        return { assembled: { metadata, licenses: electLicenses(root, record, carried) } };
     } catch (error) {
         return { refusal: `${id}: ${errorMessage(error)}; re-pin this proof by hand` };
     }
 }
 
 function cargoAssembledProof(
+    root: string,
     record: DependencyLicenseRecord,
     sourceDirectory: string | undefined,
-    cargoHome: string
+    cargoHome: string,
+    carried: readonly string[] | undefined
 ): ProofAttempt {
     const id = packageId(record);
     if (sourceDirectory === undefined || !existsSync(sourceDirectory)) {
@@ -186,7 +209,7 @@ function cargoAssembledProof(
             refusal: `${id}: ${record.name}-${record.version}.crate is absent from ${join(cargoHome, 'registry', 'cache')}; run "cargo fetch" and rerun`,
         };
     }
-    const evidence = assembledEvidence(record, sourceDirectory);
+    const evidence = assembledEvidence(root, record, sourceDirectory, carried);
     if ('refusal' in evidence) {
         return evidence;
     }
@@ -199,9 +222,13 @@ function cargoAssembledProof(
     };
 }
 
-function npmAssembledProof(root: string, record: DependencyLicenseRecord): ProofAttempt {
+function npmAssembledProof(
+    root: string,
+    record: DependencyLicenseRecord,
+    carried: readonly string[] | undefined
+): ProofAttempt {
     const id = packageId(record);
-    const evidence = assembledEvidence(record, undefined);
+    const evidence = assembledEvidence(root, record, undefined, carried);
     if ('refusal' in evidence) {
         return evidence;
     }
@@ -220,11 +247,12 @@ function assembledProof(
     root: string,
     record: DependencyLicenseRecord,
     sourceDirectory: string | undefined,
-    cargoHome: string
+    cargoHome: string,
+    carried: readonly string[] | undefined
 ): ProofAttempt {
     return record.ecosystem === 'cargo'
-        ? cargoAssembledProof(record, sourceDirectory, cargoHome)
-        : npmAssembledProof(root, record);
+        ? cargoAssembledProof(root, record, sourceDirectory, cargoHome, carried)
+        : npmAssembledProof(root, record, carried);
 }
 
 function archiveProofRefusal(
@@ -271,7 +299,13 @@ export function reconcileDependencyLicenseProofs(
         }
         for (const successor of successors) {
             const successorId = packageId(successor);
-            const attempt = assembledProof(root, successor, installed.cargoSourceDirectories[successorId], cargoHome);
+            const attempt = assembledProof(
+                root,
+                successor,
+                installed.cargoSourceDirectories[successorId],
+                cargoHome,
+                proof.assembled.licenses
+            );
             if ('refusal' in attempt) {
                 refusals.push(attempt.refusal);
                 continue;
@@ -282,12 +316,14 @@ export function reconcileDependencyLicenseProofs(
         }
     }
 
+    // Only a cargo package gets a proof pinned from nothing: an npm one has no registry source directory
+    // to read, so it stays unproven and the dependency-licence check names it during verification.
     for (const record of unproven) {
         const id = packageId(record);
         if (carried.has(id) || record.ecosystem !== 'cargo') {
             continue;
         }
-        const attempt = cargoAssembledProof(record, installed.cargoSourceDirectories[id], cargoHome);
+        const attempt = cargoAssembledProof(root, record, installed.cargoSourceDirectories[id], cargoHome, undefined);
         if ('refusal' in attempt) {
             refusals.push(attempt.refusal);
             continue;
@@ -299,9 +335,9 @@ export function reconcileDependencyLicenseProofs(
     return { packages: Object.fromEntries(entries), changes, refusals };
 }
 
-function readArtifactContents(root: string): Map<string, string> {
+function readFileContents(root: string, paths: readonly string[]): Map<string, string> {
     const contents = new Map<string, string>();
-    for (const path of DEPENDENCY_LICENSE_ARTIFACT_PATHS) {
+    for (const path of paths) {
         const absolute = resolve(root, path);
         if (existsSync(absolute)) {
             contents.set(path, readFileSync(absolute, 'utf8'));
@@ -310,16 +346,16 @@ function readArtifactContents(root: string): Map<string, string> {
     return contents;
 }
 
-function changedArtifacts(root: string, recorded: ReadonlyMap<string, string>): string[] {
-    return [...readArtifactContents(root)]
+function changedFiles(root: string, recorded: ReadonlyMap<string, string>): string[] {
+    return [...readFileContents(root, [...recorded.keys()])]
         .filter(([path, contents]) => recorded.get(path) !== contents)
         .map(([path]) => path);
 }
 
-function restoreArtifacts(root: string, recorded: ReadonlyMap<string, string>): void {
-    for (const path of changedArtifacts(root, recorded)) {
-        const contents = recorded.get(path);
-        if (contents !== undefined) {
+function restoreFiles(root: string, recorded: ReadonlyMap<string, string>): void {
+    const current = readFileContents(root, [...recorded.keys()]);
+    for (const [path, contents] of recorded) {
+        if (current.get(path) !== contents) {
             writeFileSync(resolve(root, path), contents, 'utf8');
         }
     }
@@ -345,7 +381,7 @@ function currentDigest(root: string, path: string): string | undefined {
 
 function restampRequiredSnapshots(root: string, inventory: ReleaseInventory): void {
     for (const entry of inventory.snapshots) {
-        if (!REQUIRED_SNAPSHOT_PATH_SET.has(entry.path)) {
+        if (!RESTAMPED_SNAPSHOT_PATHS.has(entry.path)) {
             continue;
         }
         const digest = currentDigest(root, entry.path);
@@ -451,21 +487,19 @@ export function restampDependencyBump(root: string, options: RestampOptions = {}
     if (reconciliation.refusals.length > 0) {
         return refused(reconciliation.refusals);
     }
-    const recorded = readArtifactContents(root);
+    const recorded = readFileContents(root, [...DEPENDENCY_LICENSE_ARTIFACT_PATHS, RELEASE_INVENTORY_PATH]);
     writeProofManifest(root, manifest, reconciliation.packages, recorded);
     try {
         (options.writeArtifacts ?? writeDependencyLicenseArtifacts)(root);
     } catch (error) {
-        restoreArtifacts(root, recorded);
+        restoreFiles(root, recorded);
         return refused([errorMessage(error)]);
     }
-    const rewritten = [
-        ...changedArtifacts(root, recorded),
-        ...restampReleaseInventory(root),
-        ...reconciliation.changes,
-    ];
+    restampReleaseInventory(root);
+    const rewritten = [...changedFiles(root, recorded), ...reconciliation.changes];
     const errors = (options.verify ?? verifyRestampedTree)(root);
     if (errors.length > 0) {
+        restoreFiles(root, recorded);
         return refused(errors);
     }
     return { ok: true, output: `restamped: ${rewritten.length === 0 ? 'nothing to rewrite' : rewritten.join(', ')}\n` };

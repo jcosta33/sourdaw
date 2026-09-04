@@ -1190,6 +1190,23 @@ function readCanonicalSpdxText(root: string, license: string): LegalFile {
     return { ...legal, label: `${license} canonical text from ${source.source}` };
 }
 
+/** The satisfaction rule validateAssembledProof applies to an assembled proof's elected licenses. */
+export function canonicalSpdxLicensesSatisfy(root: string, licenses: readonly string[], expression: string): boolean {
+    if (licenses.length === 0 || new Set(licenses).size !== licenses.length) {
+        return false;
+    }
+    try {
+        assertLicenseExpressionEvidence(
+            'assembled proof',
+            expression,
+            licenses.map((license) => readCanonicalSpdxText(root, license))
+        );
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function validateAssembledProof(
     packageId: string,
     proof: DependencyLicenseProof,
