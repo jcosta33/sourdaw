@@ -22,6 +22,7 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -469,29 +470,36 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                 </span>
 
                 {/* Power toggle — matches mute/solo button styling */}
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className={cn(
-                        'size-4 rounded flex items-center justify-center transition-colors',
-                        state.enabled
-                            ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/30'
-                            : 'text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5'
-                    )}
-                    aria-label={state.enabled ? 'Disable harmonic following' : 'Enable harmonic following'}
-                    aria-pressed={state.enabled}
-                    disabled={pending}
-                    title={state.enabled ? 'Harmonic following ON' : 'Harmonic following OFF'}
-                    onClick={() => {
-                        void dispatchAction({
-                            type: 'toggleChordTrack',
-                            payload: { enabled: !state.enabled },
-                        });
-                    }}
-                >
-                    <Power className="size-2.5" />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className={cn(
+                                'size-4 rounded flex items-center justify-center transition-colors',
+                                state.enabled
+                                    ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/30'
+                                    : 'text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5'
+                            )}
+                            aria-label={state.enabled ? 'Disable harmonic following' : 'Enable harmonic following'}
+                            aria-pressed={state.enabled}
+                            disabled={pending}
+                            title={state.enabled ? 'Harmonic following ON' : 'Harmonic following OFF'}
+                            onClick={() => {
+                                void dispatchAction({
+                                    type: 'toggleChordTrack',
+                                    payload: { enabled: !state.enabled },
+                                });
+                            }}
+                        >
+                            <Power className="size-2.5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                        {state.enabled ? 'Harmonic following ON' : 'Harmonic following OFF'}
+                    </TooltipContent>
+                </Tooltip>
 
                 {/* Add button */}
                 <div className="relative" ref={addRef}>
@@ -511,20 +519,24 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
 
                 {/* Clear all — only show if there are events */}
                 {state.events.length > 0 ? (
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="size-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
-                        aria-label="Clear all chords"
-                        disabled={pending}
-                        title="Clear chord track"
-                        onClick={() => {
-                            void dispatchAction({ type: 'clearChordTrack' });
-                        }}
-                    >
-                        <Trash2 className="size-2.5" />
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="size-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
+                                aria-label="Clear all chords"
+                                disabled={pending}
+                                onClick={() => {
+                                    void dispatchAction({ type: 'clearChordTrack' });
+                                }}
+                            >
+                                <Trash2 className="size-2.5" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Clear chord track</TooltipContent>
+                    </Tooltip>
                 ) : null}
             </Row>
             <span

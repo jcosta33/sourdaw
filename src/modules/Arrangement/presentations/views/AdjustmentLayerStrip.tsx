@@ -15,6 +15,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent } from '#/components/ui/dialog';
 import { Slider } from '#/components/ui/slider';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -466,6 +467,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
+                    role="menu"
                     className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
@@ -638,19 +640,24 @@ const AdjustmentLayerRow = ({
                 className="absolute left-0 top-0 z-10 border-r border-border/40 px-1 py-0.5"
                 style={{ height: ROW_HEIGHT, backgroundColor: 'var(--color-surface-base)' }}
             >
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
-                    title={layer.enabled ? 'Disable' : 'Enable'}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleEnabled();
-                    }}
-                >
-                    <Power className="size-2.5" style={{ color: layer.color }} />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
+                            aria-label={layer.enabled ? 'Disable layer' : 'Enable layer'}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleEnabled();
+                            }}
+                        >
+                            <Power className="size-2.5" style={{ color: layer.color }} />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{layer.enabled ? 'Disable layer' : 'Enable layer'}</TooltipContent>
+                </Tooltip>
                 <span
                     className="max-w-[80px] truncate text-[9px] font-medium"
                     style={{ color: layer.color }}
@@ -658,32 +665,42 @@ const AdjustmentLayerRow = ({
                 >
                     {layer.name}
                 </span>
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
-                    title="Affected tracks"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenAffectedTracks();
-                    }}
-                >
-                    <Settings2 className="size-2.5" />
-                </Button>
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
-                    title="Remove layer"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onRemoveLayer();
-                    }}
-                >
-                    <X className="size-2.5" />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
+                            aria-label="Affected tracks"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenAffectedTracks();
+                            }}
+                        >
+                            <Settings2 className="size-2.5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Affected tracks</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex size-3 items-center justify-center rounded-sm hover:bg-white/10"
+                            aria-label="Remove layer"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveLayer();
+                            }}
+                        >
+                            <X className="size-2.5" />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Remove layer</TooltipContent>
+                </Tooltip>
             </Row>
             {regions.map((region) => {
                 const liveRegion =

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AdjustmentLayerStrip, EMPTY_RANGE_SENTINEL, DEFAULT_FULL_RANGE_REGION } from '../AdjustmentLayerStrip';
@@ -168,7 +168,7 @@ describe('AdjustmentLayerStrip', () => {
         renderStrip();
         const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.contextMenu(layerRow, { clientX: 100, clientY: 100 });
-        expect(screen.getByText(/disable layer|enable layer/i)).toBeInTheDocument();
+        expect(within(screen.getByRole('menu')).getByText(/disable layer|enable layer/i)).toBeInTheDocument();
     });
 
     it('should open the Add menu when the add button is clicked', () => {
@@ -212,7 +212,7 @@ describe('AdjustmentLayerStrip', () => {
     it('toggles a layer enabled from the row power button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Disable'));
+        fireEvent.click(screen.getByRole('button', { name: 'Disable layer' }));
         expect(findCall('toggleAdjustmentLayer')).toMatchObject({
             type: 'toggleAdjustmentLayer',
             payload: { layerId: 'L1' },
@@ -222,7 +222,7 @@ describe('AdjustmentLayerStrip', () => {
     it('removes a layer from the row remove button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Remove layer'));
+        fireEvent.click(screen.getByRole('button', { name: 'Remove layer' }));
         expect(findCall('removeAdjustmentLayer')).toMatchObject({
             type: 'removeAdjustmentLayer',
             payload: { layerId: 'L1' },
@@ -232,7 +232,7 @@ describe('AdjustmentLayerStrip', () => {
     it('opens the affected-tracks picker from the row settings button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Affected tracks'));
+        fireEvent.click(screen.getByRole('button', { name: 'Affected tracks' }));
         expect(screen.getByRole('dialog', { name: /affected tracks for eq layer/i })).toBeInTheDocument();
     });
 
@@ -243,7 +243,7 @@ describe('AdjustmentLayerStrip', () => {
             { id: 't2', name: 'Bass' },
         ];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Affected tracks'));
+        fireEvent.click(screen.getByRole('button', { name: 'Affected tracks' }));
         // t1 is already selected; clicking it removes it.
         const guitarCheckbox = screen.getByLabelText('Guitar') as HTMLInputElement;
         fireEvent.click(guitarCheckbox);
@@ -256,7 +256,7 @@ describe('AdjustmentLayerStrip', () => {
     it('clears all affected tracks via the clear button', () => {
         mocks.layers = [layerWithRegion()];
         renderStrip();
-        fireEvent.click(screen.getByTitle('Affected tracks'));
+        fireEvent.click(screen.getByRole('button', { name: 'Affected tracks' }));
         fireEvent.click(screen.getByText('Clear (= all below)'));
         expect(findCall('setLayerAffectedTracks')).toMatchObject({
             type: 'setLayerAffectedTracks',

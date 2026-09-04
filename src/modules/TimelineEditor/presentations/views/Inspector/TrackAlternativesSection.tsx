@@ -6,6 +6,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { executeAppAction } from '#/modules/Command/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -23,21 +24,25 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                 className="mb-2 rounded-sm"
                 title="Alternatives"
                 actions={
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => {
-                            const name = `Alt ${track.alternatives.length + 1}`;
-                            void executeAppAction({
-                                type: 'createTrackAlternative',
-                                payload: { trackId: track.id, name, duplicateActive: false },
-                            });
-                        }}
-                        aria-label="Create new alternative"
-                        title="New empty alternative"
-                    >
-                        <Plus className="size-3" />
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => {
+                                    const name = `Alt ${track.alternatives.length + 1}`;
+                                    void executeAppAction({
+                                        type: 'createTrackAlternative',
+                                        payload: { trackId: track.id, name, duplicateActive: false },
+                                    });
+                                }}
+                                aria-label="Create new alternative"
+                            >
+                                <Plus className="size-3" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">New empty alternative</TooltipContent>
+                    </Tooltip>
                 }
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">

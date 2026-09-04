@@ -6,6 +6,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { defaultVcaGroupState, vcaGroupStore } from '#/modules/Arrangement/stores';
 import { assignToVca, removeFromVca, createVcaGroup } from '#/modules/Arrangement/useCases';
@@ -30,18 +31,22 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                 className="mb-2 rounded-sm"
                 title="VCA Group"
                 actions={
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => {
-                            const name = `VCA ${groups.length + 1}`;
-                            createVcaGroup(name, [track.id]);
-                        }}
-                        aria-label="Create VCA group"
-                        title="Create new VCA group with this track"
-                    >
-                        <Plus className="size-3" />
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => {
+                                    const name = `VCA ${groups.length + 1}`;
+                                    createVcaGroup(name, [track.id]);
+                                }}
+                                aria-label="Create VCA group"
+                            >
+                                <Plus className="size-3" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Create new VCA group with this track</TooltipContent>
+                    </Tooltip>
                 }
             />
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
