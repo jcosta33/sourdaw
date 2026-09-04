@@ -1,0 +1,22 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_1228e573df1f42 6117,6138,6146,6170,6178,6206,6238,6266,6298,6333,6922,6926-6927,6943,6947-6948,6961,7002,7006-7007,7020,7031-7032,7036-7037,7050
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_1228e573df1f42 1371-1444,1829-1830,1833-1834,1837-1845,1861
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_1228e573df1f42 239,330-332,1485-1496
+scripts/healthGateWorkflowContract.ts
+  h_1228e573df1f42 279-293,324
+scripts/test-health-gate-scripts.sh
+  h_1228e573df1f42 1451-1459
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8d780142c7b29dfd19a09390b9a90676457fc41f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
