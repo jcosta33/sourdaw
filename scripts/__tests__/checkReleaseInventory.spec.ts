@@ -3091,7 +3091,7 @@ describe('release inventory', () => {
                 'source digest drifted for crates/daw-dsp/src/primitives/time_stretch/stretch.rs'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3115,7 +3115,7 @@ describe('release inventory', () => {
                 'source-digest census disagrees with the compile-time closure census (#3005)'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3189,7 +3189,7 @@ describe('release inventory', () => {
                 'Whole-engine measured reference project exceeds its render budget'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
