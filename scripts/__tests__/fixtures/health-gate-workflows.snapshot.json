@@ -516,6 +516,10 @@
             "run": "pnpm test:run scripts/__tests__/releaseProof.spec.ts"
           },
           {
+            "name": "Agent delivery scripts",
+            "run": "pnpm test:run scripts/__tests__/agentDeliveryScripts.spec.ts"
+          },
+          {
             "name": "Health gate infrastructure",
             "run": "pnpm test:health-gates"
           }
@@ -1074,6 +1078,10 @@
           {
             "name": "Release proof",
             "run": "pnpm test:run scripts/__tests__/releaseProof.spec.ts"
+          },
+          {
+            "name": "Agent delivery scripts",
+            "run": "pnpm test:run scripts/__tests__/agentDeliveryScripts.spec.ts"
           },
           {
             "name": "Health gate infrastructure",
