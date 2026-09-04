@@ -1,0 +1,50 @@
+release/open-source-inventory.json
+  s_28abfd94826e36::t_625c2d423b9621 1719
+  s_28abfd94826e36::t_af77e21abbfe7c 1329-1332,1335
+scripts/wasm-artifacts.ts
+  s_28abfd94826e36::t_18c936f2332c85 430-436,441,449-451,462-468,471
+  s_28abfd94826e36::t_8208098d32f10f 28-29
+  s_28abfd94826e36::t_f6329169f9533a 469-470,472-473,810-811
+AGENTS.md
+  s_28abfd94826e36::t_dab449b9bd7d46 419-425
+scripts/workspaceManifestFingerprint.ts
+  s_28abfd94826e36::t_6f38a6b2db5fde 1-161
+scripts/__tests__/wasmArtifactsWorkspaceManifest.spec.ts
+  s_28abfd94826e36::t_4f2c7805f55d8a 1-153
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_28abfd94826e36::t_ab0f3b6cf4abe7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_28abfd94826e36::t_f669fa6d48d3e0 1
+public/wasm/manifest.json
+  s_28abfd94826e36::t_00295993100fad 12,17-18,21,26,31-32,35,40,45-46,49,54
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_28abfd94826e36::t_78cb6c58c3092d 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_28abfd94826e36::t_02d2e2fe5f5712 1
+public/wasm/scoring/scoring.d.ts
+  s_28abfd94826e36::t_cb0da2306c76b0 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_28abfd94826e36::t_4ffe6d3894078c 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_28abfd94826e36::t_a190d45d44bf0b 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_28abfd94826e36::t_8733224541a40c 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_28abfd94826e36::t_aa875946976a18 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a56f11e25ed011d5d4c5bbd68b2c9a768a6dac87",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
