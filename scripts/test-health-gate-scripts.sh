@@ -778,6 +778,7 @@ const deployWebGuardRun = deployWebGuardStep?.run ?? '';
 const deployWebResolveStep = stepNamed(deployWeb, 'Resolve the current production revision');
 const deployWebSkipReportStep = stepNamed(deployWeb, 'Report why nothing was deployed');
 const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
+const deployWebAliasStep = stepNamed(deployWeb, 'Resolve the aliases of the deployment');
 const deployWebIsolationStep = stepNamed(deployWeb, 'Assert cross-origin isolation on the deployment');
 const deployWebArmingReport = stepNamed(deployWeb, 'Report the missing deployment credential')?.run ?? '';
 const vercelConfig = JSON.parse(readFileSync(`${process.env.REPO_ROOT}/vercel.json`, 'utf8'));
@@ -808,8 +809,29 @@ expect(
     'the daily web deploy must queue behind a running deploy rather than cancel one mid-alias'
 );
 expect(
-    deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
-    'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
+    deployWebAliasStep?.id === 'aliases',
+    'the daily web deploy must publish the aliases of the deployment under a stable step id'
+);
+expect(
+    deployWebAliasStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
+    'the alias step must read the aliases off the deployment this run just created, which is what binds the isolation check to this deployment rather than to whatever the domain served yesterday'
+);
+expect(
+    deployWebAliasStep?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}' &&
+        deployWebAliasStep?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}',
+    'the alias step must authenticate its Vercel query from the environment'
+);
+expect(
+    deployWebAliasStep?.run === 'node scripts/resolveVercelDeploymentAliases.ts',
+    'the daily web deploy must resolve its aliases through scripts/resolveVercelDeploymentAliases.ts, which is what validates every hostname before it reaches GITHUB_OUTPUT'
+);
+expect(
+    deployWebIsolationStep?.env?.ALIASES === '${{ steps.aliases.outputs.aliases }}',
+    'the daily web deploy must assert isolation against the public aliases of the deployment it just created; Standard Protection restricts the generated deployment URL behind Vercel Authentication, so grading that URL grades the vercel.com login page'
+);
+expect(
+    !(deployWebIsolationStep?.run ?? '').includes('--location'),
+    'the isolation assertion must not follow a redirect off the domain it is grading, since a restricted deployment URL redirects to vercel.com and its headers are not this deployment headers'
 );
 for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
@@ -925,6 +947,7 @@ for (const stepName of [
     'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
+    'Resolve the aliases of the deployment',
     'Assert cross-origin isolation on the deployment',
 ]) {
     expect(

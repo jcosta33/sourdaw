@@ -142,6 +142,14 @@ const DEPLOY_ARMING_PRECONDITIONS = [
     'deployment branch policy limited to `main`',
 ] as const;
 const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
+// Standard Protection restricts every generated deployment URL behind Vercel
+// Authentication, so the deployment URL redirects to the vercel.com login page
+// and only the aliases the deployment took are public. The isolation
+// assertion therefore reads the aliases, and the deployment URL is what the
+// step that resolves them reads.
+const DEPLOYMENT_ALIASES_REFERENCE = '${{ steps.aliases.outputs.aliases }}';
+const DEPLOY_WEB_ALIAS_STEP = 'Resolve the aliases of the deployment';
+const DEPLOY_WEB_ISOLATION_STEP = 'Assert cross-origin isolation on the deployment';
 const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
 const VERCEL_ORG_ID_REFERENCE = '${{ secrets.VERCEL_ORG_ID }}';
 const VERCEL_PROJECT_ID_REFERENCE = '${{ secrets.VERCEL_PROJECT_ID }}';
@@ -185,7 +193,8 @@ const DEPLOY_REVISION_GATED_STEPS = [
     'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
-    'Assert cross-origin isolation on the deployment',
+    DEPLOY_WEB_ALIAS_STEP,
+    DEPLOY_WEB_ISOLATION_STEP,
 ] as const;
 const DEPLOY_ENVIRONMENT = { name: 'Production', url: DEPLOYMENT_URL_REFERENCE } as const;
 const VERCEL_CLI_PIN = /^vercel@\d+\.\d+\.\d+$/u;
@@ -894,9 +903,25 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
             throw new Error(`${name} must not pass VERCEL_PROJECT_ID to the CLI`);
         }
     }
-    const isolationStep = stepNamed(job, 'Assert cross-origin isolation on the deployment');
-    if (recordAt(isolationStep, 'env').DEPLOYMENT_URL !== DEPLOYMENT_URL_REFERENCE) {
-        throw new Error('the daily deploy train must read its headers back off the deployment it just created');
+    const aliasStep = stepNamed(job, DEPLOY_WEB_ALIAS_STEP);
+    if (aliasStep.id !== 'aliases') {
+        throw new Error('the daily deploy train must publish the deployment aliases under a stable step id');
+    }
+    const aliasEnv = recordAt(aliasStep, 'env');
+    if (aliasEnv.DEPLOYMENT_URL !== DEPLOYMENT_URL_REFERENCE) {
+        throw new Error('the alias step must read the aliases off the deployment this run just created');
+    }
+    if (aliasEnv.VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE || aliasEnv.VERCEL_ORG_ID !== VERCEL_ORG_ID_REFERENCE) {
+        throw new Error('the alias step must authenticate its Vercel query from the environment');
+    }
+    if (stringAt(aliasStep, 'run') !== 'node scripts/resolveVercelDeploymentAliases.ts') {
+        throw new Error(
+            'the daily deploy train must resolve its aliases through scripts/resolveVercelDeploymentAliases.ts'
+        );
+    }
+    const isolationStep = stepNamed(job, DEPLOY_WEB_ISOLATION_STEP);
+    if (recordAt(isolationStep, 'env').ALIASES !== DEPLOYMENT_ALIASES_REFERENCE) {
+        throw new Error('the daily deploy train must read its headers back off the public aliases it just resolved');
     }
     const isolation = stringAt(isolationStep, 'run');
     if (
@@ -904,6 +929,9 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
         !isolation.includes('cross-origin-embedder-policy: require-corp')
     ) {
         throw new Error('the daily deploy train must read the isolation headers back off the deployment');
+    }
+    if (isolation.includes('--location')) {
+        throw new Error('the isolation assertion must not follow a redirect off the domain it is grading');
     }
     const serialised = JSON.stringify(job);
     for (const sideEffect of RELEASE_SIDE_EFFECTS) {
@@ -1607,13 +1635,62 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must not pull the production environment through the Vercel CLI'
         );
 
+        // A fixed alias grades whatever that domain serves, which on a run
+        // whose alias never moved is the previous deployment.
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
-        recordAt(
-            stepNamed(jobAt(reboundIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment'),
-            'env'
-        ).DEPLOYMENT_URL = 'https://sourdaw.vercel.app';
+        recordAt(stepNamed(jobAt(reboundIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP), 'env').ALIASES =
+            'app.sourdaw.studio';
         expect(() => assertDailyDeployTrain(reboundIsolation)).toThrow(
-            'the daily deploy train must read its headers back off the deployment it just created'
+            'the daily deploy train must read its headers back off the public aliases it just resolved'
+        );
+
+        // Mutation-kill: the generated deployment URL is exactly what run
+        // 33850467688 graded, and Vercel Authentication restricts it, so
+        // pointing the assertion back at it must fail this spec.
+        const restrictedIsolation = asRecord(structuredClone(nightly), 'restricted-isolation deploy train');
+        recordAt(stepNamed(jobAt(restrictedIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP), 'env').ALIASES =
+            DEPLOYMENT_URL_REFERENCE;
+        expect(() => assertDailyDeployTrain(restrictedIsolation)).toThrow(
+            'the daily deploy train must read its headers back off the public aliases it just resolved'
+        );
+
+        // Mutation-kill: following the redirect a restricted URL answers is
+        // what graded the vercel.com login page rather than the deployment.
+        const redirectFollowingIsolation = asRecord(structuredClone(nightly), 'redirect-following deploy train');
+        const followingStep = stepNamed(jobAt(redirectFollowingIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP);
+        followingStep.run = stringAt(followingStep, 'run').replace('curl --silent', 'curl --location --silent');
+        expect(() => assertDailyDeployTrain(redirectFollowingIsolation)).toThrow(
+            'the isolation assertion must not follow a redirect off the domain it is grading'
+        );
+
+        const unidentifiedAliases = asRecord(structuredClone(nightly), 'unidentified-aliases deploy train');
+        stepNamed(jobAt(unidentifiedAliases, DEPLOY_WEB_JOB), DEPLOY_WEB_ALIAS_STEP).id = 'domains';
+        expect(() => assertDailyDeployTrain(unidentifiedAliases)).toThrow(
+            'the daily deploy train must publish the deployment aliases under a stable step id'
+        );
+
+        const unboundAliases = asRecord(structuredClone(nightly), 'unbound-aliases deploy train');
+        recordAt(stepNamed(jobAt(unboundAliases, DEPLOY_WEB_JOB), DEPLOY_WEB_ALIAS_STEP), 'env').DEPLOYMENT_URL =
+            'https://sourdaw.vercel.app';
+        expect(() => assertDailyDeployTrain(unboundAliases)).toThrow(
+            'the alias step must read the aliases off the deployment this run just created'
+        );
+
+        const unauthenticatedAliases = asRecord(structuredClone(nightly), 'unauthenticated-aliases deploy train');
+        delete recordAt(stepNamed(jobAt(unauthenticatedAliases, DEPLOY_WEB_JOB), DEPLOY_WEB_ALIAS_STEP), 'env')
+            .VERCEL_ORG_ID;
+        expect(() => assertDailyDeployTrain(unauthenticatedAliases)).toThrow(
+            'the alias step must authenticate its Vercel query from the environment'
+        );
+
+        // Mutation-kill: an alias step that writes its own output inline,
+        // bypassing the validation the script performs on every hostname it
+        // publishes, must fail this spec rather than only at runtime.
+        const inlinedAliases = asRecord(structuredClone(nightly), 'inlined-aliases deploy train');
+        stepNamed(jobAt(inlinedAliases, DEPLOY_WEB_JOB), DEPLOY_WEB_ALIAS_STEP).run =
+            'printf \'aliases=app.sourdaw.studio\\n\' >> "$GITHUB_OUTPUT"';
+        expect(() => assertDailyDeployTrain(inlinedAliases)).toThrow(
+            'the daily deploy train must resolve its aliases through scripts/resolveVercelDeploymentAliases.ts'
         );
 
         const unvalidatedTrain = asRecord(structuredClone(nightly), 'unvalidated deploy train');
@@ -1760,8 +1837,8 @@ describe('health gates workflow contract', () => {
         );
 
         const unassertedIsolation = asRecord(structuredClone(nightly), 'unasserted-isolation deploy train');
-        stepNamed(jobAt(unassertedIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment').run =
-            'curl --fail --silent --head "$DEPLOYMENT_URL"';
+        stepNamed(jobAt(unassertedIsolation, DEPLOY_WEB_JOB), DEPLOY_WEB_ISOLATION_STEP).run =
+            'curl --fail --silent --head "https://$ALIASES/"';
         expect(() => assertDailyDeployTrain(unassertedIsolation)).toThrow(
             'the daily deploy train must read the isolation headers back off the deployment'
         );
