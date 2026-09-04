@@ -1296,10 +1296,13 @@ async fn load_plugin_with_backend(
     };
 
     let (engine_plugin_id, bridge_frames) = match outcome {
-        EngineHandover::Registered(registration) => (
-            Some(registration.engine_plugin_id),
-            registration.bridge_round_trip_frames,
-        ),
+        EngineHandover::Registered(registration) => {
+            install_host_request_wake(&instance_id.0, &registration.runtime);
+            (
+                Some(registration.engine_plugin_id),
+                registration.bridge_round_trip_frames,
+            )
+        }
         EngineHandover::Refused(refusal) => {
             // Explicit, and before the return, so the order this whole block
             // exists to get right is the order the code states: the engine lock
@@ -1441,6 +1444,10 @@ const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
 struct EngineRegistration {
     engine_plugin_id: usize,
     bridge_round_trip_frames: u32,
+    /// The owner the audio thread now reads through, handed back so the caller
+    /// can install the host-request wake once the engine lock is gone — see
+    /// [`install_host_request_wake`].
+    runtime: Arc<SharedHostedPlugin>,
 }
 
 /// How a load's visit to the engine ended, carried out of the engine lock's
@@ -1507,7 +1514,7 @@ impl RegistrationRefusal {
 }
 
 /// Hand one runtime to a running engine: reserve its id, build its bridge,
-/// install the host-request wake, record the instance, and register the slot.
+/// record the instance, and register the slot.
 ///
 /// The one copy of that sequence. A load reaches it with a runtime it has just
 /// built ([`load_plugin_with_backend`]); the engine's first graph batch reaches
@@ -1523,7 +1530,8 @@ impl RegistrationRefusal {
 ///
 /// Called with the engine lock held, and takes `engine_plugins` under it, which
 /// is the load path's order and the only order any engine-then-map path here
-/// uses.
+/// uses. Everything that has to wait on the instance itself is therefore the
+/// caller's, once that lock is gone: see [`install_host_request_wake`].
 fn register_runtime_with_engine(
     engine: &mut daw_engine::EngineHandle,
     state: &AppState,
@@ -1614,33 +1622,45 @@ fn register_runtime_with_engine(
         return Err(RegistrationRefusal::recovered(error, shared_plugin));
     }
 
-    // Mark this instance as one whose plugin-initiated asks get carried off the
-    // calling thread — the watcher wakes for the `[main-thread]` asks (a state
-    // change, a parameter rescan), and the drain thread answers the
-    // `[thread-safe]` ones (an editor resize, a flush).
-    //
-    // Engine-owned only, because both carriers reach an instance through
-    // `engine_plugins`: one the engine never took is not reachable from there,
-    // and installing the wake on one would have the plugin told its resize was
-    // accepted by a follow-up that could never run.
-    //
-    // Which is why it is installed *here*, past every refusal, rather than on
-    // the runtime before it moved. A refusal hands the runtime back to be
-    // parked, and the wake is a `OnceLock` — first install wins for the
-    // instance's whole life, and nothing can take it off again. A parked
-    // instance carrying one answers `request_resize` with true while
-    // `apply_pending_editor_resizes` walks only `engine_plugins`, so the plugin
-    // lays its editor out to a size no window will ever take. No wake is the
-    // honest answer for a parked instance: `request_resize` returns false, and a
-    // plugin that is refused can lay itself out to the size it has.
-    //
-    // Through the access seam because the engine may already be processing this
-    // slot — the push above is visible to the audio thread the moment it drains.
-    // A wake that could not be installed is reported and nothing else: the
-    // registration itself succeeded, and the plugin simply gets the answer a
-    // host with no follow-up gives.
+    Ok(EngineRegistration {
+        engine_plugin_id: id,
+        bridge_round_trip_frames: bridge_round_trip_frames(Some(engine)),
+        runtime: shared_plugin,
+    })
+}
+
+/// Mark one registered instance as one whose plugin-initiated asks get carried
+/// off the calling thread — the watcher wakes for the `[main-thread]` asks (a
+/// state change, a parameter rescan), and the drain thread answers the
+/// `[thread-safe]` ones (an editor resize, a flush).
+///
+/// Engine-owned only, because both carriers reach an instance through
+/// `engine_plugins`: one the engine never took is not reachable from there, and
+/// installing the wake on one would have the plugin told its resize was accepted
+/// by a follow-up that could never run. So it is installed past every refusal
+/// rather than on the runtime before it moved — the wake is a `OnceLock`, first
+/// install wins for the instance's whole life, and a refusal hands the runtime
+/// back to be parked. A parked instance carrying a wake answers `request_resize`
+/// with true while `apply_pending_editor_resizes` walks only `engine_plugins`, so
+/// the plugin lays its editor out to a size no window will ever take.
+///
+/// **Called clear of `state.engine`.** Reaching the runtime waits twice: on the
+/// instance's non-RT control gate, which an open editor holds across the
+/// plugin's own `open_gui`, and then on the RT seam for as long as
+/// [`HOST_REQUEST_WAKE_INSTALL_TIMEOUT`]. Under the engine lock either wait
+/// would park every graph batch, every transport update and the quit cascade
+/// behind a third party's editor code, so both callers install once their engine
+/// guard is out of scope — the way `unload_plugin_runtime` keeps its own control
+/// visit outside that lock. Waiting under the instance's own lifecycle gate is
+/// the point rather than a cost: what that gate holds off is another operation
+/// on this same instance.
+///
+/// A wake that could not be installed is reported and nothing else: the
+/// registration itself succeeded, and the plugin gets the answer a host with no
+/// follow-up gives.
+fn install_host_request_wake(instance_id: &str, runtime: &SharedHostedPlugin) {
     let requesting_instance_id = instance_id.to_string();
-    if let Err(error) = shared_plugin.with_control(HOST_REQUEST_WAKE_INSTALL_TIMEOUT, |plugin| {
+    if let Err(error) = runtime.with_control(HOST_REQUEST_WAKE_INSTALL_TIMEOUT, |plugin| {
         plugin.set_plugin_host_request_notifier(Box::new(move |request| {
             crate::host::plugin_host_requests::notify_plugin_host_request(
                 &requesting_instance_id,
@@ -1653,11 +1673,6 @@ fn register_runtime_with_engine(
             "[Plugin] instance '{instance_id}' will not carry its own host requests: {error}"
         );
     }
-
-    Ok(EngineRegistration {
-        engine_plugin_id: id,
-        bridge_round_trip_frames: bridge_round_trip_frames(Some(engine)),
-    })
 }
 
 /// One instance the engine has just taken, for the batch that started it to
@@ -1778,11 +1793,14 @@ fn attach_one_dormant_plugin(
     };
 
     match registration {
-        Ok(registration) => Ok(Some(AttachedPlugin {
-            instance_id: instance_id.to_string(),
-            engine_plugin_id: registration.engine_plugin_id,
-            bridge_round_trip_frames: registration.bridge_round_trip_frames,
-        })),
+        Ok(registration) => {
+            install_host_request_wake(instance_id, &registration.runtime);
+            Ok(Some(AttachedPlugin {
+                instance_id: instance_id.to_string(),
+                engine_plugin_id: registration.engine_plugin_id,
+                bridge_round_trip_frames: registration.bridge_round_trip_frames,
+            }))
+        }
         Err(refusal) => {
             // Park it again, outside the engine lock, so the next batch tries
             // it once more. A refusal hands the runtime back whether or not it
@@ -3724,6 +3742,140 @@ mod tests {
             engine_free_at_teardown.load(std::sync::atomic::Ordering::SeqCst),
             "a plugin's teardown must not run under the engine lock: the quit \
              cascade takes it from the shell's UI thread"
+        );
+    }
+
+    /// The load path installs the host-request wake with no lock of the app's
+    /// held.
+    ///
+    /// Installing one crosses the runtime's access seam, which waits on the
+    /// instance's control gate — held across the plugin's own `open_gui` while
+    /// an editor opens — and then on the audio thread's claim for as long as the
+    /// bounded seam allows. Under `state.engine` that wait is every graph batch,
+    /// every transport update and the shell's own quit cascade parked behind a
+    /// third party's editor code. The fixture reports what the installing thread
+    /// held at the moment it was installed.
+    #[test]
+    fn a_load_installs_the_host_request_wake_with_the_engine_lock_free() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let installs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let engine_free_at_install = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("wake-installed".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Wake Loaded", Vec::new(), false);
+                let observed_state = Arc::clone(&state);
+                let installs = Arc::clone(&installs);
+                let engine_free = Arc::clone(&engine_free_at_install);
+                wrapper.observe_engine_owned_command_fixture_notifier_install(Box::new(
+                    move || {
+                        installs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        engine_free.store(
+                            observed_state.engine.try_lock().is_ok(),
+                            std::sync::atomic::Ordering::SeqCst,
+                        );
+                    },
+                ));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("a load against a running engine must succeed");
+
+        assert_eq!(
+            installs.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "an engine-owned instance must carry its own host requests"
+        );
+        assert!(
+            engine_free_at_install.load(std::sync::atomic::Ordering::SeqCst),
+            "the wake must be installed with the engine lock free: the wait is \
+             the plugin's, and everything behind that lock would wait with it"
+        );
+    }
+
+    /// And the attach path does the same, for the same reason.
+    ///
+    /// It is the worse of the two: `apply_graph_commands` holds the graph
+    /// registry across this call as well, so an install under the engine lock
+    /// here parks the next batch behind a plugin's editor twice over.
+    #[test]
+    fn an_attach_installs_the_host_request_wake_with_the_engine_lock_free() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let installs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let engine_free_at_install = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Wake Attached", Vec::new(), false);
+        {
+            let observed_state = Arc::clone(&state);
+            let installs = Arc::clone(&installs);
+            let engine_free = Arc::clone(&engine_free_at_install);
+            wrapper.observe_engine_owned_command_fixture_notifier_install(Box::new(move || {
+                installs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                engine_free.store(
+                    observed_state.engine.try_lock().is_ok(),
+                    std::sync::atomic::Ordering::SeqCst,
+                );
+            }));
+        }
+
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                "wake-attached".to_string(),
+                PluginInstanceData {
+                    plugin: HostedRuntime::from(wrapper),
+                    name: "Wake Attached".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                },
+            );
+
+        let attached =
+            attach_dormant_plugins(&state).expect("the dormant instance must reach the engine");
+
+        let taken: Vec<&str> = attached
+            .iter()
+            .map(|plugin| plugin.instance_id.as_str())
+            .collect();
+        assert_eq!(
+            taken,
+            ["wake-attached"],
+            "the attach must have taken the dormant instance"
+        );
+        assert_eq!(
+            installs.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "an instance the engine took must carry its own host requests"
+        );
+        assert!(
+            engine_free_at_install.load(std::sync::atomic::Ordering::SeqCst),
+            "the wake must be installed with the engine lock free: the wait is \
+             the plugin's, and everything behind that lock would wait with it"
         );
     }
 

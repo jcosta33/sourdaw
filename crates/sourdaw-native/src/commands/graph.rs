@@ -149,7 +149,8 @@ use crate::commands::crumbs::{self, CrumbsState};
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
-    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, TIMELINE_CHAIN_SLOT_BUDGET,
+    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, HOSTED_PLUGIN_RESERVE,
+    TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -2502,24 +2503,6 @@ pub async fn apply_graph_commands(
         Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
     }
 
-    // How many command slots this batch has to leave free behind it: the
-    // attach below pushes one `AddPluginWithBridge` per dormant instance, and a
-    // batch sizes the ring to exactly itself and then fills it, so without this
-    // every dormant plugin is refused as "queue full" on any batch from about
-    // sixty tracks upwards — the plugin this attach exists to unmute going
-    // silent on exactly the projects big enough to care.
-    //
-    // Read before the batch is sent and outside the engine lock, in the load
-    // path's order. The count can only shrink between here and the attach: the
-    // engine is installed above, so a load that arrives after this read takes
-    // the engine-present branch and never parks anything. Over-reserving costs
-    // a slightly larger ring.
-    let dormant_plugin_count = state
-        .plugins
-        .lock()
-        .map_err(|error| format!("Failed to lock plugins: {error}"))?
-        .len();
-
     let mut engine_guard = state
         .engine
         .lock()
@@ -2556,7 +2539,12 @@ pub async fn apply_graph_commands(
     // refuses to drain past until every command is visible — the engine
     // applies the batch whole or does not observe it at all. Only this
     // thread pushes onto the ring (the engine mutex is held).
-    match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
+    // The attach below pushes one `AddPluginWithBridge` per dormant instance,
+    // onto a ring this batch sizes to exactly itself and then fills, so it
+    // reserves the whole population the session ceiling can ever admit —
+    // counting the dormant instances instead would race a load that parks one
+    // after the count is read, and over-reserving only makes the ring larger.
+    match engine.send_graph_batch_with_headroom(mapped.ops, HOSTED_PLUGIN_RESERVE) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
             // Nothing was pushed: a refusal here is a clean rejection.
@@ -4606,8 +4594,12 @@ mod tests {
     #[test]
     fn an_applied_batch_reports_the_fence_it_published() {
         let state = AppState::default();
+        // The boot ring's own capacity, because every batch reserves the
+        // attach's whole population behind it: a smaller ring is provisioned
+        // larger mid-batch, and the fence then lands on the replacement rather
+        // than on the consumer this test holds.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(64);
+            daw_engine::engine_handle_for_command_capture(256);
         // Filling the slot first is what makes this a capture engine: the
         // lazy bootstrap in `apply_graph_commands` starts one only into an
         // empty slot, so it reuses this handle rather than opening a device.

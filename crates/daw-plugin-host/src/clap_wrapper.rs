@@ -222,6 +222,13 @@ struct EngineOwnedCommandFixture {
     /// fixture has no plugin to be slow, so the only way a host can prove it
     /// drops in the clear is to be told the moment it does.
     teardown_observer: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run as this fixture's host-request wake is installed.
+    ///
+    /// Installing one reaches the runtime through the host's own access seam,
+    /// which waits on whatever holds the instance — so *where* a host installs
+    /// is a contract for the same reason teardown is, and the only way to prove
+    /// it is to be told what the installing thread was holding at the time.
+    notifier_install_observer: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -908,6 +915,7 @@ impl ClapWrapper {
                 gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
                 teardown_observer: None,
+                notifier_install_observer: None,
             }),
         }
     }
@@ -986,6 +994,25 @@ impl ClapWrapper {
     ) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.teardown_observer = Some(observe);
+        }
+    }
+
+    /// Be told the moment this fixture's host-request wake is installed.
+    ///
+    /// The install crosses the host's access seam, which waits on the control
+    /// gate an open editor holds and then on the audio thread's own claim. A
+    /// host that installs under a lock the rest of the app takes has parked
+    /// everything behind that wait, and no other answer of this wrapper's shows
+    /// it — so the observer runs during the install, where it can read what the
+    /// installing thread still holds.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_notifier_install(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.notifier_install_observer = Some(observe);
         }
     }
 
@@ -1604,6 +1631,14 @@ impl ClapWrapper {
     /// thread that answers them serves exactly the instances the native engine
     /// took, which is exactly where this is installed.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.notifier_install_observer.as_ref())
+        {
+            observe();
+        }
         self.host_state.set_request_notifier(notifier)
     }
 
