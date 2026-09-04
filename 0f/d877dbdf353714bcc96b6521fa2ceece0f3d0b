@@ -1,0 +1,20 @@
+src/infra/dialogService/ConfirmDialog.tsx
+  h_1228e573df1f42 38-46
+src/infra/dialogService/__tests__/ConfirmDialog.spec.tsx
+  h_1228e573df1f42 150-182
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  h_1228e573df1f42 30,161-168
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  h_1228e573df1f42 53,453-465
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0fd877dbdf353714bcc96b6521fa2ceece0f3d0b",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
