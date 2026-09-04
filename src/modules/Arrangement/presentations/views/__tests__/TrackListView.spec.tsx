@@ -182,6 +182,14 @@ describe('TrackListView', () => {
                     collapsed: false,
                     height: 64,
                 }),
+                normalizeTrack({
+                    id: 't3',
+                    name: 'Master',
+                    kind: 'master',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
             ],
             selectedTrackId: 't1',
         });
@@ -459,6 +467,57 @@ describe('TrackListView', () => {
         await Promise.resolve();
         // The rename input owns the keystroke: no delete confirmation may
         // open and no removeTrack action may fire from the bubbled keydown.
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('claims Delete for a selected-but-hidden master track without confirming (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't2',
+                    name: 'Track 2',
+                    kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't3',
+                    name: 'Master',
+                    kind: 'master',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+            ],
+            // The master track never appears in `visibleTracks`, so the
+            // Delete branch finds no track to confirm — but it must still
+            // claim the key.
+            selectedTrackId: 't3',
+        });
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Delete' });
+        // Synchronous: the claim covers the selected-but-hidden case too,
+        // so the bubble path to window is cut and the global layer cannot
+        // delete the selected clips unconfirmed.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
         expect(confirmUser).not.toHaveBeenCalled();
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });

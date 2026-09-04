@@ -187,14 +187,19 @@ export const TrackListView = ({
             setWorkspaceMode('clip');
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
             if (selectedTrackId) {
+                // Claim the key for every selected case: this cuts the
+                // bubble path to the window-level shortcut layer whenever
+                // the track list owns the gesture — visible or not, and
+                // whatever the confirmation below resolves to
+                // (stopPropagation cannot be called after the await). The
+                // confirmation opens only for a track the list can show,
+                // so a selected-but-hidden track (master, child of a
+                // collapsed folder) is a no-op rather than an unconfirmed
+                // clip deletion.
                 event.preventDefault();
+                event.stopPropagation();
                 const track = visibleTracks.find((time) => time.id === selectedTrackId);
                 if (track) {
-                    // Cut the bubble path synchronously: the global shortcut
-                    // layer listens on window and would delete the selected
-                    // clips no matter how the confirmation below resolves, and
-                    // stopPropagation cannot be called after the await.
-                    event.stopPropagation();
                     void (async () => {
                         const ok = await confirmUser({
                             title: `Delete "${track.name}"?`,
