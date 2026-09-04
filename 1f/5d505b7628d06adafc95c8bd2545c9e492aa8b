@@ -1,0 +1,25 @@
+scripts/__tests__/restampDependencyBump.spec.ts
+  s_28abfd94826e36::t_ff81c7e4801ea8 19,24,35-41,170-173,440-547
+scripts/dependencyLicenseReport.ts
+  s_28abfd94826e36::t_0c0b98fdac7ff9 1193-1209
+scripts/generateDependencyLicenseReport.ts
+  s_28abfd94826e36::t_3a6f1654cc27a1 12,22-26
+scripts/restampDependencyBump.ts
+  s_28abfd94826e36::t_e921f2f07c90ce 21,36-39,49,52-59,153-170,189,196,199-200,212,225-229,231,250-251,254-255,302-308,319-320,326,338,340,349-350,355-358,384,490,495,498-499,502
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1f5d505b7628d06adafc95c8bd2545c9e492aa8b",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
