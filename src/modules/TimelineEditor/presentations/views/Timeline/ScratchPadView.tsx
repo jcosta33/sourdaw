@@ -19,6 +19,7 @@ import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { scratchPadStore } from '#/modules/Arrangement/stores';
 import {
@@ -129,46 +130,58 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                 <div className="flex-1" />
 
                 {/* Capture current arrangement */}
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5 transition-colors"
-                    title="Capture current arrangement"
-                    onClick={() => captureArrangementToScratchPad()}
-                >
-                    <Copy className="size-2.5" />
-                    <span>Capture</span>
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-muted-foreground/60 hover:text-muted-foreground hover:bg-white/5 transition-colors"
+                            onClick={() => captureArrangementToScratchPad()}
+                        >
+                            <Copy className="size-2.5" />
+                            <span>Capture</span>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Capture current arrangement</TooltipContent>
+                </Tooltip>
 
                 {/* Commit to arrangement */}
                 {sections.length > 0 ? (
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-[var(--color-accent-peach)]/70 hover:text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/10 transition-colors"
-                        title="Apply scratch pad to main arrangement"
-                        onClick={() => commitScratchPadToArrangement()}
-                    >
-                        <ArrowUpFromLine className="size-2.5" />
-                        <span>Apply</span>
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="h-5 px-1.5 rounded flex items-center gap-1 text-[9px] text-[var(--color-accent-peach)]/70 hover:text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/10 transition-colors"
+                                onClick={() => commitScratchPadToArrangement()}
+                            >
+                                <ArrowUpFromLine className="size-2.5" />
+                                <span>Apply</span>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Apply scratch pad to main arrangement</TooltipContent>
+                    </Tooltip>
                 ) : null}
 
                 {/* Clear */}
                 {sections.length > 0 ? (
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="size-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
-                        aria-label="Clear scratch pad"
-                        title="Clear scratch pad"
-                        onClick={() => clearScratchPad()}
-                    >
-                        <Trash2 className="size-2.5" />
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="size-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
+                                aria-label="Clear scratch pad"
+                                onClick={() => clearScratchPad()}
+                            >
+                                <Trash2 className="size-2.5" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Clear scratch pad</TooltipContent>
+                    </Tooltip>
                 ) : null}
 
                 {/* Collapse toggle */}

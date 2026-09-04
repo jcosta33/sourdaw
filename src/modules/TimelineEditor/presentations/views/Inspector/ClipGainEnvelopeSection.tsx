@@ -6,6 +6,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { defaultGainEnvelopeStoreState, gainEnvelopeStore } from '#/modules/Arrangement/stores';
 import {
@@ -47,35 +48,49 @@ export const ClipGainEnvelopeSection = ({ clipId, duration }: ClipGainEnvelopeSe
                         {envelope.points.length !== 1 ? 's' : ''}
                     </MetaText>
                     <Row gap={1}>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => toggleClipGainEnvelope(clipId)}
-                            aria-label={envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
-                            title={envelope.enabled ? 'Disable' : 'Enable'}
-                        >
-                            <Activity
-                                className={`size-3 ${envelope.enabled ? 'text-[var(--color-state-success)]' : 'text-muted-foreground'}`}
-                            />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => addGainEnvelopePoint(clipId, duration / 2, 0)}
-                            aria-label="Add breakpoint"
-                            title="Add breakpoint at midpoint"
-                        >
-                            <Plus className="size-3" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => resetClipGainEnvelope(clipId)}
-                            aria-label="Reset gain envelope"
-                            title="Reset to flat 0 dB"
-                        >
-                            <RotateCcw className="size-3" />
-                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    onClick={() => toggleClipGainEnvelope(clipId)}
+                                    aria-label={envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
+                                >
+                                    <Activity
+                                        className={`size-3 ${envelope.enabled ? 'text-[var(--color-state-success)]' : 'text-muted-foreground'}`}
+                                    />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                                {envelope.enabled ? 'Disable gain envelope' : 'Enable gain envelope'}
+                            </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    onClick={() => addGainEnvelopePoint(clipId, duration / 2, 0)}
+                                    aria-label="Add breakpoint"
+                                >
+                                    <Plus className="size-3" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">Add breakpoint at midpoint</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    onClick={() => resetClipGainEnvelope(clipId)}
+                                    aria-label="Reset gain envelope"
+                                >
+                                    <RotateCcw className="size-3" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">Reset to flat 0 dB</TooltipContent>
+                        </Tooltip>
                     </Row>
                 </Row>
                 {envelope.enabled && envelope.points.length > 0 ? (

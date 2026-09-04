@@ -4,6 +4,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row, Stack } from '#/components/layout';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -365,26 +366,37 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             paramId={param.id}
                         />
                         {param.automatable ? (
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                className={cn(
-                                    'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                    hasAutomation
-                                        ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
-                                        : 'border-muted-foreground/30 hover:bg-muted'
-                                )}
-                                onClick={() => {
-                                    if (activeLane) {
-                                        removeAutomationLane(activeLane.id);
-                                    } else {
-                                        addAutomationLane(trackId, targetId, param.name);
-                                    }
-                                }}
-                                aria-label={`Automate ${param.name}`}
-                                title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
-                            />
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
+                                        type="button"
+                                        className={cn(
+                                            'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
+                                            hasAutomation
+                                                ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
+                                                : 'border-muted-foreground/30 hover:bg-muted'
+                                        )}
+                                        onClick={() => {
+                                            if (activeLane) {
+                                                removeAutomationLane(activeLane.id);
+                                            } else {
+                                                addAutomationLane(trackId, targetId, param.name);
+                                            }
+                                        }}
+                                        aria-label={
+                                            hasAutomation
+                                                ? `Remove automation for ${param.name}`
+                                                : `Automate ${param.name}`
+                                        }
+                                        aria-pressed={hasAutomation}
+                                    />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
+                                </TooltipContent>
+                            </Tooltip>
                         ) : null}
                     </Row>
                 </Row>
@@ -407,26 +419,37 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                             paramId={param.id}
                         />
                         {param.automatable ? (
-                            <Button
-                                variant="bare"
-                                size="bare"
-                                type="button"
-                                className={cn(
-                                    'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                    hasAutomation
-                                        ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
-                                        : 'border-muted-foreground/30 hover:bg-muted'
-                                )}
-                                onClick={() => {
-                                    if (activeLane) {
-                                        removeAutomationLane(activeLane.id);
-                                    } else {
-                                        addAutomationLane(trackId, targetId, param.name);
-                                    }
-                                }}
-                                aria-label={`Automate ${param.name}`}
-                                title={hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
-                            />
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="bare"
+                                        size="bare"
+                                        type="button"
+                                        className={cn(
+                                            'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
+                                            hasAutomation
+                                                ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
+                                                : 'border-muted-foreground/30 hover:bg-muted'
+                                        )}
+                                        onClick={() => {
+                                            if (activeLane) {
+                                                removeAutomationLane(activeLane.id);
+                                            } else {
+                                                addAutomationLane(trackId, targetId, param.name);
+                                            }
+                                        }}
+                                        aria-label={
+                                            hasAutomation
+                                                ? `Remove automation for ${param.name}`
+                                                : `Automate ${param.name}`
+                                        }
+                                        aria-pressed={hasAutomation}
+                                    />
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
+                                </TooltipContent>
+                            </Tooltip>
                         ) : null}
                     </Row>
                 </Stack>
