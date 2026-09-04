@@ -1,0 +1,21 @@
+scripts/assert-deployment-isolation.sh
+  s_28abfd94826e36::t_8e0d232c5c0d8d 52-58
+release/open-source-inventory.json
+  s_28abfd94826e36::t_ae4d68dc53e11c 1821-1830
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6eed09c85b19c6357bcb53b8a3b340403a0635e9",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
