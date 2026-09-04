@@ -523,12 +523,17 @@ fn the_replay_preserves_most_recent_write_order() {
 
 /// The render in three readable numbers.
 ///
-/// `onset: 0` is measured, not a placeholder — see `RenderShape` for why it is
-/// 0 even at `mix = 1`, and for what it can and cannot see.
+/// `onset: 1` is measured, not a placeholder — see `RenderShape` for why it is
+/// near 0 even at `mix = 1`, and for what it can and cannot see.
+///
+/// Updated for #2292: seeding `EarlyReflections` at 0.75 instead of 0.5 shifts
+/// early reflection tap arrivals to match the documented plate room size, moving
+/// the measured peak from 8.290293e-1 to 9.8297787e-1 and RMS from 1.515884e-1
+/// to 1.7570771e-1 on this stimulus.
 const UNTOLD_INSTANCE_SHAPE: RenderShape = RenderShape {
-    peak: 8.290293e-1,
-    rms: 1.515884e-1,
-    onset: 0,
+    peak: 9.8297787e-1,
+    rms: 1.7570771e-1,
+    onset: 1,
 };
 
 #[test]

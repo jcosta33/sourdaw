@@ -804,10 +804,10 @@ impl ProofChamber {
             predelay: DelayLine::new(predelay_max),
             predelay_len: ((15.0 / 1000.0) * sample_rate) as usize,
 
-            // Seeded at the same room size the FDN uses, so a project that
-            // never touches Size hears the same reflection pattern whichever
-            // of the two engines it selects.
-            early_reflections: EarlyReflections::new(sample_rate, 0.5),
+            // Seeded at 0.75 to match `self.size = 0.75` and the Dutch Oven
+            // plate default, so an untouched plate renders the room size it
+            // reports.
+            early_reflections: EarlyReflections::new(sample_rate, 0.75),
 
             left_mod_ap: DelayLine::new(scaled_left_mod),
             left_mod_ap_gain: -0.70,
@@ -898,7 +898,7 @@ impl ProofChamber {
         self.input_diffusers[2].reset(0.625);
         self.input_diffusers[3].reset(0.625);
 
-        self.early_reflections.reset(sample_rate, 0.5);
+        self.early_reflections.reset(sample_rate, 0.75);
 
         self.predelay.reset();
         self.predelay_len = ((15.0 / 1000.0) * sample_rate) as usize;
