@@ -621,6 +621,23 @@ expect(
     stepNamed(nightly.jobs?.static, 'Device write boundary census')?.if === undefined,
     'nightly static device write boundary census must stay unconditional'
 );
+const releaseProofRun = 'pnpm test:run scripts/__tests__/releaseProof.spec.ts';
+expect(
+    stepNamed(staticJob, 'Release proof')?.run === releaseProofRun,
+    'static must run the release proof spec outside unit shards'
+);
+expect(
+    stepNamed(staticJob, 'Release proof')?.['continue-on-error'] === undefined,
+    'static Release proof must stay blocking'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Release proof')?.run === releaseProofRun,
+    'nightly static must run the release proof spec outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Release proof')?.['continue-on-error'] === undefined,
+    'nightly static Release proof must stay blocking'
+);
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
     'the offline smoke set must run on every pull-request run that touches the browser surface, including the review run an approval leaves reporting'

@@ -703,6 +703,44 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain('Related #12');
     });
 
+    it('recomposes the Related section from Closes on a flagless update whose existing body carries extra Related lines', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS).replace(
+                'Closes #12',
+                'Closes #12\nRelated #7\nRelated #9'
+            ),
+        });
+
+        publishLane(12, port);
+
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        expect(relatedSection).toBe('Closes #12');
+    });
+
+    it('skips recovering a relationship from a body naming a different issue when --relates is explicit', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(7, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS, 'relates'),
+        });
+
+        publishLane(12, port, 'relates');
+
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        expect(relatedSection).toBe('Related #12');
+    });
+
+    it('still refuses that same body on a flagless update, which must recover the lane-issue relationship', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(7, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS, 'relates'),
+        });
+
+        expect(() => publishLane(12, port)).toThrow('pull-request body must contain exactly one relationship to #12');
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
     it('preserves valid existing test instructions when --test is omitted', () => {
         const existingInstructions = 'Open the settings panel and confirm the new control is visible.';
         const { port, bodies } = fakePort({
@@ -769,7 +807,9 @@ describe('lane publish', () => {
     it('validates existing state before an explicit relationship change', () => {
         const { port, calls } = fakePort({ existing: 41, existingBody: 'None.' });
 
-        expect(() => publishLane(12, port, 'relates')).toThrow(/Related tickets/);
+        // --relates is explicit, so nothing recovers a relationship from this body; the update
+        // still needs a valid existing How-to-test section to fill in the omitted --test flag.
+        expect(() => publishLane(12, port, 'relates')).toThrow(/is missing: ### 🧪 How to test/);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });

@@ -725,13 +725,13 @@ function gateNeeds(declared: unknown): string[] {
 }
 
 /**
- * The names GitHub labels a job's checks with, or a refusal where this gate cannot produce them. A
- * matrix name on a job the gate needs directly is a template GitHub substitutes per shard, and as
- * declared it matches no check on the head — it would silently match nothing and tolerate every
- * real cancellation. The summary does carry that job's strategy now; the refusal to expand a direct
- * job's matrix here was kept deliberately and is recorded as issue #2924. A job that calls a
- * reusable workflow resolves through the called file the launcher carried, where the same
- * substitution becomes derivable because the called file declares its own matrix values.
+ * Every name GitHub labels a job's checks with, or a refusal where this gate cannot produce them. A
+ * matrix job reports one check per combination with its `name:` substituted, so it contributes one
+ * name per combination, expanded exactly — include and exclude honoured — from the declared matrix.
+ * A job that calls a reusable workflow resolves through the called file the launcher carried, where
+ * the same expansion applies to the called file's own matrices. A name still carrying an expression
+ * once the matrix values are substituted matches no check on the head, and so tolerates every real
+ * cancellation: it refuses.
  */
 function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWorkflows): string[] {
     const job = jobs[jobId];
@@ -744,14 +744,23 @@ function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWor
     if (job.uses !== undefined && job.uses !== null) {
         return reusableCheckNames(jobId, job, called);
     }
-    const name = declaredCheckName(jobId, job.name, HEALTH_GATES_WORKFLOW_PATH);
-    if (name.includes(EXPRESSION_OPENER)) {
-        fail(
-            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${name}, ` +
-                `which GitHub substitutes per matrix job before reporting it`
-        );
+    const combinations = matrixCombinations(jobId, job.strategy, HEALTH_GATES_WORKFLOW_PATH);
+    if (combinations === undefined) {
+        return [
+            reportedCheckName(
+                jobId,
+                declaredCheckName(jobId, job.name, HEALTH_GATES_WORKFLOW_PATH),
+                undefined,
+                HEALTH_GATES_WORKFLOW_PATH
+            ),
+        ];
     }
-    return [name];
+    const declared = matrixCheckName(jobId, job.name, HEALTH_GATES_WORKFLOW_PATH);
+    return distinctCheckNames(
+        jobId,
+        combinations.map((combination) => reportedCheckName(jobId, declared, combination, HEALTH_GATES_WORKFLOW_PATH)),
+        HEALTH_GATES_WORKFLOW_PATH
+    );
 }
 
 /**
@@ -792,95 +801,321 @@ function reusableCheckNames(jobId: string, job: WorkflowJob, called: CalledWorkf
         );
     }
     const names: string[] = [];
+    const usesPath = job.uses;
     for (const innerId of innerIds) {
         const inner = target.jobs[innerId];
         if (inner === undefined) {
-            failUnreadableWorkflow(`the ${innerId} job in the called workflow ${job.uses} read back as absent`);
+            failUnreadableWorkflow(`the ${innerId} job in the called workflow ${usesPath} read back as absent`);
         }
         if (inner.uses !== undefined && inner.uses !== null) {
             fail(
-                `the ${innerId} job in ${job.uses} calls a nested reusable workflow, ` +
+                `the ${innerId} job in ${usesPath} calls a nested reusable workflow, ` +
                     `whose check names this gate does not derive`
             );
         }
-        const innerName = declaredCheckName(innerId, inner.name, job.uses);
-        for (const resolved of resolveMatrixName(innerId, innerName, inner.strategy, job.uses)) {
+        const combinations = matrixCombinations(innerId, inner.strategy, usesPath);
+        if (combinations === undefined) {
+            const innerName = declaredCheckName(innerId, inner.name, usesPath);
+            names.push(`${callerName} / ${reportedCheckName(innerId, innerName, undefined, usesPath)}`);
+            continue;
+        }
+        const declared = matrixCheckName(innerId, inner.name, usesPath);
+        for (const resolved of distinctCheckNames(
+            innerId,
+            combinations.map((combination) => reportedCheckName(innerId, declared, combination, usesPath)),
+            usesPath
+        )) {
             names.push(`${callerName} / ${resolved}`);
         }
     }
     return names;
 }
 
-const MATRIX_REFERENCE = /\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
-
 /**
- * The one expression a check name may carry and stay derivable: `matrix.<dimension>` references
- * substituted from the statically declared matrix, which is how `Unit suite ${{ matrix.shard }}/4`
- * becomes the four names GitHub reports. Anything else — a matrix the file does not declare, an
- * `include`/`exclude` that rewrites the combination set, a dimension that is not a list of text or
- * numbers, or a non-matrix expression — names checks this gate cannot know, and refuses.
+ * GitHub labels a matrix job that declares no name `<job id> (<value>, <value>)` rather than the
+ * bare job id, so the fallback a job without a matrix answers with is a name no check on the head
+ * carries. Rendering that parenthesised form would mean reproducing which keys GitHub puts in it and
+ * in which order, so this refuses instead.
  */
-function resolveMatrixName(jobId: string, name: string, strategy: unknown, workflowPath: string): string[] {
-    if (!name.includes(EXPRESSION_OPENER)) {
-        return [name];
-    }
-    const dimensions = [
-        ...new Set([...name.matchAll(MATRIX_REFERENCE)].flatMap((match) => (match[1] === undefined ? [] : [match[1]]))),
-    ];
-    if (dimensions.length === 0) {
+function matrixCheckName(jobId: string, name: unknown, workflowPath: string): string {
+    if (name === undefined || name === null || name === '') {
         fail(
-            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
-                `which references something other than its matrix dimensions`
+            `the ${jobId} job in ${workflowPath} declares a matrix and no name, ` +
+                `so GitHub labels its checks with values this gate does not render`
         );
     }
-    const matrix = isRecord(strategy) && isRecord(strategy.matrix) ? strategy.matrix : undefined;
-    if (matrix === undefined) {
+    return declaredCheckName(jobId, name, workflowPath);
+}
+
+/** The declared name with this combination substituted into it, or a refusal for any other expression. */
+function reportedCheckName(
+    jobId: string,
+    declared: string,
+    combination: MatrixCombination | undefined,
+    workflowPath: string
+): string {
+    const reported =
+        combination === undefined ? declared : substituteMatrixValues(jobId, declared, combination, workflowPath);
+    if (reported.includes(EXPRESSION_OPENER)) {
         fail(
-            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
+            `the ${jobId} job in ${workflowPath} names its check ${declared}, ` +
                 `which GitHub substitutes per matrix job before reporting it`
         );
     }
-    if ('include' in matrix || 'exclude' in matrix) {
-        fail(
-            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
-                `whose matrix include or exclude rewrites the combination set this gate derives`
-        );
-    }
-    let resolved = [name];
-    for (const dimension of dimensions) {
-        const values = matrix[dimension];
-        if (
-            !Array.isArray(values) ||
-            values.length === 0 ||
-            !values.every((value) => typeof value === 'string' || typeof value === 'number')
-        ) {
-            fail(
-                `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
-                    `whose matrix dimension ${dimension} is not a list of text or numbers this gate can substitute`
-            );
-        }
-        const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
-        // A replacement function, never a replacement string: `String.replace` would read `$`
-        // patterns out of the value, so `a$$b` would arrive as `a$b` and `a$&b` would re-insert
-        // the reference — neither is the name GitHub mints.
-        resolved = resolved.flatMap((template) =>
-            values.map((value) => template.replace(reference, () => String(value)))
-        );
-    }
-    // Substitution only removes matrix references. A name that still opens an expression — one that
-    // mixed a matrix reference with `github.event_name`, or one whose matrix value was itself an
-    // expression — names a check GitHub never mints, and deriving it would tolerate every real
-    // cancellation on the leg.
-    if (resolved.some((resolvedName) => resolvedName.includes(EXPRESSION_OPENER))) {
-        fail(
-            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
-                `which references something other than its matrix dimensions`
-        );
-    }
-    return resolved;
+    return reported;
 }
 
-/** A job that declares no name is labelled with its job id, which is what GitHub reports for it. */
+/**
+ * GitHub reports one check per matrix job, so two combinations sharing a name leave one of them
+ * with no check of its own: the other's success answers for both, and its cancellation is invisible.
+ * A matrix job whose name references no matrix value has this shape for every combination it runs.
+ */
+function distinctCheckNames(jobId: string, names: string[], workflowPath: string): string[] {
+    const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+    if (duplicate !== undefined) {
+        fail(
+            `the ${jobId} job in ${workflowPath} gives more than one matrix job the check name ` +
+                `${duplicate}, which GitHub reports as one check name this gate cannot tell apart`
+        );
+    }
+    return names;
+}
+
+type MatrixValue = string | number | boolean;
+
+/** One matrix job as GitHub runs it: every key that job carries, mapped to its value. */
+type MatrixCombination = ReadonlyMap<string, MatrixValue>;
+
+/** Combinations already in the matrix, kept apart from those an `include` entry added to it. */
+type MatrixExpansion = { decorated: MatrixCombination[]; added: MatrixCombination[] };
+
+const MATRIX_KEY = 'matrix';
+const MATRIX_INCLUDE = 'include';
+const MATRIX_EXCLUDE = 'exclude';
+const MATRIX_REFERENCE = /\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}/g;
+
+/**
+ * The combinations GitHub runs a job as, or `undefined` for a job that declares no matrix. A matrix
+ * this gate cannot expand exactly refuses: a combination too many derives a name that matches
+ * nothing on the head, and one too few leaves a real shard ungated.
+ */
+function matrixCombinations(jobId: string, strategy: unknown, workflowPath: string): MatrixCombination[] | undefined {
+    const matrix = declaredMatrix(jobId, strategy, workflowPath);
+    if (matrix === undefined) {
+        return undefined;
+    }
+    const axes = matrixAxes(jobId, matrix, workflowPath);
+    const axisKeys = new Set(axes.map(([axis]) => axis));
+    const remaining = withoutExcluded(baseCombinations(axes), excludeEntries(jobId, matrix, axisKeys, workflowPath));
+    const combinations = withIncluded(remaining, matrixEntries(jobId, matrix, MATRIX_INCLUDE, workflowPath), axisKeys);
+    if (combinations.length === 0) {
+        fail(
+            `the ${jobId} job in ${workflowPath} declares a matrix that runs no job, ` +
+                `so no check of that job can be proven to gate the merge`
+        );
+    }
+    return combinations;
+}
+
+function declaredMatrix(
+    jobId: string,
+    strategy: unknown,
+    workflowPath: string
+): Record<string, unknown> | undefined {
+    if (strategy === undefined || strategy === null) {
+        return undefined;
+    }
+    if (!isRecord(strategy)) {
+        fail(
+            `the ${jobId} job in ${workflowPath} declares a strategy that is not a mapping, ` +
+                `so the names GitHub reports for its jobs cannot be derived from the workflow`
+        );
+    }
+    const matrix = strategy[MATRIX_KEY];
+    if (matrix === undefined || matrix === null) {
+        return undefined;
+    }
+    if (!isRecord(matrix)) {
+        failUnexpandableMatrix(jobId, matrix, workflowPath);
+    }
+    return matrix;
+}
+
+/**
+ * A matrix GitHub builds at run time — `fromJSON` of another job's output is the usual form — runs
+ * jobs no reading of the workflow enumerates.
+ */
+function failUnexpandableMatrix(jobId: string, declared: unknown, workflowPath: string): never {
+    const shape =
+        typeof declared === 'string' && declared.includes(EXPRESSION_OPENER)
+            ? `the expression ${declared}`
+            : 'something other than a mapping of variations';
+    fail(
+        `the ${jobId} job in ${workflowPath} declares its matrix as ${shape}, ` +
+            `so the names GitHub reports for its jobs cannot be derived from the workflow`
+    );
+}
+
+function matrixAxes(
+    jobId: string,
+    matrix: Record<string, unknown>,
+    workflowPath: string
+): Array<[string, MatrixValue[]]> {
+    return Object.entries(matrix)
+        .filter(([key]) => key !== MATRIX_INCLUDE && key !== MATRIX_EXCLUDE)
+        .map(([axis, declared]): [string, MatrixValue[]] => [axis, axisValues(jobId, axis, declared, workflowPath)]);
+}
+
+function axisValues(jobId: string, axis: string, declared: unknown, workflowPath: string): MatrixValue[] {
+    if (!Array.isArray(declared) || declared.length === 0) {
+        failUnexpandableAxis(jobId, axis, workflowPath);
+    }
+    return declared.map((value) => matrixValue(jobId, axis, value, workflowPath));
+}
+
+/** GitHub substitutes a matrix value as plain text, which it can only do for a plain scalar. */
+function matrixValue(jobId: string, axis: string, value: unknown, workflowPath: string): MatrixValue {
+    if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) {
+        return value;
+    }
+    if (typeof value === 'string' && !value.includes(EXPRESSION_OPENER)) {
+        return value;
+    }
+    return failUnexpandableAxis(jobId, axis, workflowPath);
+}
+
+function failUnexpandableAxis(jobId: string, axis: string, workflowPath: string): never {
+    fail(
+        `the ${jobId} job in ${workflowPath} declares matrix ${axis} as something other than ` +
+            `a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow`
+    );
+}
+
+function matrixEntries(
+    jobId: string,
+    matrix: Record<string, unknown>,
+    key: string,
+    workflowPath: string
+): MatrixCombination[] {
+    const declared = matrix[key];
+    if (declared === undefined || declared === null) {
+        return [];
+    }
+    if (!Array.isArray(declared)) {
+        failUnexpandableAxis(jobId, key, workflowPath);
+    }
+    return declared.map((entry) => {
+        if (!isRecord(entry)) {
+            failUnexpandableAxis(jobId, key, workflowPath);
+        }
+        return new Map(
+            Object.entries(entry).map(
+                ([name, value]): [string, MatrixValue] => [name, matrixValue(jobId, key, value, workflowPath)]
+            )
+        );
+    });
+}
+
+/**
+ * An `exclude` key the matrix never declared removes nothing, so the job runs combinations this
+ * gate would still have to name. It refuses rather than deriving a set it cannot stand behind.
+ */
+function excludeEntries(
+    jobId: string,
+    matrix: Record<string, unknown>,
+    axisKeys: ReadonlySet<string>,
+    workflowPath: string
+): MatrixCombination[] {
+    const entries = matrixEntries(jobId, matrix, MATRIX_EXCLUDE, workflowPath);
+    const undeclared = entries.flatMap((entry) => [...entry.keys()]).find((key) => !axisKeys.has(key));
+    if (undeclared !== undefined) {
+        fail(
+            `the ${jobId} job in ${workflowPath} excludes matrix ${undeclared}, ` +
+                `which its matrix does not declare, so which jobs GitHub runs cannot be derived from the workflow`
+        );
+    }
+    return entries;
+}
+
+/** The cartesian product of the axes, and no combination at all when the matrix declares none. */
+function baseCombinations(axes: ReadonlyArray<readonly [string, MatrixValue[]]>): MatrixCombination[] {
+    if (axes.length === 0) {
+        return [];
+    }
+    return axes.reduce<MatrixCombination[]>(
+        (combinations, [axis, values]) =>
+            combinations.flatMap((combination) => values.map((value) => new Map(combination).set(axis, value))),
+        [new Map<string, MatrixValue>()]
+    );
+}
+
+function withoutExcluded(combinations: MatrixCombination[], excludes: MatrixCombination[]): MatrixCombination[] {
+    return combinations.filter((combination) => !excludes.some((entry) => matchesCombination(combination, entry)));
+}
+
+function matchesCombination(combination: MatrixCombination, entry: MatrixCombination): boolean {
+    return [...entry].every(([key, value]) => combination.get(key) === value);
+}
+
+/**
+ * GitHub adds an `include` entry's keys to every combination whose axis values the entry matches,
+ * and makes the entry a combination of its own only when it matches none — so an entry naming an
+ * axis value the matrix never declared adds a job, while one naming a declared value only adds keys
+ * to jobs already there. Entries match the combinations the axes produced and never one an earlier
+ * entry added, which is why two entries naming the same undeclared value stay two jobs.
+ */
+function withIncluded(
+    combinations: MatrixCombination[],
+    includes: MatrixCombination[],
+    axisKeys: ReadonlySet<string>
+): MatrixCombination[] {
+    const expansion = includes.reduce<MatrixExpansion>((state, entry) => applyInclude(state, entry, axisKeys), {
+        decorated: combinations,
+        added: [],
+    });
+    return [...expansion.decorated, ...expansion.added];
+}
+
+function applyInclude(
+    state: MatrixExpansion,
+    entry: MatrixCombination,
+    axisKeys: ReadonlySet<string>
+): MatrixExpansion {
+    const selector = new Map([...entry].filter(([key]) => axisKeys.has(key)));
+    if (!state.decorated.some((combination) => matchesCombination(combination, selector))) {
+        return { decorated: state.decorated, added: [...state.added, entry] };
+    }
+    return {
+        decorated: state.decorated.map((combination) =>
+            matchesCombination(combination, selector) ? new Map([...combination, ...entry]) : combination
+        ),
+        added: state.added,
+    };
+}
+
+function substituteMatrixValues(
+    jobId: string,
+    declared: string,
+    combination: MatrixCombination,
+    workflowPath: string
+): string {
+    return declared.replace(MATRIX_REFERENCE, (_reference, key: string) => {
+        const value = combination.get(key);
+        if (value === undefined) {
+            fail(
+                `the ${jobId} job in ${workflowPath} names its check with matrix.${key}, ` +
+                    `which its matrix does not declare for every job it runs`
+            );
+        }
+        return String(value);
+    });
+}
+
+/**
+ * A job that declares no name is labelled with its job id, which is what GitHub reports for a job
+ * that runs no matrix. A matrix job is labelled from its combination instead, and never reaches the
+ * fallback here.
+ */
 function declaredCheckName(jobId: string, name: unknown, workflowPath: string): string {
     if (name === undefined || name === null || name === '') {
         return jobId;

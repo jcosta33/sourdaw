@@ -183,11 +183,7 @@ const DELIVERY_RECEIPT_V2_PATTERN =
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
 
-function isExpectedClosingReference(
-    reference: ClosingReference,
-    issue: number,
-    repository: string | undefined
-): boolean {
+function referencesIssue(reference: ClosingReference, issue: number, repository: string | undefined): boolean {
     return (
         reference.issue === String(issue) &&
         (reference.repository === undefined ||
@@ -209,7 +205,7 @@ function assertIssueClosingReferences(
     for (const match of matches) {
         const reference: ClosingReference =
             match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] };
-        if (expected !== undefined && !matchedExpected && isExpectedClosingReference(reference, expected, repository)) {
+        if (expected !== undefined && !matchedExpected && referencesIssue(reference, expected, repository)) {
             matchedExpected = true;
         } else {
             unexpectedPhrases.push(match[0]);
@@ -405,6 +401,15 @@ function assertSafeIssueNumber(value: number, label: string): void {
     }
 }
 
+/** The relationship lines that name `issue`, ignoring lines that relate the body to other issues. */
+function relationshipsForIssue(
+    relationships: IssueReference[],
+    issue: number,
+    repository: string | undefined
+): IssueReference[] {
+    return relationships.filter((reference) => referencesIssue(reference, issue, repository));
+}
+
 export function issueRelationshipFromBody(
     body: string,
     issue: number | undefined,
@@ -432,15 +437,9 @@ export function issueRelationshipFromBody(
         assertIssueClosingReferences(body, issue, undefined, repository);
         return undefined;
     }
-    const existing = relationships[0];
-    if (
-        relationships.length !== 1 ||
-        existing === undefined ||
-        existing.issue !== String(issue) ||
-        (existing.repository !== undefined &&
-            (repository === undefined || existing.repository.toLowerCase() !== repository.toLowerCase())) ||
-        lines.includes(NO_RELATED_TICKETS)
-    ) {
+    const matching = relationshipsForIssue(relationships, issue, repository);
+    const existing = matching[0];
+    if (matching.length !== 1 || existing === undefined || lines.includes(NO_RELATED_TICKETS)) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
     const relationship = existing.label === 'Closes' ? 'closes' : 'relates';

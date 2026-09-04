@@ -253,6 +253,11 @@ jobs:
       - name: Device write boundary census
         run: pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
 
+      # Every case assembles a full release candidate, so the file is isolated
+      # from the unit shards rather than paying that cost under their load.
+      - name: Release proof
+        run: pnpm test:run scripts/__tests__/releaseProof.spec.ts
+
       - name: Health gate infrastructure
         run: pnpm test:health-gates
 

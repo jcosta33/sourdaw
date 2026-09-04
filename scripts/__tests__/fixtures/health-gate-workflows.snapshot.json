@@ -512,6 +512,10 @@
             "run": "pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts"
           },
           {
+            "name": "Release proof",
+            "run": "pnpm test:run scripts/__tests__/releaseProof.spec.ts"
+          },
+          {
             "name": "Health gate infrastructure",
             "run": "pnpm test:health-gates"
           }
@@ -1066,6 +1070,10 @@
           {
             "name": "Device write boundary census",
             "run": "pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts"
+          },
+          {
+            "name": "Release proof",
+            "run": "pnpm test:run scripts/__tests__/releaseProof.spec.ts"
           },
           {
             "name": "Health gate infrastructure",
