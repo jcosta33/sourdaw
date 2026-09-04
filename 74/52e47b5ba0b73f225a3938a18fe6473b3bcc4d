@@ -1,0 +1,14 @@
+crates/sourdaw-native/src/commands/graph.rs
+  h_1228e573df1f42 5953-5997
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7452e47b5ba0b73f225a3938a18fe6473b3bcc4d",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
