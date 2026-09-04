@@ -6,6 +6,8 @@ import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getCommandHandler } from './getCommandHandler';
+import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
@@ -37,6 +39,10 @@ function notifyUndoConflict(label: string): void {
 
 function notifyPartialGroupUndo(label: string): void {
     notifyUser(`Only part of "${label}" could be undone: project state has changed`, 'warning');
+}
+
+function notifySkippedUndoConflict(skippedLabel: string, undoneLabel: string): void {
+    notifyUser(`Skipped "${skippedLabel}": project state has changed; undid "${undoneLabel}"`, 'warning');
 }
 
 function commitUndoTransition(
@@ -173,6 +179,31 @@ function takeCandidate(past: readonly UndoEntry[]): UndoCandidate | null {
 }
 
 /**
+ * Whether undo may step over one conflicted unit onto the candidate beneath it
+ * (#2881). Guardedness is a property of the HANDLER an inverse will run, not of
+ * the undo entry: `executeAppAction` never calls `handler.validate`, and many
+ * undoable handlers route through `toHandlerExecutionResult` (`no-write` |
+ * `written`) and can never refuse. So the step is admitted only when every
+ * member is an action entry whose `inverseAction` resolves to a handler that
+ * declares `canReportConflict` — one whose `execute` can genuinely return
+ * `{ status: 'conflict' }`. A callback member reports success unconditionally
+ * and an unflagged or missing handler cannot refuse, so stepping onto either
+ * would silently overwrite the very edit that caused the conflict. Between a
+ * blocked history and a clobbered edit, blocked is recoverable.
+ */
+function canStepOverConflictOnto(candidate: UndoCandidate): boolean {
+    for (const entry of candidate.entries) {
+        if (!isActionEntry(entry) || entry.inverseAction === null) {
+            return false;
+        }
+        if (getCommandHandler(entry.inverseAction)?.canReportConflict !== true) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
  * Whether the whole unit can be replayed as one inverse batch. That needs every
  * member to be an action entry carrying an `inverseAction`; a callback member has
  * no action to batch, and a member without an inverse has nothing to contribute.
@@ -286,6 +317,70 @@ function settleWithoutUndo({ initialPast, headId, retainedPast }: UndoSettleInpu
     return toUndoResult(headId, retainedPast);
 }
 
+type StepOverInput = {
+    readonly initialPast: readonly UndoEntry[];
+    readonly headId: string;
+    /** The conflicted unit's head entry, which names it in the skip notification. */
+    readonly conflictedHead: UndoEntry;
+    /** The conflicted unit's entries, which stay on `past` at the head, retryable. */
+    readonly retained: readonly UndoEntry[];
+    /** `past` beneath the conflicted unit. */
+    readonly beneath: readonly UndoEntry[];
+};
+
+/**
+ * One conflicted unit no longer wedges the whole history behind it (#2881): a
+ * single step onto the unit directly beneath is attempted, gated by
+ * `canStepOverConflictOnto`, and nothing further. One keystroke touches at most
+ * two units (the conflicted head attempted, one step target undone) and emits at
+ * most two notifications (the conflict message plus the skip summary) — never an
+ * unbounded scan. The conflicted unit stays at the head of `past`, retryable, so
+ * `headConsumed` stays `false` and history sweeps still stop on it.
+ */
+async function stepOverConflictedHeadOrSettle({
+    initialPast,
+    headId,
+    conflictedHead,
+    retained,
+    beneath,
+}: StepOverInput): Promise<UndoResult> {
+    const next = takeCandidate(beneath);
+    if (!next || !canStepOverConflictOnto(next)) {
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+    }
+
+    const outcome = await undoCandidate(next);
+    if (outcome.status === 'conflict') {
+        // The step target refused too. Nothing was written by either unit, both
+        // stay on `past` retryable, and the conflict notification already
+        // reported the blocked undo. No third unit is touched.
+        return settleWithoutUndo({
+            initialPast,
+            headId,
+            retainedPast: [...next.below, ...outcome.retained, ...retained],
+        });
+    }
+    if (outcome.status === 'inert') {
+        // Unreachable — the gate admits only members carrying an inverse — but
+        // dropping an inert unit here matches the scan's own inert purge.
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...next.below, ...retained] });
+    }
+
+    // The gate admits only all-flagged atomic groups and single flagged entries,
+    // so a partial conflict inside the step target cannot arise.
+    notifySkippedUndoConflict(undoEntryLabel(conflictedHead), undoEntryLabel(next.head));
+    const result = commitUndo({
+        initialPast,
+        headId,
+        retainedPast: [...next.below, ...outcome.retained, ...retained],
+        undoneEntries: outcome.undone,
+    });
+    if (outcome.committedError) {
+        throw outcome.committedError;
+    }
+    return result;
+}
+
 async function undoImpl(): Promise<UndoResult> {
     const stored = undoStore.value;
     if (!stored || stored.past.length === 0) {
@@ -300,16 +395,29 @@ async function undoImpl(): Promise<UndoResult> {
     const headId = initialPast[initialPast.length - 1]!.id;
     let past: readonly UndoEntry[] = initialPast;
 
+    // While project mutation admission fails, every inverse would refuse on
+    // admission alone before any handler runs, so attempting one only to step
+    // to the next is pointless churn. Report the blocked undo once and stop.
+    if (getProjectMutationAdmissionFailure() !== null) {
+        notifyUndoConflict(undoEntryLabel(initialPast[initialPast.length - 1]!));
+        return settleWithoutUndo({ initialPast, headId, retainedPast: initialPast });
+    }
+
     // Scan downwards until something is actually undone. Inert entries (action
     // entries without an `inverseAction`) are dropped along the way: undoing one
     // writes nothing, so they must never wedge the undoable entries beneath them.
     //
-    // A conflict ends the scan instead. Whether an inverse can refuse to write
-    // against a diverged document is a property of the handler it runs, not of
-    // the entry, and it is not visible from `UndoEntry` — so the entries beneath
-    // cannot be filtered for safety, and running one risks overwriting the very
-    // edit that caused the conflict. A blocked history is recoverable; a
-    // clobbered edit is not. See #2881 for the capability this needs.
+    // A conflict no longer wedges everything beneath it (#2881). The conflicted
+    // unit stays retained at the head of `past` — retryable, with
+    // `headConsumed: false` — and undo attempts exactly one unit beneath it, and
+    // only when every member's inverse resolves to a handler that declares
+    // `canReportConflict`: a handler whose `execute` can genuinely refuse to
+    // write against a diverged document. Handlers routed through
+    // `toHandlerExecutionResult` and callback entries can never refuse, so
+    // stepping onto them could silently overwrite the very edit that caused the
+    // conflict; the wedge above those runs is deliberate — #2881's own limit,
+    // and between a blocked history and a clobbered edit, blocked is
+    // recoverable. #2878 mirrors this for redo; see #3641 for the callback arc.
     for (;;) {
         const candidate = takeCandidate(past);
         if (!candidate) {
@@ -323,10 +431,12 @@ async function undoImpl(): Promise<UndoResult> {
         }
         if (outcome.status === 'conflict') {
             notifyUndoConflict(undoEntryLabel(candidate.head));
-            return settleWithoutUndo({
+            return stepOverConflictedHeadOrSettle({
                 initialPast,
                 headId,
-                retainedPast: [...past, ...outcome.retained],
+                conflictedHead: candidate.head,
+                retained: outcome.retained,
+                beneath: past,
             });
         }
 
