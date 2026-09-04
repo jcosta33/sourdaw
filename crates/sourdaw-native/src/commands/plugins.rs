@@ -1227,21 +1227,12 @@ async fn load_plugin_with_backend(
     // the session — each one paying a lifecycle lease, two map locks and the
     // engine lock under the graph registry, every batch, forever.
     //
-    // The gate and the lease are released by hand before the runtime goes down,
-    // because both are function-scope and the teardown they would otherwise
-    // cover is a plugin's own `deactivate`, `destroy` and `deinit_entry`, of
-    // unbounded duration. `PLUGIN_RUNTIME_GATE` is fair, so a quit-path
-    // `unload_all_plugin_runtimes` queueing for the write behind that teardown
-    // parks every later load and unload behind itself, and each graph batch's
-    // `try_read` fails outright for as long as it lasts. Nothing below this
-    // return needs either guard, and the wrapper is in no map, so no unload can
-    // reach it while it drops unguarded.
+    // Refused through `refuse_load`, like every other exit from here to the
+    // handover: the runtime gate goes before the plugin's teardown, and the
+    // instance's lifecycle lease stays held until this function returns.
     if !wrapper.is_activated() {
         let reason = activation_refusal_reason(&name);
-        drop(_lifecycle_guard);
-        drop(_runtime_guard);
-        drop(wrapper);
-        return Err(reason);
+        return Err(refuse_load(wrapper, reason, _runtime_guard));
     }
     let params = wrapper.get_parameters();
     // Asked on the shell's UI thread because, for VST3, the question is a real
@@ -1250,7 +1241,14 @@ async fn load_plugin_with_backend(
     // backend caches the answer, so every later capability read
     // (`is_plugin_gui_supported`, the open path's own check) answers from it
     // without touching the plugin.
-    let has_gui = editor_support_on_ui_thread(windows_host, &mut wrapper)?;
+    //
+    // Matched rather than `?`-ed: this ask crosses to the shell's UI thread and
+    // that crossing has a deadline (`lend_on_ui_thread`), so a shell whose main
+    // loop is wedged returns an error here with an activated plugin in hand.
+    let has_gui = match editor_support_on_ui_thread(windows_host, &mut wrapper) {
+        Ok(has_gui) => has_gui,
+        Err(reason) => return Err(refuse_load(wrapper, reason, _runtime_guard)),
+    };
     // Query the plugin's latency on the control thread while it is active (the
     // wrapper just activated it) — both formats define the value only for an
     // active plugin. Captured before the wrapper moves into the engine-owned
@@ -1298,10 +1296,16 @@ async fn load_plugin_with_backend(
     // this lock, is the shell's whole UI thread waiting on a plugin's own
     // shutdown.
     let outcome = {
-        let mut engine_guard = state
-            .engine
-            .lock()
-            .map_err(|e| format!("Failed to lock engine: {}", e))?;
+        // A poisoned engine slot is an exit like any other here, and it holds an
+        // activated runtime: `?` on it would drop that runtime by reverse
+        // declaration order, under the gate.
+        let mut engine_guard = match state.engine.lock() {
+            Ok(engine_guard) => engine_guard,
+            Err(error) => {
+                let reason = format!("Failed to lock engine: {error}");
+                return Err(refuse_load(wrapper, reason, _runtime_guard));
+            }
+        };
         match engine_guard.as_mut() {
             Some(engine) => match register_runtime_with_engine(
                 engine,
@@ -1328,35 +1332,33 @@ async fn load_plugin_with_backend(
             )
         }
         EngineHandover::Refused(refusal) => {
-            // Every lock this path holds goes first, in the order the code
-            // states rather than the order the scopes happen to end in: the
-            // engine lock left scope with the block above, and the runtime gate
-            // and the lifecycle lease are released here. Then the plugin's own
-            // teardown runs, holding nothing.
-            //
-            // Which matters because that teardown is third-party code of
-            // unbounded duration. Under the engine lock it is the shell's quit
-            // cascade waiting; under the fair runtime gate it is a queued
-            // `unload_all_plugin_runtimes` writer, and behind that writer every
-            // later load and unload plus each batch's `try_read` attach. The
-            // refused instance is in no map, so nothing can reach it while it
-            // drops unguarded.
-            let reason = refusal.reason;
-            let runtime = refusal.runtime;
-            drop(_lifecycle_guard);
-            drop(_runtime_guard);
-            drop(runtime);
-            return Err(reason);
+            // The engine lock left scope with the block above; `refuse_load`
+            // takes the runtime gate from here so that the release is stated
+            // rather than left to the order the scopes happen to end in.
+            let Some(runtime) = refusal.runtime else {
+                // The refusal could not get the runtime back out of its owner
+                // (see `RegistrationRefusal::recovered`), so this path tears
+                // nothing down and has nothing to order.
+                return Err(refusal.reason);
+            };
+            return Err(refuse_load(runtime, refusal.reason, _runtime_guard));
         }
         EngineHandover::NoEngine(wrapper) => {
             eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
             // Dormant, not lost: `attach_dormant_plugins` registers this
             // instance on the engine's first graph batch, from the very
             // record written here.
-            let mut plugins = state
-                .plugins
-                .lock()
-                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            //
+            // The map this parks into is the one exit left holding the runtime,
+            // so a poisoned `plugins` refuses through the same helper: until the
+            // insert below lands, this wrapper is still the load's to tear down.
+            let mut plugins = match state.plugins.lock() {
+                Ok(plugins) => plugins,
+                Err(error) => {
+                    let reason = format!("Failed to lock plugins: {error}");
+                    return Err(refuse_load(wrapper, reason, _runtime_guard));
+                }
+            };
             plugins.insert(
                 instance_id.0.clone(),
                 PluginInstanceData {
@@ -1487,6 +1489,76 @@ const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// names the plugin rather than its backend.
 fn activation_refusal_reason(name: &str) -> String {
     format!("plugin '{name}' failed to activate for engine-owned runtime")
+}
+
+/// Refuse a load that has already built its runtime, in the order a refusal has
+/// to happen in.
+///
+/// The runtime gate is released first and the plugin's own teardown —
+/// `deactivate`, `destroy`, `deinit_entry`, third-party code of unbounded
+/// duration — runs after it. `PLUGIN_RUNTIME_GATE` is fair, so a quit-path
+/// `unload_all_plugin_runtimes` queued for the write behind that teardown parks
+/// every later load and unload behind itself, and each graph batch's `try_read`
+/// attach fails outright for as long as it lasts.
+///
+/// The instance's lifecycle lease is deliberately **not** released here: it
+/// stays with the caller until it returns. That lease holds off exactly one
+/// thing — another operation on this same instance — and that is the operation
+/// which must wait. A refusal reaches the renderer as a load error the musician
+/// retries on the same device; released early, the retry takes the free lease,
+/// passes [`ensure_plugin_instance_id_available`] because the refused instance
+/// is in no map, and calls the plugin's entry point on the very bundle this
+/// teardown is still running `deinit_entry` and `dlclose` on.
+///
+/// Takes the guard by value so that the release is this function's own
+/// statement rather than a scope ending somewhere below. Every guard in
+/// [`load_plugin_with_backend`] is function-scope, so reverse declaration order
+/// is what each exit between the runtime's construction and its handover would
+/// otherwise fall back on — which is the teardown-under-the-gate this exists to
+/// prevent.
+fn refuse_load(
+    runtime: HostedRuntime,
+    reason: String,
+    gate: tokio::sync::RwLockReadGuard<'_, ()>,
+) -> String {
+    drop(gate);
+    #[cfg(test)]
+    note_load_teardown_event(LoadTeardownEvent::RuntimeGateReleased);
+    drop(runtime);
+    reason
+}
+
+/// What a refused load did, in the order it did it.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoadTeardownEvent {
+    RuntimeGateReleased,
+    RuntimeTornDown,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// One thread's own record of that order.
+    ///
+    /// Thread-local because `PLUGIN_RUNTIME_GATE` is process-global: a parallel
+    /// test holding it in read mode makes any direct observation of the gate
+    /// answer for that test rather than for this load. A sequence answers
+    /// instead — and between the release in [`refuse_load`] and the runtime's
+    /// drop there is no await, so the two events are adjacent on whichever
+    /// thread ran the refusal.
+    static LOAD_TEARDOWN_EVENTS: std::cell::RefCell<Vec<LoadTeardownEvent>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+fn note_load_teardown_event(event: LoadTeardownEvent) {
+    LOAD_TEARDOWN_EVENTS.with(|events| events.borrow_mut().push(event));
+}
+
+/// Take this thread's sequence, leaving it empty for the next observation.
+#[cfg(test)]
+fn take_load_teardown_events() -> Vec<LoadTeardownEvent> {
+    LOAD_TEARDOWN_EVENTS.with(|events| std::mem::take(&mut *events.borrow_mut()))
 }
 
 /// What the engine took, for the caller to report.
@@ -2569,6 +2641,56 @@ mod tests {
     /// parallel harness — so every test that reaches the permit serializes
     /// through this lock for its full duration.
     static SCAN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// What this thread did immediately before the refused runtime went down.
+    ///
+    /// The one ordering a refusal owes: `PLUGIN_RUNTIME_GATE` released, and only
+    /// then the plugin's own `deactivate`, `destroy` and `deinit_entry`.
+    fn event_before_teardown(events: &[LoadTeardownEvent]) -> Option<LoadTeardownEvent> {
+        let teardown = events
+            .iter()
+            .position(|event| *event == LoadTeardownEvent::RuntimeTornDown)?;
+        teardown.checked_sub(1).map(|before| events[before])
+    }
+
+    /// A shell whose UI thread never answers: it has a thread of its own, so
+    /// every editor call has to cross to it, and it refuses to carry one.
+    ///
+    /// Which is what a wedged main loop looks like from this side — the real
+    /// implementation gives up on its own deadline (`lend_on_ui_thread`) and
+    /// reports the same shape of error.
+    struct UnreachableUiWindowHost;
+
+    impl UiThread for UnreachableUiWindowHost {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
+            Err("The shell's UI thread did not take the editor call".to_string())
+        }
+    }
+
+    impl PluginWindowHost for UnreachableUiWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Err("This host cannot create plugin editor windows".to_string())
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+
+        fn hide_window(&self, _label: &str) {}
+
+        fn show_window(&self, _label: &str) {}
+    }
 
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
         PluginParameter {
@@ -3764,9 +3886,8 @@ mod tests {
             &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
         );
 
-        let torn_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let lease_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        take_load_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -3786,24 +3907,11 @@ mod tests {
                     false,
                 );
                 let observed_state = Arc::clone(&state);
-                let torn_down = Arc::clone(&torn_down);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
-                let lease_free = Arc::clone(&lease_free_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    torn_down.store(true, std::sync::atomic::Ordering::SeqCst);
+                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
                     engine_free.store(
                         observed_state.engine.try_lock().is_ok(),
-                        std::sync::atomic::Ordering::SeqCst,
-                    );
-                    // The lease rather than `PLUGIN_RUNTIME_GATE` itself: the
-                    // gate is process-global and any concurrently loading test
-                    // holds it in read mode, so a `try_write` here would report
-                    // that test's reader and not this path's. The lease is keyed
-                    // by instance id, so nothing else in the harness can hold
-                    // it — and the load releases the two together, in the same
-                    // pair of statements, immediately before this teardown.
-                    lease_free.store(
-                        try_lock_plugin_lifecycle("refused-by-the-engine").is_some(),
                         std::sync::atomic::Ordering::SeqCst,
                     );
                 }));
@@ -3832,8 +3940,9 @@ mod tests {
                 .contains_key("refused-by-the-engine"),
             "and the engine kept none of it"
         );
+        let events = take_load_teardown_events();
         assert!(
-            torn_down.load(std::sync::atomic::Ordering::SeqCst),
+            events.contains(&LoadTeardownEvent::RuntimeTornDown),
             "the refused runtime must actually have been torn down, not leaked"
         );
         assert!(
@@ -3841,12 +3950,105 @@ mod tests {
             "a plugin's teardown must not run under the engine lock: the quit \
              cascade takes it from the shell's UI thread"
         );
+        assert_eq!(
+            event_before_teardown(&events),
+            Some(LoadTeardownEvent::RuntimeGateReleased),
+            "nor under the runtime gate, which is fair: a quit's write request \
+             queued behind this teardown parks every later load and unload, and \
+             fails every batch's attach outright. Got: {events:?}"
+        );
+    }
+
+    /// The editor-support ask is an exit like the refusals, and it holds an
+    /// activated plugin when it fails.
+    ///
+    /// It is the one step between the runtime's construction and its handover
+    /// that leaves this thread entirely: the answer for VST3 is a real
+    /// `createView`, so the ask crosses to the shell's UI thread and comes back
+    /// with an error when that thread cannot take it. Nothing about the plugin
+    /// is wrong at that point — it activated — so the load has a live runtime to
+    /// tear down, and it owes that teardown the same order every other refusal
+    /// owes it.
+    #[test]
+    fn a_load_whose_editor_ask_never_reached_the_shell_tears_down_off_the_runtime_gate() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        take_load_teardown_events();
+
+        let error = crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("editor-ask-unanswered".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &UnreachableUiWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                    "Editor Ask Unanswered",
+                    Vec::new(),
+                    true,
+                );
+                let observed_state = Arc::clone(&state);
+                let engine_free = Arc::clone(&engine_free_at_teardown);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    engine_free.store(
+                        observed_state.engine.try_lock().is_ok(),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect_err("a load whose editor ask never ran must not report a loaded plugin");
+
         assert!(
-            lease_free_at_teardown.load(std::sync::atomic::Ordering::SeqCst),
-            "nor under the instance's lifecycle lease, which this path releases \
-             together with the runtime gate: that gate is fair, so a quit's \
-             write request queued behind this teardown parks every later load, \
-             unload and attach"
+            error.contains("UI thread"),
+            "the caller is told the shell never took the ask, got: {error}"
+        );
+        assert!(
+            !state
+                .plugins
+                .lock()
+                .expect("plugins lock should be available")
+                .contains_key("editor-ask-unanswered"),
+            "a load refused before the handover parks nothing"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("editor-ask-unanswered"),
+            "and hands the engine nothing"
+        );
+        let events = take_load_teardown_events();
+        assert!(
+            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            "the runtime it built must actually have been torn down, not leaked"
+        );
+        assert!(
+            engine_free_at_teardown.load(std::sync::atomic::Ordering::SeqCst),
+            "a plugin's teardown must not run under the engine lock: the quit \
+             cascade takes it from the shell's UI thread"
+        );
+        assert_eq!(
+            event_before_teardown(&events),
+            Some(LoadTeardownEvent::RuntimeGateReleased),
+            "nor under the runtime gate, which is fair: a quit's write request \
+             queued behind this teardown parks every later load and unload, and \
+             fails every batch's attach outright. Got: {events:?}"
         );
     }
 
@@ -4080,8 +4282,8 @@ mod tests {
             &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
         );
 
-        let torn_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let lease_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let lease_held_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        take_load_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -4096,15 +4298,11 @@ mod tests {
                     false,
                 );
                 wrapper.deactivate_engine_owned_command_fixture();
-                let torn_down = Arc::clone(&torn_down);
-                let lease_free = Arc::clone(&lease_free_at_teardown);
+                let lease_held = Arc::clone(&lease_held_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    torn_down.store(true, std::sync::atomic::Ordering::SeqCst);
-                    // Instance-scoped, so no concurrent test can answer for this
-                    // one; the load releases it and the runtime gate together,
-                    // in the same pair of statements above this teardown.
-                    lease_free.store(
-                        try_lock_plugin_lifecycle("never-activated-dormant").is_some(),
+                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    lease_held.store(
+                        try_lock_plugin_lifecycle("never-activated-dormant").is_none(),
                         std::sync::atomic::Ordering::SeqCst,
                     );
                 }));
@@ -4133,16 +4331,25 @@ mod tests {
                 .contains_key("never-activated-dormant"),
             "and nothing is parked: an attach could only refuse it, once per batch, forever"
         );
+        let events = take_load_teardown_events();
         assert!(
-            torn_down.load(std::sync::atomic::Ordering::SeqCst),
+            events.contains(&LoadTeardownEvent::RuntimeTornDown),
             "the refused runtime must actually have been torn down, not leaked"
         );
+        assert_eq!(
+            event_before_teardown(&events),
+            Some(LoadTeardownEvent::RuntimeGateReleased),
+            "and it must go down with the runtime gate already released: that \
+             gate is fair, so a quit's write request queued behind this teardown \
+             parks every later load and unload, and fails every batch's attach \
+             outright. Got: {events:?}"
+        );
         assert!(
-            lease_free_at_teardown.load(std::sync::atomic::Ordering::SeqCst),
-            "and it must go down with the instance's lease released, which this \
-             path releases together with the runtime gate: that gate is fair, so \
-             a quit's write request queued behind this teardown parks every \
-             later load, unload and attach"
+            lease_held_at_teardown.load(std::sync::atomic::Ordering::SeqCst),
+            "and with the instance's own lease still held: a refusal reaches the \
+             musician as a load error they retry on the same device, and a retry \
+             that took this lease would call the plugin's entry point on the \
+             bundle this teardown is still running deinit_entry and dlclose on"
         );
     }
 
