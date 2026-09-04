@@ -1284,21 +1284,79 @@ describe('AutomergeSync', () => {
         }
 
         /**
-         * Deliver one payload from the peer and let this node's own outbound
-         * generation reach it. Returns false once the peer has nothing to send.
+         * Whether this side's document is still missing content the peer's
+         * document already carries.
          */
-        async function deliverOne(protocol_event?: string): Promise<boolean> {
+        function isMissingPeerContent(): boolean {
+            if (live === undefined) {
+                return getHeads(peer.document()).length > 0;
+            }
+            return getMissingDeps(live, getHeads(peer.document())).length > 0;
+        }
+
+        /**
+         * Deliver the peer's current message, merge it, and wait for this
+         * side's own reply to reach the peer before returning. Returns the
+         * decoded payload, or null once the peer has nothing to send.
+         */
+        async function deliverRound(protocol_event?: string): Promise<ReturnType<typeof decodeSyncMessage> | null> {
             const message = peer.send();
             if (!message) {
-                return false;
+                return null;
             }
             if (protocol_event !== undefined) {
                 protocol_sequence.push(protocol_event);
             }
+            const decoded = decodeSyncMessage(message);
             sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
             // A live session keeps editing while it syncs, and it is the
             // repository's change notification that generates the reply.
+            // `sendDocSyncToPeer` sends nothing when it has nothing new to
+            // offer, so this waits for that generation attempt to reach its
+            // synchronous send (or its synchronous decision not to), not for
+            // an outbound message that may never come.
             change_cb?.(doc_id);
+            await waitForQueuedGenerationStart();
+            return decoded;
+        }
+
+        /**
+         * Redeliver while this side is still behind and the round that left
+         * it there carried nothing: Automerge's sync `have` message is a
+         * Bloom filter with a small false-positive rate, and a hit makes the
+         * sender omit a change it wrongly believes the other side already
+         * has, so the next round (informed by this side's reply) carries it
+         * instead. A round that *did* carry changes and still left this side
+         * behind failed for a real reason — sanitation rejected it, a merge
+         * was rolled back — and chasing that is not this fixture's call to
+         * make; the caller decides whether and when to try again.
+         */
+        async function chaseConvergenceAfterEmptyRound(
+            lastDecoded: ReturnType<typeof decodeSyncMessage>
+        ): Promise<ReturnType<typeof decodeSyncMessage>> {
+            let decoded = lastDecoded;
+            while (decoded.changes.length === 0 && isMissingPeerContent()) {
+                const next = await deliverRound();
+                if (next === null) {
+                    return decoded;
+                }
+                decoded = next;
+            }
+            return decoded;
+        }
+
+        /**
+         * Deliver one payload from the peer and let this node's own outbound
+         * generation reach it. Returns false once the peer has nothing to
+         * send. Chases convergence (see `chaseConvergenceAfterEmptyRound`)
+         * so a Bloom-filter miss on this round does not read as delivery.
+         */
+        async function deliverOne(protocol_event?: string): Promise<boolean> {
+            const first = await deliverRound(protocol_event);
+            if (first === null) {
+                return false;
+            }
+            await chaseConvergenceAfterEmptyRound(first);
             return true;
         }
 
@@ -1362,16 +1420,21 @@ describe('AutomergeSync', () => {
          * pushed only after the applied wait resolves, so the recorded
          * order — `'peer-edit-applied'` then `'peer-edit-delivered'` — is
          * produced by the actual apply, not by push order alone.
+         *
+         * `applied` is registered once, before the first round, and chasing
+         * convergence (see `chaseConvergenceAfterEmptyRound`) redelivers on
+         * the same waiter: a Bloom-filter miss on the first round never
+         * fires `onSyncApplied`, but a later round that actually carries the
+         * edit still resolves it, because the resolver stayed queued across
+         * every round.
          */
         async function deliverPeerEdit(): Promise<boolean> {
-            const message = peer.send();
-            if (!message) {
+            const applied = waitForNextAppliedSync();
+            const first = await deliverRound();
+            if (first === null) {
                 return false;
             }
-            const decoded = decodeSyncMessage(message);
-            const applied = waitForNextAppliedSync();
-            sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
-            change_cb?.(doc_id);
+            const decoded = await chaseConvergenceAfterEmptyRound(first);
             await raceAppliedOrDiagnose(applied, decoded);
             protocol_sequence.push('peer-edit-delivered');
             return true;
@@ -1388,22 +1451,30 @@ describe('AutomergeSync', () => {
             return bytesToBase64(resend.send()!);
         }
 
-        function deliverResend(): void {
+        /**
+         * Deliver a from-scratch renegotiation. Deliberately not chased:
+         * `resendFromPeer` builds a brand-new `SyncState` every call, and
+         * Automerge's first message off an uninitialized state is always
+         * exploratory — a heads-and-bloom announcement with zero changes —
+         * regardless of what the peer holds. That is not the Bloom-filter
+         * false positive `deliverOne` chases past; it is the protocol's
+         * ordinary first hop, and callers that need the content hop already
+         * call `deliverResend` again for it (see the sanitation-retry
+         * tests, which pace one call per delivery attempt on purpose).
+         */
+        async function deliverResend(): Promise<void> {
             sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: resendFromPeer() });
+            await waitForQueuedGenerationStart();
         }
 
         async function deliverOneAndWaitForReply(): Promise<void> {
-            const reply = waitForOutbound();
             if (!(await deliverOne())) {
                 throw new Error('the peer produced no sync message');
             }
-            await reply;
         }
 
         async function deliverResendAndWaitForReply(): Promise<void> {
-            const reply = waitForOutbound();
-            deliverResend();
-            await reply;
+            await deliverResend();
         }
 
         /** The repository announcing a local edit, and the sends it triggers. */
@@ -1527,7 +1598,7 @@ describe('AutomergeSync', () => {
     async function driveToQuarantine(exchange: ReturnType<typeof setupLiveExchange>): Promise<void> {
         await exchange.deliverOneAndWaitForReply();
         await exchange.deliverResendAndWaitForReply();
-        exchange.deliverResend();
+        await exchange.deliverResend();
         // The final failed delivery quarantines the channel. This local
         // notification proves the closed-channel generation has reached its
         // guard before the next test action reopens that channel.
@@ -1592,7 +1663,16 @@ describe('AutomergeSync', () => {
 
         await exchange.deliverOne();
 
-        expect(vi.mocked(sanitizeIncomingCrdtDocument).mock.calls.length).toBe(2);
+        // At least the in-delivery retry this test targets: a Bloom-filter
+        // false positive can cost `deliverOne` a leading empty round (see
+        // `chaseConvergenceAfterEmptyRound`), which spends the scripted
+        // failure on a round that carries nothing and adds a call the exact
+        // count below owed only to a single-round delivery. What the retry
+        // loop must still guarantee — regardless of how many physical
+        // rounds this logical delivery took — is captured by the assertions
+        // that follow: the edit arrived, and the channel was not quarantined
+        // for a fault that a second attempt clears.
+        expect(vi.mocked(sanitizeIncomingCrdtDocument).mock.calls.length).toBeGreaterThanOrEqual(2);
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.probeValue()).toBe(PEER_EDIT);
     });
@@ -1606,23 +1686,29 @@ describe('AutomergeSync', () => {
     it('clears the failure streak after a delivery that sanitizes', async () => {
         const exchange = setupLiveExchange();
         await exchange.connect();
-        // Two failed deliveries — one short of the bound.
+        // Two failed deliveries — one short of the bound. Both go through
+        // `deliverResend`, not `deliverOne`: this test paces exactly one
+        // sanitize-failure round per call, and `deliverOne`'s chase past a
+        // Bloom-filter miss (see `chaseConvergenceAfterEmptyRound`) would
+        // occasionally spend this delivery's single round on two, since
+        // sanitation runs — and can fail — on every round regardless of
+        // whether it carried a change.
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
             throw new Error('sanitation failed');
         });
-        await exchange.deliverOne();
-        exchange.deliverResend();
+        await exchange.deliverResend();
+        await exchange.deliverResend();
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
 
         // One that works, then two more failures. Without the reset the
         // second of those would be the third in a row and close the channel.
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => document);
-        exchange.deliverResend();
+        await exchange.deliverResend();
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
             throw new Error('sanitation failed');
         });
-        exchange.deliverResend();
-        exchange.deliverResend();
+        await exchange.deliverResend();
+        await exchange.deliverResend();
 
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
     });
@@ -1642,13 +1728,19 @@ describe('AutomergeSync', () => {
             throw new Error('sanitation failed');
         });
 
-        await exchange.deliverOne();
+        // All three deliveries go through `deliverResend`, not `deliverOne`:
+        // this test paces exactly one sanitize-failure round per call, and
+        // `deliverOne`'s chase past a Bloom-filter miss (see
+        // `chaseConvergenceAfterEmptyRound`) would occasionally spend a
+        // single delivery's round on two, since sanitation runs — and can
+        // fail — on every round regardless of whether it carried a change.
+        await exchange.deliverResend();
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.currentHeads()).toEqual(pre_sync_heads);
-        exchange.deliverResend();
+        await exchange.deliverResend();
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.currentHeads()).toEqual(pre_sync_heads);
-        exchange.deliverResend();
+        await exchange.deliverResend();
 
         expect(exchange.onSyncQuarantine).toHaveBeenCalledTimes(1);
         // Three deliveries, each given its two in-hand attempts.
