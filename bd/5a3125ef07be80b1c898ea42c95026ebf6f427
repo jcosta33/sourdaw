@@ -1,0 +1,134 @@
+.agents/decisions/0044-two-carrier-live-playback-until-native-hosts-every-device.md
+  s_9b530f08172a54::t_ea5d5ab7c86463 1-113
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getCompensationDelay.spec.ts
+  s_9b530f08172a54::t_5ec29ef624e76b 25-33,45,53,55,57,67,70,73-74,76-80,84,86,90,95,98,100,103-104
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_9b3fb561fe6f62 76-91
+  s_9b530f08172a54::t_88da93fa0cd399 99-102,107-108
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_9b530f08172a54::t_1517b9ac598cfb 34
+  s_9b530f08172a54::t_b789f7f58a3500 1-33,35-70,72-144,146-229
+  s_9b530f08172a54::t_1035411d312487 71
+  s_9b530f08172a54::t_9862028b2f1c53 145,230-240
+.agents/decisions/README.md
+  s_9b530f08172a54::t_bc349cbde13f05 60
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_9b530f08172a54::t_b3f3070f61ca5f 614-616
+src/modules/AudioEngine/useCases/livePlayback/primeNativeTimelineSamples.ts
+  s_9b530f08172a54::t_d5908f8ae38470 58,60-62
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_9b530f08172a54::t_e84549d1fc66ec 510-513,534,537-540,542-584
+  s_9b530f08172a54::t_d8f359760c6787 118
+  s_9b530f08172a54::t_e65eb16f0ed47b 586-595
+  s_0bfea916524b71::t_d5b3cdbad250a6 585
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/externalPluginCompensation.spec.ts
+  s_9b530f08172a54::t_61a2db73ebae1e 116-119
+  s_9b530f08172a54::t_d0488de7ddd526 1-115,120-121
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_1ca734a366a08d 1-339
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/externalLatencyRegistry.ts
+  s_9b530f08172a54::t_2645f3fdfce8ef 4-5,7-12,14-17
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_9b530f08172a54::t_3c44c4472e8b76 434
+  s_9b530f08172a54::t_e45eced7d62a5f 9
+  s_9b530f08172a54::t_8b8ad4e0eafbf4 36-41
+  s_9b530f08172a54::t_29f1b9ba5672bf 1067-1073,1075,1079-1101,1106-1111
+  s_9b530f08172a54::t_b6127a1104092d 53-62
+  s_9b530f08172a54::t_b099d0ef4959b7 419-426,431-433,435
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_9b530f08172a54::t_48cd5667f810c4 88
+  s_9b530f08172a54::t_a1fdf1675e542c 162,164,169,171-177
+  s_9b530f08172a54::t_dba7bd4773636c 23-33
+  s_9b530f08172a54::t_a15036eef282db 40,42-46,48-52,54-63,65-69
+  s_9b530f08172a54::t_0a20a572a7bdf2 131-139
+  s_9b530f08172a54::t_1f5b3e8cf05425 257,262-272,279,285-292
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_9b530f08172a54::t_8a1fd4e96e7e4b 64-68
+src/modules/AudioEngine/engine/hostedPluginControls.ts
+  s_9b530f08172a54::t_b67971b15a35fc 1-75
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getDeviceLatencyMs.ts
+  s_9b530f08172a54::t_68fbf6c64638d5 3
+  s_9b530f08172a54::t_48565079f6dbb6 30
+  s_9b530f08172a54::t_2855a10660e843 18,20-26,33
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_9b530f08172a54::t_4c156b06058aba 10-24
+  s_9b530f08172a54::t_f7ae075b1f9457 580-584,591-594,596-604,609,611
+  s_9b530f08172a54::t_f46f7b2777a7f4 605-608,610
+  s_9b530f08172a54::t_72705d08d7a38c 849-853,859,864-881,884-888,893-894,897-898
+  s_9b530f08172a54::t_cf4f4f43e26935 908,911-912
+  s_9b530f08172a54::t_8e0b2cc297a93a 90-95,102-103
+  s_9b530f08172a54::t_fe93f2adca2819 930
+  s_9b530f08172a54::t_538e8728475c28 51-52
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/reportBridgeRoundTripFrames.ts
+  s_9b530f08172a54::t_ef6fdaaef9684e 4,6,8-9,11-13
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_2cb9708414cfb3 530-546
+  s_9b530f08172a54::t_b4f8c9bff5fe94 465-466
+  s_9b530f08172a54::t_315a423a813fce 156-158
+  s_9b530f08172a54::t_047ce85f828b43 168-180,182-186,198
+  s_9b530f08172a54::t_6edc37893d32f7 181
+  s_9b530f08172a54::t_74776b4b5e07f4 106,122,124-128,130
+  s_9b530f08172a54::t_250323c5696110 93
+  s_9b530f08172a54::t_65b3c58c305b9c 486
+  s_9b530f08172a54::t_4bee2fbfd922f8 8-27
+  s_9b530f08172a54::t_001313ce3f7b6e 119
+  s_9b530f08172a54::t_407b9578be8175 228,232-295
+  s_9b530f08172a54::t_67d05b7db98428 473,476-479,482-485,490,493,495,503-511,516,518
+  s_9b530f08172a54::t_5cbe356d5ab558 296,410-425
+  s_9b530f08172a54::t_f0d7260de25c33 110
+  s_9b530f08172a54::t_8517a658ad2a26 297
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_9b530f08172a54::t_e8fcb0e0dc3ecf 13-14
+  s_9b530f08172a54::t_83a14c9a055b7b 601-677
+  s_9b530f08172a54::t_4acfb514f5421d 31-43,48
+  s_9b530f08172a54::t_148c3de83b0d20 266-269
+  s_9b530f08172a54::t_2730aacbac2e41 64,66-67
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/reportedDeviceLatency.spec.ts
+  s_9b530f08172a54::t_5773aab63a0d14 1-205
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/livePdcGaps.spec.ts
+  s_9b530f08172a54::t_c95456f337073d 36-40
+  s_9b530f08172a54::t_9357c624fc95b4 157
+src/modules/AudioEngine/useCases/livePlayback/isHostedPluginDevice.ts
+  s_9b530f08172a54::t_fc39ef402d6b09 1-15
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_226d2cdf41b913 13-20,23
+  s_9b530f08172a54::t_ed2022bbcc2755 42-43
+  s_9b530f08172a54::t_214910ac83547f 24
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_28177c9f6c72af 406-409
+  s_9b530f08172a54::t_ac2e5d095c36e6 894,897-902,905,910,913-914
+  s_9b530f08172a54::t_6eb962194e9508 384-392
+  s_9b530f08172a54::t_87a53ce362834e 1507
+  s_9b530f08172a54::t_834e5108a5d937 961-966
+  s_9b530f08172a54::t_b635f720e4ff52 1002-1015,1018-1019
+  s_9b530f08172a54::t_91b91387bb940a 95-109
+  s_9b530f08172a54::t_014ecc8830f06a 1408-1430
+  s_9b530f08172a54::t_0e2febac2935f3 161-166
+  s_9b530f08172a54::t_bc862a17d4651a 1016-1017
+  s_9b530f08172a54::t_6b40add24a6834 990-1001,1020-1177
+  s_9b530f08172a54::t_f4c8c0cf6590c6 716
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bd5a3125ef07be80b1c898ea42c95026ebf6f427",
+  "prompts": {},
+  "sessions": {
+    "s_0bfea916524b71": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06bc5-0169-7d31-8f56-d7fc43b79d98",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
