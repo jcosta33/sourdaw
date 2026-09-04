@@ -240,8 +240,7 @@ pub async fn commit_pitch_edit(request: PitchCommitRequest) -> Result<(), String
 /// exported file (see `filesystem::replace_file_atomically`).
 ///
 /// The sample-streaming closure is the seam that lets the atomicity contract
-/// be exercised with an injected failure, mirroring `write_wav`'s tests in
-/// `audio_postprocess`.
+/// be exercised with an injected failure.
 fn write_committed_wav(
     path: &Path,
     sample_rate: u32,

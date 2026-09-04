@@ -43,10 +43,13 @@
 //! whose material was decoded at a different rate than the engine runs at is
 //! rate-converted through `ClipPlayback::playback_rate`
 //! (`material_rate / engine_rate` — a sample-rate conversion, which preserves
-//! pitch-at-speed semantics). The contract's own `playbackRate` must be `1`
-//! in this slice: `TimelineClip` has nowhere to carry a stretch, so a
-//! stretched clip is refused rather than played at unity behind the user's
-//! back. Native varispeed is tracked in jcosta33/sourdaw#2219.
+//! pitch-at-speed semantics). The contract's own `playbackRate` is varispeed —
+//! rate and pitch move together, exactly what `ClipPlayback::playback_rate`
+//! already documents and what an `AudioBufferSourceNode` does on the Web
+//! Audio legs — so the user's rate is folded into the same conversion:
+//! `effective_rate = playbackRate * (material_rate / engine_rate)`. Only a
+//! non-positive or non-finite rate is refused; nothing here claims
+//! pitch-preserving stretch, which does not exist on any clip-playback leg.
 //!
 //! ## Engine bootstrap (#1984)
 //!
@@ -59,6 +62,25 @@
 //! caller in any shipped build, and a second, unconditioned start entry point
 //! beside a lazy one is two bootstraps to keep honest instead of one.
 //! `render_graph_offline` never starts the live engine at all.
+//!
+//! ## The loop seam
+//!
+//! A loop region breaks the playhead's monotonicity, and the progress echo
+//! carries the seam beside it for that reason: `loop_wraps` counts the seams
+//! the engine has closed, and `last_wrap_frame` is the frame the pass that
+//! closed the newest one walked to.
+//!
+//! Two consumers read that pair, and only one of them is here. This module's
+//! queue ledger uses it to prove a write left the engine's queue when the
+//! pinned playhead never can ([`proven_popped`]). The other is the per-pass
+//! automation re-arm: the engine's automation queue is a window rather than a
+//! curve, so a pass consumes what it walks past and the seam does not put it
+//! back, and something has to re-send it. That belongs to the automation owner
+//! above this layer, which holds the three things re-arming needs and this
+//! layer has none of — it owns the curve, it learns the loop region, and it
+//! already polls the position feed on a cadence it can send from. This module
+//! sees single commands from an arbitrary caller, is never told the region,
+//! and has no clock of its own.
 //!
 //! ## Strip reports
 //!
@@ -101,6 +123,15 @@
 //! transport write leaves plugin-visible tempo and time signature untouched;
 //! the engine re-derives the beat position from the tempo it already holds.
 //!
+//! A `set-transport` is also a **locate** unless it says otherwise, and a
+//! locate is destructive by design: it seeks, and a seek cancels every queued
+//! mixer write stamped at or past the frame it lands on
+//! (`RampedParam::cancel_from`). Strip creation states a fader, a pan and each
+//! send level as writes stamped at frame 0, so a transport write that locates
+//! to the session head after those strips were built erases the mix they
+//! declared. A producer that only needs to start or stop playback from where
+//! the engine already stands therefore sends `locate: false`.
+//!
 //! ## Known deviations, recorded rather than silent
 //!
 //! - `smoothed` writes (Web Audio `setTargetAtTime`) have no native
@@ -111,12 +142,10 @@
 //!   and the stamp is not honoured at all: the native gates are strip flags,
 //!   not ramped parameters, so the write applies at the block boundary that
 //!   drains the command — even when its stamp names a future time.
-//! - A bus strip has no pan, no mute gate, no solo gate and no sends in
-//!   `daw-engine`; batches that need them refuse with a reason naming the gap.
-//! - `bus -> track` routing refuses with its own reason — the D3 obligation
-//!   named at `AudioGraphBackend.ts` (routing constraint): buses are summed
-//!   after every track, so the edge cannot carry audio today.
+//! - A bus strip has no send taps in `daw-engine`; a send whose source is a
+//!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
 
+use crate::commands::crumbs::{self, CrumbsState};
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
@@ -132,7 +161,8 @@ use daw_engine::timeline::{
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
 /// `FADER_HEADROOM_DB` in `src/utils/audioLevelLaw.ts`, the definition of
@@ -169,6 +199,30 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// Create-*-strip plus set-track-output, then the per-strip send, device, and
+/// clip slots a maximal topology batch fills.
+const MAX_STRIP_TOPOLOGY_COMMANDS: usize =
+    2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS;
+
+/// One queue fill of `write-parameter` (fader, pan, mute, solo, and each send
+/// level) plus one `write-device-parameter` fill per device slot.
+const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_QUEUE_CAPACITY
+    + MAX_TRACK_DEVICES * DEVICE_PARAM_QUEUE_CAPACITY;
+
+/// The most commands one batch may carry.
+///
+/// The batch arrives from the renderer and sizes two rings that live as long
+/// as the process: `EngineHandle::send_graph_batch` provisions the command
+/// ring from the batch it is handed, and the retirement ring with it. Neither
+/// shrinks again, so an unbounded array is an unbounded resident allocation
+/// bought by one message. The ceiling is what a maximal project genuinely
+/// needs — every strip created, routed, sent, filled with devices and clips,
+/// plus a full `write-parameter` and `write-device-parameter` queue fill per
+/// mixer and device target — so it can refuse a hostile batch without ever
+/// meeting an honest one.
+const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
+    * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
+
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
 #[derive(Debug, Deserialize)]
@@ -177,7 +231,25 @@ pub struct GraphBatchPayload {
     pub schema_version: u32,
     #[serde(default)]
     pub correlation: Option<Value>,
+    /// Whether this batch **replaces** the graph rather than adding to it.
+    ///
+    /// The live registry lives as long as the process and this surface has no
+    /// remove-strip vocabulary, so a second batch naming the strip ids the
+    /// first one built refuses on every one of them. A producer that rebuilds
+    /// a session's topology per play — the live one does, because topology
+    /// drifts between plays — marks the batch instead: the mapper tears the
+    /// previous topology down inside the same fence, and the batch's own
+    /// commands build against an empty graph.
+    #[serde(default)]
+    pub replace_topology: bool,
     pub commands: Vec<GraphCommandPayload>,
+}
+
+/// A `set-transport` that does not say otherwise is a locate — the meaning the
+/// field's absence carried before it existed, so every producer written against
+/// the older shape keeps behaving exactly as it did.
+fn locate_unless_told_otherwise() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -239,7 +311,29 @@ pub enum GraphCommandPayload {
     SetTransport {
         playing: bool,
         position_seconds: f64,
+        /// Whether this write is also a *locate*. Absent means it is, which is
+        /// what every producer that moves the playhead wants and what the
+        /// field's absence has always meant.
+        ///
+        /// A producer sets it `false` to say "roll from where you already
+        /// stand". That is not a convenience: a locate cancels every queued
+        /// mixer write stamped at or past its frame (see the mapping arm), so a
+        /// second transport write that merely starts playback would erase the
+        /// fader, pan and send levels an earlier batch queued at frame 0. The
+        /// position still travels, because `SetTransportPlayback` carries it
+        /// and it must stay truthful; only the seek is withheld.
+        #[serde(default = "locate_unless_told_otherwise")]
+        locate: bool,
     },
+    /// The session-level shadow monitor gate
+    /// ([`GraphCommand::SetMonitorShadow`]): the engine keeps rendering and
+    /// contributes nothing to the OS output. It travels with the topology
+    /// rather than as a start parameter because the engine has no start call
+    /// to carry one — `apply_graph_commands` boots it lazily on the first
+    /// batch — and because the cutover has to be expressible on a session
+    /// that is already rolling.
+    #[serde(rename_all = "camelCase")]
+    SetMonitorShadow { shadowed: bool },
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,8 +347,10 @@ pub struct StripStatePayload {
 }
 
 /// Project truth's `Device`, mirrored. `deviceState` is opaque to this
-/// backend and ignored; a device bound to an externally hosted plugin refuses
-/// in this slice — plugin chain binding is a later D3 slice.
+/// backend and ignored. A device naming an `externalInstanceId` the engine
+/// already owns is spliced onto the strip by that instance's own effect id
+/// ([`map_device`]); one naming a plugin the engine does not hold has no
+/// native body and follows the degradation law in [`no_native_body`].
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevicePayload {
@@ -416,8 +512,51 @@ pub struct GraphApplyResultPayload {
     pub correlation: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_revision: Option<u64>,
+    /// The fence number the engine's `batches_applied` reaches once this batch
+    /// has drained — present only when a batch actually reached the live
+    /// engine's ring. A caller holds it against
+    /// `EngineTransportPosition::batchesApplied` to tell a transport reading
+    /// taken after this batch from one taken before it, which no position or
+    /// wrap count can say: `apply` resolves when the batch is fenced, not when
+    /// it is drained.
+    ///
+    /// Absent for a mapping (no runtime, so no fence), for a refusal (nothing
+    /// was pushed) and for a partial push (the fence stalls the drain, so the
+    /// count never reaches it) — a number in any of those cases would promise
+    /// a drain that is not coming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admitted_batch: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reports: Option<Vec<StripReportPayload>>,
+    /// Instances that were loaded before any engine was running and that this
+    /// batch took over — see
+    /// [`crate::commands::plugins::attach_dormant_plugins`].
+    ///
+    /// Present on an applied batch and empty when it attached nothing. Absent
+    /// everywhere else, and that absence is a rule about when the attach runs,
+    /// not just about what is serialized: the attach happens only once the
+    /// batch is fenced and `applied` is the answer, so no other outcome ever has
+    /// an instance to report. A rejected batch leaves every dormant instance
+    /// dormant, which is what lets the next batch report it.
+    ///
+    /// The caller needs it because nothing else tells it a plugin it loaded into
+    /// silence is now processing audio — its own load reported no engine plugin
+    /// id and no bridge round trip, and there is no later event.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
+}
+
+/// One instance an engine start took over, as the caller reads it.
+///
+/// The engine's own plugin id is deliberately not here: it names a slot in the
+/// scheduler, and no caller outside this crate addresses one. The bridge round
+/// trip is the part the caller has to act on, because it is added to the
+/// plugin's own latency when compensating the device.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachedPluginPayload {
+    pub instance_id: String,
+    pub bridge_round_trip_frames: u32,
 }
 
 impl GraphApplyResultPayload {
@@ -429,14 +568,18 @@ impl GraphApplyResultPayload {
             compensation: None,
             correlation: None,
             runtime_revision: None,
+            admitted_batch: None,
             reports: None,
+            attached_plugins: None,
         }
     }
 
     fn applied(
         correlation: Option<Value>,
         runtime_revision: u64,
+        admitted_batch: u64,
         reports: Vec<StripReportPayload>,
+        attached_plugins: Vec<AttachedPluginPayload>,
     ) -> Self {
         Self {
             acceptance: "accepted",
@@ -445,7 +588,9 @@ impl GraphApplyResultPayload {
             compensation: None,
             correlation,
             runtime_revision: Some(runtime_revision),
+            admitted_batch: Some(admitted_batch),
             reports: Some(reports),
+            attached_plugins: Some(attached_plugins),
         }
     }
 
@@ -463,7 +608,9 @@ impl GraphApplyResultPayload {
             compensation: None,
             correlation,
             runtime_revision: None,
+            admitted_batch: None,
             reports: Some(reports),
+            attached_plugins: None,
         }
     }
 
@@ -480,7 +627,9 @@ impl GraphApplyResultPayload {
             compensation: Some("not-attempted"),
             correlation,
             runtime_revision: Some(runtime_revision),
+            admitted_batch: None,
             reports: Some(reports),
+            attached_plugins: None,
         }
     }
 }
@@ -519,6 +668,15 @@ struct StripEntry {
 struct DeviceEntry {
     native_effect_id: usize,
     strip_id: String,
+    /// True when the effect id is a hosted plugin instance the engine already
+    /// owns rather than one this registry allocated.
+    ///
+    /// It decides how the device leaves a chain: an effect this registry built
+    /// is retired with its removal, while an engine-owned one is only released,
+    /// because its lifetime belongs to the load that registered it and
+    /// `unload_plugin` is what frees it. Retiring one here would take a live
+    /// plugin's effect out from under the panel still driving it.
+    engine_owned: bool,
 }
 
 /// Resolves the app's string ids onto engine node ids and holds the strip
@@ -533,8 +691,8 @@ struct DeviceEntry {
 /// laws, each a mirror of an engine law, never a guess: a replace/hold's
 /// stale-cancellation and a backward locate mirror the queues' own
 /// cancellation ([`QueueBudgets`]); and [`Self::release_landed`] subtracts
-/// what the engine's progress echo **proves** has left its queue —
-/// admitted-batch and stamp both behind the echoed horizon. The echo lags
+/// what the engine's progress echo **proves** has left its queue
+/// ([`proven_popped`]). The echo lags
 /// the engine, so the ledger may over-refuse for a batch or two; it never
 /// under-refuses, because nothing is released ahead of proof. An offline
 /// render's fresh registry keeps the ledger exact for its one
@@ -582,6 +740,25 @@ impl Default for GraphRegistry {
 }
 
 impl GraphRegistry {
+    /// Number a fence this process published outside [`map_batch`] — the
+    /// transport maps install, which sends its own batch
+    /// (`commands::engine_transport`).
+    ///
+    /// The engine numbers every fence it drains without caring which command
+    /// sent it, so [`Self::batches_sent`] is only comparable to
+    /// `batches_applied` while it counts them all. A fence left unnumbered
+    /// here would leave every later batch's [`PendingStamp::admitted_batch`]
+    /// below the count it is held against, and the ledger would release a
+    /// stamp on a batch horizon it had not actually cleared.
+    ///
+    /// Called after the push succeeds, for the same reason `map_batch`'s own
+    /// increment lives on a clone the caller only commits on success: a batch
+    /// the ring refused is not a fence.
+    pub(crate) fn record_fenced_batch(&mut self) -> u64 {
+        self.batches_sent += 1;
+        self.batches_sent
+    }
+
     fn allocate_node_id(&mut self) -> usize {
         let id = self.next_node_id;
         self.next_node_id += 1;
@@ -595,19 +772,25 @@ impl GraphRegistry {
     }
 
     /// Whether routing `from` at `target` closes a cycle, walking the outputs
-    /// this registry has recorded. The engine refuses cycles too, but its
-    /// refusal is a counted drop on the audio thread; the contract demands the
-    /// *batch* refuse instead, so the walk happens here first.
+    /// and the sends this registry has recorded. The engine refuses cycles too,
+    /// but its refusal is a counted drop on the audio thread; the contract
+    /// demands the *batch* refuse instead, so the walk happens here first.
     fn would_cycle(&self, from: &StripEntry, target: StripOutput) -> bool {
-        let mut current = target;
-        let mut hops = 0usize;
+        let mut stack = vec![target];
+        let mut seen = HashSet::new();
         let limit = MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES;
-        while hops <= limit {
+        while let Some(current) = stack.pop() {
             let next_native = match current {
-                StripOutput::Master => return false,
+                StripOutput::Master => continue,
                 StripOutput::Track(native_id) | StripOutput::Bus(native_id) => native_id,
             };
             if next_native == from.native_id {
+                return true;
+            }
+            if !seen.insert(next_native) {
+                continue;
+            }
+            if seen.len() > limit {
                 return true;
             }
             let Some(next) = self
@@ -615,12 +798,70 @@ impl GraphRegistry {
                 .values()
                 .find(|entry| entry.native_id == next_native)
             else {
-                return false;
+                continue;
             };
-            current = next.output;
-            hops += 1;
+            stack.push(next.output);
+            if next.kind == StripKind::Track {
+                for bus_id in &next.send_bus_ids {
+                    let Some(bus) = self.strips.get(bus_id) else {
+                        continue;
+                    };
+                    stack.push(StripOutput::Bus(bus.native_id));
+                }
+            }
         }
-        true
+        false
+    }
+
+    /// Retire everything this registry built, returning the engine ops that do
+    /// it and leaving the registry holding no strip and no device.
+    ///
+    /// A strip's chain devices are retired before the strip itself:
+    /// [`GraphCommand::RemoveTrack`] leaves a track's effects registered but
+    /// detached, so a topology replaced without this would strand one entry of
+    /// the scheduler's shared effect table per device per play until the table
+    /// is full.
+    ///
+    /// Three things deliberately survive the teardown. The node and effect id
+    /// allocators keep counting, so a rebuilt strip never reuses an id the
+    /// engine has not finished with — `AddTrack` answers a colliding id by
+    /// silently retiring the track it was handed, which would lose a strip with
+    /// no refusal anywhere. `runtime_revision` keeps counting because the
+    /// correlation law is about this registry's history, not its contents. And
+    /// `batches_sent` keeps counting because it numbers fences against the
+    /// engine's own applied count: that stream is not restarting here, only the
+    /// graph it carries.
+    ///
+    /// The queue ledgers do go, with the strips they describe: every stamp
+    /// addresses a node or an effect this teardown removes, and a removed
+    /// node's queue is removed with it.
+    fn take_topology_down(&mut self) -> Vec<GraphCommand> {
+        let mut strips: Vec<&StripEntry> = self.strips.values().collect();
+        // Registry order is a `HashMap`'s, which is not an order at all. Native
+        // id is creation order, so the teardown reads the way the build did.
+        strips.sort_by_key(|entry| entry.native_id);
+
+        let mut ops = Vec::new();
+        for strip in strips {
+            for device_id in &strip.device_ids {
+                let Some(device) = self.devices.get(device_id) else {
+                    continue;
+                };
+                ops.push(remove_device_op(strip.kind, strip.native_id, device));
+            }
+            ops.push(match strip.kind {
+                StripKind::Track => GraphCommand::RemoveTrack(strip.native_id),
+                StripKind::Bus => GraphCommand::RemoveBus(strip.native_id),
+            });
+        }
+
+        self.strips.clear();
+        self.devices.clear();
+        self.track_count = 0;
+        self.bus_count = 0;
+        self.automation_pending.clear();
+        self.device_param_pending.clear();
+        ops
     }
 
     /// Subtract from the ledger exactly what the engine's progress echo
@@ -628,31 +869,93 @@ impl GraphRegistry {
     /// proof, because a stamp the ledger's own mirrored cancellations already
     /// removed must not release a second slot.
     ///
-    /// The proof is the echo's happens-before guarantee
-    /// ([`GraphProgressSnapshot`]): a write is gone from its engine queue
-    /// once its admitting fenced batch is at or behind the echoed batch
-    /// horizon **and** its stamp sits strictly before the echoed playhead.
-    /// Strictly — a stamp at the playhead itself is not yet proven popped.
-    /// Both queue kinds pop by that law every rendered block, playing or
-    /// stopped: `RampedParam` frees a slot when the playhead reaches a
-    /// write's start frame, `DeviceParamQueue` pops everything due within
-    /// the block. A stale echo, an engine restart, or a stamp the engine
-    /// dropped by a law with no mirror here (a foreign seek, a stop-edge
-    /// hold) all degrade the same direction: the stamp stays charged and the
-    /// ledger over-refuses until a later echo — never under-refuses.
+    /// The proof is [`proven_popped`], and a stamp it does not prove stays
+    /// charged: a stale echo, an engine restart, or a stamp the engine dropped
+    /// by a law with no mirror here (a foreign seek, a stop-edge hold) all
+    /// degrade the same direction — the ledger over-refuses until a later echo,
+    /// never under-refuses.
     fn release_landed(&mut self, progress: GraphProgressSnapshot) {
-        let proven_landed = |admitted_batch: u64, at_frame: u64| {
-            admitted_batch <= progress.batches_applied && at_frame < progress.playhead_frame
-        };
         self.automation_pending.retain(|_, queued| {
-            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            queued.retain_mut(|stamp| {
+                !proven_popped(
+                    progress,
+                    stamp.admitted_batch,
+                    stamp.at_frame,
+                    &mut stamp.landed_wraps,
+                )
+            });
             !queued.is_empty()
         });
         self.device_param_pending.retain(|_, queued| {
-            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            queued.retain_mut(|stamp| {
+                !proven_popped(
+                    progress,
+                    stamp.admitted_batch,
+                    stamp.at_frame,
+                    &mut stamp.landed_wraps,
+                )
+            });
             !queued.is_empty()
         });
     }
+}
+
+/// How many seams must close after a stamp is known queued before a *whole*
+/// pass is proven to have run with it there.
+///
+/// One is not enough: the seam that closes first ends the pass the stamp was
+/// admitted into, and the playhead may already have been past the stamp when
+/// the batch drained, so that pass proves nothing about it. The pass between
+/// the first and second seam is the earliest one that ran from the region's
+/// start with the stamp already queued.
+const SEAMS_PROVING_A_WHOLE_PASS: u64 = 2;
+
+/// Whether the engine's progress echo proves one queued write has left its
+/// fixed engine queue.
+///
+/// Nothing is released on a count, always on a per-stamp proof, because a stamp
+/// the ledger's own mirrored cancellations already removed must not release a
+/// second slot. Two proofs exist, and both first require the write's admitting
+/// fenced batch to be at or behind the echoed batch horizon — until then the
+/// engine has not even been handed it.
+///
+/// **The playhead.** A stamp strictly before the echoed playhead is popped
+/// ([`GraphProgressSnapshot`]'s happens-before). Strictly — a stamp at the
+/// playhead itself is due in the block that has not run. Both queue kinds pop
+/// by that law every rendered block, playing or stopped: `RampedParam` frees a
+/// slot when the walk reaches a write's start frame, `DeviceParamQueue` pops
+/// everything due within the block.
+///
+/// **The seam.** A loop pins the playhead below the region's end forever, so
+/// the first proof alone would leave every stamp in the region charged for the
+/// life of the session and a looping musician's parameter edits would exhaust
+/// the admission budget. The seam proof replaces the playhead's monotonicity
+/// with the wrap counter's: `last_wrap_frame` is the frame the pass ending at
+/// seam `loop_wraps` walked to, so every write queued *before that pass began*
+/// and stamped below it was consumed by it. `landed_wraps` anchors "before":
+/// it is the wrap count on the first echo that proved the batch drained, which
+/// is an echo at which the write was certainly on the queue, and
+/// [`SEAMS_PROVING_A_WHOLE_PASS`] seams after it is the earliest point a whole
+/// pass has run since.
+///
+/// Neither proof can release a stamp the audio thread might still consume, and
+/// neither depends on how often the echo is sampled: sampling less often only
+/// delays a release.
+fn proven_popped(
+    progress: GraphProgressSnapshot,
+    admitted_batch: u64,
+    at_frame: u64,
+    landed_wraps: &mut Option<u64>,
+) -> bool {
+    if admitted_batch > progress.batches_applied {
+        return false;
+    }
+    if at_frame < progress.playhead_frame {
+        return true;
+    }
+    let anchor = *landed_wraps.get_or_insert(progress.loop_wraps);
+    progress.loop_wraps.saturating_sub(anchor) >= SEAMS_PROVING_A_WHOLE_PASS
+        && at_frame < progress.last_wrap_frame
 }
 
 // ── Validation and mapping ─────────────────────────────────────────────────
@@ -684,6 +987,10 @@ struct PendingStamp {
     at_frame: u64,
     lands_at: u64,
     admitted_batch: u64,
+    /// The wrap count on the first echo that proved this stamp's batch drained
+    /// — the anchor the loop half of the release proof counts passes from. See
+    /// [`proven_popped`].
+    landed_wraps: Option<u64>,
 }
 
 /// One device-parameter change the ledger believes a device's pending window
@@ -694,6 +1001,8 @@ struct PendingStamp {
 struct DeviceParamStamp {
     at_frame: u64,
     admitted_batch: u64,
+    /// As [`PendingStamp::landed_wraps`].
+    landed_wraps: Option<u64>,
 }
 
 /// Control-side ledger of what accepted batches queue on the engine's fixed
@@ -747,15 +1056,7 @@ impl QueueBudgets {
         write: &AutomationWrite,
     ) -> Result<(), String> {
         let queued = self.automation.entry(target).or_default();
-        let (start, lands_at) = match write {
-            AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
-                event.at_frame,
-                event
-                    .at_frame
-                    .saturating_add(u64::from(event.duration_frames)),
-            ),
-            AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
-        };
+        let (start, lands_at) = write_frames(write);
         if !matches!(write, AutomationWrite::Append(_)) {
             queued.retain(|pending| pending.lands_at < start);
         }
@@ -775,6 +1076,7 @@ impl QueueBudgets {
             at_frame: start,
             lands_at,
             admitted_batch: self.charging_batch,
+            landed_wraps: None,
         });
         Ok(())
     }
@@ -794,6 +1096,7 @@ impl QueueBudgets {
         queued.push(DeviceParamStamp {
             at_frame,
             admitted_batch: self.charging_batch,
+            landed_wraps: None,
         });
         Ok(())
     }
@@ -809,7 +1112,22 @@ impl QueueBudgets {
     }
 }
 
-fn finite(value: f64, what: &str) -> Result<f64, String> {
+/// The frame a write starts at and the frame it lands on — a ramp's start and
+/// its landing, a step's or a hold's own stamp for both, because both land
+/// instantly.
+fn write_frames(write: &AutomationWrite) -> (u64, u64) {
+    match write {
+        AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
+            event.at_frame,
+            event
+                .at_frame
+                .saturating_add(u64::from(event.duration_frames)),
+        ),
+        AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
+    }
+}
+
+pub(crate) fn finite(value: f64, what: &str) -> Result<f64, String> {
     if value.is_finite() {
         Ok(value)
     } else {
@@ -817,7 +1135,7 @@ fn finite(value: f64, what: &str) -> Result<f64, String> {
     }
 }
 
-fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> Result<u64, String> {
+pub(crate) fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> Result<u64, String> {
     let seconds = finite(seconds, what)?;
     if seconds < 0.0 {
         return Err(format!("{what} is negative"));
@@ -881,36 +1199,101 @@ fn push_automation(
     Ok(())
 }
 
-/// What one device maps onto natively. The scheduler's only built-in is the
-/// Knead engine; everything else in the project's native-DSP vocabulary is a
-/// WASM device the web runtime realises, with no `daw-engine` body yet.
+/// Why this device has no body the scheduler can build, or `None` when it has
+/// one.
 ///
-/// The built-in instance is built here, on the mapping (control) thread,
-/// against the stream's `sample_rate`: the audio thread that applies the
-/// command installs or retires it and never constructs one (ADR 0020).
+/// Both answers are the same fact — nothing native to install — and they are
+/// stated together so they reach the one degradation law that governs it. An
+/// externally hosted plugin with no engine-owned instance belongs here rather
+/// than in a refusal of its own: it sounds where it already sounds, on the web
+/// path, and a strip mirroring the session's routing has no more to add for it
+/// than it does for a WASM device. Refusing it instead would refuse the whole
+/// batch, which in practice means every project that holds a plugin — most of
+/// them.
+///
+/// A device whose `externalInstanceId` the engine *does* own never reaches here:
+/// [`map_device`] splices it by that instance's effect id, and a lookup miss
+/// there carries its own reason naming the instance.
+fn no_native_body(device: &DevicePayload) -> Option<String> {
+    if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
+        return Some(format!(
+            "device '{}' is an externally hosted plugin with no engine-owned instance to bind",
+            device.id
+        ));
+    }
+    if !device.device_type.eq_ignore_ascii_case("knead") {
+        return Some(format!(
+            "device '{}' of type '{}' has no native realisation",
+            device.id, device.device_type
+        ));
+    }
+    None
+}
+
+/// What one device maps onto natively, and who owns the effect it names.
+///
+/// Two populations reach a strip chain. A built-in Knead device is *built*
+/// here, on the mapping (control) thread, against the stream's `sample_rate`:
+/// the audio thread that applies the command installs or retires it and never
+/// constructs one (ADR 0020). A hosted plugin the engine already owns is
+/// *borrowed*: `load_plugin` registered it and reserved its effect-table slot
+/// at that moment, so this maps the device onto that instance's existing engine
+/// plugin id and allocates nothing. Everything else in the project's
+/// native-DSP vocabulary is a WASM device the web runtime realises, with no
+/// `daw-engine` body yet.
+///
+/// An engine-owned device carries no `SetParam`: an external plugin's
+/// parameters are its own, addressed over the plugin's control path rather than
+/// through the engine's fixed built-in vocabulary, so its `parameterValues` are
+/// carried by the panel and never validated against `DeviceParam::from_name`
+/// here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MappedDevice {
+    effect_id: usize,
+    engine_owned: bool,
+}
+
 fn map_device(
     device: &DevicePayload,
     registry: &mut GraphRegistry,
     contributes_audio: bool,
     sample_rate: f32,
+    engine_plugin_ids: &HashMap<String, usize>,
     ops: &mut Vec<GraphCommand>,
-) -> Result<Option<usize>, String> {
-    if device.external_instance_id.is_some() || device.external_plugin_id.is_some() {
-        return Err(format!(
-            "device '{}' is an externally hosted plugin; plugin chain binding is not part of this \
-             slice",
-            device.id
-        ));
-    }
+) -> Result<Option<MappedDevice>, String> {
     if registry.devices.contains_key(&device.id) {
         return Err(format!("device id '{}' is already in a chain", device.id));
     }
-    if !device.device_type.eq_ignore_ascii_case("knead") {
+
+    if let Some(instance_id) = device.external_instance_id.as_deref() {
+        let Some(&effect_id) = engine_plugin_ids.get(instance_id) else {
+            let reason = format!(
+                "device '{}' names hosted plugin instance '{instance_id}', which is not attached \
+                 to the engine",
+                device.id
+            );
+            if contributes_audio {
+                return Err(reason);
+            }
+            // Same degradation law as any device with no body: a strip built
+            // only to keep the routing graph faithful contributes silence, so
+            // the device is omitted and its absence is what the strip report
+            // says.
+            return Ok(None);
+        };
+        charge_chain_slot(registry, &device.id)?;
+        if device.bypassed {
+            ops.push(GraphCommand::SetBypass(effect_id, true));
+        }
+        return Ok(Some(MappedDevice {
+            effect_id,
+            engine_owned: true,
+        }));
+    }
+
+    if let Some(reason) = no_native_body(device) {
         if contributes_audio {
-            return Err(format!(
-                "device '{}' of type '{}' has no native realisation",
-                device.id, device.device_type
-            ));
+            return Err(reason);
         }
         // A strip built only to keep the routing graph faithful contributes
         // silence by construction, so a device it cannot build degrades:
@@ -932,31 +1315,7 @@ fn map_device(
         }
     }
 
-    // The scheduler's effect table is shared by every population that
-    // registers into it — the project's chain devices, engine-owned plugins,
-    // the crumbs capture slot — and its timeline term is the chain-slot
-    // budget the strip admission rules themselves enforce: tracks and buses
-    // are counted, and each chain is capped per strip. This bound is the
-    // project-wide belt over those per-strip caps: while they hold it is
-    // unreachable, and a device that slips past them must still refuse here —
-    // refusing at map time is what turns a device that would silently vanish
-    // into one that reports it could not be added: the batch fails, its
-    // working registry clone is discarded, and no chain entry is written.
-    //
-    // This bound covers the project's *devices* only, and it names the device
-    // that hit it. The table is shared with engine-owned plugins and the
-    // crumbs capture slot, so the complete ceiling is the engine's own ledger
-    // — `EngineHandle::send_graph_batch` admits the whole batch against the
-    // whole population before it publishes anything, and refuses it whole
-    // otherwise. Whichever bound is tighter fires first; neither is the only
-    // one, and neither may be widened into a second partial count.
-    if registry.devices.len() >= TIMELINE_CHAIN_SLOT_BUDGET {
-        return Err(format!(
-            "device '{}': the project holds its maximum of {TIMELINE_CHAIN_SLOT_BUDGET} native \
-             devices",
-            device.id
-        ));
-    }
+    charge_chain_slot(registry, &device.id)?;
     let effect_id = registry.allocate_effect_id();
     // Detached, never `AddEffect`: commands cross the ring one at a time, so
     // a callback can drain between this registration and the chain splice
@@ -979,7 +1338,80 @@ fn map_device(
     if device.bypassed {
         ops.push(GraphCommand::SetBypass(effect_id, true));
     }
-    Ok(Some(effect_id))
+    Ok(Some(MappedDevice {
+        effect_id,
+        engine_owned: false,
+    }))
+}
+
+/// Take one of the project's chain slots for `device_id`, or refuse by name.
+///
+/// The scheduler's effect table is shared by every population that registers
+/// into it — the project's chain devices, engine-owned plugins, the crumbs
+/// capture slot — and its timeline term is the chain-slot budget the strip
+/// admission rules themselves enforce: tracks and buses are counted, and each
+/// chain is capped per strip. This bound is the project-wide belt over those
+/// per-strip caps: while they hold it is unreachable, and a device that slips
+/// past them must still refuse here — refusing at map time is what turns a
+/// device that would silently vanish into one that reports it could not be
+/// added: the batch fails, its working registry clone is discarded, and no
+/// chain entry is written.
+///
+/// An engine-owned plugin is charged here too, because it occupies a chain slot
+/// exactly like any other device. Its *effect-table* headroom is not taken
+/// here: `register_runtime_with_engine` took that at load
+/// (`EngineHandle::ensure_effect_table_headroom`), which is why the splice
+/// allocates nothing.
+///
+/// This bound covers the project's *devices* only, and it names the device that
+/// hit it. The table is shared with the crumbs capture slot too, so the complete
+/// ceiling is the engine's own ledger — `EngineHandle::send_graph_batch` admits
+/// the whole batch against the whole population before it publishes anything,
+/// and refuses it whole otherwise. Whichever bound is tighter fires first;
+/// neither is the only one, and neither may be widened into a second partial
+/// count.
+fn charge_chain_slot(registry: &GraphRegistry, device_id: &str) -> Result<(), String> {
+    if registry.devices.len() >= TIMELINE_CHAIN_SLOT_BUDGET {
+        return Err(format!(
+            "device '{device_id}': the project holds its maximum of \
+             {TIMELINE_CHAIN_SLOT_BUDGET} native devices"
+        ));
+    }
+    Ok(())
+}
+
+/// How one device leaves its chain.
+///
+/// A device this registry built is removed and retired in one engine command:
+/// a separate removal followed by a retirement would return the effect to the
+/// master insert chain for any block a callback rendered between the two,
+/// running a deleted device over the whole mix.
+///
+/// An engine-owned plugin is removed without being retired, because retiring it
+/// would free an instance the plugin panel, its editor and its parameter path
+/// are all still holding — `unload_plugin` owns that, through
+/// `RemovePluginWithBridge`. The window the retiring form exists to close is
+/// already shut for it from the other end: the engine homes a hosted plugin
+/// detached, so releasing one puts it nowhere rather than on the master mix.
+fn remove_device_op(kind: StripKind, native_id: usize, device: &DeviceEntry) -> GraphCommand {
+    match (kind, device.engine_owned) {
+        (StripKind::Track, false) => GraphCommand::RemoveTrackDeviceRetired {
+            track_id: native_id,
+            effect_id: device.native_effect_id,
+        },
+        (StripKind::Track, true) => GraphCommand::RemoveTrackDevice {
+            track_id: native_id,
+            effect_id: device.native_effect_id,
+        },
+        (StripKind::Bus, false) => GraphCommand::RemoveBusDeviceRetired {
+            bus_id: native_id,
+            effect_id: device.native_effect_id,
+        },
+        (StripKind::Bus, true) => GraphCommand::RemoveBusDevice {
+            bus_id: native_id,
+            effect_id: device.native_effect_id,
+        },
+    }
 }
 
 fn strip_device_capacity(kind: StripKind) -> usize {
@@ -1019,11 +1451,18 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 /// Map a whole batch. `registry` is the caller's working clone; on `Err`
 /// nothing built here may be applied and the clone is discarded — including
 /// the queue ledger, which is written back onto the clone only on success.
+///
+/// `engine_plugin_ids` is instance id → engine plugin id for every hosted
+/// plugin the engine owns, read once on the control thread before the batch is
+/// mapped. It is empty for every offline path: those render with no live
+/// engine, so no instance exists for a device to bind to and an external device
+/// on a sounding strip refuses there exactly as it did before binding existed.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &HashMap<String, TimelineSample>,
     sample_rate: f32,
+    engine_plugin_ids: &HashMap<String, usize>,
 ) -> Result<MappedBatch, String> {
     if batch.schema_version != 1 {
         return Err(format!(
@@ -1031,8 +1470,21 @@ fn map_batch(
             batch.schema_version
         ));
     }
+    if batch.commands.len() > MAX_BATCH_COMMANDS {
+        return Err(format!(
+            "batch carries {} commands, past the ceiling of {MAX_BATCH_COMMANDS}",
+            batch.commands.len()
+        ));
+    }
 
     let mut ops = Vec::new();
+    // A replacing batch tears the previous topology down inside its own fence,
+    // so the swap is one step for the audio thread: no block renders the old
+    // graph beside the new one, and none renders neither. The ledger is seeded
+    // after the teardown because the teardown clears it.
+    if batch.replace_topology {
+        ops.extend(registry.take_topology_down());
+    }
     let mut touched: Vec<String> = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
     let mut budgets = QueueBudgets::seeded_from(registry);
@@ -1043,6 +1495,7 @@ fn map_batch(
             registry,
             samples,
             sample_rate,
+            engine_plugin_ids,
             &mut budgets,
             &mut ops,
             &mut touched,
@@ -1122,6 +1575,7 @@ fn map_command(
     registry: &mut GraphRegistry,
     samples: &HashMap<String, TimelineSample>,
     sample_rate: f32,
+    engine_plugin_ids: &HashMap<String, usize>,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
@@ -1178,8 +1632,14 @@ fn map_command(
             let mut built_device_ids = Vec::new();
             let mut chain_index = 0usize;
             for device in devices {
-                let Some(effect_id) =
-                    map_device(device, registry, *contributes_audio, sample_rate, ops)?
+                let Some(mapped) = map_device(
+                    device,
+                    registry,
+                    *contributes_audio,
+                    sample_rate,
+                    engine_plugin_ids,
+                    ops,
+                )?
                 else {
                     continue;
                 };
@@ -1187,7 +1647,7 @@ fn map_command(
                     StripKind::Track,
                     native_id,
                     ChainEntry {
-                        effect_id,
+                        effect_id: mapped.effect_id,
                         kind: DeviceKind::Effect,
                     },
                     chain_index,
@@ -1195,8 +1655,9 @@ fn map_command(
                 registry.devices.insert(
                     device.id.clone(),
                     DeviceEntry {
-                        native_effect_id: effect_id,
+                        native_effect_id: mapped.effect_id,
                         strip_id: track_id.clone(),
+                        engine_owned: mapped.engine_owned,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -1248,26 +1709,8 @@ fn map_command(
             if vca < 0.0 {
                 return Err("create-bus-strip: vcaMultiplier is negative".to_string());
             }
-            if pan_position(state.pan)? != 0.0 {
-                return Err(
-                    "create-bus-strip: bus-pan-unsupported — the native bus strip has no panner"
-                        .to_string(),
-                );
-            }
-            if *honor_muted && state.muted {
-                return Err(
-                    "create-bus-strip: bus-mute-unsupported — the native bus strip has no mute gate"
-                        .to_string(),
-                );
-            }
-            if state.solo_gated {
-                return Err(
-                    "create-bus-strip: bus-solo-gate-unsupported — the native bus strip has no \
-                     solo gate"
-                        .to_string(),
-                );
-            }
             let gain = fader_gain(state.gain, vca)?;
+            let pan = pan_position(state.pan)?;
             let native_id = registry.allocate_node_id();
 
             ops.push(GraphCommand::AddBus(TimelineBus::new(native_id)));
@@ -1277,12 +1720,32 @@ fn map_command(
                 budgets,
                 ops,
             )?;
+            if pan != 0.0 {
+                push_automation(
+                    AutomationTarget::BusPan(native_id),
+                    immediate_write(pan),
+                    budgets,
+                    ops,
+                )?;
+            }
+            if *honor_muted && state.muted {
+                ops.push(GraphCommand::SetBusMute(native_id, true));
+            }
+            if state.solo_gated {
+                ops.push(GraphCommand::SetBusSoloGate(native_id, true));
+            }
 
             let mut built_device_ids = Vec::new();
             let mut chain_index = 0usize;
             for device in devices {
-                let Some(effect_id) =
-                    map_device(device, registry, *contributes_audio, sample_rate, ops)?
+                let Some(mapped) = map_device(
+                    device,
+                    registry,
+                    *contributes_audio,
+                    sample_rate,
+                    engine_plugin_ids,
+                    ops,
+                )?
                 else {
                     continue;
                 };
@@ -1290,7 +1753,7 @@ fn map_command(
                     StripKind::Bus,
                     native_id,
                     ChainEntry {
-                        effect_id,
+                        effect_id: mapped.effect_id,
                         kind: DeviceKind::Effect,
                     },
                     chain_index,
@@ -1298,8 +1761,9 @@ fn map_command(
                 registry.devices.insert(
                     device.id.clone(),
                     DeviceEntry {
-                        native_effect_id: effect_id,
+                        native_effect_id: mapped.effect_id,
                         strip_id: bus_id.clone(),
+                        engine_owned: mapped.engine_owned,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -1336,20 +1800,6 @@ fn map_command(
                 .get(track_id)
                 .ok_or_else(|| format!("set-track-output: unknown strip '{track_id}'"))?
                 .clone();
-            if strip.kind == StripKind::Bus {
-                if matches!(output, StripOutput::Track(_)) {
-                    // The refusal asymmetry named at AudioGraphBackend.ts's
-                    // routing constraint: buses are summed after every track,
-                    // so this edge cannot carry audio. Refusing the batch —
-                    // with this reason, distinct from an unknown target — is
-                    // the D3 obligation this slice takes; rendering bus->track
-                    // is not.
-                    return Err(format!(
-                        "set-track-output: bus-to-track-routing-unsupported — strip '{track_id}' \
-                         is a bus and daw-engine sums buses after tracks"
-                    ));
-                }
-            }
             if registry.would_cycle(&strip, output) {
                 return Err(format!(
                     "set-track-output: routing '{track_id}' there closes a cycle"
@@ -1402,6 +1852,11 @@ fn map_command(
                 return Err(format!(
                     "add-send: send target '{bus_id}' is a track, and a native send lands only on \
                      a bus"
+                ));
+            }
+            if registry.would_cycle(source, StripOutput::Bus(destination.native_id)) {
+                return Err(format!(
+                    "add-send: routing '{track_id}' there closes a cycle"
                 ));
             }
             let source_native = source.native_id;
@@ -1470,8 +1925,14 @@ fn map_command(
             // and the strip's report is exactly how that omission is
             // observable — the command never succeeds silently.
             touch(touched, track_id);
-            let Some(effect_id) =
-                map_device(device, registry, strip.contributes_audio, sample_rate, ops)?
+            let Some(mapped) = map_device(
+                device,
+                registry,
+                strip.contributes_audio,
+                sample_rate,
+                engine_plugin_ids,
+                ops,
+            )?
             else {
                 return Ok(());
             };
@@ -1480,7 +1941,7 @@ fn map_command(
                 strip.kind,
                 strip.native_id,
                 ChainEntry {
-                    effect_id,
+                    effect_id: mapped.effect_id,
                     kind: DeviceKind::Effect,
                 },
                 insert_at,
@@ -1488,8 +1949,9 @@ fn map_command(
             registry.devices.insert(
                 device.id.clone(),
                 DeviceEntry {
-                    native_effect_id: effect_id,
+                    native_effect_id: mapped.effect_id,
                     strip_id: track_id.clone(),
+                    engine_owned: mapped.engine_owned,
                 },
             );
             registry
@@ -1520,25 +1982,14 @@ fn map_command(
                     "remove-device: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            // Remove and retire in one engine command. A separate removal
-            // followed by a retirement would return the effect to the master
-            // insert chain for any block a callback rendered between the two,
-            // running a deleted device over the whole mix.
-            ops.push(match strip.kind {
-                StripKind::Track => GraphCommand::RemoveTrackDeviceRetired {
-                    track_id: strip.native_id,
-                    effect_id: device.native_effect_id,
-                },
-                StripKind::Bus => GraphCommand::RemoveBusDeviceRetired {
-                    bus_id: strip.native_id,
-                    effect_id: device.native_effect_id,
-                },
-            });
+            ops.push(remove_device_op(strip.kind, strip.native_id, &device));
             registry.devices.remove(device_id);
-            // The retirement takes the device's `DeviceParamQueue` with it,
+            // A retirement takes the device's `DeviceParamQueue` with it,
             // pending changes and all, and graph effect ids are never reused
             // (the allocator is monotonic) — so the ledger's window for this
-            // effect is exactly gone, not guessed gone.
+            // effect is exactly gone, not guessed gone. An engine-owned device
+            // holds no window to close: `write-device-parameter` refuses one, so
+            // nothing was ever charged against its id.
             budgets.device_params.remove(&device.native_effect_id);
             registry
                 .strips
@@ -1569,18 +2020,31 @@ fn map_command(
                     "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
+            if device.engine_owned {
+                // The engine's device-parameter vocabulary is the built-in's.
+                // A hosted plugin's parameters are its own and travel on the
+                // plugin's control path, so a write addressed here would either
+                // refuse by name or — worse, when a name happens to collide —
+                // queue a stamp the engine can only count as an unmapped call.
+                return Err(format!(
+                    "write-device-parameter: device '{device_id}' is a hosted plugin; its \
+                     parameters are written through the plugin, not the graph"
+                ));
+            }
             let param = DeviceParam::from_name(parameter_id.as_str()).ok_or_else(|| {
                 format!("write-device-parameter: parameter '{parameter_id}' has no native address")
             })?;
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+            let value = finite(*value, "write-device-parameter value")? as f32;
+            let effect_id = device.native_effect_id;
             budgets
-                .charge_device_param(device.native_effect_id, at_frame)
+                .charge_device_param(effect_id, at_frame)
                 .map_err(|reason| format!("write-device-parameter: {reason}"))?;
             ops.push(GraphCommand::AutomateDeviceParam {
-                effect_id: device.native_effect_id,
+                effect_id,
                 param,
-                value: finite(*value, "write-device-parameter value")? as f32,
+                value,
                 at_frame,
             });
             Ok(())
@@ -1593,7 +2057,12 @@ fn map_command(
         GraphCommandPayload::SetTransport {
             playing,
             position_seconds,
+            locate,
         } => {
+            // Validated whether or not it is used: a position this side cannot
+            // put on the frame grid is malformed however the producer means it
+            // to be read, and refusing only when the seek is wanted would let
+            // one shape of the command carry a number the other refuses.
             let frame =
                 seconds_to_frames(*position_seconds, sample_rate, "set-transport position")?;
             // Playback state lands before the locate: a play→stop edge holds
@@ -1607,10 +2076,20 @@ fn map_command(
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
             });
-            ops.push(GraphCommand::SeekFrames(frame));
-            // The ledger mirrors the locate it just queued: the engine's seek
-            // drops every queued write stamped at or past the target.
-            budgets.apply_seek(frame);
+            if *locate {
+                ops.push(GraphCommand::SeekFrames(frame));
+                // The ledger mirrors the locate it just queued: the engine's
+                // seek drops every queued write stamped at or past the target.
+                budgets.apply_seek(frame);
+            }
+            Ok(())
+        }
+
+        GraphCommandPayload::SetMonitorShadow { shadowed } => {
+            // Nothing to validate and nothing to charge: the gate addresses no
+            // strip, holds no stamp and queues no write. It is a mode the
+            // callback reads at the device boundary.
+            ops.push(GraphCommand::SetMonitorShadow(*shadowed));
             Ok(())
         }
     }
@@ -1647,24 +2126,22 @@ fn map_parameter_write(
     match target {
         StripParameterTargetPayload::TrackMuteGate { track_id } => {
             let strip = strip_for(track_id)?;
-            if strip.kind == StripKind::Bus {
-                return Err(format!(
-                    "write-parameter: bus-mute-unsupported — strip '{track_id}' is a bus"
-                ));
-            }
             let closed = gate_step("track-mute-gate")?;
-            ops.push(GraphCommand::SetTrackMute(strip.native_id, closed));
+            match strip.kind {
+                StripKind::Track => ops.push(GraphCommand::SetTrackMute(strip.native_id, closed)),
+                StripKind::Bus => ops.push(GraphCommand::SetBusMute(strip.native_id, closed)),
+            }
             return Ok(());
         }
         StripParameterTargetPayload::TrackSoloGate { track_id } => {
             let strip = strip_for(track_id)?;
-            if strip.kind == StripKind::Bus {
-                return Err(format!(
-                    "write-parameter: bus-solo-gate-unsupported — strip '{track_id}' is a bus"
-                ));
-            }
             let closed = gate_step("track-solo-gate")?;
-            ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed));
+            match strip.kind {
+                StripKind::Track => {
+                    ops.push(GraphCommand::SetTrackSoloGate(strip.native_id, closed))
+                }
+                StripKind::Bus => ops.push(GraphCommand::SetBusSoloGate(strip.native_id, closed)),
+            }
             return Ok(());
         }
         _ => {}
@@ -1687,17 +2164,11 @@ fn map_parameter_write(
         }
         StripParameterTargetPayload::TrackPan { track_id } => {
             let strip = strip_for(track_id)?;
-            if strip.kind == StripKind::Bus {
-                return Err(format!(
-                    "write-parameter: bus-pan-unsupported — strip '{track_id}' is a bus and \
-                         the native bus strip has no panner"
-                ));
-            }
-            (
-                strip,
-                AutomationTarget::TrackPan(strip.native_id),
-                |value, _| pan_position(value),
-            )
+            let target = match strip.kind {
+                StripKind::Track => AutomationTarget::TrackPan(strip.native_id),
+                StripKind::Bus => AutomationTarget::BusPan(strip.native_id),
+            };
+            (strip, target, |value, _| pan_position(value))
         }
         StripParameterTargetPayload::TrackSendLevel { track_id, bus_id } => {
             let strip = strip_for(track_id)?;
@@ -1796,22 +2267,21 @@ fn map_schedule_clip(
     })?;
 
     let rate = finite(playback.playback_rate, "playbackRate")?;
-    if rate != 1.0 {
-        // This backend does not implement stretch: `TimelineClip` has nowhere
-        // to carry a rate, and a clip played at unity instead would bounce at
-        // the wrong pitch and the wrong length without saying so. Refuse until
-        // the engine can play one.
+    if rate <= 0.0 {
         return Err(format!(
-            "schedule-clip: stretched-clip-unsupported — playbackRate {rate} refused because this \
-             backend cannot stretch a clip yet"
+            "schedule-clip: playbackRate {rate} refused — a clip rate must be positive"
         ));
     }
-    // Rate *conversion* is not a stretch: material decoded at another rate is
-    // read at material_rate / engine_rate source frames per rendered frame,
-    // which preserves its pitch and its duration on this engine's clock.
-    let effective_rate = sample.sample_rate / sample_rate;
+    // `ClipPlayback::playback_rate` is varispeed, not pitch-preserving stretch
+    // (crates/daw-engine/src/timeline.rs, `ClipPlayback` doc): rate and pitch
+    // move together, exactly what an `AudioBufferSourceNode` does on the Web
+    // Audio legs (`scheduleAudioClips.ts`, `scheduleOfflineClipSource.ts`).
+    // The user's rate and the material's own sample-rate conversion both read
+    // as "source frames per rendered frame", so they compose by
+    // multiplication into one field the engine already knows how to play.
+    let effective_rate = rate * f64::from(sample.sample_rate / sample_rate);
     if !effective_rate.is_finite() || effective_rate <= 0.0 {
-        return Err("schedule-clip: the sample's rate conversion is not renderable".to_string());
+        return Err("schedule-clip: the clip's effective rate is not renderable".to_string());
     }
 
     let gain = finite(playback.gain, "clip gain")?;
@@ -1862,10 +2332,21 @@ fn map_schedule_clip(
             begins_at: Some(at),
         }) => {
             let at = seconds_to_frames(*at, sample_rate, "fadeOut beginsAt")?;
-            if at > clip_end_frame {
+            // A producer states the clip's end as one quantity of seconds; this
+            // arm reconstructs it as two roundings, `round(start) +
+            // round(length)`. The two disagree by exactly one frame whenever
+            // both fractional parts sit below a half and still sum past it, so
+            // a fade-out pinned to the end of its own clip lands one frame past
+            // that reconstruction through arithmetic alone. One frame is the
+            // widest that split can be, so absorb it and keep refusing anything
+            // farther out, which is a fade genuinely outside its sound.
+            if at > clip_end_frame.saturating_add(1) {
                 return Err("schedule-clip: fadeOut begins after the clip ends".to_string());
             }
-            Some(frames_u32(clip_end_frame - at, "fadeOut span")?)
+            Some(frames_u32(
+                clip_end_frame.saturating_sub(at),
+                "fadeOut span",
+            )?)
         }
     };
 
@@ -1874,8 +2355,10 @@ fn map_schedule_clip(
         native_track_id,
         TimelineClip::new(
             clip_id,
-            sample.left.clone(),
-            sample.right.clone(),
+            // Shared, never copied: a take comped into forty regions, or looped
+            // across an arrangement, is forty clips over one allocation.
+            Arc::clone(&sample.left),
+            Arc::clone(&sample.right),
             ClipPlacement {
                 start_frame,
                 source_offset_frames,
@@ -1888,7 +2371,7 @@ fn map_schedule_clip(
                     fade_out_frames,
                     micro_fade_frames,
                 },
-                playback_rate: effective_rate,
+                playback_rate: effective_rate as f32,
             },
         ),
     ));
@@ -2005,18 +2488,19 @@ pub async fn register_timeline_sample(
     };
     let frames = pcm_frame_count(pcm.len(), channels)?;
     let bytes_per_frame = 4 * channels;
-    let mut left = Vec::with_capacity(frames);
-    let mut right = if channels == 2 {
-        Vec::with_capacity(frames)
+    // Collected straight into the shared channels every clip over this material
+    // will hold, so registration allocates each one exactly once.
+    let left: Arc<[f32]> = pcm
+        .chunks_exact(bytes_per_frame)
+        .map(|frame| f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]))
+        .collect();
+    let right: Arc<[f32]> = if channels == 2 {
+        pcm.chunks_exact(bytes_per_frame)
+            .map(|frame| f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]))
+            .collect()
     } else {
-        Vec::new()
+        Arc::from([])
     };
-    for frame in pcm.chunks_exact(bytes_per_frame) {
-        left.push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-        if channels == 2 {
-            right.push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-        }
-    }
 
     let mut samples = state
         .timeline_samples
@@ -2033,13 +2517,69 @@ pub async fn register_timeline_sample(
     Ok(serde_json::json!({ "frames": frames }))
 }
 
+/// Why a slot could not be filled: the mutex guarding it failed (a transport
+/// fault the caller reports as an error), or the constructor refused (a result
+/// the caller reports in its own vocabulary).
+enum SlotStartFailure<E> {
+    Lock(String),
+    Start(E),
+}
+
+/// Fill `slot` if it is empty, running `start` with **no lock held**.
+///
+/// `start` here is `EngineHandle::new`, which spawns a device output stream
+/// and waits on it — up to two five-second startup timeouts on a wedged
+/// device. A mutex held across that wait parks every other claim on the engine
+/// behind it, and the quit cascade claims the engine on the JS thread
+/// (`shutdown.rs`), where parking also stops the shell's force-exit timer from
+/// ever firing: a quit landing inside a slow bootstrap would hang the app for
+/// as long as the bootstrap takes. So the lock is taken twice and briefly —
+/// once to see whether anything is needed, once to install — and never across
+/// the construction.
+///
+/// The window between the two is why the install re-checks rather than
+/// assigning: single-boot is the property that matters, and it must not depend
+/// on a caller's own serialization. A value that lost the race is dropped only
+/// after the guard is released, because releasing a stream blocks exactly like
+/// starting one.
+fn start_into_empty_slot<T, E>(
+    slot: &Mutex<Option<T>>,
+    start: impl FnOnce() -> Result<T, E>,
+) -> Result<(), SlotStartFailure<E>> {
+    let lock_failure = |error: std::sync::PoisonError<_>| {
+        SlotStartFailure::Lock(format!("Failed to lock: {error}"))
+    };
+
+    if slot.lock().map_err(lock_failure)?.is_some() {
+        return Ok(());
+    }
+    let started = start().map_err(SlotStartFailure::Start)?;
+
+    let mut guard = slot.lock().map_err(lock_failure)?;
+    if guard.is_some() {
+        drop(guard);
+        return Ok(());
+    }
+    *guard = Some(started);
+    Ok(())
+}
+
 /// Apply one `AudioGraphCommandBatch` to the live native engine.
 ///
 /// Lazy bootstrap (#1984): the engine starts here, on the first batch, and a
 /// machine where it cannot start gets a `rejected` result whose reason says
 /// so — never a crash and never a silent no-op. The batch is validated whole
 /// against the registry before anything is pushed.
-pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Value, String> {
+///
+/// The registry it is validated against outlives every batch, so a caller that
+/// rebuilds a whole topology — every play does — sends a batch marked
+/// `replaceTopology` and the previous one is torn down inside the same fence
+/// ([`GraphRegistry::take_topology_down`]).
+pub async fn apply_graph_commands(
+    batch: Value,
+    state: &AppState,
+    crumbs: &CrumbsState,
+) -> Result<Value, String> {
     // A batch that does not even deserialize is a refusal, not a transport
     // error: the contract's one failure vocabulary is the `rejected` result,
     // and a thrown error beside it would be a second vocabulary for the same
@@ -2063,21 +2603,66 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
         return result_json(&GraphApplyResultPayload::rejected(reason));
     }
 
+    if let Err(failure) = start_into_empty_slot(&state.engine, daw_engine::EngineHandle::new) {
+        return match failure {
+            SlotStartFailure::Lock(error) => Err(format!("Failed to lock engine: {error}")),
+            SlotStartFailure::Start(error) => result_json(&GraphApplyResultPayload::rejected(
+                format!("engine-not-running: {error}"),
+            )),
+        };
+    }
+
+    // An engine exists from here on, so this is where a crumbs instance
+    // created before it ran takes its slot (#2265). Instances then engine —
+    // the order every path holding both takes them in — and both released
+    // before this batch claims the engine below. A crumbs refusal is that
+    // instance's to carry, never this batch's: it stays dormant for the next
+    // one.
+    match crumbs::attach_dormant_crumbs(crumbs, &state.engine) {
+        Ok(refusals) => {
+            for (instance_id, reason) in refusals {
+                eprintln!(
+                    "[Crumbs] instance '{instance_id}' could not attach to the engine: {reason}"
+                );
+            }
+        }
+        Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
+    }
+
+    // Read outside the engine lock, in the load path's order, and spent as both
+    // the batch's reservation and the attach's limit.
+    let dormant_plugin_count = state
+        .plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock plugins: {error}"))?
+        .len();
+
+    // The instances a device may bind to, read here because this is the last
+    // point before the batch is mapped. `attach_dormant_plugins` runs after the
+    // fence, for the reason stated there — only an `applied` payload can report
+    // an attach — so an instance this batch's own admission takes is not in this
+    // lookup and binds on the *next* batch instead. That one-batch lag is the
+    // cost of never reporting an engine-owned plugin on a rejected result, and
+    // the producer resends its topology on every play.
+    let engine_plugin_ids: HashMap<String, usize> = state
+        .engine_plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
+        .iter()
+        .map(|(instance_id, instance)| (instance_id.clone(), instance.engine_plugin_id))
+        .collect();
+
     let mut engine_guard = state
         .engine
         .lock()
         .map_err(|error| format!("Failed to lock engine: {error}"))?;
-    if engine_guard.is_none() {
-        match daw_engine::EngineHandle::new() {
-            Ok(handle) => *engine_guard = Some(handle),
-            Err(error) => {
-                return result_json(&GraphApplyResultPayload::rejected(format!(
-                    "engine-not-running: {error}"
-                )))
-            }
-        }
-    }
-    let engine = engine_guard.as_mut().expect("engine started above");
+    // The engine is installed above and only the quit cascade releases one, so
+    // an empty slot here means the process is shutting down under this batch.
+    let Some(engine) = engine_guard.as_mut() else {
+        return result_json(&GraphApplyResultPayload::rejected(
+            "engine-not-running: the engine was released while this batch was admitted".to_string(),
+        ));
+    };
 
     // Admission opens by subtracting what the engine has proven landed since
     // the last batch: the queue ledger releases exactly the stamps the
@@ -2092,7 +2677,13 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
 
     let correlation = batch.correlation.clone();
     let mut working = registry_guard.clone();
-    let mapped = match map_batch(&batch, &mut working, &samples, engine.sample_rate()) {
+    let mapped = match map_batch(
+        &batch,
+        &mut working,
+        &samples,
+        engine.sample_rate(),
+        &engine_plugin_ids,
+    ) {
         Ok(mapped) => mapped,
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
     };
@@ -2103,7 +2694,14 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
     // refuses to drain past until every command is visible — the engine
     // applies the batch whole or does not observe it at all. Only this
     // thread pushes onto the ring (the engine mutex is held).
-    match engine.send_graph_batch(mapped.ops) {
+    // The attach below pushes one `AddPluginWithBridge` per instance it takes,
+    // onto a ring this batch sizes to exactly itself and then fills, so the
+    // batch leaves exactly that many slots free. The count and the limit are the
+    // same number: an instance parked after the count is read is left dormant
+    // for the next batch rather than pushed onto a ring with no room, which is
+    // what keeps the reservation exact and a batch with nothing parked as small
+    // as it was before any of this existed.
+    match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
             // Nothing was pushed: a refusal here is a clean rejection.
@@ -2135,13 +2733,54 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
         }
     }
 
+    // The batch is fenced, so this call is `applied` and nothing below can turn
+    // it into anything else. That is the whole reason a hosted plugin loaded
+    // before the engine ran attaches *here* rather than beside the crumbs slot
+    // above: only the applied payload carries `attachedPlugins`, so an attach
+    // that ran before `map_batch` or `send_graph_batch` had decided could hand
+    // the engine an instance and then report a `rejected` result that says
+    // nothing about it — engine-owned and rendering on this side, still pending
+    // and degraded on the caller's, and gone from `state.plugins` so no later
+    // batch would ever mention it again.
+    //
+    // Same shape of answer as the crumbs slot: a refusal is that instance's to
+    // carry and leaves it dormant for the next batch, never this batch's to
+    // fail on. Unlike crumbs, the caller is told which instances were taken —
+    // the load told it the plugin had no engine, and this result is the only
+    // correction it will get.
+    //
+    // The engine lock goes first: `attach_dormant_plugins` takes it itself, and
+    // this one is not reentrant.
+    drop(engine_guard);
+    let attached_plugins =
+        match crate::commands::plugins::attach_dormant_plugins(state, dormant_plugin_count) {
+            Ok(attached) => attached,
+            Err(error) => {
+                eprintln!("[Plugin] dormant instances could not be attached: {error}");
+                Vec::new()
+            }
+        };
+    let attached_plugins: Vec<AttachedPluginPayload> = attached_plugins
+        .into_iter()
+        .map(|attached| AttachedPluginPayload {
+            instance_id: attached.instance_id,
+            bridge_round_trip_frames: attached.bridge_round_trip_frames,
+        })
+        .collect();
+
     working.runtime_revision = registry_guard.runtime_revision + 1;
     let revision = working.runtime_revision;
+    // `map_batch` advanced this count for the fence just published, so it is
+    // the number the engine's `batches_applied` reaches when this batch drains
+    // — the same number the ledger stamped every write in it with.
+    let admitted_batch = working.batches_sent;
     *registry_guard = working;
     result_json(&GraphApplyResultPayload::applied(
         correlation,
         revision,
+        admitted_batch,
         mapped.reports,
+        attached_plugins,
     ))
 }
 
@@ -2246,13 +2885,43 @@ struct MappingSessionKeyPayload {
     revision: u64,
 }
 
+/// Replay already-accepted history onto a fresh registry, one ceiling-sized
+/// chunk at a time. Concatenated session history can exceed what a single
+/// honest batch may carry; packing it into one `GraphBatchPayload` would
+/// refuse commands this process already took. Each chunk is at most
+/// [`MAX_BATCH_COMMANDS`] so the incoming batch still meets the same ceiling.
+fn replay_prior_commands(
+    mut commands: Vec<GraphCommandPayload>,
+    registry: &mut GraphRegistry,
+    samples: &HashMap<String, TimelineSample>,
+    sample_rate: f32,
+) -> Result<(), String> {
+    while !commands.is_empty() {
+        let rest = if commands.len() > MAX_BATCH_COMMANDS {
+            commands.split_off(MAX_BATCH_COMMANDS)
+        } else {
+            Vec::new()
+        };
+        let replay = GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            replace_topology: false,
+            commands,
+        };
+        map_batch(&replay, registry, samples, sample_rate, &HashMap::new())
+            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        commands = rest;
+    }
+    Ok(())
+}
+
 /// Map one batch against the graph a prior command sequence built — the
 /// report wire of the offline seam, with nothing rendered.
 ///
 /// This is how `createNativeOfflineGraphBackend.ts` gets strip reports and
 /// refusals from the mapping that owns them instead of restating them
 /// TS-side: `prior` is the backend's already-committed wire commands
-/// (replayed as one synthetic batch onto a fresh registry, exactly the graph
+/// (replayed in ceiling-sized chunks onto a fresh registry, exactly the graph
 /// its next render would rebuild), `batch` is the incoming batch mapped
 /// against that carried registry. The split is what scopes the result: the
 /// reports cover only the strips the *incoming* batch touched, and a refusal
@@ -2343,13 +3012,7 @@ pub async fn map_graph_batch(
         None => {
             let mut registry = GraphRegistry::default();
             if !prior_commands.is_empty() {
-                let replay = GraphBatchPayload {
-                    schema_version: 1,
-                    correlation: None,
-                    commands: prior_commands,
-                };
-                map_batch(&replay, &mut registry, &samples, sample_rate as f32)
-                    .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+                replay_prior_commands(prior_commands, &mut registry, &samples, sample_rate as f32)?;
             }
             registry
         }
@@ -2363,7 +3026,15 @@ pub async fn map_graph_batch(
     let batch_len = batch.commands.len() as u64;
 
     let correlation = batch.correlation.clone();
-    let mapped = map_batch(&batch, &mut registry, &samples, sample_rate as f32);
+    // No live engine on this seam, so no instance can be bound: the same
+    // empty lookup `render_graph_offline` maps against.
+    let mapped = map_batch(
+        &batch,
+        &mut registry,
+        &samples,
+        sample_rate as f32,
+        &HashMap::new(),
+    );
     drop(samples);
 
     if let Some(key) = &session_key {
@@ -2406,7 +3077,9 @@ fn map_offline_batch(
     sample_rate: f32,
 ) -> Result<Vec<GraphCommand>, String> {
     let mut registry = GraphRegistry::default();
-    Ok(map_batch(batch, &mut registry, samples, sample_rate)?.ops)
+    // An offline render has no engine and therefore no hosted plugin instances:
+    // an external device on a sounding strip refuses here, as it always has.
+    Ok(map_batch(batch, &mut registry, samples, sample_rate, &HashMap::new())?.ops)
 }
 
 /// Drive one mapped batch through the offline scheduler, refusing a render
@@ -2521,13 +3194,25 @@ mod tests {
     use crate::block_on_test;
     use serde_json::json;
 
+    /// Map a batch against an engine holding no hosted plugin instances — the
+    /// state every case below is about unless it says otherwise. A case about
+    /// binding calls [`map_batch`] itself with the lookup it wants.
+    fn map_unbound_batch(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+        samples: &HashMap<String, TimelineSample>,
+        sample_rate: f32,
+    ) -> Result<MappedBatch, String> {
+        map_batch(batch, registry, samples, sample_rate, &HashMap::new())
+    }
+
     fn sample_pool() -> HashMap<String, TimelineSample> {
         let mut samples = HashMap::new();
         samples.insert(
             "source-a".to_string(),
             TimelineSample {
-                left: vec![0.5; 48_000],
-                right: vec![0.5; 48_000],
+                left: vec![0.5; 48_000].into(),
+                right: vec![0.5; 48_000].into(),
                 sample_rate: 48_000.0,
             },
         );
@@ -2541,6 +3226,93 @@ mod tests {
     fn batch(commands: Value) -> GraphBatchPayload {
         serde_json::from_value(json!({ "schemaVersion": 1, "commands": commands }))
             .expect("the test batch should deserialize")
+    }
+
+    /// How many locates a mapping queued. `GraphCommand` carries no `Debug`, so
+    /// the shape is counted rather than printed.
+    fn seek_count(ops: &[GraphCommand]) -> usize {
+        ops.iter()
+            .filter(|op| matches!(op, GraphCommand::SeekFrames(_)))
+            .count()
+    }
+
+    /// The shape every producer written before the field existed still sends.
+    #[test]
+    fn a_transport_write_locates_unless_it_says_otherwise() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0 }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("an ordinary transport write should map");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [
+                    GraphCommand::SetTransportPlayback {
+                        is_playing: true,
+                        ..
+                    },
+                    GraphCommand::SeekFrames(96_000)
+                ]
+            ),
+            "an unqualified set-transport is a locate at its own position"
+        );
+    }
+
+    /// The live session's roll (`rollNativeTransport`), which follows a topology
+    /// batch that already parked the engine where playback is to start. The
+    /// locate it does not need is one that would cancel every fader, pan and
+    /// send level that topology queued at frame 0.
+    #[test]
+    fn a_transport_write_that_does_not_locate_queues_no_seek() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a non-locating transport write should map");
+
+        assert_eq!(seek_count(&mapped.ops), 0, "no locate was asked for");
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds
+                }] if (*song_pos_seconds - 2.0).abs() < f64::EPSILON
+            ),
+            "the playback state and its position still travel; only the seek is withheld"
+        );
+    }
+
+    /// Withholding the seek must not withhold the validation: a position that
+    /// cannot be put on the frame grid is malformed either way.
+    #[test]
+    fn a_non_locating_transport_write_still_refuses_an_unmappable_position() {
+        let mut registry = GraphRegistry::default();
+        let refused = map_unbound_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": -1.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        );
+
+        assert!(
+            refused.is_err(),
+            "a position the grid cannot hold is refused whether or not it is used"
+        );
     }
 
     fn clip_and_gain_batch() -> GraphBatchPayload {
@@ -2664,7 +3436,7 @@ mod tests {
         ]));
 
         let mut registry = GraphRegistry::default();
-        let mapped = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+        let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
             .expect("the full vocabulary should map");
 
         assert!(!mapped.ops.is_empty());
@@ -2710,8 +3482,36 @@ mod tests {
         )));
     }
 
+    /// The shadow monitor gate crosses the wire as itself: a session mode the
+    /// engine reads at the device boundary, carrying no strip and no stamp. It
+    /// must not be mapped onto the master fader — that is project truth a
+    /// bounce and a save both read, and a monitor mode is neither.
     #[test]
-    fn a_bus_routed_at_a_track_refuses_the_batch_with_the_distinct_reason() {
+    fn the_monitor_shadow_gate_maps_onto_the_engine_command_and_nothing_else() {
+        for shadowed in [true, false] {
+            let batch = batch(json!([
+                { "kind": "set-monitor-shadow", "shadowed": shadowed }
+            ]));
+
+            let mut registry = GraphRegistry::default();
+            let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+                .expect("the monitor gate should map without a strip");
+
+            assert!(mapped.ops.iter().any(
+                |op| matches!(op, GraphCommand::SetMonitorShadow(value) if *value == shadowed)
+            ));
+            assert!(!mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AutomateParam {
+                    target: AutomationTarget::MasterGain,
+                    ..
+                }
+            )));
+        }
+    }
+
+    #[test]
+    fn a_bus_routed_at_a_track_maps_onto_a_bus_to_track_edge() {
         let batch = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -2721,14 +3521,93 @@ mod tests {
         ]));
 
         let mut registry = GraphRegistry::default();
-        let refusal = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
-            .expect_err("bus->track must refuse");
+        let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+            .expect("bus->track must map");
 
-        assert!(
-            refusal.contains("bus-to-track-routing-unsupported"),
-            "the refusal must carry its own reason, got: {refusal}"
-        );
-        assert!(refusal.contains("commands[2]"));
+        // Node ids are allocated in creation order: the track is 1, the bus is 2.
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusOutput(2, RouteTarget::Track(1)))));
+    }
+
+    #[test]
+    fn a_bus_strip_maps_mute_pan_and_solo_gate() {
+        let batch = batch(json!([{
+            "kind": "create-bus-strip",
+            "busId": "b1",
+            "name": "Reverb",
+            "state": { "gain": 0.9, "pan": -25, "muted": true, "soloGated": true, "vcaMultiplier": 1 },
+            "devices": [],
+            "honorMuted": true,
+            "contributesAudio": true
+        }]));
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bus strip holds mute, pan, and solo");
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusMute(1, true))));
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusSoloGate(1, true))));
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AutomateParam {
+                target: AutomationTarget::BusPan(1),
+                write: AutomationWrite::Replace(event),
+            } if event.value == -0.5
+        )));
+    }
+
+    #[test]
+    fn a_bus_parameter_write_maps_mute_pan_and_solo_gate() {
+        let batch = batch(json!([
+            {
+                "kind": "create-bus-strip", "busId": "b1", "name": "Reverb",
+                "state": strip_state(0.9), "devices": [], "honorMuted": true,
+                "contributesAudio": true
+            },
+            { "kind": "write-parameter",
+              "target": { "kind": "track-mute-gate", "trackId": "b1" },
+              "write": { "shape": "step", "value": 0, "time": 0 } },
+            { "kind": "write-parameter",
+              "target": { "kind": "track-solo-gate", "trackId": "b1" },
+              "write": { "shape": "step", "value": 0, "time": 0 } },
+            { "kind": "write-parameter",
+              "target": { "kind": "track-pan", "trackId": "b1" },
+              "write": { "shape": "step", "value": 25, "time": 0 } }
+        ]));
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a bus accepts mute, pan, and solo writes");
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusMute(1, true))));
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetBusSoloGate(1, true))));
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AutomateParam {
+                target: AutomationTarget::BusPan(1),
+                ..
+            }
+        )));
     }
 
     #[test]
@@ -2741,7 +3620,7 @@ mod tests {
 
         let registry = GraphRegistry::default();
         let mut working = registry.clone();
-        let refusal = map_batch(&batch, &mut working, &sample_pool(), 48_000.0)
+        let refusal = map_unbound_batch(&batch, &mut working, &sample_pool(), 48_000.0)
             .expect_err("an unknown strip must refuse the batch");
 
         assert!(refusal.contains("commands[1]"));
@@ -2752,7 +3631,10 @@ mod tests {
     }
 
     #[test]
-    fn a_stretched_clip_refuses_as_unsupported_and_a_missing_sample_refuses_by_name() {
+    fn a_stretched_clip_maps_to_its_playback_rate() {
+        // 48 kHz material on a 48 kHz engine: the rate conversion factor is 1,
+        // so the mapped `playback_rate` is exactly the user's varispeed rate —
+        // the same thing an `AudioBufferSourceNode` does on the Web Audio legs.
         let stretched = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -2761,16 +3643,21 @@ mod tests {
                 "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
                 "playbackRate": 1.5, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
         ]));
-        let refusal = map_batch(
+        let mapped = map_unbound_batch(
             &stretched,
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
         )
-        .expect_err("a stretched clip must refuse");
-        assert!(refusal.contains("stretched-clip-unsupported"));
-        assert!(refusal.contains("1.5"));
+        .expect("a varispeed clip must map, not refuse");
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 1.5
+        )));
+    }
 
+    #[test]
+    fn an_unregistered_sample_refuses_by_name() {
         let unknown = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -2779,7 +3666,7 @@ mod tests {
                 "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
                 "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
         ]));
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &unknown,
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -2790,13 +3677,146 @@ mod tests {
     }
 
     #[test]
+    fn a_non_positive_playback_rate_refuses_by_name() {
+        for rate in [0.0, -1.0] {
+            let batch = batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+                  "devices": [], "honorMuted": true, "contributesAudio": true },
+                { "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
+                    "playbackRate": rate, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
+            ]));
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut GraphRegistry::default(),
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect_err(&format!("playbackRate {rate} must refuse"));
+            assert!(refusal.contains("playbackRate"));
+            assert!(refusal.contains(&rate.to_string()));
+        }
+    }
+
+    #[test]
+    fn a_stretched_clips_length_frames_stays_timeline_measured() {
+        // The placement's `length_frames` is how long the clip sounds on the
+        // timeline, not how much material it reads — `ClipPlayback::playback_rate`
+        // decides that separately. A 2x clip that lasts one timeline second
+        // still occupies exactly one second of frames at the engine's rate.
+        let stretched = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "source-a" },
+                "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
+                "playbackRate": 2.0, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
+        ]));
+        let mapped = map_unbound_batch(
+            &stretched,
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a varispeed clip must map");
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.placement().length_frames == 48_000
+        )));
+    }
+
+    /// A clip whose start and length each round *down* by 0.4 of a frame, so
+    /// the end stated as one quantity of seconds rounds one frame past the end
+    /// this mapper reconstructs from the two: 0.0113 s and 0.9113 s land on
+    /// frames 542 and 43_742 at 48 kHz, while their sum lands on 44_285 rather
+    /// than 44_284.
+    fn clip_with_fade_out_at(begins_at: f64) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "source-a" },
+                "startTime": 0.0113, "sourceOffsetSeconds": 0, "durationSeconds": 0.9113,
+                "playbackRate": 1, "gain": 1,
+                "fade": { "fadeOut": { "beginsAt": begins_at }, "microFadeSeconds": 0 } } }
+        ]))
+    }
+
+    #[test]
+    fn a_fade_out_on_the_clips_own_end_survives_the_rounding_split() {
+        let mapped = map_unbound_batch(
+            &clip_with_fade_out_at(0.9226),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a fade-out pinned to the clip's own end must map");
+
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().fade.fade_out_frames == Some(0)
+        )));
+    }
+
+    #[test]
+    fn a_fade_out_two_frames_past_the_clip_end_still_refuses() {
+        // 44_286 frames — one frame farther than any rounding split can reach.
+        let refusal = map_unbound_batch(
+            &clip_with_fade_out_at(44_286.0 / 48_000.0),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a fade-out genuinely past the clip must refuse");
+
+        assert!(refusal.contains("fadeOut begins after the clip ends"));
+    }
+
+    #[test]
+    fn scheduling_one_sample_many_times_shares_its_material_instead_of_copying_it() {
+        // A take becomes many clips through ordinary editing — comp regions,
+        // gap fills, loop passes — and a mapper that handed each one its own
+        // copy would multiply the take's PCM by the number of edits made to it.
+        let clips: Vec<Value> = (0..8)
+            .map(|index| {
+                json!({ "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": index, "sourceOffsetSeconds": 0, "durationSeconds": 0.5,
+                    "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 } } })
+            })
+            .collect();
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            clips[0], clips[1], clips[2], clips[3], clips[4], clips[5], clips[6], clips[7]
+        ]));
+        let samples = sample_pool();
+
+        let mapped = map_unbound_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+            .expect("eight clips over one sample should map");
+
+        let scheduled = mapped
+            .ops
+            .iter()
+            .filter(|op| matches!(op, GraphCommand::AddClip(..)))
+            .count();
+        assert_eq!(scheduled, 8);
+        // The pool's own handle plus one per scheduled clip. A copy would leave
+        // the pool holding its material alone.
+        let material = &samples["source-a"];
+        assert_eq!(Arc::strong_count(&material.left), 9);
+        assert_eq!(Arc::strong_count(&material.right), 9);
+    }
+
+    #[test]
     fn material_at_another_rate_is_rate_converted_not_stretched() {
         let mut samples = HashMap::new();
         samples.insert(
             "half-rate".to_string(),
             TimelineSample {
-                left: vec![0.5; 24_000],
-                right: Vec::new(),
+                left: vec![0.5; 24_000].into(),
+                right: [].into(),
                 sample_rate: 24_000.0,
             },
         );
@@ -2809,14 +3829,46 @@ mod tests {
                 "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
         ]));
 
-        let mapped = map_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+        let mapped = map_unbound_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
             .expect("a rate-converted clip should map");
 
         // Half-rate material on a 48k engine reads 0.5 source frames per
-        // rendered frame — conversion, with a contract stretch still refused.
+        // rendered frame at the user's unity rate — pure conversion.
         assert!(mapped.ops.iter().any(|op| matches!(
             op,
             GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 0.5
+        )));
+    }
+
+    #[test]
+    fn a_user_rate_composes_with_the_materials_own_rate_conversion() {
+        // 24 kHz material on a 48 kHz engine converts by 0.5; a user rate of
+        // 2.0 on top of that composes by multiplication back to unity — the
+        // arithmetic itself is observed here, not just that the field is set.
+        let mut samples = HashMap::new();
+        samples.insert(
+            "half-rate".to_string(),
+            TimelineSample {
+                left: vec![0.5; 24_000].into(),
+                right: [].into(),
+                sample_rate: 24_000.0,
+            },
+        );
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "half-rate" },
+                "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.5,
+                "playbackRate": 2.0, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
+        ]));
+
+        let mapped = map_unbound_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+            .expect("a composed rate should map");
+
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 1.0
         )));
     }
 
@@ -2829,7 +3881,7 @@ mod tests {
               "target": { "kind": "track-fader", "trackId": "t1" },
               "write": { "shape": "smoothed", "value": 0.5, "time": 0, "timeConstantSeconds": 0.01 } }
         ]));
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &smoothed,
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -2843,7 +3895,7 @@ mod tests {
               "devices": [ { "id": "d1", "type": "dutch-oven", "bypassed": false, "parameterValues": {} } ],
               "honorMuted": true, "contributesAudio": true }
         ]));
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &alien_device,
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -2864,7 +3916,7 @@ mod tests {
               "honorMuted": true, "contributesAudio": false }
         ]));
 
-        let mapped = map_batch(
+        let mapped = map_unbound_batch(
             &batch,
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -2885,7 +3937,7 @@ mod tests {
     #[test]
     fn insert_and_remove_device_report_the_affected_strips_realized_chain() {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_unbound_batch(
             &batch(json!([
                 { "kind": "create-track-strip", "trackId": "t1", "name": "T",
                   "state": strip_state(1.0),
@@ -2899,7 +3951,7 @@ mod tests {
         )
         .expect("the creation batch maps");
 
-        let degraded = map_batch(
+        let degraded = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
                   "device": { "id": "d-alien", "type": "dutch-oven", "bypassed": false,
@@ -2921,7 +3973,7 @@ mod tests {
         );
 
         // A built insert lands at its clamped index in the realized order.
-        let inserted = map_batch(
+        let inserted = map_unbound_batch(
             &batch(json!([
                 { "kind": "insert-device", "trackId": "t1", "index": 0,
                   "device": { "id": "d-front", "type": "knead", "bypassed": false,
@@ -2937,7 +3989,7 @@ mod tests {
             vec!["d-front".to_string(), "d-knead".to_string()]
         );
 
-        let removed = map_batch(
+        let removed = map_unbound_batch(
             &batch(json!([
                 { "kind": "remove-device", "trackId": "t1", "deviceId": "d-knead" }
             ])),
@@ -2998,7 +4050,7 @@ mod tests {
         };
 
         for track in 0..MAX_TIMELINE_TRACKS {
-            map_batch(
+            map_unbound_batch(
                 &strip_batch(true, track),
                 &mut registry,
                 &sample_pool(),
@@ -3007,7 +4059,7 @@ mod tests {
             .expect("a track strip inside the timeline's limits must map");
         }
         for bus in 0..MAX_TIMELINE_BUSES {
-            map_batch(
+            map_unbound_batch(
                 &strip_batch(false, bus),
                 &mut registry,
                 &sample_pool(),
@@ -3021,7 +4073,7 @@ mod tests {
         // further strip is refused by the strip admission rules — the ceiling
         // a user actually reaches, named in its own terms.
         let mut working = registry.clone();
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &batch(json!([{
                 "kind": "create-track-strip", "trackId": "t-overflow", "name": "T",
                 "state": strip_state(1.0),
@@ -3054,7 +4106,7 @@ mod tests {
     #[test]
     fn a_device_past_the_project_wide_device_ceiling_refuses_the_batch() {
         let mut registry = GraphRegistry::default();
-        map_batch(
+        map_unbound_batch(
             &batch(json!([{
                 "kind": "create-track-strip", "trackId": "t1", "name": "T",
                 "state": strip_state(1.0),
@@ -3076,6 +4128,7 @@ mod tests {
                 DeviceEntry {
                     native_effect_id: FIRST_GRAPH_EFFECT_ID + index,
                     strip_id: "t1".to_string(),
+                    engine_owned: false,
                 },
             );
         }
@@ -3086,7 +4139,7 @@ mod tests {
                           "parameterValues": {} } }
         ]));
         let mut working = registry.clone();
-        let refusal = map_batch(&overflow, &mut working, &sample_pool(), 48_000.0)
+        let refusal = map_unbound_batch(&overflow, &mut working, &sample_pool(), 48_000.0)
             .expect_err("a device past the project-wide ceiling must refuse the batch");
 
         assert!(
@@ -3157,7 +4210,7 @@ mod tests {
         for index in 0..=AUTOMATION_QUEUE_CAPACITY {
             commands.push(pan_step("t1", 0.1, 1.0 + index as f64));
         }
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &batch(Value::Array(commands)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -3181,7 +4234,7 @@ mod tests {
             commands.push(pan_step("t1", 0.1, 1.0 + index as f64));
         }
 
-        map_batch(
+        map_unbound_batch(
             &batch(Value::Array(commands)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -3222,7 +4275,7 @@ mod tests {
                 "write": { "shape": "step", "value": 1.0, "time": 1.0 + index as f64 } }));
         }
 
-        map_batch(
+        map_unbound_batch(
             &batch(Value::Array(commands.clone())),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -3234,7 +4287,7 @@ mod tests {
             "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
                         "parameterId": "shift_semitones" },
             "write": { "shape": "step", "value": 1.0, "time": 99.0 } }));
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &batch(Value::Array(commands)),
             &mut GraphRegistry::default(),
             &sample_pool(),
@@ -3255,7 +4308,7 @@ mod tests {
         for index in 0..AUTOMATION_QUEUE_CAPACITY {
             fill.push(pan_step("t1", 0.1, 1.0 + index as f64));
         }
-        map_batch(
+        map_unbound_batch(
             &batch(Value::Array(fill)),
             &mut registry,
             &sample_pool(),
@@ -3267,7 +4320,7 @@ mod tests {
         // against an empty engine it would map, and the engine would drop it
         // render-side with only a counter.
         let mut working = registry.clone();
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &batch(json!([pan_step("t1", 0.2, 99.0)])),
             &mut working,
             &sample_pool(),
@@ -3282,7 +4335,7 @@ mod tests {
         // A locate drops every queued write stamped at or past its target
         // (`RampedParam::cancel_from`); the ledger mirrors it, so the write
         // behind the locate fits again.
-        map_batch(
+        map_unbound_batch(
             &batch(json!([
                 { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
                 pan_step("t1", 0.2, 1.0)
@@ -3333,7 +4386,7 @@ mod tests {
     ) -> Result<(), String> {
         registry.release_landed(renderer.graph_progress());
         let mut working = registry.clone();
-        let mapped = map_batch(&batch(commands), &mut working, samples, 48_000.0)?;
+        let mapped = map_unbound_batch(&batch(commands), &mut working, samples, 48_000.0)?;
         send_mapped(renderer, mapped.ops);
         *registry = working;
         Ok(())
@@ -3426,7 +4479,7 @@ mod tests {
         // stands between this ledger and an under-refusal.
         registry.release_landed(stale);
         let mut working = registry.clone();
-        let refusal = map_batch(
+        let refusal = map_unbound_batch(
             &batch(json!([device_step("t1", "d1", 9.0, 0.0)])),
             &mut working,
             &samples,
@@ -3527,6 +4580,767 @@ mod tests {
         );
     }
 
+    /// A loop region two render blocks long, so a pass is exactly two blocks
+    /// and its seam falls on a block boundary.
+    const LOOP_END_FRAME: u64 = 1_024;
+
+    /// Install the region as a loose command, the way `engine_transport_set_maps`
+    /// does: the loop is not part of a graph batch, so it must not advance the
+    /// fence horizon the ledger numbers against.
+    fn install_loop(renderer: &mut OfflineRenderer) {
+        renderer
+            .push(GraphCommand::SetLoopRegion(
+                daw_engine::transport_map::LoopRegion {
+                    enabled: true,
+                    start_frame: 0,
+                    end_frame: LOOP_END_FRAME,
+                },
+            ))
+            .expect("the loose loop command fits");
+    }
+
+    /// The release proof's loop half. A stamp inside the loop region is
+    /// consumed on every pass, but the echoed playhead is pinned below the
+    /// region's end forever, so the playhead proof alone charges that stamp for
+    /// the life of the session — the starvation that makes a looping session's
+    /// parameter edits refuse. The seam proves what the playhead cannot, and
+    /// only a *whole* pass does: one seam after the stamp is known queued ends
+    /// the pass it arrived in, which says nothing about a stamp the playhead
+    /// was already past.
+    ///
+    /// Both of the proof's bounds are strict, and the region's own end is where
+    /// that matters: the closing pass walks *to* `last_wrap_frame` without
+    /// rendering it, so a stamp sitting exactly there is one the engine has
+    /// never popped and never will while the region holds. It stays charged
+    /// forever, and that is the correct answer — the ledger over-refuses rather
+    /// than freeing a slot the engine still owes.
+    #[test]
+    fn a_stamp_a_whole_loop_pass_walked_past_releases_on_the_seam() {
+        const STAMP: u64 = 768;
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        install_loop(&mut renderer);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        renderer.render(512);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                pan_step("t1", 0.1, STAMP as f64 / 48_000.0),
+                pan_step("t1", 0.2, LOOP_END_FRAME as f64 / 48_000.0),
+            ]),
+            &samples,
+        )
+        .expect("the writes admit");
+
+        // The block that drains it is the one that closes the seam, so the
+        // engine walks past the stamp and reports a playhead below it.
+        renderer.render(512);
+        let closed = renderer.graph_progress();
+        assert_eq!(closed.loop_wraps, 1);
+        assert!(
+            closed.playhead_frame < STAMP,
+            "the pinned playhead is what makes this stamp unprovable without the seam"
+        );
+
+        let charged = |registry: &GraphRegistry| -> usize {
+            registry.automation_pending.values().map(Vec::len).sum()
+        };
+
+        registry.release_landed(closed);
+        assert_eq!(
+            charged(&registry),
+            2,
+            "the first echo proving the batch drained only anchors the seam count"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        assert_eq!(renderer.graph_progress().loop_wraps, 2);
+        registry.release_landed(renderer.graph_progress());
+        assert_eq!(
+            charged(&registry),
+            2,
+            "one seam after the anchor only ends the pass the stamp arrived in"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        let walked = renderer.graph_progress();
+        assert_eq!(walked.loop_wraps, 3);
+        assert_eq!(
+            walked.last_wrap_frame, LOOP_END_FRAME,
+            "the pass walked to the region's end, so a stamp there is the boundary case"
+        );
+        registry.release_landed(walked);
+        let left: Vec<u64> = registry
+            .automation_pending
+            .values()
+            .flatten()
+            .map(|stamp| stamp.at_frame)
+            .collect();
+        assert_eq!(
+            left,
+            vec![LOOP_END_FRAME],
+            "a whole pass ran with both stamps queued, but it only popped the one below its walk"
+        );
+    }
+
+    /// The number a batch reports is the number its own writes were charged
+    /// against, and it counts *every* fence this process publishes — including
+    /// the transport maps install, which sends its own batch from
+    /// `commands::engine_transport` rather than through `map_batch`. A caller
+    /// compares it against the engine's `batches_applied`, which numbers
+    /// fences without caring who sent them, so a fence this counter skipped
+    /// would leave every later batch numbered below the count it is held
+    /// against.
+    #[test]
+    fn a_batchs_reported_number_is_the_one_its_writes_were_charged_against() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        assert_eq!(registry.batches_sent, 1);
+
+        // The maps install's fence, published outside `map_batch`.
+        let maps_batch = registry.record_fenced_batch();
+        assert_eq!(maps_batch, 2);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([pan_step("t1", 0.1, 1.0)]),
+            &samples,
+        )
+        .expect("the write admits");
+
+        assert_eq!(
+            registry.batches_sent, 3,
+            "the write's batch is numbered after the maps fence, not over it"
+        );
+        let charged: Vec<u64> = registry
+            .automation_pending
+            .values()
+            .flatten()
+            .map(|stamp| stamp.admitted_batch)
+            .collect();
+        assert_eq!(
+            charged,
+            vec![registry.batches_sent],
+            "the reported number and the ledger's stamps are one number"
+        );
+    }
+
+    /// How many fences a drain would meet on this ring, leaving it empty for
+    /// the next batch. `GraphCommand` carries no `Debug`, so the ring is
+    /// counted rather than printed.
+    fn drain_counting_fences(commands: &mut rtrb::Consumer<GraphCommand>) -> usize {
+        let mut fences = 0;
+        while let Ok(command) = commands.pop() {
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        fences
+    }
+
+    /// The number an applied batch reports is the fence it actually published
+    /// on the engine's ring, taken from the ledger that stamped its writes.
+    /// The three have to be one number: the caller holds the report against the
+    /// engine's `batches_applied`, which counts drained fences, and releases
+    /// the ledger's stamps by the same count. A report drawn from anywhere else
+    /// — the revision, the previous count — would let a poll taken before this
+    /// batch drained pass for one taken after it, which is exactly the reading
+    /// the live automation writer refuses to act on.
+    #[test]
+    fn an_applied_batch_reports_the_fence_it_published() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        // Filling the slot first is what makes this a capture engine: the
+        // lazy bootstrap in `apply_graph_commands` starts one only into an
+        // empty slot, so it reuses this handle rather than opening a device.
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let first = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1"), pan_step("t1", 0.1, 1.0)] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(first["application"], "applied");
+        let reported = first["admittedBatch"]
+            .as_u64()
+            .expect("an applied batch names the fence it published");
+        assert_eq!(
+            drain_counting_fences(&mut command_rx),
+            1,
+            "one fence reached the engine, and the report is about that fence"
+        );
+
+        {
+            let registry = state.graph.lock().expect("the registry is readable");
+            assert_eq!(
+                reported, registry.batches_sent,
+                "the reported number is the ledger's own count of fences sent"
+            );
+            let charged: Vec<u64> = registry
+                .automation_pending
+                .values()
+                .flatten()
+                .map(|stamp| stamp.admitted_batch)
+                .collect();
+            assert!(
+                !charged.is_empty(),
+                "the batch carried writes, so the ledger holds stamps for them"
+            );
+            assert_eq!(
+                charged,
+                vec![reported; charged.len()],
+                "every write is released against the number the caller was told"
+            );
+        }
+
+        let second = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [pan_step("t1", 0.2, 2.0)] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the second batch resolves to a result");
+        assert_eq!(second["application"], "applied");
+        assert_eq!(
+            second["admittedBatch"].as_u64(),
+            Some(reported + 1),
+            "each applied batch reports the next fence, never the one before it"
+        );
+        assert_eq!(drain_counting_fences(&mut command_rx), 1);
+    }
+
+    /// Issue #2265: the engine starts here, on the first batch, so this is the
+    /// only moment an instance created before it ran can take its slot. The
+    /// batch that starts the engine attaches it — the panel's sampler becomes
+    /// audible and recordable on the first play rather than staying dead for
+    /// the session — and the batch's own application is unaffected.
+    #[test]
+    fn the_first_batch_attaches_dormant_crumbs() {
+        use crate::host::native_bridge::CrumbsPluginSlot;
+
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "before-first-play".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        // Filling the slot first is what makes this a capture engine, exactly
+        // as the lazy bootstrap's own tests do: the batch reuses this handle
+        // rather than opening a device.
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            result["application"], "applied",
+            "attaching the sampler is not the batch's business to fail over"
+        );
+
+        let mut crumbs_slots = 0;
+        while let Ok(command) = command_rx.pop() {
+            if let GraphCommand::AddPlugin(_, plugin) = command {
+                if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
+                    crumbs_slots += 1;
+                }
+            }
+        }
+        assert_eq!(
+            crumbs_slots, 1,
+            "the batch that started the engine published the dormant instance's slot onto it"
+        );
+    }
+
+    /// A dormant hosted-plugin record, parked exactly as a load with no engine
+    /// parks one.
+    ///
+    /// The instance id has to be unique across the tests that call this: the
+    /// per-instance lifecycle gates are process-global, keyed by id, and two
+    /// tests sharing one id contend for the same gate however separate their
+    /// `AppState`s are.
+    fn park_dormant_plugin(state: &AppState, instance_id: &str) {
+        state.plugins.lock().expect("plugins lock").insert(
+            instance_id.to_string(),
+            crate::state::PluginInstanceData::dormant_fixture(
+                daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                    "Dormant Fixture",
+                    vec![],
+                    false,
+                )
+                .into(),
+            ),
+        );
+    }
+
+    /// A dormant record whose runtime never activated — a plugin whose
+    /// `activate` failed at load, parked all the same.
+    ///
+    /// Its refusal lands *inside* the registration, past the ergonomic ceiling
+    /// check and past the removal from the command-owned store, which is the
+    /// only route to the re-parking branch.
+    fn park_unactivated_dormant_plugin(state: &AppState, instance_id: &str) {
+        let mut wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "Unactivated Fixture",
+            vec![],
+            false,
+        );
+        wrapper.deactivate_engine_owned_command_fixture();
+        state.plugins.lock().expect("plugins lock").insert(
+            instance_id.to_string(),
+            crate::state::PluginInstanceData::dormant_fixture(wrapper.into()),
+        );
+    }
+
+    /// Leave the session with no room for another engine-owned instance, so the
+    /// next attach is refused by the session ceiling rather than by anything
+    /// about the instance itself.
+    fn fill_hosted_plugin_reserve(state: &AppState) {
+        let mut engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        for slot in 0..daw_engine::scheduler::HOSTED_PLUGIN_RESERVE {
+            let runtime: daw_plugin_host::HostedRuntime =
+                daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                    "Filler",
+                    vec![],
+                    false,
+                )
+                .into();
+            let parameter_events = daw_plugin_host::AudioPlugin::parameter_event_queue(&runtime);
+            engine_plugins.insert(
+                format!("filler-{slot}"),
+                crate::state::EnginePluginInstanceData {
+                    engine_plugin_id: slot,
+                    runtime: std::sync::Arc::new(
+                        crate::host::native_bridge::SharedHostedPlugin::new(runtime),
+                    ),
+                    name: "Filler".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    bridge: None,
+                    relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events,
+                },
+            );
+        }
+    }
+
+    /// The same moment as the crumbs slot above, for a hosted plugin. A plugin
+    /// loaded before the first Play is parked command-side with no engine
+    /// plugin id, and nothing used to move it out again: the relay answered
+    /// "No engine plugin for instance" for the rest of the session and the
+    /// device passed silence. The caller is told, because its own load reported
+    /// no engine and no later event corrects that.
+    #[test]
+    fn the_first_batch_attaches_dormant_plugins_and_reports_them() {
+        let state = AppState::default();
+        park_dormant_plugin(&state, "attached-on-first-play");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["application"], "applied",
+            "attaching the plugin is not the batch's business to fail over"
+        );
+        assert!(
+            state.plugins.lock().expect("plugins lock").is_empty(),
+            "an attached instance leaves the command-owned store"
+        );
+        assert!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("attached-on-first-play"),
+            "the batch that started the engine handed it the dormant instance"
+        );
+        let attached = result["attachedPlugins"]
+            .as_array()
+            .expect("an applied batch always carries the list");
+        assert_eq!(attached.len(), 1, "got: {attached:?}");
+        assert_eq!(attached[0]["instanceId"], "attached-on-first-play");
+        assert!(
+            attached[0]["bridgeRoundTripFrames"].is_u64(),
+            "the caller is told the bridge depth it has to compensate: {:?}",
+            attached[0]
+        );
+    }
+
+    /// The lag the binding lookup is read with, made visible.
+    ///
+    /// A plugin loaded before the first Play is attached by that batch, but the
+    /// attach runs *after* the fence — only an applied payload can report one —
+    /// so the lookup this batch mapped against did not hold the instance yet and
+    /// its device degrades. The next batch binds it. This is the whole of the
+    /// cost, and the producer resends its topology on every play, so a device
+    /// that missed here is spliced one play later rather than never.
+    #[test]
+    fn a_plugin_attached_by_a_batch_binds_on_the_next_one() {
+        let state = AppState::default();
+        park_dormant_plugin(&state, "bound-on-the-second-batch");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        // A silent strip, so the unbound first batch degrades the device rather
+        // than refusing the batch that is about to attach the instance.
+        let topology = || {
+            json!({ "schemaVersion": 1, "replaceTopology": true, "commands": [{
+                "kind": "create-track-strip",
+                "trackId": "lead",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [
+                    { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.fabfilter.proq",
+                      "externalInstanceId": "bound-on-the-second-batch" }
+                ],
+                "honorMuted": true,
+                "contributesAudio": false
+            }] })
+        };
+
+        let first = block_on_test(apply_graph_commands(
+            topology(),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(first["application"], "applied");
+        assert_eq!(
+            first["reports"][0]["deviceIds"],
+            json!([]),
+            "the instance was not engine-owned yet when this batch was mapped"
+        );
+        assert_eq!(
+            first["attachedPlugins"][0]["instanceId"], "bound-on-the-second-batch",
+            "and this is the batch that attached it"
+        );
+
+        let second = block_on_test(apply_graph_commands(
+            topology(),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the second batch resolves to a result");
+        assert_eq!(second["application"], "applied");
+        assert_eq!(
+            second["reports"][0]["deviceIds"],
+            json!(["d-plugin"]),
+            "the next batch reads the instance and splices it into the chain"
+        );
+    }
+
+    /// A refusal is the instance's to carry, never the batch's. The instance
+    /// stays dormant with its runtime intact — the next batch tries again — and
+    /// the caller is told that nothing was attached rather than told a plugin
+    /// is processing audio when it is not.
+    #[test]
+    fn a_refused_attach_leaves_the_instance_dormant_and_the_batch_applied() {
+        let state = AppState::default();
+        fill_hosted_plugin_reserve(&state);
+        park_dormant_plugin(&state, "refused-on-first-play");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["application"], "applied",
+            "a refused attach must not fail the batch"
+        );
+        assert_eq!(
+            result["attachedPlugins"],
+            json!([]),
+            "nothing was attached, and the caller must not be told otherwise"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("refused-on-first-play"),
+            "a refused instance stays dormant, runtime and all, for the next batch"
+        );
+    }
+
+    /// A batch the engine never took must not take a plugin either. The attach
+    /// hands the instance to the engine and removes it from the command-owned
+    /// store, and only an applied result carries `attachedPlugins` — so an
+    /// attach that ran before the batch was decided would leave a rejected
+    /// caller with a plugin that is engine-owned and rendering here, still
+    /// pending and degraded there, and absent from every later batch's answer.
+    #[test]
+    fn a_rejected_batch_leaves_a_dormant_plugin_for_the_next_one() {
+        let state = AppState::default();
+        park_dormant_plugin(&state, "attached-after-a-refused-batch");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        // Refused by the mapping, with the engine already running: the batch
+        // names a track no strip ever created.
+        let rejected = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [
+                { "kind": "set-track-output", "trackId": "missing",
+                  "target": { "kind": "master" } }
+            ] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("a refusal resolves to a result");
+
+        assert_eq!(rejected["acceptance"], "rejected");
+        assert!(
+            rejected.get("attachedPlugins").is_none(),
+            "only an applied batch answers about attachments: {rejected:?}"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("attached-after-a-refused-batch"),
+            "a batch that applied nothing must leave the instance dormant"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("attached-after-a-refused-batch"),
+            "and must not have handed it to the engine on the way"
+        );
+
+        let applied = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(applied["application"], "applied");
+        let attached = applied["attachedPlugins"]
+            .as_array()
+            .expect("an applied batch always carries the list");
+        assert_eq!(attached.len(), 1, "got: {attached:?}");
+        assert_eq!(attached[0]["instanceId"], "attached-after-a-refused-batch");
+        assert!(
+            state.plugins.lock().expect("plugins lock").is_empty(),
+            "the batch that applied is the one that took the instance"
+        );
+    }
+
+    /// A batch big enough to resize the command ring must still leave room for
+    /// the attach it is about to make.
+    ///
+    /// `send_graph_batch` provisions exactly fence plus body and then fills every
+    /// slot, so on a ring it sized the following single push is refused as
+    /// "queue full" whatever it is. In production that is the 256-slot boot ring
+    /// and a project of some sixty tracks on its first Play; here the ring is
+    /// small and the batch modest, because the arithmetic that breaks is
+    /// `capacity == needed`, not the size either of them happens to be. The
+    /// plugin this whole path exists to unmute would go silent on exactly the
+    /// sessions large enough to notice.
+    #[test]
+    fn a_batch_that_fills_the_command_ring_still_attaches_its_dormant_plugin() {
+        let state = AppState::default();
+        park_dormant_plugin(&state, "attached-behind-a-full-batch");
+
+        // Smaller than the batch below, so that batch is the one that sizes the
+        // ring it then fills.
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let commands: Vec<Value> = (0..64)
+            .map(|index| track_strip(&format!("t{index}")))
+            .collect();
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": commands }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(result["application"], "applied", "got: {result:?}");
+        let attached = result["attachedPlugins"]
+            .as_array()
+            .expect("an applied batch always carries the list");
+        assert_eq!(
+            attached.len(),
+            1,
+            "the ring the batch sized must have held a slot for the attach: {attached:?}"
+        );
+        assert_eq!(attached[0]["instanceId"], "attached-behind-a-full-batch");
+        assert!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("attached-behind-a-full-batch"),
+            "and the engine must actually hold it"
+        );
+    }
+
+    /// A batch with nothing parked reserves nothing, and so publishes onto the
+    /// ring it was handed rather than onto a replacement.
+    ///
+    /// The reservation is the attach's, and a session with no dormant instance
+    /// has no attach to make. Reserving a fixed population instead would make
+    /// every start sequence provision a new channel — `startNativeLiveGraphSession`
+    /// sends its topology and its roll back to back, so that is two allocations,
+    /// two fence swaps and two audio-thread adoptions per Play, under the engine
+    /// and graph locks, for plugins that are not there. The consumer this test
+    /// holds is the one the engine was built with: a provisioned batch lands on
+    /// its replacement and this one drains nothing.
+    #[test]
+    fn a_batch_with_nothing_parked_publishes_onto_the_ring_it_was_given() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let commands: Vec<Value> = (0..8)
+            .map(|index| track_strip(&format!("t{index}")))
+            .collect();
+        let sent = commands.len();
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": commands }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(result["application"], "applied", "got: {result:?}");
+        assert!(
+            state.plugins.lock().expect("plugins lock").is_empty(),
+            "the reservation under test is the one a session with no dormant \
+             instance makes"
+        );
+
+        let mut drained = 0;
+        let mut fences = 0;
+        while let Ok(command) = command_rx.pop() {
+            drained += 1;
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        assert_eq!(
+            fences, 1,
+            "the fence must reach the ring the engine was built with"
+        );
+        assert!(
+            drained > sent,
+            "and the batch's own commands with it: {drained} drained behind one \
+             fence, for {sent} commands sent"
+        );
+    }
+
+    /// The refusal that arrives after the instance has left the command-owned
+    /// store. The runtime comes back out of the registration and the instance is
+    /// parked again, so the next batch tries it once more — the alternative is
+    /// an instance that exists in neither map, with a device in the rack and
+    /// nothing behind it.
+    ///
+    /// Distinct from the ceiling refusal above, which is decided before the
+    /// removal and never reaches this branch at all.
+    #[test]
+    fn an_instance_refused_after_it_leaves_the_store_is_parked_again() {
+        let state = AppState::default();
+        park_unactivated_dormant_plugin(&state, "reparked-on-first-play");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["application"], "applied",
+            "a refused attach must not fail the batch"
+        );
+        assert_eq!(
+            result["attachedPlugins"],
+            json!([]),
+            "nothing was attached, and the caller must not be told otherwise"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("reparked-on-first-play"),
+            "the instance is parked again, runtime and all, for the next batch"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("reparked-on-first-play"),
+            "and the engine holds no record of the registration it refused"
+        );
+    }
+
     /// Debt 3, refusal ordering: a batch that lost its revision race rejects
     /// with the contract's semantics — refused before the graph changed —
     /// and before the lazy bootstrap, so a lost batch never starts an
@@ -3538,7 +5352,7 @@ mod tests {
             "correlation": { "appRevision": 5, "projectRevision": "p1" },
             "commands": [] });
 
-        let result = block_on_test(apply_graph_commands(stale, &state))
+        let result = block_on_test(apply_graph_commands(stale, &state, &CrumbsState::default()))
             .expect("a stale correlation resolves to a result, not a throw");
         assert_eq!(result["acceptance"], "rejected");
         assert_eq!(result["application"], "not-applied");
@@ -3551,8 +5365,12 @@ mod tests {
         let malformed = json!({ "schemaVersion": 1,
             "correlation": { "appRevision": "not-a-revision" },
             "commands": [] });
-        let result = block_on_test(apply_graph_commands(malformed, &state))
-            .expect("an unreadable correlation resolves to a result");
+        let result = block_on_test(apply_graph_commands(
+            malformed,
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("an unreadable correlation resolves to a result");
         assert_eq!(result["acceptance"], "rejected");
         assert!(result["reason"]
             .as_str()
@@ -3601,6 +5419,9 @@ mod tests {
         assert_eq!(result["application"], "applied");
         // No runtime ran, so no runtime revision may be claimed.
         assert!(result.get("runtimeRevision").is_none());
+        // And no fence was published, so there is no batch number for a
+        // transport reading to be held against either.
+        assert!(result.get("admittedBatch").is_none());
         // The correlation is echoed, not validated: a mapping races nothing.
         assert_eq!(result["correlation"]["appRevision"], 3);
         // Reports cover exactly the strips the *incoming* batch touched —
@@ -3872,8 +5693,12 @@ mod tests {
                           "parameterValues": {} } }
         ]});
 
-        let result = block_on_test(apply_graph_commands(malformed, &state))
-            .expect("a parse failure must resolve to a result, not throw");
+        let result = block_on_test(apply_graph_commands(
+            malformed,
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("a parse failure must resolve to a result, not throw");
 
         assert_eq!(result["acceptance"], "rejected");
         assert_eq!(result["application"], "not-applied");
@@ -3907,8 +5732,8 @@ mod tests {
 
         let samples = state.timeline_samples.lock().expect("sample lock");
         let sample = samples.get("s1").expect("the sample is registered");
-        assert_eq!(sample.left, vec![0.1, 0.2]);
-        assert_eq!(sample.right, vec![-0.1, -0.2]);
+        assert_eq!(*sample.left, [0.1, 0.2]);
+        assert_eq!(*sample.right, [-0.1, -0.2]);
         drop(samples);
 
         let refused = block_on_test(register_timeline_sample(
@@ -3967,10 +5792,15 @@ mod tests {
         let applied = serde_json::to_string(&GraphApplyResultPayload::applied(
             None,
             3,
+            5,
             vec![StripReportPayload {
                 kind: "track",
                 id: "t1".to_string(),
                 device_ids: vec!["d1".to_string()],
+            }],
+            vec![AttachedPluginPayload {
+                instance_id: "i1".to_string(),
+                bridge_round_trip_frames: 512,
             }],
         ))
         .expect("applied serializes");
@@ -3978,7 +5808,8 @@ mod tests {
             applied,
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
-                r#""reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}]}"#
+                r#""admittedBatch":5,"reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}],"#,
+                r#""attachedPlugins":[{"instanceId":"i1","bridgeRoundTripFrames":512}]}"#
             )
         );
 
@@ -4047,6 +5878,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
+                engine_owned: false,
             },
         );
 
@@ -4057,6 +5889,7 @@ mod tests {
             let batch = GraphBatchPayload {
                 schema_version: 1,
                 correlation: None,
+                replace_topology: false,
                 commands: vec![GraphCommandPayload::WriteDeviceParameter {
                     target: DeviceParameterTargetPayload::DeviceParameter {
                         track_id: track_id.clone(),
@@ -4070,7 +5903,7 @@ mod tests {
                 }],
             };
             let mut reg_clone = registry.clone();
-            let res = map_batch(&batch, &mut reg_clone, &samples, 48000.0);
+            let res = map_unbound_batch(&batch, &mut reg_clone, &samples, 48000.0);
             assert!(
                 res.is_ok(),
                 "WriteDeviceParameter must accept known param '{param_name}': {:?}",
@@ -4084,6 +5917,7 @@ mod tests {
         let unknown_batch = GraphBatchPayload {
             schema_version: 1,
             correlation: None,
+            replace_topology: false,
             commands: vec![GraphCommandPayload::WriteDeviceParameter {
                 target: DeviceParameterTargetPayload::DeviceParameter {
                     track_id: track_id.clone(),
@@ -4097,7 +5931,7 @@ mod tests {
             }],
         };
         let mut reg_clone = registry.clone();
-        let res = map_batch(&unknown_batch, &mut reg_clone, &samples, 48000.0);
+        let res = map_unbound_batch(&unknown_batch, &mut reg_clone, &samples, 48000.0);
         assert!(
             res.is_err(),
             "WriteDeviceParameter must refuse unknown parameter"
@@ -4105,6 +5939,756 @@ mod tests {
         assert!(
             res.unwrap_err().contains("has no native address"),
             "refusal must mention missing native address"
+        );
+    }
+
+    // ── The live producer's batch, against the real mapper ─────────────────
+
+    fn replacing_batch(commands: Value) -> GraphBatchPayload {
+        serde_json::from_value(
+            json!({ "schemaVersion": 1, "replaceTopology": true, "commands": commands }),
+        )
+        .expect("the test batch should deserialize")
+    }
+
+    /// What `projectLiveGraphTopology` builds for a session holding one soloed
+    /// track — carrying a hosted plugin and a built-in — one send bus, and one
+    /// track the solo is gating.
+    ///
+    /// The routes are the ones a default session really produces, not the
+    /// simplest ones that map: every added track's stored output is the master
+    /// track, so an ordinary track — and a bus — routes at that *track* strip
+    /// and runs through its device chain.
+    fn live_topology_commands() -> Value {
+        json!([
+            {
+                "kind": "create-track-strip",
+                "trackId": "master",
+                "name": "Master",
+                "state": { "gain": 0.8, "pan": 0, "muted": false, "soloGated": false, "vcaMultiplier": 1 },
+                "devices": [],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
+            {
+                "kind": "create-track-strip",
+                "trackId": "lead",
+                "name": "Lead",
+                "state": { "gain": 0.8, "pan": 0, "muted": false, "soloGated": false, "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.fabfilter.proq", "externalInstanceId": "inst-1" },
+                    { "id": "d-knead", "name": "Knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
+                ],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
+            {
+                "kind": "create-track-strip",
+                "trackId": "gated",
+                "name": "Pads",
+                "state": { "gain": 0.7, "pan": 10, "muted": false, "soloGated": true, "vcaMultiplier": 1 },
+                "devices": [],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
+            {
+                "kind": "create-bus-strip",
+                "busId": "verb",
+                "name": "Reverb",
+                "state": { "gain": 0.9, "pan": -10, "muted": false, "soloGated": true, "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-bus-plugin", "name": "Valhalla", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.valhalla.room", "externalInstanceId": "inst-2" },
+                    { "id": "d-bus-knead", "name": "Knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
+                ],
+                "honorMuted": true,
+                "contributesAudio": false
+            },
+            { "kind": "set-track-output", "trackId": "master", "target": { "kind": "master" } },
+            { "kind": "set-track-output", "trackId": "lead", "target": { "kind": "track", "trackId": "master" } },
+            { "kind": "set-track-output", "trackId": "gated", "target": { "kind": "track", "trackId": "master" } },
+            { "kind": "set-track-output", "trackId": "verb", "target": { "kind": "track", "trackId": "master" } },
+            { "kind": "add-send", "trackId": "lead", "busId": "verb", "tap": "post-fader", "level": 0.4 },
+            { "kind": "set-transport", "playing": true, "positionSeconds": 0 }
+        ])
+    }
+
+    /// The acceptance the live producer needs and could not get from its own
+    /// output shape: the batch a play gesture sends must map, and the batch the
+    /// *next* play sends must map against the registry the first one left.
+    ///
+    /// Two shapes are guarded structurally here, and each was reachable from an
+    /// ordinary session: a hosted plugin anywhere in a chain, and simply
+    /// pressing play twice. A bus that is itself solo-gated is ordinary too —
+    /// the producer now sends that gate, and the mapper must take it. The
+    /// fixture below reflects what the producer emits.
+    #[test]
+    fn a_live_topology_batch_maps_and_maps_again_over_itself() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+
+        let first = map_unbound_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("the first play's topology should map");
+        assert_eq!(
+            first
+                .reports
+                .iter()
+                .map(|report| report.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["master", "lead", "gated", "verb"],
+            "every strip the batch created owes a report"
+        );
+        // The hosted plugins degraded; the built-ins are the realized devices.
+        assert_eq!(first.reports[1].device_ids, vec!["d-knead".to_string()]);
+        assert_eq!(first.reports[3].device_ids, vec!["d-bus-knead".to_string()]);
+
+        let second = map_unbound_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("a second play must not collide with the first play's strips");
+        assert!(
+            second
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrack(_))),
+            "a replacing batch tears the previous topology down"
+        );
+        assert_eq!(registry.track_count, 3);
+        assert_eq!(registry.bus_count, 1);
+    }
+
+    /// The same producer batch once the engine holds both plugins: it must map,
+    /// map again over itself, and this time realise the plugins in their chains
+    /// beside the built-ins — on a track and on a bus, because the two splice
+    /// through different engine commands.
+    #[test]
+    fn a_live_topology_batch_with_attached_plugins_binds_them_and_maps_again_over_itself() {
+        let samples = sample_pool();
+        let lookup = HashMap::from([
+            ("inst-1".to_string(), 1_007usize),
+            ("inst-2".to_string(), 1_008usize),
+        ]);
+        let mut registry = GraphRegistry::default();
+
+        let first = map_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+            &lookup,
+        )
+        .expect("the first play's topology should map");
+        assert_eq!(
+            first.reports[1].device_ids,
+            vec!["d-plugin".to_string(), "d-knead".to_string()]
+        );
+        assert_eq!(
+            first.reports[3].device_ids,
+            vec!["d-bus-plugin".to_string(), "d-bus-knead".to_string()]
+        );
+        assert!(first.ops.iter().any(
+            |op| matches!(op, GraphCommand::InsertTrackDevice { entry, .. }
+                if entry.effect_id == 1_007)
+        ));
+        assert!(first.ops.iter().any(
+            |op| matches!(op, GraphCommand::InsertBusDevice { entry, .. }
+                if entry.effect_id == 1_008)
+        ));
+
+        let second = map_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+            &lookup,
+        )
+        .expect("a second play must not collide with the first play's strips");
+        // The teardown released both instances rather than retiring them, so
+        // the second play binds the very same ids again.
+        assert!(second.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::RemoveTrackDevice {
+                effect_id: 1_007,
+                ..
+            }
+        )));
+        assert_eq!(
+            second.reports[1].device_ids,
+            vec!["d-plugin".to_string(), "d-knead".to_string()]
+        );
+        assert_eq!(registry.track_count, 3);
+        assert_eq!(registry.bus_count, 1);
+    }
+
+    /// Assert one teardown arm: the strip holding a retired device is removed
+    /// only after that retirement.
+    ///
+    /// Per strip, not across the whole teardown: a strip carrying no device is
+    /// removed before another strip's devices are retired, and reading the first
+    /// index of each kind would call that an ordering violation.
+    fn assert_device_retired_before_its_strip(
+        teardown: &[GraphCommand],
+        retired_device_strip: impl Fn(&GraphCommand) -> Option<usize>,
+        removes_strip: impl Fn(&GraphCommand, usize) -> bool,
+        arm: &str,
+    ) {
+        let (retire_index, holder) = teardown
+            .iter()
+            .enumerate()
+            .find_map(|(index, op)| retired_device_strip(op).map(|strip| (index, strip)))
+            .unwrap_or_else(|| panic!("the {arm}'s built device must be retired"));
+        let remove_index = teardown
+            .iter()
+            .position(|op| removes_strip(op, holder))
+            .unwrap_or_else(|| panic!("the {arm} strip that held it must be removed"));
+        assert!(
+            retire_index < remove_index,
+            "a {arm} device is retired while its strip still holds it, not after"
+        );
+    }
+
+    /// A replaced topology must not strand what it built: an effect whose strip
+    /// is removed without it stays registered in the scheduler's shared table,
+    /// detached, for the rest of the process.
+    #[test]
+    fn replacing_a_topology_retires_each_chain_device_before_its_strip() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &replacing_batch(live_topology_commands()),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("the first play's topology should map");
+
+        let teardown = registry.take_topology_down();
+
+        // Both arms, because they are separate code: a bus device mistyped onto
+        // the track command would leak an effect-table slot per bus device per
+        // play with the track assertion still green.
+        assert_device_retired_before_its_strip(
+            &teardown,
+            |op| match op {
+                GraphCommand::RemoveTrackDeviceRetired { track_id, .. } => Some(*track_id),
+                _ => None,
+            },
+            |op, strip| matches!(op, GraphCommand::RemoveTrack(id) if *id == strip),
+            "track",
+        );
+        assert_device_retired_before_its_strip(
+            &teardown,
+            |op| match op {
+                GraphCommand::RemoveBusDeviceRetired { bus_id, .. } => Some(*bus_id),
+                _ => None,
+            },
+            |op, strip| matches!(op, GraphCommand::RemoveBus(id) if *id == strip),
+            "bus",
+        );
+        assert_eq!(registry.track_count, 0);
+        assert_eq!(registry.bus_count, 0);
+        assert!(registry.devices.is_empty());
+    }
+
+    /// The refusal the producer's send filter exists for. Bus into bus is
+    /// ordinary practice and the project admits it, so the producer must drop
+    /// such a send rather than let the mapper decline the batch that carries it.
+    #[test]
+    fn a_send_whose_source_is_a_bus_refuses_the_batch_with_the_distinct_reason() {
+        let samples = sample_pool();
+        let refusal = map_unbound_batch(
+            &batch(json!([
+                {
+                    "kind": "create-bus-strip", "busId": "verb", "name": "Reverb",
+                    "state": strip_state(0.9), "devices": [], "honorMuted": false,
+                    "contributesAudio": false
+                },
+                {
+                    "kind": "create-bus-strip", "busId": "squash", "name": "Parallel",
+                    "state": strip_state(0.9), "devices": [], "honorMuted": false,
+                    "contributesAudio": false
+                },
+                { "kind": "add-send", "trackId": "verb", "busId": "squash",
+                  "tap": "post-fader", "level": 0.5 }
+            ])),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a bus has no send tap natively");
+        assert!(
+            refusal.contains("bus-send-unsupported"),
+            "the refusal names the unsupported shape, got: {refusal}"
+        );
+    }
+
+    /// One strip carrying one hosted plugin device, parameterised on the two
+    /// things the binding law turns on.
+    fn hosted_plugin_strip(contributes_audio: bool, bypassed: bool) -> Value {
+        json!([{
+            "kind": "create-track-strip",
+            "trackId": "lead",
+            "name": "Lead",
+            "state": strip_state(0.8),
+            "devices": [
+                { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": bypassed,
+                  "parameterValues": {},
+                  "externalPluginId": "com.fabfilter.proq", "externalInstanceId": "inst-1" }
+            ],
+            "honorMuted": true,
+            "contributesAudio": contributes_audio
+        }])
+    }
+
+    /// One attached hosted plugin instance, at the engine plugin id the load
+    /// reserved for it.
+    fn attached(instance_id: &str, engine_plugin_id: usize) -> HashMap<String, usize> {
+        HashMap::from([(instance_id.to_string(), engine_plugin_id)])
+    }
+
+    fn inserted_effect_ids(ops: &[GraphCommand]) -> Vec<usize> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::InsertTrackDevice { entry, .. }
+                | GraphCommand::InsertBusDevice { entry, .. } => Some(entry.effect_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// An instance the engine does not hold cannot be spliced, so the device
+    /// falls back on the degradation law: silent strips omit it, sounding ones
+    /// refuse — there the missing device is a missing sound. The refusal names
+    /// the instance, because "which plugin" is the only actionable part of it.
+    #[test]
+    fn a_hosted_plugin_the_engine_does_not_hold_degrades_silently_and_refuses_audibly() {
+        let samples = sample_pool();
+
+        let degraded = map_unbound_batch(
+            &batch(hosted_plugin_strip(false, false)),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect("a strip that contributes no audio degrades what it cannot bind");
+        assert_eq!(degraded.reports[0].device_ids, Vec::<String>::new());
+
+        let refusal = map_unbound_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a strip that contributes audio must refuse a device it cannot bind");
+        assert!(
+            refusal.contains("d-plugin")
+                && refusal.contains("inst-1")
+                && refusal.contains("not attached to the engine"),
+            "the refusal names the device, the instance, and why, got: {refusal}"
+        );
+    }
+
+    /// The binding itself. The device takes the instance's own engine plugin id
+    /// — nothing is allocated and nothing is registered — and the strip splice
+    /// names that id.
+    #[test]
+    fn a_hosted_plugin_the_engine_holds_is_spliced_onto_a_sounding_strip_by_its_own_id() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect("an attached instance binds on a sounding strip");
+
+        assert_eq!(mapped.reports[0].device_ids, vec!["d-plugin".to_string()]);
+        assert_eq!(inserted_effect_ids(&mapped.ops), vec![1_007]);
+        assert!(
+            !mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::AddDetachedEffect(..))),
+            "an engine-owned plugin is borrowed, never registered a second time"
+        );
+        assert!(
+            !mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::SetParam(..))),
+            "an external plugin's parameters travel on its own control path"
+        );
+        // The registry never allocated for it, so the next built device takes
+        // the first graph effect id.
+        assert_eq!(registry.next_effect_id, FIRST_GRAPH_EFFECT_ID);
+    }
+
+    /// An external plugin's parameter names are its own vocabulary, so the
+    /// mapper must not hold them against `DeviceParam::from_name` the way it
+    /// holds a built-in's — which would refuse the whole batch for a plugin
+    /// whose knobs simply are not knead's.
+    #[test]
+    fn an_engine_owned_devices_parameter_names_are_not_held_against_the_builtin_vocabulary() {
+        let strip = json!([{
+            "kind": "create-track-strip",
+            "trackId": "lead",
+            "name": "Lead",
+            "state": strip_state(0.8),
+            "devices": [
+                { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                  "parameterValues": { "Band 1 Freq": 440.0, "Output Level": -3.0 },
+                  "externalPluginId": "com.fabfilter.proq", "externalInstanceId": "inst-1" }
+            ],
+            "honorMuted": true,
+            "contributesAudio": true
+        }]);
+
+        let mapped = map_batch(
+            &batch(strip),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect("a plugin's own parameter names must not refuse the batch");
+        assert!(!mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetParam(..))));
+    }
+
+    /// Bypass is graph state and does reach the engine: it is the one thing on
+    /// an engine-owned device the chain owns, because the chain is what skips
+    /// the instance.
+    #[test]
+    fn a_bypassed_engine_owned_device_carries_its_bypass_to_the_engine() {
+        let mapped = map_batch(
+            &batch(hosted_plugin_strip(true, true)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect("a bypassed hosted plugin binds like any other");
+        assert!(
+            mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::SetBypass(1_007, true))),
+            "the bypass must reach the effect the chain runs"
+        );
+    }
+
+    /// A hosted plugin leaves a chain by being released, never retired: the
+    /// instance belongs to the load that created it, and `unload_plugin` is
+    /// what frees it. Retiring it here would take the effect out from under a
+    /// panel, an editor and a parameter path all still holding the instance.
+    #[test]
+    fn removing_an_engine_owned_device_releases_the_effect_instead_of_retiring_it() {
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect("the strip binds");
+
+        let removed = map_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "lead", "deviceId": "d-plugin" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect("the removal maps");
+
+        assert_eq!(
+            removed
+                .ops
+                .iter()
+                .filter(|op| matches!(
+                    op,
+                    GraphCommand::RemoveTrackDevice {
+                        effect_id: 1_007,
+                        ..
+                    }
+                ))
+                .count(),
+            1
+        );
+        assert!(
+            !removed
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. })),
+            "retiring an engine-owned effect would free a live plugin instance"
+        );
+        assert_eq!(removed.reports[0].device_ids, Vec::<String>::new());
+    }
+
+    /// The same law on the teardown path: a replacing batch tears every strip
+    /// down, and an engine-owned device on one of them is released rather than
+    /// retired — every play sends a replacing batch, so this is the ordinary
+    /// route, not an edge.
+    #[test]
+    fn a_replacing_batch_releases_engine_owned_devices_and_retires_the_rest() {
+        let lookup = attached("inst-1", 1_007);
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "lead",
+                "name": "Lead",
+                "state": strip_state(0.8),
+                "devices": [
+                    { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                      "parameterValues": {},
+                      "externalPluginId": "com.fabfilter.proq", "externalInstanceId": "inst-1" },
+                    { "id": "d-knead", "name": "Knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
+                ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &lookup,
+        )
+        .expect("the strip binds");
+
+        let replaced = map_batch(
+            &replacing_batch(json!([])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &lookup,
+        )
+        .expect("a replacing batch maps");
+
+        assert!(replaced.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::RemoveTrackDevice {
+                effect_id: 1_007,
+                ..
+            }
+        )));
+        assert!(
+            replaced
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::RemoveTrackDeviceRetired { .. })),
+            "a device this registry built is still retired with its removal"
+        );
+    }
+
+    /// An offline render has no engine, so it has no instances: the binding
+    /// path cannot open there, and an external device on a sounding strip
+    /// refuses exactly as it did before binding existed.
+    #[test]
+    fn an_offline_render_still_refuses_a_hosted_plugin_on_a_sounding_strip() {
+        let Err(refusal) = map_offline_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &sample_pool(),
+            48_000.0,
+        ) else {
+            panic!("an offline render holds no plugin instance to bind");
+        };
+        assert!(
+            refusal.contains("not attached to the engine"),
+            "the offline refusal is the unbound one, got: {refusal}"
+        );
+    }
+
+    /// A hosted plugin's parameters are the plugin's own, written through it
+    /// rather than through the graph. A device-parameter write addressed at one
+    /// must refuse: the engine's device-parameter vocabulary is the built-in's,
+    /// and a name that happened to collide would queue a stamp the engine could
+    /// only count as an unmapped call.
+    #[test]
+    fn a_device_parameter_write_addressed_at_an_engine_owned_device_refuses() {
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect("the strip binds");
+
+        let refusal = map_batch(
+            &batch(json!([{
+                "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": "lead",
+                            "deviceId": "d-plugin", "parameterId": "shift_semitones" },
+                "write": { "shape": "step", "value": 5.0, "time": 0.0 }
+            }])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .expect_err("a hosted plugin's parameters are not the graph's to write");
+        assert!(
+            refusal.contains("written through the plugin"),
+            "the refusal says where the write belongs, got: {refusal}"
+        );
+    }
+
+    /// The batch sizes rings that live as long as the process, so its length is
+    /// bounded by what a project can hold rather than by what a caller sends.
+    #[test]
+    fn a_batch_past_the_command_ceiling_refuses_whole() {
+        let samples = sample_pool();
+        let commands: Vec<Value> = (0..=MAX_BATCH_COMMANDS)
+            .map(|_| json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 }))
+            .collect();
+
+        let refusal = map_unbound_batch(
+            &batch(json!(commands)),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a batch past the ceiling must refuse");
+        assert!(
+            refusal.contains("past the ceiling"),
+            "the refusal names the ceiling, got: {refusal}"
+        );
+    }
+
+    /// The ceiling is a ceiling, not a limit one command below it. The refusal
+    /// above holds identically whether the guard reads `>` or `>=`, so without
+    /// this the bound could silently tighten and reject the largest batch a
+    /// full project is entitled to send.
+    #[test]
+    fn a_batch_exactly_at_the_command_ceiling_maps() {
+        let samples = sample_pool();
+        let commands: Vec<Value> = (0..MAX_BATCH_COMMANDS)
+            .map(|_| json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 }))
+            .collect();
+
+        let mapped = map_unbound_batch(
+            &batch(json!(commands)),
+            &mut GraphRegistry::default(),
+            &samples,
+            48_000.0,
+        )
+        .expect("a batch exactly at the ceiling must map");
+        assert!(
+            mapped.ops.len() >= MAX_BATCH_COMMANDS,
+            "every admitted command owes at least its own op, got {}",
+            mapped.ops.len()
+        );
+    }
+
+    /// A maximal honest batch also carries mixer and device automation — one
+    /// queue fill of `write-parameter` / `write-device-parameter` per strip
+    /// target — so the ceiling is that product, not topology commands alone.
+    #[test]
+    fn max_batch_commands_includes_one_automation_fill_per_strip() {
+        let topology = 2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS;
+        let automation = (4 + MAX_TRACK_SENDS) * AUTOMATION_QUEUE_CAPACITY
+            + MAX_TRACK_DEVICES * DEVICE_PARAM_QUEUE_CAPACITY;
+        assert_eq!(
+            MAX_BATCH_COMMANDS,
+            (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES) * (topology + automation)
+        );
+    }
+
+    /// Session-replay concatenation packs already-accepted history into one
+    /// `GraphBatchPayload`. Each original batch can sit under the ceiling
+    /// while the concatenated prior does not — that is a transport fault for
+    /// commands the process already took. Chunking the replay under the
+    /// per-batch ceiling maps them; raising the ceiling to cover all history
+    /// would unbounded-size the process-lifetime rings.
+    #[test]
+    fn map_graph_batch_replays_a_prior_past_the_command_ceiling() {
+        let state = AppState::default();
+        let transport = json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 });
+        let strip_id = "t-remainder";
+        let mut prior: Vec<Value> = (0..MAX_BATCH_COMMANDS).map(|_| transport.clone()).collect();
+        prior.push(track_strip(strip_id));
+
+        let result = block_on_test(map_graph_batch(
+            json!(prior),
+            json!({ "schemaVersion": 1, "commands": [fader_step(strip_id)] }),
+            48_000.0,
+            None,
+            &state,
+        ))
+        .expect("a prior one command past the ceiling must still replay");
+
+        assert_eq!(result["acceptance"], "accepted", "got: {result}");
+        assert_eq!(result["application"], "applied", "got: {result}");
+    }
+
+    /// The engine bootstrap must not run under the engine mutex: it waits on a
+    /// device stream, and the quit cascade claims that same mutex on the JS
+    /// thread, where waiting stops the force-exit timer from ever firing.
+    #[test]
+    fn a_slot_is_filled_without_holding_its_lock_across_the_construction() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let slot: Mutex<Option<&'static str>> = Mutex::new(None);
+        let free_during_construction = AtomicBool::new(false);
+
+        let filled = start_into_empty_slot(&slot, || -> Result<&'static str, String> {
+            // From another thread, because a same-thread `try_lock` against a
+            // lock this thread holds has no defined answer. A held lock fails
+            // this claim, which is the whole assertion.
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    free_during_construction.store(slot.try_lock().is_ok(), Ordering::SeqCst);
+                });
+            });
+            Ok("engine")
+        });
+
+        assert!(filled.is_ok(), "an empty slot should fill");
+        assert!(
+            free_during_construction.load(Ordering::SeqCst),
+            "the slot's lock must be free while its value is being constructed"
+        );
+        assert_eq!(
+            *slot.lock().expect("the slot is not poisoned"),
+            Some("engine")
+        );
+    }
+
+    /// Single boot is a property of the install, not of a caller's own
+    /// serialization: a full slot never constructs a second value.
+    #[test]
+    fn a_full_slot_is_never_constructed_into() {
+        let slot: Mutex<Option<&'static str>> = Mutex::new(Some("already running"));
+
+        let filled = start_into_empty_slot(&slot, || -> Result<&'static str, String> {
+            panic!("a full slot must not construct a second value")
+        });
+
+        assert!(filled.is_ok());
+        assert_eq!(
+            *slot.lock().expect("the slot is not poisoned"),
+            Some("already running")
         );
     }
 }

@@ -12,7 +12,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 import { Header, Pax } from 'tar';
@@ -33,6 +32,7 @@ import {
     assertLicenseExpressionEvidence,
     collectNpmLockDependencyLicenses,
     buildDependencyLicenseArtifacts,
+    CARGO_RUNTIME_FEATURE_SELECTION,
     collectCargoDependencyLicenses,
     DEPENDENCY_LICENSE_PROOFS_PATH,
     DEPENDENCY_LICENSE_REPORT_PATH,
@@ -220,11 +220,94 @@ describe('project license', () => {
     });
 
     it('parses pnpm-lock.yaml once per artifact build across repeated pnpm proof lookups', () => {
+        const legalContents = readFileSync(join(process.cwd(), 'release/spdx-license-texts/MIT.txt'), 'utf8');
+        const legalSha256 = createHash('sha256').update(legalContents).digest('hex');
+        const legalFile = { label: 'MIT.txt', sha256: legalSha256, contents: legalContents };
+        const packageNames = ['fixture-alpha', 'fixture-beta'];
+        const records: DependencyLicenseRecord[] = [];
+        const proofs: Record<string, DependencyLicenseProof> = {};
+        const lockPackages: string[] = [];
+        for (const name of packageNames) {
+            const archive = gzipSync(
+                Buffer.concat([
+                    encodeTarEntry('package/LICENSE', 'File', Buffer.from(legalContents)),
+                    Buffer.alloc(1024),
+                ])
+            );
+            const archivePath = `release/dependency-license-proofs/${name}.tgz`;
+            mkdirSync(dirname(join(root, archivePath)), { recursive: true });
+            writeFileSync(join(root, archivePath), archive);
+            const integrity = `sha512-${createHash('sha512').update(archive).digest('base64')}`;
+            records.push({
+                ecosystem: 'npm',
+                name,
+                version: '1.0.0',
+                license: 'MIT',
+                legalFiles: [],
+                graphs: ['pnpm-lock.yaml'],
+            });
+            proofs[`npm:${name}@1.0.0`] = {
+                source: `https://registry.npmjs.org/${name}/-/${name}-1.0.0.tgz`,
+                revision: integrity,
+                files: [{ archivePath, sourcePath: 'LICENSE', sha256: legalSha256 }],
+            };
+            lockPackages.push(`  "${name}@1.0.0":\n    resolution:\n      integrity: ${integrity}`);
+        }
+        const serverRecord: DependencyLicenseRecord = {
+            ecosystem: 'npm',
+            name: 'fixture-server',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [legalFile],
+            graphs: ['server/package-lock.json'],
+        };
+        const cargoRecord: DependencyLicenseRecord = {
+            ecosystem: 'cargo',
+            name: 'fixture-cargo',
+            version: '1.0.0',
+            license: 'MIT',
+            legalFiles: [legalFile],
+            cargoSource: 'registry+https://index.crates.io/',
+            graphs: ['Cargo.lock'],
+        };
+        const legalReference = { label: legalFile.label, sha256: legalFile.sha256 };
+        write(root, 'pnpm-lock.yaml', `lockfileVersion: '9.0'\npackages:\n${lockPackages.join('\n')}\n`);
+        write(root, 'server/package-lock.json', '{"packages":{}}\n');
+        write(root, 'Cargo.lock', '');
+        write(root, 'release/spdx-license-texts/MIT.txt', legalContents);
+        write(
+            root,
+            DEPENDENCY_LICENSE_PROOFS_PATH,
+            `${JSON.stringify(
+                {
+                    schemaVersion: 4,
+                    packages: proofs,
+                    cargoRuntimeInventory: {
+                        cargoLockSha256: '0'.repeat(64),
+                        sourceInputs: [{ path: 'Cargo.lock', sha256: '0'.repeat(64) }],
+                        featureSelection: CARGO_RUNTIME_FEATURE_SELECTION,
+                        packages: [
+                            {
+                                name: cargoRecord.name,
+                                version: cargoRecord.version,
+                                source: cargoRecord.cargoSource,
+                                license: cargoRecord.license,
+                                legalFiles: [legalReference],
+                                reportedLegalFiles: [legalReference],
+                            },
+                        ],
+                    },
+                },
+                null,
+                4
+            )}\n`
+        );
+
         let parseCount = 0;
         let pnpmLookupCount = 0;
-        const loadPnpmLockPackages = (root: string) => {
+        const loadPnpmLockPackages = (fixtureRoot: string) => {
             parseCount += 1;
-            const document = parseDocument(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'));
+            const document = parseDocument(readFileSync(join(fixtureRoot, 'pnpm-lock.yaml'), 'utf8'));
             if (document.errors.length > 0) {
                 throw new Error(document.errors[0]!.message);
             }
@@ -239,13 +322,18 @@ describe('project license', () => {
             });
         };
 
-        const first = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
+        const options = {
+            loadPnpmLockPackages,
+            collectNpmDependencies: () => records,
+            collectNpmLockDependencies: () => [serverRecord],
+            collectCargoDependencies: () => [cargoRecord],
+        };
+        const first = buildDependencyLicenseArtifacts(root, options);
         const firstBuildLookupCount = pnpmLookupCount;
-        const second = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
+        const second = buildDependencyLicenseArtifacts(root, options);
         const secondBuildLookupCount = pnpmLookupCount - firstBuildLookupCount;
 
-        expect(first.report).toBe(readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8'));
-        expect(second.report).toBe(first.report);
+        expect(second).toEqual(first);
         expect(firstBuildLookupCount).toBeGreaterThan(1);
         expect(secondBuildLookupCount).toBeGreaterThan(1);
         expect(parseCount).toBe(2);
@@ -618,7 +706,7 @@ describe('project license', () => {
     it('marks the intended WASM package when run from a crate directory', () => {
         const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-mark-wasm-package-'));
         try {
-            const sourceHelper = join(dirname(fileURLToPath(import.meta.url)), '..', 'markWasmPackageInternal.ts');
+            const sourceHelper = join(import.meta.dirname, '..', 'markWasmPackageInternal.ts');
             const helper = join(helperRoot, 'scripts/markWasmPackageInternal.ts');
             const packagePath = join(helperRoot, 'public/wasm/daw-dsp/package.json');
             const crateDirectory = join(helperRoot, 'crates/daw-dsp');
@@ -646,7 +734,7 @@ describe('project license', () => {
     it('rejects duplicate WASM package metadata before marking it internal', () => {
         const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-mark-wasm-duplicate-'));
         try {
-            const scriptsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..');
+            const scriptsDirectory = join(import.meta.dirname, '..');
             const helper = join(helperRoot, 'scripts/markWasmPackageInternal.ts');
             const packagePath = join(helperRoot, 'public/wasm/daw-dsp/package.json');
             const crateDirectory = join(helperRoot, 'crates/daw-dsp');

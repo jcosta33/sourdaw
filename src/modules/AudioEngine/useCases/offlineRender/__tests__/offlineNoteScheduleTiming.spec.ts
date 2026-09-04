@@ -15,7 +15,7 @@ import {
     type GrowableMemory,
 } from '../../../services/__tests__/wasmViewGrowthHarness';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
-import { type PendingWorkletEvent } from '../types';
+import { type PendingExpressionWorkletEvent, type PendingNoteWorkletEvent } from '../types';
 
 // End-to-end timing proof for the offline note path, wired out of production
 // parts only: the real factory table -> the real `NativeDspDeviceStrategy` ->
@@ -46,6 +46,18 @@ let currentBlock = -1;
 
 type Dispatch = { note: number; velocity: number; channel: number; block: number };
 const dispatches: Dispatch[] = [];
+type ExpressionDispatch = {
+    note: number;
+    channel: number;
+    bendSemitones: number;
+    pressure: number;
+    slide: number;
+    block: number;
+};
+const expressionDispatches: ExpressionDispatch[] = [];
+
+/** Every engine call in arrival order, so ordering within a block is observable. */
+const engineEvents: string[] = [];
 
 class LevainInstanceMock {
     note_on(note: number, velocity: number): void {
@@ -53,6 +65,11 @@ class LevainInstanceMock {
     }
     note_on_with_channel(note: number, velocity: number, channel: number): void {
         dispatches.push({ note, velocity, channel, block: currentBlock });
+        engineEvents.push(`note:${String(note)}`);
+    }
+    note_expression(note: number, channel: number, bendSemitones: number, pressure: number, slide: number): void {
+        expressionDispatches.push({ note, channel, bendSemitones, pressure, slide, block: currentBlock });
+        engineEvents.push(`expr:${String(note)}`);
     }
     note_off(_note: number): void {}
     note_off_on_channel(_note: number, _channel: number): void {}
@@ -91,6 +108,16 @@ vi.mock('../../../engine/LevainNode', () => {
     const noteOff: LevainNodeResult['noteOff'] = (note, sampleFrame, channel) => {
         portHolder.post?.({ type: 'noteOff', note, sampleFrame, channel });
     };
+    const noteExpression: LevainNodeResult['noteExpression'] = (
+        note,
+        channel,
+        bendSemitones,
+        pressure,
+        slide,
+        sampleFrame
+    ) => {
+        portHolder.post?.({ type: 'noteExpression', note, channel, bendSemitones, pressure, slide, sampleFrame });
+    };
     return {
         isLevainDevice: (deviceType: string) => deviceType === 'levain',
         createLevainNode: () =>
@@ -99,6 +126,7 @@ vi.mock('../../../engine/LevainNode', () => {
                 ready: Promise.resolve({}),
                 noteOn,
                 noteOff,
+                noteExpression,
             }),
     };
 });
@@ -160,7 +188,7 @@ async function buildLevainStrategy(): Promise<NativeDspDeviceStrategy> {
     return new NativeDspDeviceStrategy(node);
 }
 
-function noteOnEvent(time: number, pitch: number, controls: PendingWorkletEvent['instrumentControls']) {
+function noteOnEvent(time: number, pitch: number, controls: PendingNoteWorkletEvent['instrumentControls']) {
     return {
         time,
         type: 'on',
@@ -169,13 +197,47 @@ function noteOnEvent(time: number, pitch: number, controls: PendingWorkletEvent[
         instrumentControls: controls,
         isToaster: false,
         toasterPadIndex: -1,
-    } satisfies PendingWorkletEvent;
+    } satisfies PendingNoteWorkletEvent;
+}
+
+/**
+ * The dispatcher the offline scheduler reads off the strategy. Levain's DSP
+ * node only carries `noteExpression` because the factory table spreads the
+ * engine node, and `NativeDspNode` does not declare it — so this resolution is
+ * itself the thing under test.
+ */
+function expressionDispatcherOf(
+    strategy: NativeDspDeviceStrategy
+): NonNullable<NativeDspDeviceStrategy['noteExpression']> {
+    const dispatch = strategy.noteExpression;
+    if (!dispatch) {
+        throw new Error('the offline Levain strategy exposes no per-note expression surface');
+    }
+    return dispatch;
+}
+
+function expressionEvent(
+    time: number,
+    pitch: number,
+    strategy: NativeDspDeviceStrategy,
+    values: { bendSemitones: number; pressure: number; slide: number }
+) {
+    return {
+        time,
+        type: 'expression',
+        pitch,
+        channel: 3,
+        dispatch: expressionDispatcherOf(strategy),
+        ...values,
+    } satisfies PendingExpressionWorkletEvent;
 }
 
 describe('offline note scheduling reaches the engine at the scheduled frame', () => {
     beforeEach(() => {
         resetGrowableMemory(memory, HEAP_BYTES);
         dispatches.length = 0;
+        expressionDispatches.length = 0;
+        engineEvents.length = 0;
         currentBlock = -1;
         vi.stubGlobal('currentFrame', 0);
     });
@@ -215,10 +277,42 @@ describe('offline note scheduling reaches the engine at the scheduled frame', ()
             renderBlock(processor);
         }
 
-        // An offline part carries no per-note expression, so every voice belongs
-        // on the base channel. `note_on_with_channel` takes a `u8`, so a frame
+        // This part carries no per-note expression, so every voice belongs on
+        // the base channel. `note_on_with_channel` takes a `u8`, so a frame
         // number here is truncated into a real member channel and the voice
         // becomes unreachable to channel-addressed release and expression.
         expect(dispatches).toEqual([{ note: 60, velocity: 90, channel: 0, block: 1 }]);
+    });
+
+    it('bends a note in the block that carries it, after the voice exists', async () => {
+        const processor = await startProcessor();
+        const strategy = await buildLevainStrategy();
+        const offlineCtx = { sampleRate: OFFLINE_SAMPLE_RATE } as unknown as OfflineAudioContext;
+
+        // Expression is handed in ahead of its own note-on, the order a caller
+        // has no reason to guarantee. The engine matches expression to a voice
+        // still held on the member channel, so a message that arrives before the
+        // note-on addresses nothing and the note sounds unbent.
+        schedulePendingSuspends(
+            offlineCtx,
+            [
+                expressionEvent(0.2, 60, strategy, { bendSemitones: -3, pressure: 0.25, slide: 0.5 }),
+                noteOnEvent(0.2, 60, strategy),
+            ],
+            4
+        );
+
+        expect(expressionDispatches).toEqual([]);
+
+        for (let block = 0; block < 2; block++) {
+            renderBlock(processor);
+        }
+
+        // Frame 200 is interior to block 1 (128..255): both messages land there,
+        // note-on first.
+        expect({ engineEvents, expressionDispatches }).toEqual({
+            engineEvents: ['note:60', 'expr:60'],
+            expressionDispatches: [{ note: 60, channel: 3, bendSemitones: -3, pressure: 0.25, slide: 0.5, block: 1 }],
+        });
     });
 });

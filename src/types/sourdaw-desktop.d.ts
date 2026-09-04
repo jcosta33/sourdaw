@@ -32,9 +32,44 @@ type SourdawMessageDialogOptions = {
     readonly kind?: 'info' | 'warning' | 'error';
 };
 
+type SourdawNativeMenuAction =
+    | 'project:new'
+    | 'project:import-project'
+    | 'project:import-audio'
+    | 'project:import-midi'
+    | 'project:open-recent'
+    | 'project:save'
+    | 'project:discard'
+    | 'project:export-audio'
+    | 'project:export-file'
+    | 'edit:undo'
+    | 'edit:redo'
+    | 'edit:cut'
+    | 'edit:copy'
+    | 'edit:paste'
+    | 'edit:select-all'
+    | 'edit:deselect-all'
+    | 'view:toggle-sidebar'
+    | 'view:toggle-mixer'
+    | 'view:toggle-inspector'
+    | 'view:toggle-track-list'
+    | 'view:toggle-virtual-keyboard'
+    | 'view:toggle-automation'
+    | 'view:toggle-chat'
+    | 'view:preferences'
+    | 'view:zoom-fit'
+    | 'view:zoom-selection'
+    | 'view:zoom-in'
+    | 'view:zoom-out'
+    | 'help:show-tour';
+
 type SourdawDesktopBridge = {
     /** The platform the shell runs on (`process.platform`), published synchronously. */
     readonly platform: string;
+    /** Renderer display controls backed by Electron's viewport-aware webFrame APIs. */
+    display: {
+        readonly setZoomFactor: (factor: number) => void;
+    };
     /** Invoke a command whose arguments and result are JSON. Arguments are positional. */
     invoke: (command: string, args?: readonly unknown[]) => Promise<unknown>;
     /** Invoke a command whose final argument is a byte payload. Resolves with the command's own result. */
@@ -68,5 +103,39 @@ type SourdawDesktopBridge = {
         readonly close: () => Promise<void>;
         readonly isMaximized: () => Promise<boolean>;
         readonly listenMaximized: (callback: (maximized: boolean) => void) => () => void;
+    };
+    nativeMenu: {
+        readonly listen: (
+            callback: (intent: {
+                readonly action: SourdawNativeMenuAction;
+                readonly requestId?: number;
+                readonly recentKey?: string;
+                readonly projectKey?: string;
+                readonly revision?: string;
+            }) => void
+        ) => () => void;
+        readonly projectState: (state: {
+            readonly title: string;
+            readonly dirty: boolean;
+            readonly durabilityPending: boolean;
+            readonly projectKey: string;
+            readonly revision: string;
+            readonly rendererReady?: boolean;
+            readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
+        }) => Promise<void>;
+        readonly saveResult: (result: {
+            readonly requestId: number;
+            readonly saved: boolean;
+            readonly dirty: boolean;
+            readonly projectKey: string;
+            readonly revision: string;
+        }) => Promise<void>;
+        readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
+        readonly listenSessionQuiesceCancel: (callback: (requestId: number) => void) => () => void;
+        readonly sessionQuiesced: (result: {
+            readonly requestId: number;
+            readonly outcome: 'success' | 'rejected' | 'terminal';
+        }) => Promise<void>;
+        readonly sessionQuiesceStarted: (requestId: number) => Promise<boolean>;
     };
 };

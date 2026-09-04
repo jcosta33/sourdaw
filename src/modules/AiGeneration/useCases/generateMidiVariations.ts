@@ -267,7 +267,9 @@ ONLY output raw JSON, no markdown blocks.`;
                     fadeOutBeats: targetClip.fadeOutBeats,
                     gain: targetClip.gain,
                     color: targetClip.color,
-                    locked: targetClip.locked,
+                    // A variation is a muted draft to audition and edit, and the canonical addNotes
+                    // contract writes only into a writable clip, so it never inherits a source lock.
+                    locked: false,
                     muted: true,
                     stretchMode: targetClip.stretchMode,
                     stretchRatio: targetClip.stretchRatio,

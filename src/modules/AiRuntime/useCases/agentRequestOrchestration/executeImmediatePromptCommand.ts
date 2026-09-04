@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { updateChatMessage } from '../../stores/chatStore';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
@@ -7,6 +6,7 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { executePlannedActions } from '../executePlannedActions';
+import { getProjectCommitFinalizationWarning } from '../getProjectCommitFinalizationWarning';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 
 import { AGENT_RUN_PERSISTENCE_WARNING, settleAgentRunWorkLeaseSafely } from './settleAgentRunWorkLeaseSafely';
@@ -43,9 +43,10 @@ function tryRecordCommittedAgentRunWork(input: {
     revertGroupId?: string;
     committedRevision?: string;
     completesRun?: boolean;
+    recoveryError?: Parameters<typeof agentRunLifecycle.recordCommittedRecoveryFailure>[0]['error'];
 }): string | null {
     try {
-        recordAgentRunReceiptSaga({
+        const receiptInput = {
             runId: input.runId,
             receipt: input.receipt,
             actions: input.actions,
@@ -53,7 +54,12 @@ function tryRecordCommittedAgentRunWork(input: {
             ...(input.revertGroupId ? { revertGroupId: input.revertGroupId } : {}),
             ...(input.committedRevision ? { committedRevision: input.committedRevision } : {}),
             ...(input.completesRun !== undefined ? { completesRun: input.completesRun } : {}),
-        });
+        };
+        if (input.recoveryError) {
+            agentRunLifecycle.recordCommittedRecoveryFailure({ ...receiptInput, error: input.recoveryError });
+        } else {
+            recordAgentRunReceiptSaga(receiptInput);
+        }
         return null;
     } catch {
         return AGENT_RUN_PERSISTENCE_WARNING;
@@ -179,14 +185,33 @@ export async function executeImmediatePromptCommand(
         if (execution.reportingWarning) {
             receiptWarnings.push(`AI history or notification reporting warning: ${execution.reportingWarning}`);
         }
+        if (execution.finalizationEvidenceFailure) {
+            receiptWarnings.push(getProjectCommitFinalizationWarning(execution.finalizationEvidenceFailure));
+        }
         const runPersistenceWarning = tryRecordCommittedAgentRunWork({
             runId,
             receipt: execution.receipt,
             actions,
             commandBatch,
             revertGroupId: group.groupId,
-            committedRevision: captureProjectRevision(),
-            completesRun: commandLeaseSettlement.accepted,
+            ...(execution.committedRevision ? { committedRevision: execution.committedRevision } : {}),
+            completesRun: commandLeaseSettlement.accepted && execution.finalizationEvidenceFailure === undefined,
+            ...(execution.finalizationEvidenceFailure
+                ? {
+                      recoveryError: normalizeAgentFailure({
+                          category: 'internal',
+                          source: 'command-execution',
+                          related: {
+                              targetIds: [...parsedCommandBatch.envelope.scope.targetIds],
+                              commandIds: parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+                              receiptIdentities: [
+                                  `${execution.receipt.schemaVersion}:${execution.receipt.runId}:${execution.receipt.batchId}:${execution.receipt.outcome}`,
+                              ],
+                          },
+                          knownDomain: true,
+                      }),
+                  }
+                : {}),
         });
         if (runPersistenceWarning) {
             receiptWarnings.push(runPersistenceWarning);

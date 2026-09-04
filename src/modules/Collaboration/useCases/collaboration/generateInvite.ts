@@ -23,12 +23,17 @@ import { sessionRuntimePrimitives as runtime } from './sessionManagement';
  * under ADR 0016 ruling 4 because it was unreachable and only ever granted
  * `editor`. Treat an invite as you would a write-capable share link — the
  * way to un-invite someone is to end the session.
+ *
+ * The invite also carries the session's relay capability, so it is the single
+ * thing a joiner needs whether the session runs peer-to-peer or through the
+ * WebSocket relay.
  */
 export async function generateInvite(): Promise<string> {
     clearCollaborationFailure();
     try {
         const peerManager = runtime.state.peerManager;
-        if (!peerManager) {
+        const sessionSecret = runtime.state.sessionSecret;
+        if (!peerManager || !sessionSecret) {
             throw createCollaborationError('No active session');
         }
 
@@ -51,6 +56,7 @@ export async function generateInvite(): Promise<string> {
             sessionId: state.sessionId!,
             sdp,
             pendingPeerId: joinerPeerId,
+            sessionSecret,
         };
 
         return await runtime.compressInvite(JSON.stringify(invite));

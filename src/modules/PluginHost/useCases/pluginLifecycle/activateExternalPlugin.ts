@@ -6,6 +6,7 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
+import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
     externalPluginActivationEpoch,
@@ -172,8 +173,16 @@ export function activateExternalPlugin({
         watchExternalPluginLatency();
     }
 
+    if (onBridgeRoundTripFrames) {
+        // Registered the same way and for a longer reach: if no engine is
+        // running, the real bridge cost is not known until one starts and takes
+        // this instance over, which happens long after this call resolves.
+        // `markExternalPluginEngineAttached` reports it through this sink.
+        externalBridgeFramesReporters.set(instanceId, onBridgeRoundTripFrames);
+    }
+
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
-        let attachmentFailure: ExternalPluginActivationResult | null = null;
+        let attachment: ExternalPluginActivationResult | null = null;
         try {
             const instance = await loadPlugin(pluginId, instanceId, engineSampleRate);
             if (activationEpoch !== externalPluginActivationEpoch.current) {
@@ -194,13 +203,16 @@ export function activateExternalPlugin({
             });
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
-                // it renders nothing. Recorded on the activation entry rather
-                // than raised: this is the legitimate load-before-engine-start
-                // flow, and failing it would break project open.
+                // it renders nothing yet. The first graph batch starts one and
+                // takes this instance over, and `markExternalPluginEngineAttached`
+                // clears the note below when it does — so this is a pending
+                // attachment, not a failed one. Reporting it as failed made
+                // every plugin loaded before the first play raise out of the
+                // committed action that loaded it.
                 const message = 'Loaded without a running native engine — this plugin processes no audio yet.';
                 setActivationStatus(instanceId, 'active', message);
                 logger.warn(`External plugin ${pluginId} instance ${instanceId}: ${message}`);
-                attachmentFailure = { status: 'failed', stage: 'attach', reason: message };
+                attachment = { status: 'active', attachment: 'pending' };
             } else {
                 setActivationStatus(instanceId, 'active');
             }
@@ -218,17 +230,18 @@ export function activateExternalPlugin({
             // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
             externalLatencyReporters.delete(instanceId);
+            externalBridgeFramesReporters.delete(instanceId);
             setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return { status: 'failed', stage: 'load', reason: String(error) };
         }
 
         if (!stateChunk) {
-            return attachmentFailure ?? { status: 'active' };
+            return attachment ?? { status: 'active' };
         }
         try {
             await restorePluginState(instanceId, stateChunk);
-            return attachmentFailure ?? { status: 'active' };
+            return attachment ?? { status: 'active' };
         } catch (error) {
             // Restore failure must not reload: the instance is loaded, so keep the
             // guard and only log — a later rebuild should not re-instantiate it.

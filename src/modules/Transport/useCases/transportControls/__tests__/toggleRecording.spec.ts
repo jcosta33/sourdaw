@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { executePlayheadSeek } from '../executePlayheadSeek';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
 
@@ -42,7 +43,7 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
         updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
-        startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
+        startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<() => void>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
@@ -50,6 +51,14 @@ const mocks = vi.hoisted(() => {
         stopAudioRecording: vi.fn<() => Promise<void>>(),
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
         timeSignatureMapStore,
+        // The seek-during-count-in case imports the real `executePlayheadSeek`,
+        // whose collaborators stay mocked here like every other side effect.
+        stopAllScheduled: vi.fn<() => void>(),
+        repositionNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
+        resetMidiState: vi.fn<() => void>(),
+        startPlayheadScheduler: vi.fn<() => void>(),
+        stopPlayheadScheduler: vi.fn<() => void>(),
+        panicYeastRuntime: vi.fn<() => Promise<void>>(),
     };
 });
 
@@ -72,12 +81,22 @@ vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: mocks.stopActiveRecording,
 }));
+vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mocks.panicYeastRuntime }));
+vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
+    startPlayheadScheduler: mocks.startPlayheadScheduler,
+}));
+vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
+    stopPlayheadScheduler: mocks.stopPlayheadScheduler,
+}));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
     startRecording: mocks.startRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        setTransportInfo: vi.fn(),
+    },
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
@@ -85,10 +104,23 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
     getCompensationDelay: mocks.getCompensationDelay,
+    stopAllScheduled: mocks.stopAllScheduled,
+    repositionNativeLiveGraphSession: mocks.repositionNativeLiveGraphSession,
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 describe('toggleRecording', () => {
+    // The count-in's boundary lives on the audio clock (the same clock the
+    // clicks are scheduled on), so tests that exercise the armed start must
+    // advance `currentTime` alongside the fake wall timers.
+    const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
+
+    function elapse(ms: number): void {
+        audioClock.currentTime += ms / 1000;
+        vi.advanceTimersByTime(ms);
+    }
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -99,12 +131,21 @@ describe('toggleRecording', () => {
         mocks.stopAudioRecording.mockResolvedValue(undefined);
         mocks.stopActiveRecording.mockImplementation(() => {
             recordingLifecycle.cancelPendingRecordingStart();
+            const timerId = recordingLifecycle.countInTimerId;
+            if (timerId !== null) {
+                clearTimeout(timerId);
+            }
             recordingLifecycle.setCountInTimerId(null);
             return Promise.resolve();
         });
         recordingLifecycle.cancelPendingRecordingStart();
         recordingLifecycle.setCountInTimerId(null);
-        mocks.getAudioContext.mockReturnValue({ currentTime: 0, baseLatency: 0, outputLatency: 0 });
+        audioClock.currentTime = 0;
+        mocks.getAudioContext.mockReturnValue(audioClock);
+        // clearAllMocks keeps return values, so a track snapshot an earlier test
+        // installed would otherwise leak into every later one through the
+        // recorder-start await.
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
         mocks.timeSignatureMapStore.value = { changes: [] };
         mocks.tempoMapStore.value = { changes: [] };
     });
@@ -170,9 +211,9 @@ describe('toggleRecording', () => {
 
         expect(mocks.scheduleClick.mock.calls.map((call) => call[0])).toEqual([0, 1, 2, 3]);
         // The count-in lasts a full four seconds; the base tempo gave two.
-        vi.advanceTimersByTime(3999);
+        elapse(3999);
         expect(mocks.startRecording).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(1);
+        elapse(1);
         expect(mocks.startRecording).toHaveBeenCalled();
     });
 
@@ -205,9 +246,9 @@ describe('toggleRecording', () => {
             false,
             false,
         ]);
-        vi.advanceTimersByTime(1499);
+        elapse(1499);
         expect(mocks.startRecording).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(1);
+        elapse(1);
         expect(mocks.startRecording).toHaveBeenCalled();
     });
 
@@ -544,5 +585,145 @@ describe('toggleRecording', () => {
         }
         // durationBeats = 2 * (120/60) = 4 -> endBeat 14 (not 12 from tempo 60).
         expect(clipUpdate(recordingClip).endBeat).toBe(14);
+    });
+
+    describe('count-in recording start anchored on the audio clock', () => {
+        // 1 bar of 4/4 at 120 BPM: the count-in spans 2 s of audio time. Armed
+        // with the clock at 10 s, the boundary sits at 12 s on that clock and
+        // the take must open on the playhead beat the count-in led to (8).
+        function armOneBarCountIn(): void {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: true,
+                countInBars: 1,
+                tempo: 120,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+                playheadPosition: 8,
+            });
+            audioClock.currentTime = 10;
+            toggleRecording();
+        }
+
+        it('opens the take on the count-in boundary beat when the wake-up slips within tolerance', async () => {
+            armOneBarCountIn();
+
+            // The main thread wakes 20 ms late. The audio clock governs: the
+            // take is anchored on the boundary beat, not on wherever the wall
+            // timer happened to land.
+            elapse(2020);
+
+            await vi.waitFor(() => {
+                expect(mocks.startRecording).toHaveBeenCalledOnce();
+            });
+            expect(mocks.startRecording).toHaveBeenCalledWith(8);
+            expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        });
+
+        it('surfaces a missed count-in instead of silently recording a late take', () => {
+            armOneBarCountIn();
+
+            // The wake-up slips 600 ms past the boundary: too far behind the
+            // beat for the take to open on it. The miss must reach the user,
+            // and the armed start must not fire.
+            elapse(2600);
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('count-in'), 'warning');
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.startPlayback).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+            expect(recordingLifecycle.hasPendingRecordingStart()).toBe(false);
+        });
+
+        it('waits for the audio clock to reach the boundary when it lags the wall timer', async () => {
+            armOneBarCountIn();
+
+            // The wall timer fires on time, but the audio clock froze at 11.2 s
+            // (a suspended context): the boundary has not been reached on the
+            // clock that scheduled the clicks, so the take must not open
+            // against it. Only the wall timers advance — the clock stays frozen.
+            audioClock.currentTime = 11.2;
+            await vi.advanceTimersByTimeAsync(2000);
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+
+            // The context resumes; the re-armed wake finds the clock on the
+            // boundary and opens the take there.
+            audioClock.currentTime = 12;
+            await vi.advanceTimersByTimeAsync(800);
+            expect(mocks.startRecording).toHaveBeenCalledWith(8);
+        });
+
+        it('canceling the count-in cancels the armed audio-clock start', () => {
+            armOneBarCountIn();
+
+            toggleRecording();
+
+            expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+            elapse(2600);
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('a seek mid-count-in cancels the armed start instead of misplacing the take', async () => {
+            armOneBarCountIn();
+
+            // Half a second into the two-second count-in the user seeks from
+            // beat 8 to beat 32. During count-in `isRecording` is still false,
+            // so the seek's recording gate alone would skip the teardown and
+            // the armed wake would keep holding beat 8 — opening the take 24
+            // beats behind the playhead the seek just committed.
+            elapse(500);
+            await executePlayheadSeek(32);
+
+            expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+            expect(updateTransportState).toHaveBeenCalledWith({ playheadPosition: 32 });
+
+            // Past the boundary the cancelled wake never fires: no take opens,
+            // no playback starts, and no miss is surfaced for a count-in the
+            // seek itself abandoned.
+            elapse(2600);
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.startPlayback).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('drops a wake whose timer identity no longer matches the armed count-in', () => {
+            armOneBarCountIn();
+
+            // A cancel or a newer arm replaced the recorded identity while
+            // this wake's timeout stayed pending on the timer wheel. The wake
+            // no longer speaks for the armed count-in, so it must not open a
+            // take: the identity guard drops it.
+            recordingLifecycle.setCountInTimerId(setTimeout(() => undefined, 60_000));
+
+            elapse(2020);
+
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.startPlayback).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('starts the take immediately at the store playhead when count-in is off', async () => {
+            vi.mocked(getTransportState).mockReturnValue({
+                ...defaultTransportState,
+                isPlaying: false,
+                isRecording: false,
+                countInEnabled: false,
+                punchInEnabled: false,
+                playheadPosition: 5,
+            });
+
+            toggleRecording();
+
+            await vi.waitFor(() => {
+                expect(mocks.startRecording).toHaveBeenCalledOnce();
+            });
+            expect(mocks.startRecording).toHaveBeenCalledWith(undefined);
+            expect(updateTransportState).toHaveBeenCalledWith({ isRecording: true });
+        });
     });
 });

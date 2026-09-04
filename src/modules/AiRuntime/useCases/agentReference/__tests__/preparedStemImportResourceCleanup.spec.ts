@@ -29,6 +29,53 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    audioEngine: {},
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(),
+    removeBusStrip: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    removeSend: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateDeviceParam: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
@@ -350,8 +397,9 @@ describe('prepared stem import resource cleanup', () => {
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
 
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
         setItem.mockRestore();
     });
 
@@ -397,8 +445,9 @@ describe('prepared stem import resource cleanup', () => {
         await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[1]!] })).resolves.toBeUndefined();
         await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
 
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
-        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-2');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
         setItem.mockRestore();
     });
 
@@ -432,6 +481,47 @@ describe('prepared stem import resource cleanup', () => {
 
         preparedStemImportResources.release({ runId, stems: [twoStems[1]!] });
         expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+    });
+
+    it('discards every stem of a verified noncommit whose run has left run history', async () => {
+        const runId = 'stem-evicted-noncommit-discard';
+        const batchId = 'batch-evicted-noncommit-discard';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: twoStems,
+            recovery: { batchId, commandBatch: createRecoveryCommandBatch(runId, batchId) },
+        });
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-evicting-run-${String(index)}`,
+                request: `Later run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-revision-${String(index)}`,
+            });
+        }
+        expect(agentRunLifecycle.get(runId)).toBeNull();
+
+        await expect(
+            preparedStemImportResources.discardAfterVerifiedNoncommit({ runId, stems: twoStems })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
         expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
     });
 

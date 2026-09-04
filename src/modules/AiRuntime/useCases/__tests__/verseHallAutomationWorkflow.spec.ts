@@ -42,6 +42,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -431,6 +434,7 @@ describe('verse Hall send automation workflow', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -678,7 +682,9 @@ describe('verse Hall send automation workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects stale confirmation when a collaborator changes one guarded Hall send', async () => {
+    // The edit below changes the exact send level this proposal names, and the refusal names that
+    // track: the divergence port classifies the conflict against the target the batch writes.
+    it('leaves no automation or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -694,16 +700,30 @@ describe('verse Hall send automation workflow', () => {
                     : track
             ),
         });
+        flushAutomergeStorageWrites();
 
-        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        expect(await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).toEqual({
+            status: 'invalidated',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-backing-vocal']),
+        });
 
-        expect(result.status).toBe('failed');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-backing-vocal')?.sends[0]?.level).toBe(0.3);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-backing-vocal']));
     });
 
-    it('rejects stale confirmation when a collaborator turns automation off for one vocal', async () => {
+    // Turning automation off on a track this proposal names is a change to one of its targets, so
+    // the refusal names that track rather than reporting a bare "the project changed".
+    it('leaves no automation or history residue when the project changes before confirmation via automation mode', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -712,16 +732,24 @@ describe('verse Hall send automation workflow', () => {
                 track.id === 'track-backing-vocal' ? { ...track, automationMode: 'off' } : track
             ),
         });
+        flushAutomergeStorageWrites();
 
-        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        expect(await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).toEqual({
+            status: 'invalidated',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-backing-vocal']),
+        });
 
-        expect(result.status).toBe('failed');
         expect(getSendLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(proposal?.content).not.toContain('Outcome: committed');
+        expect(proposal?.content).toBe(ambiguousSameObjectDivergenceMessage(['track-backing-vocal']));
     });
 
     it('aborts the automation write without receipt or undo when its store write fails', async () => {

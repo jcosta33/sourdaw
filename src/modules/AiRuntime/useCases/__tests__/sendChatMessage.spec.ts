@@ -18,6 +18,7 @@ import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentP
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
+import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { AGENT_RUN_PROVIDER_PERSISTENCE_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
@@ -90,9 +91,35 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    captureActiveBranchReference: vi.fn(),
+    compactProject: vi.fn(),
+    createCrdtDoc: vi.fn(),
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    loadCrdtProject: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    resetCrdtProjectAuthority: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    startCrdtAutoSave: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
@@ -406,14 +433,12 @@ function configurePromptPlanning(
         }
         plannedRunId = runId;
         if (action.type === 'importStemSet' && readiness !== 'missing') {
-            for (const stem of action.payload.stems) {
-                agentRunLifecycle.registerTemporaryAsset({
-                    runId,
-                    assetId: stem.audioBufferId,
-                    kind: 'import',
-                    cleanupOwner: 'stem-import-preparation',
-                });
-                if (readiness === 'cleanup-pending') {
+            // Register through the owning module the way `planPromptActions`
+            // does: a bare `registerTemporaryAsset` records the asset without
+            // the cleanup callback that actually discards the prepared stem.
+            preparedStemImportResources.register({ runId, stems: action.payload.stems });
+            if (readiness === 'cleanup-pending') {
+                for (const stem of action.payload.stems) {
                     agentRunLifecycle.prepareTemporaryAssetCleanup({
                         runId,
                         assetId: stem.audioBufferId,
@@ -713,6 +738,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             async (
@@ -803,6 +829,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             (
@@ -933,6 +960,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             (
@@ -1004,6 +1032,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             async (
@@ -1752,8 +1781,8 @@ describe('sendChatMessage retained-provider selection', () => {
                 .find((message) => message.role === 'assistant' && message.isCommandAction === true);
             expect(mocks.updateChatMessage).toHaveBeenCalledWith(commandAssistantMessage?.id, {
                 isStreaming: false,
-                content: `Failed to execute prompt command.\n\n_${WORK_PERSISTENCE_WARNING}_`,
-                error: `${executionError.message}\n\n${WORK_PERSISTENCE_WARNING}`,
+                content: `Failed to execute prompt command.\n\n_${FAILURE_PERSISTENCE_WARNING}_`,
+                error: `${executionError.message}\n\n${FAILURE_PERSISTENCE_WARNING}`,
             });
             expect(loggerError).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -3132,6 +3161,9 @@ describe('sendChatMessage retained-provider selection', () => {
         );
         const { parseVersionedCommandBatchEnvelope } =
             await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        const { captureProjectIdentity } = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
+            '#/modules/CrdtDocument/useCases'
+        );
         mocks.compileAgentActionExecution.mockImplementation(compileAgentActionExecution);
         mocks.parseVersionedCommandBatchEnvelope.mockImplementation(parseVersionedCommandBatchEnvelope);
         commandBatchPreflightPort.setProvider(() => ({
@@ -3139,7 +3171,7 @@ describe('sendChatMessage retained-provider selection', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-fixture',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: { 'track-kick': 'track-kick:fixture' },
         }));

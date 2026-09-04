@@ -1,11 +1,15 @@
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
+import { buildWireToolNameCodec } from './buildWireToolNameCodec';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+const CACHE_CONTROL = { type: 'ephemeral' } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -16,18 +20,25 @@ export async function generateAnthropicToolCalls(input: {
     systemPrompt: string;
     userMessage: string;
     toolSchemas: readonly ToolSchema[];
+    // The admitted provider request (llmOrchestration/inference.ts) is the single source of
+    // truth for this budget — see models/HostedToolPlanLimits.ts. The wire request must use
+    // exactly what was admitted, not a constant of its own, or the two can silently drift.
+    maxOutputTokens: number;
     signal: AbortSignal;
 }): Promise<ToolCallResult[]> {
     const chunks: Uint8Array[] = [];
     let responseBytes = 0;
+    const codec = buildWireToolNameCodec(input.toolSchemas);
+    const lastToolIndex = input.toolSchemas.length - 1;
     const body = JSON.stringify({
         model: input.runtime.model,
-        max_tokens: 2048,
-        system: input.systemPrompt,
-        tools: input.toolSchemas.map((schema) => ({
-            name: schema.function.name,
+        max_tokens: input.maxOutputTokens,
+        system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
+        tools: input.toolSchemas.map((schema, index) => ({
+            name: codec.encode(schema.function.name),
             description: schema.function.description,
             input_schema: schema.function.parameters,
+            ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
         })),
         messages: [{ role: 'user', content: input.userMessage }],
     });
@@ -44,7 +55,10 @@ export async function generateAnthropicToolCalls(input: {
         },
     });
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Hosted AI tool-planning request failed with status ${String(response.status)}`);
+        throw new HostedAiHttpStatusError(
+            response.status,
+            `Hosted AI tool-planning request failed with status ${String(response.status)}`
+        );
     }
     if (response.contentType?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning content type');
@@ -83,9 +97,12 @@ export async function generateAnthropicToolCalls(input: {
         }
         results.push({
             ...(typeof block.id === 'string' && block.id.length > 0 ? { id: block.id } : {}),
-            name: block.name,
+            name: codec.decode(block.name),
             arguments: block.input,
         });
+    }
+    if (payload.stop_reason === 'max_tokens') {
+        throw new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit');
     }
     const hasValidToolStop = payload.stop_reason === 'tool_use' && results.length > 0;
     const hasValidEmptyStop = payload.stop_reason === 'end_turn' && results.length === 0 && !hasNonToolText;

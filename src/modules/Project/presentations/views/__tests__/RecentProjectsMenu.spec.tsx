@@ -89,11 +89,54 @@ describe('RecentProjectsMenu', () => {
         expect(screen.getByLabelText(/Project menu/i)).toBeInTheDocument();
     });
 
+    it('renders as the right segment of the project control', () => {
+        render(<RecentProjectsMenu />);
+
+        const trigger = screen.getByLabelText(/Project menu/i);
+
+        expect(trigger).toHaveClass(
+            'daw-readout-well',
+            'rounded-l-none',
+            'rounded-r-sm',
+            'border-l-[rgba(255,249,242,0.1)]',
+            'hover:brightness-[1.06]'
+        );
+        expect(trigger).toHaveAttribute('data-size', 'icon-sm');
+        expect(trigger).toContainElement(screen.getByTestId('project-menu-chevron'));
+    });
+
     it('should show menu when button is clicked', () => {
         render(<RecentProjectsMenu />);
         const button = screen.getByLabelText(/Project menu/i);
         fireEvent.click(button);
         expect(screen.getByRole('menu')).toBeInTheDocument();
+    });
+
+    it('keeps the project menu scrollable within the renderer height', () => {
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+
+        expect(screen.getByRole('menu')).toHaveClass(
+            'max-h-[calc(100vh-3rem)]',
+            'overflow-y-auto',
+            'overscroll-contain'
+        );
+    });
+
+    it('left-aligns menu rows that do not carry a trailing shortcut', () => {
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+
+        const labels = [
+            'New Project',
+            'New from Template…',
+            'Load Demo Project…',
+            'Export Project File…',
+            'Import Project File…',
+        ];
+        for (const label of labels) {
+            expect(screen.getByRole('menuitem', { name: label })).toHaveClass('justify-start');
+        }
     });
 
     it('should render New Project option', () => {

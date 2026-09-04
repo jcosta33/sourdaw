@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 
@@ -7,6 +7,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
 import { getAutomationDeviceDescriptor } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -36,7 +37,6 @@ type TrackAutomationState = {
 
 export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): ReactElement => {
     const [showAutoMenu, setShowAutoMenu] = useState(false);
-    const autoMenuRef = useRef<HTMLDivElement>(null);
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
     // External plugin parameters resolve out of this store, and a refresh fills
@@ -59,21 +59,6 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
         }
     }, [showAutoMenu, track.devices]);
 
-    useEffect(() => {
-        if (!showAutoMenu) {
-            return undefined;
-        }
-        const handleClick = (event: MouseEvent): void => {
-            if (autoMenuRef.current && !autoMenuRef.current.contains(event.target as Node)) {
-                setShowAutoMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClick);
-        return () => {
-            document.removeEventListener('mousedown', handleClick);
-        };
-    }, [showAutoMenu]);
-
     return (
         <div className="overflow-visible">
             <DawHeaderBand
@@ -81,103 +66,105 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                 className="mb-2 rounded-sm"
                 title="Automation"
                 actions={
-                    <div className="relative" ref={autoMenuRef}>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => {
-                                setShowAutoMenu(!showAutoMenu);
-                            }}
-                            aria-label="Add automation lane"
-                        >
-                            <Plus className="size-3" />
-                        </Button>
-                        {showAutoMenu ? (
-                            <div
-                                className="daw-floating-surface absolute right-0 top-full z-50 mt-1 w-48 rounded-md py-1"
-                                role="menu"
+                    <Popover open={showAutoMenu} onOpenChange={setShowAutoMenu}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label="Add automation lane"
+                                aria-haspopup="menu"
+                                data-testid="add-automation-button"
                             >
-                                <DawMenuSectionLabel>Track</DawMenuSectionLabel>
-                                <Button
-                                    variant="bare"
-                                    size="bare"
-                                    type="button"
-                                    className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                    role="menuitem"
-                                    onClick={() => {
-                                        addAutomationLane(track.id, 'gain', 'Gain');
-                                        setShowAutoMenu(false);
-                                    }}
-                                >
-                                    Gain
-                                </Button>
-                                <Button
-                                    variant="bare"
-                                    size="bare"
-                                    type="button"
-                                    className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                    role="menuitem"
-                                    onClick={() => {
-                                        addAutomationLane(track.id, 'pan', 'Pan');
-                                        setShowAutoMenu(false);
-                                    }}
-                                >
-                                    Pan
-                                </Button>
-                                {track.devices.length > 0 ? (
-                                    <>
-                                        <DawMenuSeparator />
-                                        {track.devices.map((device) => {
-                                            const plugin = getAutomationDeviceDescriptor(
-                                                device.type,
-                                                device.externalInstanceId
-                                            );
-                                            if (!plugin) {
-                                                return null;
-                                            }
-                                            const autoParams = plugin.parameters.filter(
-                                                (param) =>
-                                                    param.automatable &&
-                                                    !findEquivalentAutomationLane(
-                                                        createDeviceAutomationTargetId(device.id, param.id),
-                                                        trackLanes,
-                                                        track.devices
-                                                    )
-                                            );
-                                            if (autoParams.length === 0) {
-                                                return null;
-                                            }
-                                            return (
-                                                <div key={device.id}>
-                                                    <DawMenuSectionLabel>{device.name}</DawMenuSectionLabel>
-                                                    {autoParams.map((param) => (
-                                                        <Button
-                                                            variant="bare"
-                                                            size="bare"
-                                                            type="button"
-                                                            key={param.id}
-                                                            className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                                                            role="menuitem"
-                                                            onClick={() => {
-                                                                addAutomationLane(
-                                                                    track.id,
-                                                                    createDeviceAutomationTargetId(device.id, param.id),
-                                                                    `${device.name}: ${param.name}`
-                                                                );
-                                                                setShowAutoMenu(false);
-                                                            }}
-                                                        >
-                                                            {param.name}
-                                                        </Button>
-                                                    ))}
-                                                </div>
-                                            );
-                                        })}
-                                    </>
-                                ) : null}
-                            </div>
-                        ) : null}
-                    </div>
+                                <Plus className="size-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            align="end"
+                            sideOffset={4}
+                            role="menu"
+                            aria-label="Add automation lane"
+                            className="daw-floating-surface w-48 p-0 py-1 rounded-md"
+                        >
+                            <DawMenuSectionLabel>Track</DawMenuSectionLabel>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                role="menuitem"
+                                onClick={() => {
+                                    addAutomationLane(track.id, 'gain', 'Gain');
+                                    setShowAutoMenu(false);
+                                }}
+                            >
+                                Gain
+                            </Button>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                role="menuitem"
+                                onClick={() => {
+                                    addAutomationLane(track.id, 'pan', 'Pan');
+                                    setShowAutoMenu(false);
+                                }}
+                            >
+                                Pan
+                            </Button>
+                            {track.devices.length > 0 ? (
+                                <>
+                                    <DawMenuSeparator />
+                                    {track.devices.map((device) => {
+                                        const plugin = getAutomationDeviceDescriptor(
+                                            device.type,
+                                            device.externalInstanceId
+                                        );
+                                        if (!plugin) {
+                                            return null;
+                                        }
+                                        const autoParams = plugin.parameters.filter(
+                                            (param) =>
+                                                param.automatable &&
+                                                !findEquivalentAutomationLane(
+                                                    createDeviceAutomationTargetId(device.id, param.id),
+                                                    trackLanes,
+                                                    track.devices
+                                                )
+                                        );
+                                        if (autoParams.length === 0) {
+                                            return null;
+                                        }
+                                        return (
+                                            <div key={device.id}>
+                                                <DawMenuSectionLabel>{device.name}</DawMenuSectionLabel>
+                                                {autoParams.map((param) => (
+                                                    <Button
+                                                        variant="bare"
+                                                        size="bare"
+                                                        type="button"
+                                                        key={param.id}
+                                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                                        role="menuitem"
+                                                        onClick={() => {
+                                                            addAutomationLane(
+                                                                track.id,
+                                                                createDeviceAutomationTargetId(device.id, param.id),
+                                                                `${device.name}: ${param.name}`
+                                                            );
+                                                            setShowAutoMenu(false);
+                                                        }}
+                                                    >
+                                                        {param.name}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            ) : null}
+                        </PopoverContent>
+                    </Popover>
                 }
             />
             {trackLanes.length > 0 ? (

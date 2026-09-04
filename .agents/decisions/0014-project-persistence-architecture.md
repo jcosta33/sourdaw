@@ -7,17 +7,17 @@ date: 2026-08-01
 accepted: 2026-08-04
 owner: The Sourdaw team
 sources:
-  - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
-  - .agents/decisions/0012-neither-target-degrades-the-other.md
-  - .agents/decisions/0013-retire-the-flat-json-project-snapshot.md
+    - .agents/artifacts/sourdaw/RESEARCH-project-persistence.md
+    - .agents/decisions/0012-neither-target-degrades-the-other.md
+    - .agents/decisions/0013-retire-the-flat-json-project-snapshot.md
 ---
 
-# 0014 — Project persistence architecture (accepted)
+# 0014 — Project persistence architecture — project-as-directory (Option C), recommended
 
 **Status is `accepted` as of 2026-08-04**, on this ADR's own stated criterion. It previously read:
-*"What keeps this `proposed` rather than `accepted` is the three items still listed under Still
+_"What keeps this `proposed` rather than `accepted` is the three items still listed under Still
 open: whether audio belongs to a project or a shared library, version policy, and the desktop
-store's budget."*
+store's budget."_
 
 Two of those three were ratified by the owner on 2026-08-04 and are recorded below — **audio
 ownership** (the project owns it; the library is browse-and-import only) and **version policy**
@@ -107,18 +107,18 @@ hoped was right.
 
 ## Gates — none of this is built before these report
 
-| # | Question | Threshold that decides |
-|---|---|---|
-| M2 | Is the Tauri origin stable across restarts? | Unstable anywhere → that target cannot use webview storage at all. Hours; run first. |
-| M9 | Do the two `.sdaw` codecs agree today? | Any divergence → a shipped web/desktop incompatibility exists now. ~30 lines; belongs in 0013's phase. |
-| M1 | Does `navigator.storage.persist()` resolve true anywhere we ship? | False in any desktop webview → **Option B disqualified outright**. False in a plain tab → install becomes a documented durability requirement. |
-| M3 | Does the embedded-WKWebView 15%/20% quota ratio hold? | Confirms or weakens the live ADR 0012 violation. |
-| M4 | What does a real project cost in Automerge? | 100 MB-audio project loading above ~2 s or peak heap above ~2× audio → Option A dead on measurement. Below both → **Option A deserves a second look and the owner sees the numbers.** |
-| M5 | History growth on realistic edits (automation drags) | Superlinear, or the blob duplicating on sibling edits → confirms audio must live outside. |
-| M6 | Can manifest-last survive fault injection? | Any torn state opening as valid → **adopt Option B and amend ADR 0012 explicitly.** Gates Phase 2. |
-| M7 | OPFS availability and throughput, all targets | Unavailable anywhere we support → that target needs a second **visible** store, documented per ADR 0012 rule 2. |
-| M8 | Cost of `durability: "strict"` | Under ~50 ms at project scale → use everywhere. Above → strict on the commit pointer only. |
-| M10 | IndexedDB Blob vs ArrayBuffer at scale | Blob records landing as separate files with good latency → Option B is stronger than credited. |
+| #   | Question                                                          | Threshold that decides                                                                                                                                                                |
+| --- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2  | Is the Tauri origin stable across restarts?                       | Unstable anywhere → that target cannot use webview storage at all. Hours; run first.                                                                                                  |
+| M9  | Do the two `.sdaw` codecs agree today?                            | Any divergence → a shipped web/desktop incompatibility exists now. ~30 lines; belongs in 0013's phase.                                                                                |
+| M1  | Does `navigator.storage.persist()` resolve true anywhere we ship? | False in any desktop webview → **Option B disqualified outright**. False in a plain tab → install becomes a documented durability requirement.                                        |
+| M3  | Does the embedded-WKWebView 15%/20% quota ratio hold?             | Confirms or weakens the live ADR 0012 violation.                                                                                                                                      |
+| M4  | What does a real project cost in Automerge?                       | 100 MB-audio project loading above ~2 s or peak heap above ~2× audio → Option A dead on measurement. Below both → **Option A deserves a second look and the owner sees the numbers.** |
+| M5  | History growth on realistic edits (automation drags)              | Superlinear, or the blob duplicating on sibling edits → confirms audio must live outside.                                                                                             |
+| M6  | Can manifest-last survive fault injection?                        | Any torn state opening as valid → **adopt Option B and amend ADR 0012 explicitly.** Gates Phase 2.                                                                                    |
+| M7  | OPFS availability and throughput, all targets                     | Unavailable anywhere we support → that target needs a second **visible** store, documented per ADR 0012 rule 2.                                                                       |
+| M8  | Cost of `durability: "strict"`                                    | Under ~50 ms at project scale → use everywhere. Above → strict on the commit pointer only.                                                                                            |
+| M10 | IndexedDB Blob vs ArrayBuffer at scale                            | Blob records landing as separate files with good latency → Option B is stronger than credited.                                                                                        |
 
 **Do not close Option A on inference.** M4 and M5 are one afternoon and are owed to it.
 
@@ -140,37 +140,37 @@ All ten have now reported or been formally deferred. Harnesses:
 harness output; the load-bearing ones were re-run by the orchestrator rather than accepted on a
 lane's report.
 
-| Gate | Result | What it forced |
-| --- | --- | --- |
-| **M1** | **WITHDRAWN — the probe measured its own fixture.** See below. | Nothing. The question is answered from documentation instead. |
-| **M2** | Deferred — Tauri webview, out of scope per ADR 0016. | Recorded unmeasured, not deleted. |
-| **M3** (web) | Observed `estimate().quota` = `usage + 10 GiB`, and the origin wrote **2.6× its reported quota** with no error. **Treat as an observation, not a refutation** — see below. | Nothing new. `quota - usage > size` was already established as never-a-precondition by STOR-17, from the specification. |
-| **M4** | 100 MB-audio document: **2431–3677 ms** load floor (ceiling ~2 s), **8.68–9.58×** audio in peak RSS (ceiling ~2×). Both breach. | **Option A is dead on measurement.** The ADR's "do not close Option A on inference" is discharged. |
-| **M5** | Automation drags grow **sublinearly**; a blob does **not** duplicate on sibling edits (1.84 B/edit). | Trigger **not** met. M5 does not confirm the split. Whole-value *replacement* is still 4× with no compaction — that is BA-11, and M5 as written does not reach it. |
-| **M6** | **FAILED, then fixed.** See below. | Layout amended. |
-| **M7** | OPFS `createSyncAccessHandle` present in a dedicated worker, absent on the window. Throughput **at parity with Node `fs`**. | Adverse branch not triggered. No second visible store needed on web. |
-| **M8** | Not run — `durability: "strict"` is an IndexedDB option and Option A is dead. | Moot. |
-| **M9** | Closed in Phase 0 (#963). | The two `.sdaw` codecs agree; one real UTF-8 divergence was found and fixed. |
-| **M10** | Blob records land as separate files — **and so do ArrayBuffers**, 4 of 4 each, established by walking the profile directory. `onsuccess` fired **281 ms before commit** on a 500 MB put. | Refines BA-18: at project scale the Blob-vs-ArrayBuffer distinction does not exist. |
+| Gate         | Result                                                                                                                                                                                   | What it forced                                                                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **M1**       | **WITHDRAWN — the probe measured its own fixture.** See below.                                                                                                                           | Nothing. The question is answered from documentation instead.                                                                                                      |
+| **M2**       | Deferred — Tauri webview, out of scope per ADR 0016.                                                                                                                                     | Recorded unmeasured, not deleted.                                                                                                                                  |
+| **M3** (web) | Observed `estimate().quota` = `usage + 10 GiB`, and the origin wrote **2.6× its reported quota** with no error. **Treat as an observation, not a refutation** — see below.               | Nothing new. `quota - usage > size` was already established as never-a-precondition by STOR-17, from the specification.                                            |
+| **M4**       | 100 MB-audio document: **2431–3677 ms** load floor (ceiling ~2 s), **8.68–9.58×** audio in peak RSS (ceiling ~2×). Both breach.                                                          | **Option A is dead on measurement.** The ADR's "do not close Option A on inference" is discharged.                                                                 |
+| **M5**       | Automation drags grow **sublinearly**; a blob does **not** duplicate on sibling edits (1.84 B/edit).                                                                                     | Trigger **not** met. M5 does not confirm the split. Whole-value _replacement_ is still 4× with no compaction — that is BA-11, and M5 as written does not reach it. |
+| **M6**       | **FAILED, then fixed.** See below.                                                                                                                                                       | Layout amended.                                                                                                                                                    |
+| **M7**       | OPFS `createSyncAccessHandle` present in a dedicated worker, absent on the window. Throughput **at parity with Node `fs`**.                                                              | Adverse branch not triggered. No second visible store needed on web.                                                                                               |
+| **M8**       | Not run — `durability: "strict"` is an IndexedDB option and Option A is dead.                                                                                                            | Moot.                                                                                                                                                              |
+| **M9**       | Closed in Phase 0 (#963).                                                                                                                                                                | The two `.sdaw` codecs agree; one real UTF-8 divergence was found and fixed.                                                                                       |
+| **M10**      | Blob records land as separate files — **and so do ArrayBuffers**, 4 of 4 each, established by walking the profile directory. `onsuccess` fired **281 ms before commit** on a 500 MB put. | Refines BA-18: at project scale the Blob-vs-ArrayBuffer distinction does not exist.                                                                                |
 
 ### M1 and M3 — withdrawn as measurements, answered from documentation
 
 **These two never needed a harness, and the one built for them measured its own fixture.**
 
 M1 probed `navigator.storage.persist()` in a throwaway Chromium profile created per run. Chrome
-grants persistent-storage silently, on documented heuristics — *"How high is the level of site
+grants persistent-storage silently, on documented heuristics — _"How high is the level of site
 engagement? Has the site been installed or bookmarked? Has the site been granted permission to show
-notifications?"* ([web.dev](https://web.dev/articles/persistent-storage)). A profile with no history
+notifications?"_ ([web.dev](https://web.dev/articles/persistent-storage)). A profile with no history
 cannot satisfy any of them, so `false` was determined by the fixture. The run also reported `false`
-for an *installed* PWA, contradicting the documented criteria — but the install was driven through
+for an _installed_ PWA, contradicting the documented criteria — but the install was driven through
 CDP (`latest_install_source: devtools`) on that same empty profile, which is the likelier
 explanation. **The documentation wins; the earlier conclusion that "install is not a remedy" is
 withdrawn as unsupported.**
 
 M3's `usage + 10 GiB` is consistent with Chromium's move to reporting a predictable value rather
 than a disk fraction, done to stop `estimate()` being used for fingerprinting and Incognito
-detection. Note the public sources disagree on the current mechanism — MDN still documents *"up to
-60% of total disk size"* — so **this is recorded as an observation on one build, not as a refutation
+detection. Note the public sources disagree on the current mechanism — MDN still documents _"up to
+60% of total disk size"_ — so **this is recorded as an observation on one build, not as a refutation
 of anything.** The operative rule was never in doubt and does not come from measurement: STOR-17,
 from the Storage Standard, already says `quota - usage > size` is a heuristic and never a
 precondition, and that the write path needs a real failure branch.
@@ -196,7 +196,7 @@ disk.
 a valid short document. The original "(self-verifying)" annotation did not do the work the layout
 asked of it.
 
-This ADR pre-committed to *"adopt Option B and amend ADR 0012 explicitly"* if M6 failed. **That
+This ADR pre-committed to _"adopt Option B and amend ADR 0012 explicitly"_ if M6 failed. **That
 pre-commitment was reasoned on a premise the measurement removed** — that a failure would mean
 hand-writing an unverifiable commit protocol. Two one-line variants each took all six tears to
 **zero of 72**: hashing the document in the manifest, or content-addressing its filename. The second
@@ -218,68 +218,69 @@ Ratified by the owner directly.
   controls, written through the File System Access API and kept in sync; browser-resident storage is
   a fast local cache.
 
-  **This rests on the Storage Standard, not on any measurement of ours.** §7.1: if a user agent
-  *"continues to be under storage pressure, then the user agent should inform the user and offer a
-  way to clear the remaining local storage buckets, i.e., those whose mode is 'persistent'."* §5:
-  the user agent *"cannot clear storage marked as persistent without involvement from the origin or
-  user."* Persistent buckets are therefore **not immune** — they are protected only by a requirement
-  that the user be involved. A desktop project file has no equivalent failure mode, and ADR 0012
-  says neither target may be degraded relative to the other.
+    **This rests on the Storage Standard, not on any measurement of ours.** §7.1: if a user agent
+    _"continues to be under storage pressure, then the user agent should inform the user and offer a
+    way to clear the remaining local storage buckets, i.e., those whose mode is 'persistent'."_ §5:
+    the user agent _"cannot clear storage marked as persistent without involvement from the origin or
+    user."_ Persistent buckets are therefore **not immune** — they are protected only by a requirement
+    that the user be involved. A desktop project file has no equivalent failure mode, and ADR 0012
+    says neither target may be degraded relative to the other.
 
-  This settles the docket's *"may browser-resident storage ever be described as safe"* — no. And
-  *"is 'install the app' a stated durability requirement"* — no, but **for the spec reason above,
-  not because installing fails.** Chrome's documented heuristics include installation, and our
-  earlier claim to the contrary is withdrawn (see M1). Even a granted persistent bucket cannot be
-  called safe, so the answer does not depend on whether the grant is obtainable.
+    This settles the docket's _"may browser-resident storage ever be described as safe"_ — no. And
+    _"is 'install the app' a stated durability requirement"_ — no, but **for the spec reason above,
+    not because installing fails.** Chrome's documented heuristics include installation, and our
+    earlier claim to the contrary is withdrawn (see M1). Even a granted persistent bucket cannot be
+    called safe, so the answer does not depend on whether the grant is obtainable.
+
 ## Ratified 2026-08-03 — the project is a directory
 
 - **A project is a folder, and its media sits beside it as files the user can see.**
 
-  This was first argued from Git's object store and SQLite's WAL: a new version must be unable to
-  destroy the old one, after which a small pointer flips. Sound, but the wrong authority to cite.
-  **Every shipping DAW already answers this, and they all answer it the same way** — Ableton `.als`
-  beside a Samples folder, Logic's `.logicx` package, a Pro Tools session folder, Reaper's `.rpp`
-  plus media, Studio One's `.song` package.
+    This was first argued from Git's object store and SQLite's WAL: a new version must be unable to
+    destroy the old one, after which a small pointer flips. Sound, but the wrong authority to cite.
+    **Every shipping DAW already answers this, and they all answer it the same way** — Ableton `.als`
+    beside a Samples folder, Logic's `.logicx` package, a Pro Tools session folder, Reaper's `.rpp`
+    plus media, Studio One's `.song` package.
 
-  The owner's ruling, recorded because it generalises well past this decision:
+    The owner's ruling, recorded because it generalises well past this decision:
 
-  > This is a DAW, we go with what people already expect, we go with the industry standard approach.
-  > When it comes to regular DAW stuff there is no doubt — there are decades of DAW industry to
-  > answer all these questions. There are aspects of Sourdaw that are truly innovative; this is not
-  > one of them.
+    > This is a DAW, we go with what people already expect, we go with the industry standard approach.
+    > When it comes to regular DAW stuff there is no doubt — there are decades of DAW industry to
+    > answer all these questions. There are aspects of Sourdaw that are truly innovative; this is not
+    > one of them.
 
-  **Convention settles the shape. Measurement settles the commit protocol inside it.** Gate M6 is
-  the reason for the *content-addressed* half specifically: 6 of 72 injected crashes torn under a
-  fixed `document.automerge`, 0 of 72 once the document is named by its own hash. No DAW convention
-  covers "how does an Automerge document commit atomically on OPFS", which is why that half was
-  measured rather than looked up.
+    **Convention settles the shape. Measurement settles the commit protocol inside it.** Gate M6 is
+    the reason for the _content-addressed_ half specifically: 6 of 72 injected crashes torn under a
+    fixed `document.automerge`, 0 of 72 once the document is named by its own hash. No DAW convention
+    covers "how does an Automerge document commit atomically on OPFS", which is why that half was
+    measured rather than looked up.
 
 ## Ratified 2026-08-04 — audio is embedded or referenced per asset, and the web writes embed
 
 - **The format carries an embed-or-reference mode on each asset. The web writer always emits
   `embed`; the deferred desktop build may emit `reference` without a format change.**
 
-  This is the docket's *"does a project file contain its audio, or reference it"*, and it is two
-  answers rather than one — which is why the format has to express both rather than pick.
+    This is the docket's _"does a project file contain its audio, or reference it"_, and it is two
+    answers rather than one — which is why the format has to express both rather than pick.
 
-  Convention gives the desktop half and does not give the web half. All four shipping DAWs default
-  to **reference** with consolidation as an explicit action, and **DAWproject already makes this a
-  per-file attribute** — so a per-asset mode is the shape the interchange format Sourdaw plans to
-  speak (`SPEC-dawproject-interchange`) requires anyway.
+    Convention gives the desktop half and does not give the web half. All four shipping DAWs default
+    to **reference** with consolidation as an explicit action, and **DAWproject already makes this a
+    per-file attribute** — so a per-asset mode is the shape the interchange format Sourdaw plans to
+    speak (`SPEC-dawproject-interchange`) requires anyway.
 
-  The web half has no precedent because reference-by-path has no working web form. A File System
-  Access handle survives in IndexedDB, but re-opening it in a new session requires
-  `requestPermission()`; a project with sixty samples would prompt per file on every reload, or
-  break. That is not a measurement of ours and does not need to be — it is what the API specifies.
-  So on the web, embedding is not a preference, it is the only mode that yields a project that
-  reliably reopens, and ADR 0012's "neither target degrades the other" is satisfied by the mode
-  being per-asset rather than by both targets behaving identically.
+    The web half has no precedent because reference-by-path has no working web form. A File System
+    Access handle survives in IndexedDB, but re-opening it in a new session requires
+    `requestPermission()`; a project with sixty samples would prompt per file on every reload, or
+    break. That is not a measurement of ours and does not need to be — it is what the API specifies.
+    So on the web, embedding is not a preference, it is the only mode that yields a project that
+    reliably reopens, and ADR 0012's "neither target degrades the other" is satisfied by the mode
+    being per-asset rather than by both targets behaving identically.
 
-  **Costs accepted, stated rather than discovered later:** the reader carries two paths from day
-  one, and the writer owes a *consolidate* action converting reference→embed. Embedding also
-  duplicates a shared sample per project on disk. Whether that duplication is acceptable, or whether
-  audio should live in a shared library instead, is the **separate** docket question below — this
-  decision fixes how a project *stores* what it owns, not what it owns.
+    **Costs accepted, stated rather than discovered later:** the reader carries two paths from day
+    one, and the writer owes a _consolidate_ action converting reference→embed. Embedding also
+    duplicates a shared sample per project on disk. Whether that duplication is acceptable, or whether
+    audio should live in a shared library instead, is the **separate** docket question below — this
+    decision fixes how a project _stores_ what it owns, not what it owns.
 
 ## Ratified 2026-08-04 — audio ownership and version policy
 
@@ -294,14 +295,14 @@ Ratified by the owner directly.
 - **Version policy is forward-only, with no retained pre-migration generation.** Newer opens older,
   older refuses newer, migration rewrites in place.
 
-  **The cost was stated before the call and accepted: there is no recourse after a bad migration.**
-  A web user cannot install the previous build, so a migration bug reaches everyone at once with no
-  way back for work already migrated — the failure mode desktop does not have. Retaining the
-  previous generation was recommended and declined; this ADR's content-addressed layout would have
-  made it nearly free, since the superseded document is a differently-named file that migration need
-  only refrain from deleting. Recorded so that if a migration does go wrong, the absence of a
-  fallback is a known accepted risk rather than a surprise, and so the first migration touching real
-  projects is understood as the natural point to revisit it.
+    **The cost was stated before the call and accepted: there is no recourse after a bad migration.**
+    A web user cannot install the previous build, so a migration bug reaches everyone at once with no
+    way back for work already migrated — the failure mode desktop does not have. Retaining the
+    previous generation was recommended and declined; this ADR's content-addressed layout would have
+    made it nearly free, since the superseded document is a differently-named file that migration need
+    only refrain from deleting. Recorded so that if a migration does go wrong, the absence of a
+    fallback is a known accepted risk rather than a surprise, and so the first migration touching real
+    projects is understood as the natural point to revisit it.
 
 **Still open and not decided here:** how much budget the desktop store gets — and that one is
 **blocked rather than pending**, because ADR 0016 defers desktop entirely. It becomes answerable

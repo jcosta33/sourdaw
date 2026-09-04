@@ -89,7 +89,7 @@ export function parseIssueForm(yaml: string): IssueForm {
 
 export function composeIssueTitle(prefix: string, title: string, scopeToken?: string): string {
     const trimmed = title.trim();
-    if (/^[a-z]+\([^)]+\): /.test(trimmed)) {
+    if (/^[a-z]+\((?:[^()]|\([^()]*\))+\): /.test(trimmed)) {
         return applyScopeToken(trimmed, scopeToken);
     }
     const typed = applyScopeToken(prefix, scopeToken);
@@ -111,8 +111,8 @@ function stripMatchingScopeSubject(title: string, scopeToken: string | undefined
     return title;
 }
 
-function titleSubject(title: string): string {
-    const match = /^[a-z]+(?:\([^)]+\))?:\s*(.*)$/.exec(title.trim());
+export function titleSubject(title: string): string {
+    const match = /^[a-z]+(?:\((?:[^()]|\([^()]*\))+\))?:\s*(.*)$/.exec(title.trim());
     if (match?.[1] !== undefined) {
         return match[1].trim();
     }

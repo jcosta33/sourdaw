@@ -47,7 +47,7 @@ export async function refreshEngineRtDiagnostics(): Promise<EngineRtDiagnostics 
     clearEngineDiagnosticsReadFailure();
 
     for (const event of diagnostics.events) {
-        logger.warn(`[AudioEngine] native engine ${event.type}: ${event.kind}`);
+        logger.warn(`[AudioEngine] native engine ${event.type} on the ${event.side} stream: ${event.kind}`);
     }
 
     engineRtDiagnosticsStore.update((state) => {

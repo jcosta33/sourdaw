@@ -3,24 +3,24 @@
     --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
     --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', monospace;
 
-    /* == Layer 1: Core Surface Hierarchy (True Black Skeuomorphic) == */
+    /* == Layer 1: Core Surface Hierarchy (Warm Graphite Skeuomorphic) == */
     /* Canonical tokens */
-    --surface-deep: #000000;
-    --surface-base: #0a0a0a;
-    --surface-default: #111111;
-    --surface-raised: #1a1a1a;
-    --surface-overlay: #242424;
-    --surface-dialog: #2e2e2e;
+    --surface-deep: #020100;
+    --surface-base: #0c0a09;
+    --surface-default: #13110f;
+    --surface-raised: #1c1917;
+    --surface-overlay: #27231f;
+    --surface-dialog: #312c28;
 
     /* == Layer 2: Surfaces (Aliases for Tailwind bg-* classes) == */
     --color-bg-app: var(--surface-deep);
     --color-bg-canvas: var(--surface-base);
     --color-bg-tray: var(--surface-base);
-    --color-bg-well: #0c0c0c;
-    --color-bg-recess: #0e0e0e;
+    --color-bg-well: #0e0c0b;
+    --color-bg-recess: #100e0d;
     --color-bg-panel: var(--surface-default);
     --color-bg-panelRaised: var(--surface-raised);
-    --color-bg-panelInset: #050505;
+    --color-bg-panelInset: #070503;
     --color-bg-slot: var(--surface-deep);
     --color-bg-overlay: var(--surface-overlay);
     --color-bg-dialog: var(--surface-dialog);
@@ -89,10 +89,10 @@
     --color-accent-indigo: #4a60a0;
 
     /* == Layer 5: Borders, Text and Seams == */
-    --color-border-hairline: rgba(255, 255, 255, 0.03);
-    --color-border-soft: rgba(255, 255, 255, 0.08);
+    --color-border-hairline: rgba(255, 249, 242, 0.03);
+    --color-border-soft: rgba(255, 249, 242, 0.08);
     --color-border-focus: rgba(78, 168, 246, 0.4);
-    --color-border-active: rgba(255, 255, 255, 0.25);
+    --color-border-active: rgba(255, 249, 242, 0.25);
 
     --color-text-primary: #eaeaea;
     --color-text-secondary: #a3a3a3;
@@ -100,7 +100,7 @@
     --color-text-disabled: #404040;
 
     /* Rim-lighting constants */
-    --color-light-edge: rgba(255, 255, 255, 0.08);
+    --color-light-edge: rgba(255, 249, 242, 0.08);
     --color-shadow-edge: rgba(0, 0, 0, 0.3);
 
     /* == Layer 6: Component Visuals == */

@@ -294,7 +294,7 @@ fn bus_channel_total(instance: &Vst3Instance, direction: int32) -> u32 {
 }
 
 /// VST3 writes sub-categories as one pipe-separated string in `PClassInfo2`.
-fn split_sub_categories(value: &str) -> Vec<String> {
+pub(crate) fn split_sub_categories(value: &str) -> Vec<String> {
     value
         .split('|')
         .map(str::trim)

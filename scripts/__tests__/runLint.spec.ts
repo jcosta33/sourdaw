@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { eslintEnvironment, lintConcurrency, lintThreads, parseArgs } from '../runLint.ts';
+import {
+    buildEslintArgv,
+    ensureServerDependencies,
+    eslintEnvironment,
+    lintConcurrency,
+    lintThreads,
+    parseArgs,
+} from '../runLint.ts';
+
+function cacheStrategy(argv: string[]): string | undefined {
+    const index = argv.indexOf('--cache-strategy');
+    return index === -1 ? undefined : argv[index + 1];
+}
 
 describe('runLint arguments', () => {
     it('requires a target unless the run is full', () => {
@@ -11,6 +23,32 @@ describe('runLint arguments', () => {
 
     it('refuses a full-tree automatic fix', () => {
         expect(() => parseArgs(['--full', '--fix'])).toThrow(/full-tree automatic lint fixes are forbidden/);
+    });
+});
+
+describe('eslint cache argv', () => {
+    it('keys cache on file content for focused runs', () => {
+        const argv = buildEslintArgv({ fix: false, full: false }, ['src/a.ts']);
+
+        expect(argv).toContain('--cache');
+        expect(cacheStrategy(argv)).toBe('content');
+    });
+
+    it('keys cache on file content for full runs', () => {
+        const argv = buildEslintArgv({ fix: false, full: true }, ['src/**/*.{ts,tsx}', 'scripts/**/*.ts']);
+
+        expect(argv).toContain('--cache');
+        expect(cacheStrategy(argv)).toBe('content');
+    });
+
+    it('passes fix and targets through unchanged', () => {
+        const argv = buildEslintArgv({ fix: true, full: false }, ['scripts/runLint.ts'], {
+            SOURDAW_LINT_CONCURRENCY: '4',
+        });
+
+        expect(argv).toContain('--fix');
+        expect(argv).toContain('scripts/runLint.ts');
+        expect(argv).toContain('--concurrency=4');
     });
 });
 
@@ -44,6 +82,68 @@ describe('eslint heap ceiling', () => {
     it('keeps unrelated node options', () => {
         expect(eslintEnvironment({ NODE_OPTIONS: '--enable-source-maps' }).NODE_OPTIONS).toBe(
             '--enable-source-maps --max-old-space-size=6144'
+        );
+    });
+});
+
+describe('ensureServerDependencies', () => {
+    it('does nothing when targets contain no server files', () => {
+        const existsSyncMock = vi.fn().mockReturnValue(false);
+        const spawnSyncMock = vi.fn();
+
+        const result = ensureServerDependencies(
+            ['src/app.ts', 'scripts/test.ts'],
+            '/repo',
+            existsSyncMock,
+            spawnSyncMock as any
+        );
+
+        expect(result).toBe(false);
+        expect(existsSyncMock).not.toHaveBeenCalled();
+        expect(spawnSyncMock).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when server/node_modules already exists', () => {
+        const existsSyncMock = vi.fn().mockReturnValue(true);
+        const spawnSyncMock = vi.fn();
+
+        const result = ensureServerDependencies(
+            ['server/collab-server.ts'],
+            '/repo',
+            existsSyncMock,
+            spawnSyncMock as any
+        );
+
+        expect(result).toBe(false);
+        expect(existsSyncMock).toHaveBeenCalled();
+        expect(spawnSyncMock).not.toHaveBeenCalled();
+    });
+
+    it('installs server dependencies when server targets are present and node_modules is missing', () => {
+        const existsSyncMock = vi.fn().mockReturnValue(false);
+        const spawnSyncMock = vi.fn().mockReturnValue({ status: 0 });
+
+        const result = ensureServerDependencies(
+            ['server/collab-server.ts'],
+            '/repo',
+            existsSyncMock,
+            spawnSyncMock as any
+        );
+
+        expect(result).toBe(true);
+        expect(existsSyncMock).toHaveBeenCalled();
+        expect(spawnSyncMock).toHaveBeenCalledWith('npm', ['--prefix', 'server', 'ci', '--include=dev'], {
+            stdio: 'inherit',
+            cwd: '/repo',
+        });
+    });
+
+    it('throws an error if npm ci fails', () => {
+        const existsSyncMock = vi.fn().mockReturnValue(false);
+        const spawnSyncMock = vi.fn().mockReturnValue({ status: 1 });
+
+        expect(() => ensureServerDependencies(['server'], '/repo', existsSyncMock, spawnSyncMock as any)).toThrow(
+            'failed to install server dependencies for linting'
         );
     });
 });

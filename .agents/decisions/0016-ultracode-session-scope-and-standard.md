@@ -6,11 +6,11 @@ status: accepted
 date: 2026-08-01
 owner: The Sourdaw team
 sources:
-  - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md
-  - .agents/decisions/0012-neither-target-degrades-the-other.md
+    - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md
+    - .agents/decisions/0012-neither-target-degrades-the-other.md
 ---
 
-# 0016 — Ultracode session scope and standard
+# 0016 — Ultracode session scope — browser-capable work only, built properly, no compatibility shims
 
 ## Context
 
@@ -28,7 +28,7 @@ Four rulings settle the scope and the standard.
 Crumbs disk streaming — is deferred. Survey Phase 4 in its entirety is out.
 
 This does not weaken ADR 0012. Building the web side properly does not degrade desktop; it leaves
-desktop unimproved, which is a different thing. What 0012 forbids is *capping* one target with the
+desktop unimproved, which is a different thing. What 0012 forbids is _capping_ one target with the
 other's limits, and that constraint stands: no web decision is made smaller because a webview cannot
 follow.
 

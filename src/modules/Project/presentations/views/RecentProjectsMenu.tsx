@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { type ReactElement, useState, useEffect } from 'react';
 
 import {
     ChevronDown,
@@ -16,6 +16,7 @@ import {
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -59,37 +60,11 @@ export const RecentProjectsMenu = (): ReactElement => {
     const [entries, setEntries] = useState<RecentProjectEntry[]>([]);
     const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
     const [templateChooserCategory, setTemplateChooserCategory] = useState<TemplateCategory | 'all'>('all');
-    const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (open) {
             setEntries(getRecentProjects());
         }
-    }, [open]);
-
-    useEffect(() => {
-        if (!open) {
-            return undefined;
-        }
-
-        const handleClickOutside = (event: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-                setOpen(false);
-            }
-        };
-
-        const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setOpen(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape);
-        };
     }, [open]);
 
     const handleNewProject = () => {
@@ -164,35 +139,36 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     return (
-        <div className="relative" ref={menuRef}>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="daw-readout-well"
-                        aria-label="Project menu"
-                        aria-expanded={open}
-                        aria-haspopup="menu"
-                        onClick={() => setOpen((prev) => !prev)}
-                    >
-                        <ChevronDown className="size-3" aria-hidden="true" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>Project menu</TooltipContent>
-            </Tooltip>
-            {open ? (
-                <div
-                    className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-surface-overlay shadow-lg py-1"
+        <div className="relative shrink-0">
+            <Popover open={open} onOpenChange={setOpen}>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="daw-readout-well rounded-l-none rounded-r-sm border-l-[rgba(255,249,242,0.1)] hover:bg-white/[0.04] hover:brightness-[1.06]"
+                                aria-label="Project menu"
+                            >
+                                <ChevronDown data-testid="project-menu-chevron" className="size-3" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Project menu</TooltipContent>
+                </Tooltip>
+                <PopoverContent
+                    align="start"
+                    sideOffset={4}
                     role="menu"
                     aria-label="Project menu"
+                    className="w-64 max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-overlay p-0 py-1 shadow-lg"
                 >
                     {/* ── Create ── */}
                     <Button
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         data-testid="menu-new-project"
                         onClick={handleNewProject}
@@ -205,7 +181,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleNewFromTemplate}
                     >
@@ -217,7 +193,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleLoadDemo}
                     >
@@ -269,7 +245,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleExportProject}
                     >
@@ -281,7 +257,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleImportProject}
                     >
@@ -335,8 +311,8 @@ export const RecentProjectsMenu = (): ReactElement => {
                             </Button>
                         </Row>
                     ))}
-                </div>
-            ) : null}
+                </PopoverContent>
+            </Popover>
             <TemplateChooser
                 open={templateChooserOpen}
                 initialCategory={templateChooserCategory}

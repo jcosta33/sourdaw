@@ -25,10 +25,16 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type RendererSessionQuiesceResult,
 } from './channels.js';
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
 
+import type { NativeHost } from './native.js';
 import type { ScanSupervisor } from './scan.js';
 import type {
     FileFilter,
@@ -51,12 +57,21 @@ export type RegisterScanCommandInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
     readonly supervisor: ScanSupervisor;
+    readonly acceptsCommand?: (command: string) => boolean;
 };
 
-export const registerScanCommand = ({ ipcMain, isTrustedFrameUrl, supervisor }: RegisterScanCommandInput): void => {
+export const registerScanCommand = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    supervisor,
+    acceptsCommand,
+}: RegisterScanCommandInput): void => {
     ipcMain.handle(
         commandChannel(SCAN_COMMAND),
         withTrustedSender(SCAN_COMMAND, isTrustedFrameUrl, async (args) => {
+            if (acceptsCommand !== undefined && !acceptsCommand(SCAN_COMMAND)) {
+                throw new Error(`${SCAN_COMMAND} rejected: the application is shutting down`);
+            }
             const [paths, retryQuarantined] = asPositionalArguments(args);
             if (!isStringList(paths)) {
                 throw new TypeError('scan_plugins expects a list of paths');
@@ -89,6 +104,42 @@ export type RegisterDialogChannelsInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
     readonly dialogs: NativeDialogs;
+    /**
+     * Resolved lazily: the host is built after these channels are registered,
+     * and a shell whose addon failed to load never builds one at all.
+     */
+    readonly native: () => NativeHost | undefined;
+};
+
+/**
+ * Grant the native file commands access to a path the user just picked
+ * (jcosta33/sourdaw#3313).
+ *
+ * This is the whole of how a path outside Sourdaw's own storage becomes
+ * reachable. A directory pick is granted recursively and writably, because
+ * that is what choosing an export folder or a sample library means; a save
+ * target is granted writable and alone, so answering one save dialog does not
+ * open the folder it sits in; an opened file is granted read-only, because
+ * being shown a file is not permission to overwrite it.
+ *
+ * A shell with no addon grants nothing and says nothing: there are no native
+ * file commands to reach in that shell either, so the pick is no less usable
+ * for it. A grant that fails while the addon *is* present is raised to the
+ * caller — returning a path whose first write would be refused is the silent
+ * failure this replaces.
+ */
+const grantPickedPaths = async (
+    native: () => NativeHost | undefined,
+    paths: readonly string[],
+    { mode, recursive }: { readonly mode: 'read' | 'readwrite'; readonly recursive: boolean }
+): Promise<void> => {
+    const host = native();
+    if (host === undefined) {
+        return;
+    }
+    for (const path of paths) {
+        await host.grantPath(path, mode, recursive);
+    }
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -118,6 +169,44 @@ const optionalFilters = (value: unknown): FileFilter[] | undefined => {
     return filters.length > 0 ? filters : undefined;
 };
 
+/** The extension swap the mixdown writer performs, mirrored exactly. */
+const SAVE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
+
+/**
+ * The most formats one save may be granted for.
+ *
+ * Each grant rewrites and fsyncs the grant file, and the registry drops the
+ * whole document once it holds more grants than a person could have picked, so
+ * an unbounded filter list is a way to erase every grant the user ever made.
+ * No real export offers anything near this many container formats.
+ */
+const MAX_SAVE_EXTENSIONS = 16;
+
+const distinctSaveExtensions = (filters: readonly FileFilter[] | undefined): string[] => [
+    ...new Set(filters?.flatMap((filter) => filter.extensions).filter((extension) => /^[a-z0-9]+$/i.test(extension))),
+];
+
+/**
+ * Every path this save could be written to, given the formats the dialog
+ * offered (jcosta33/sourdaw#3313).
+ *
+ * A save dialog answers with one filename, but an export that renders several
+ * formats at once writes one file per offered extension by swapping the
+ * extension of that pick. Granting the pick alone therefore lets the first
+ * format through and refuses the rest, which reads as a mixdown that half
+ * exported. The siblings are granted individually rather than by widening the
+ * pick to its folder: the user chose a name, not a directory.
+ *
+ * A pick carrying no extension is left as it is, because that is what the
+ * writer's own swap does with it.
+ */
+const saveTargets = (pickedPath: string, extensions: readonly string[]): string[] => [
+    ...new Set([
+        pickedPath,
+        ...extensions.map((extension) => pickedPath.replace(SAVE_EXTENSION_PATTERN, `.${extension}`)),
+    ]),
+];
+
 const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
     value === 'warning' || value === 'error' ? value : 'info';
 
@@ -131,24 +220,36 @@ const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
  * successful pick of an object — which, for the save dialog, means writing a
  * render to a path that is not a path.
  */
-export const registerDialogChannels = ({ ipcMain, isTrustedFrameUrl, dialogs }: RegisterDialogChannelsInput): void => {
+export const registerDialogChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    dialogs,
+    native,
+}: RegisterDialogChannelsInput): void => {
     ipcMain.handle(
         DIALOG_OPEN_CHANNEL,
         withTrustedSender('dialog.open', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
             const multiple = request.multiple === true;
+            const directory = request.directory === true;
             const result = await dialogs.showOpenDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
                 filters: optionalFilters(request.filters),
                 properties: [
-                    request.directory === true ? 'openDirectory' : 'openFile',
+                    directory ? 'openDirectory' : 'openFile',
                     ...(multiple ? (['multiSelections'] as const) : []),
                 ],
             });
             if (result.canceled || result.filePaths.length === 0) {
                 return null;
             }
+            // Granted before the paths are answered, never after: the renderer
+            // may call a file command the moment it has them.
+            await grantPickedPaths(native, result.filePaths, {
+                mode: directory ? 'readwrite' : 'read',
+                recursive: directory,
+            });
             return multiple ? result.filePaths : result.filePaths[0];
         })
     );
@@ -157,12 +258,24 @@ export const registerDialogChannels = ({ ipcMain, isTrustedFrameUrl, dialogs }: 
         DIALOG_SAVE_CHANNEL,
         withTrustedSender('dialog.save', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
+            const filters = optionalFilters(request.filters);
+            const extensions = distinctSaveExtensions(filters);
+            if (extensions.length > MAX_SAVE_EXTENSIONS) {
+                throw new TypeError(`dialog.save expects at most ${MAX_SAVE_EXTENSIONS} distinct filter extensions`);
+            }
             const result = await dialogs.showSaveDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
-                filters: optionalFilters(request.filters),
+                filters,
             });
-            return result.canceled || result.filePath === '' ? null : result.filePath;
+            if (result.canceled || result.filePath === '') {
+                return null;
+            }
+            await grantPickedPaths(native, saveTargets(result.filePath, extensions), {
+                mode: 'readwrite',
+                recursive: false,
+            });
+            return result.filePath;
         })
     );
 
@@ -284,6 +397,151 @@ export const registerWindowControlChannels = ({
             'window.isMaximized',
             isTrustedFrameUrl,
             (event) => windowForSender(event.sender)?.isMaximized() ?? false
+        )
+    );
+};
+
+export type NativeMenuProjectState = {
+    readonly title: string;
+    readonly dirty: boolean;
+    readonly durabilityPending: boolean;
+    readonly projectKey: string;
+    readonly revision: string;
+    /** A recovering renderer may publish its provisional shell state before Project hydration completes. */
+    readonly rendererReady?: boolean;
+    readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
+};
+
+export type NativeMenuSaveResult = {
+    readonly requestId: number;
+    readonly saved: boolean;
+    readonly dirty: boolean;
+    readonly projectKey: string;
+    readonly revision: string;
+};
+
+export type RegisterNativeMenuChannelsInput = {
+    readonly ipcMain: IpcMainLike;
+    readonly isTrustedFrameUrl: TrustGuard;
+    readonly onProjectState: (state: NativeMenuProjectState, sender: unknown) => void;
+    readonly onSaveResult: (result: NativeMenuSaveResult) => void;
+    readonly onSessionQuiesced: (result: RendererSessionQuiesceResult, sender: unknown) => void;
+    readonly onSessionQuiesceStarted: (requestId: number, sender: unknown) => boolean;
+};
+
+const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
+    const state = asRecord(value);
+    if (
+        typeof state.title !== 'string' ||
+        typeof state.dirty !== 'boolean' ||
+        typeof state.durabilityPending !== 'boolean' ||
+        typeof state.projectKey !== 'string' ||
+        typeof state.revision !== 'string' ||
+        !Array.isArray(state.recentProjects)
+    ) {
+        throw new TypeError('native menu project state is invalid');
+    }
+    const recentProjects = state.recentProjects.map((entry) => {
+        const project = asRecord(entry);
+        if (typeof project.key !== 'string' || typeof project.name !== 'string') {
+            throw new TypeError('native menu recent project is invalid');
+        }
+        return { key: project.key, name: project.name };
+    });
+    const rendererReady = state.rendererReady;
+    if (rendererReady !== undefined && typeof rendererReady !== 'boolean') {
+        throw new TypeError('native menu renderer readiness is invalid');
+    }
+    return {
+        title: state.title,
+        dirty: state.dirty,
+        durabilityPending: state.durabilityPending,
+        projectKey: state.projectKey,
+        revision: state.revision,
+        rendererReady,
+        recentProjects,
+    };
+};
+
+const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
+    const result = asRecord(value);
+    if (
+        typeof result.requestId !== 'number' ||
+        !Number.isSafeInteger(result.requestId) ||
+        result.requestId < 1 ||
+        typeof result.saved !== 'boolean' ||
+        typeof result.dirty !== 'boolean' ||
+        typeof result.projectKey !== 'string' ||
+        typeof result.revision !== 'string'
+    ) {
+        throw new TypeError('native menu save result is invalid');
+    }
+    return {
+        requestId: result.requestId,
+        saved: result.saved,
+        dirty: result.dirty,
+        projectKey: result.projectKey,
+        revision: result.revision,
+    };
+};
+
+const rendererSessionQuiesced = (value: unknown): RendererSessionQuiesceResult => {
+    const result = asRecord(value);
+    const keys = Object.keys(result);
+    const outcome = result.outcome;
+    if (
+        keys.length !== 2 ||
+        !keys.includes('requestId') ||
+        !keys.includes('outcome') ||
+        typeof result.requestId !== 'number' ||
+        !Number.isSafeInteger(result.requestId) ||
+        result.requestId < 1 ||
+        (outcome !== 'success' && outcome !== 'rejected' && outcome !== 'terminal')
+    ) {
+        throw new TypeError('renderer session quiesce result is invalid');
+    }
+    return { requestId: result.requestId, outcome };
+};
+
+const rendererSessionRequestId = (value: unknown): number => {
+    const result = asRecord(value);
+    if (typeof result.requestId !== 'number' || !Number.isSafeInteger(result.requestId) || result.requestId < 1) {
+        throw new TypeError('renderer session quiesce start is invalid');
+    }
+    return result.requestId;
+};
+
+/** The entire renderer-facing native menu surface: validated projections and text editing only. */
+export const registerNativeMenuChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    onProjectState,
+    onSaveResult,
+    onSessionQuiesced,
+    onSessionQuiesceStarted,
+}: RegisterNativeMenuChannelsInput): void => {
+    ipcMain.handle(
+        NATIVE_MENU_PROJECT_STATE_CHANNEL,
+        withTrustedSenderEvent('nativeMenu.projectState', isTrustedFrameUrl, (event, value) =>
+            onProjectState(nativeMenuProjectState(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+        withTrustedSenderEvent('rendererSession.quiesceStarted', isTrustedFrameUrl, (event, value) =>
+            onSessionQuiesceStarted(rendererSessionRequestId(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        RENDERER_SESSION_QUIESCED_CHANNEL,
+        withTrustedSenderEvent('rendererSession.quiesced', isTrustedFrameUrl, (event, value) =>
+            onSessionQuiesced(rendererSessionQuiesced(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        NATIVE_MENU_SAVE_RESULT_CHANNEL,
+        withTrustedSender('nativeMenu.saveResult', isTrustedFrameUrl, (value) =>
+            onSaveResult(nativeMenuSaveResult(value))
         )
     );
 };

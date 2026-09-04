@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { getRecentProjects, recentProjectsStorage } from './helpers';
+import { getRecentProjects, recentProjectChanges, recentProjectsStorage } from './helpers';
 
 const MAX_RECENT = 10;
 
@@ -12,6 +12,7 @@ export const addToRecentProjects = inject({ logger })(
                 const entries = getRecentProjects().filter((event) => event.key !== key);
                 entries.unshift({ name, key, updatedAt: Date.now() });
                 recentProjectsStorage.set(entries.slice(0, MAX_RECENT));
+                recentProjectChanges.notify();
             } catch (error) {
                 logger.warn(`Failed to update recent projects: ${error}`);
             }

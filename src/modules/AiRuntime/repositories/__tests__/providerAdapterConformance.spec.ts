@@ -52,6 +52,7 @@ const BASE_INSTALLATION: ProviderAdapterInstallationInput = {
 function createAdapterRuntime(): OpenAiCompatibleCloudRuntime {
     return {
         provider: 'openai-compatible',
+        authentication: 'api-key',
         session_id: 'provider-session-00000000000000000000000000000000',
         model: 'studio-model-v1',
         base_url: 'https://models.example.test:8443/v1',
@@ -142,13 +143,14 @@ describe('provider adapter conformance', () => {
             invoke,
         };
 
-        const sessionId = await openProviderGatewaySession(adapter, 'openai-compatible', dependencies);
+        const sessionId = await openProviderGatewaySession(adapter, 'openai-compatible', 'sk-test-key', dependencies);
         await closeProviderGatewaySession(sessionId, dependencies);
 
         expect(invoke).toHaveBeenNthCalledWith(1, 'open_provider_gateway_session', {
             adapterId: adapter.adapterId,
             origin: adapter.origin,
             credentialSource: 'openai-compatible',
+            credential: 'sk-test-key',
         });
         expect(invoke).toHaveBeenNthCalledWith(2, 'close_provider_gateway_session', { sessionId });
     });
@@ -160,9 +162,28 @@ describe('provider adapter conformance', () => {
             invoke: async () => 'secret-or-untrusted-value',
         };
 
-        await expect(openProviderGatewaySession(adapter, 'openai-compatible', dependencies)).rejects.toThrow(
+        await expect(openProviderGatewaySession(adapter, 'openai-compatible', '', dependencies)).rejects.toThrow(
             'invalid credential session'
         );
+    });
+
+    it('enforces the credential UTF-8 byte limit before opening native IPC', async () => {
+        const adapter = compileProviderAdapterInstallation(BASE_INSTALLATION);
+        const invoke = vi.fn<ProviderGatewayDependencies['invoke']>(
+            async () => 'provider-session-00000000000000000000000000000000'
+        );
+        const dependencies: ProviderGatewayDependencies = {
+            createChannel: desktopHarness.createChannel,
+            invoke,
+        };
+
+        await expect(
+            openProviderGatewaySession(adapter, 'openai-compatible', 'é'.repeat(8192), dependencies)
+        ).resolves.toMatch(/^provider-session-/u);
+        await expect(
+            openProviderGatewaySession(adapter, 'openai-compatible', 'é'.repeat(8193), dependencies)
+        ).rejects.toThrow('Provider gateway credential exceeds its size limit');
+        expect(invoke).toHaveBeenCalledTimes(1);
     });
 
     it.each([
@@ -471,6 +492,7 @@ describe('provider adapter conformance', () => {
                         },
                     },
                 ],
+                maxOutputTokens: 8192,
             })
         ).resolves.toEqual([{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
         expect(fetchMock).not.toHaveBeenCalled();

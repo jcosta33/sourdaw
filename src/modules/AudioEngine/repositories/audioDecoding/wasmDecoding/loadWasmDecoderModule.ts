@@ -16,16 +16,13 @@ export type WasmDecoderModule = {
     decode_audio_bytes: (bytes: Uint8Array) => WasmDecoded;
 };
 
-const WASM_JS_URL = '/wasm/daw-wasm-decoder/daw_wasm_decoder.js';
-
 /**
  * Lazy-load the generated `daw-wasm-decoder` public asset.
  *
- * The specifier is a root-absolute path to a build-time-generated file under
- * `public/`; it is deliberately isolated here so the decoder repository depends
- * on a same-module seam instead of an unresolvable asset specifier. The exact
- * `/* @vite-ignore *\/` string reaches the browser unchanged in production.
+ * Constructing the URL at runtime keeps Vite from treating the public asset as a
+ * source import and preserves deployments under a relative base path.
  */
 export async function loadWasmDecoderModule(): Promise<WasmDecoderModule> {
-    return (await import(/* @vite-ignore */ WASM_JS_URL)) as WasmDecoderModule;
+    const wasmDecoderUrl = new URL('wasm/daw-wasm-decoder/daw_wasm_decoder.js', globalThis.location.href).href;
+    return (await import(/* @vite-ignore */ wasmDecoderUrl)) as WasmDecoderModule;
 }

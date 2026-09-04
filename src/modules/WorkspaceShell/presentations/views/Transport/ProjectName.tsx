@@ -25,9 +25,9 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
 
     if (editing) {
         return (
-            <Row gap={1.5} shrink={false}>
+            <Row gap={1.5} shrink={false} className="transport-bar__project-name">
                 <DawCompactInput
-                    className="daw-readout-well w-32 px-1.5 font-medium ring-1 ring-ring"
+                    className="transport-bar__project-name-input daw-readout-well w-32 min-w-0 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
                     onChange={(event) => setValue(event.target.value)}
                     onBlur={commit}
@@ -53,30 +53,25 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                     size="bare"
                     type="button"
                     data-testid="project-name"
-                    className="flex items-center gap-1.5 rounded-sm px-1.5 py-1 hover:bg-white/[0.04] transition-colors cursor-pointer group shrink-0"
+                    className="transport-bar__project-name daw-readout-well group flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-l-sm rounded-r-none border-r-0 px-2.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-white/[0.04] hover:brightness-[1.06] hover:text-foreground"
                     onClick={() => {
                         setEditing(true);
                         setValue(name);
                     }}
                     onDoubleClick={() => saveProject()}
                 >
-                    {/* Project name in a subtle recessed badge */}
-                    <Row gap={1} className="daw-readout-well rounded-sm px-2 py-0.5">
-                        <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground truncate max-w-32 transition-colors">
-                            {name}
-                        </span>
-                        {dirty ? (
-                            <DawStatusDot
-                                tone="peach"
-                                pulse
-                                style={{
-                                    boxShadow: '0 0 4px rgba(240,160,96,0.4)',
-                                    animationDuration: '2s',
-                                }}
-                                title="Unsaved changes"
-                            />
-                        ) : null}
-                    </Row>
+                    <span className="max-w-32 truncate">{name}</span>
+                    {dirty ? (
+                        <DawStatusDot
+                            tone="peach"
+                            pulse
+                            style={{
+                                boxShadow: '0 0 4px rgba(240,160,96,0.4)',
+                                animationDuration: '2s',
+                            }}
+                            title="Unsaved changes"
+                        />
+                    ) : null}
                 </Button>
             </TooltipTrigger>
             <TooltipContent>Click to rename, double-click to save</TooltipContent>

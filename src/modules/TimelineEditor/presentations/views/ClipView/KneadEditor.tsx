@@ -3,6 +3,7 @@ import { type ReactElement, useRef, useEffect, useLayoutEffect, useState, type P
 import { Mic } from 'lucide-react';
 
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
@@ -640,7 +641,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         dragStart.current = null;
         setIsDragging(false);
     };
-    const renderIife_10 = () => {
+    const renderEditorOverlay = (): ReactElement | null => {
         if (!hasKnead) {
             return (
                 <Stack
@@ -742,10 +743,12 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                 Scale
                             </p>
                             <Row gap={1}>
-                                <select
-                                    className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors"
+                                <DawCompactSelect
+                                    size="sm"
+                                    tone="overlay"
                                     value={keyRoot}
                                     onChange={(event) => handleKeyChange(parseInt(event.target.value))}
+                                    aria-label="Root note"
                                 >
                                     {KEY_NAMES.map((name, index) => (
                                         <option
@@ -756,18 +759,21 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                             {name}
                                         </option>
                                     ))}
-                                </select>
-                                <select
-                                    className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors capitalize"
+                                </DawCompactSelect>
+                                <DawCompactSelect
+                                    size="sm"
+                                    tone="overlay"
                                     value={scaleName}
                                     onChange={(event) => handleScaleChange(event.target.value)}
+                                    aria-label="Scale"
+                                    className="capitalize"
                                 >
                                     {SCALE_NAMES.map((name) => (
                                         <option key={name} value={name} className="bg-surface-elevated text-foreground">
                                             {name.replaceAll(/([A-Z])/g, ' $1')}
                                         </option>
                                     ))}
-                                </select>
+                                </DawCompactSelect>
                             </Row>
                             <Button
                                 variant="ghost"
@@ -845,7 +851,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     onPointerUp={handlePointerUp}
                 />
             </div>
-            {renderIife_10()}
+            {renderEditorOverlay()}
         </Stack>
     );
 };

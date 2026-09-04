@@ -11,3 +11,6 @@ export { timeSignatureMapStore } from './timeSignatureMapStore';
 
 export { transportStore, defaultTransportState, MIN_TEMPO, MAX_TEMPO } from './transportStore';
 export type { TransportState } from './transportStore';
+
+export { readTempoAtBeat } from './readTempoAtBeat';
+export { readSecondsAtBeat } from './readSecondsAtBeat';

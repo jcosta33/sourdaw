@@ -177,6 +177,12 @@ export type ProjectContextClip = {
     loopEnabled?: boolean;
     loopLength?: number;
     minimumLoopLengthBeats?: number;
+    /**
+     * Where the clip's content starts, in the clip's own media coordinates. Note beats are stored in
+     * those coordinates, so this is what maps a note to the beat it actually sounds on: slipping a
+     * clip moves the window without moving a single note.
+     */
+    midiOffsetBeats?: number;
     noteCount: number;
 };
 

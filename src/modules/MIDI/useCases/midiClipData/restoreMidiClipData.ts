@@ -1,22 +1,13 @@
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import {
+    MIDI_NOTE_OPTIONAL_KEYS,
+    MIDI_NOTE_REQUIRED_KEYS,
+    type MidiCC,
+    type MidiNote,
+    type MidiPitchBend,
+} from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
 
 const INVALID_MIDI_CLIP_DATA_SNAPSHOT = 'Invalid MIDI clip data snapshot';
-const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
-// Must stay in step with `MidiNote` and with the equivalent allowlist in
-// `midiStore.ts`. This list had drifted: a note carrying
-// `pitchBendRangeSemitones` or `articulation` — both long-standing model
-// fields, and both now preserved across a split — failed the exact-keys gate,
-// so undo/redo of a cut on such a clip threw instead of restoring.
-const MIDI_NOTE_OPTIONAL_KEYS = [
-    'probability',
-    'pressure',
-    'slide',
-    'pitchBend',
-    'pitchBendRangeSemitones',
-    'channel',
-    'articulation',
-] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
 const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
 

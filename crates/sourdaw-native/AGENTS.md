@@ -43,12 +43,33 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`). Capacity is headroom,
   not latency: the callback holds the round trip within twice the device period by processing a
   block and then withholding it from the return ring, so latency settles at that depth instead of
-  ratcheting up to the ring. Never shed a block before the plugin sees it — the input side is the
-  native sampler's only record feed.
-- The native chain renders bridged plugins plus the timeline graph built through the graph-command
+  ratcheting up to the ring. Never shed a block before the plugin sees it.
+- Recorded input is the engine's own capture tap, never render scratch. A slot that records
+  registers as a capture consumer and takes its audio in `process_capture_input`
+  (`host/native_bridge.rs`); the buffers every other `NativePlugin` method is handed are output,
+  and feeding them to a recorder splices a device buffer of silence into every take. An unserved
+  block is still recorded, because a dropout is a hole in the take's time, not a cut in it.
+- A slot that records is built at the engine handle's own sample rate. The tap, the render pass and
+  the take's stamped rate are all the device's, and any other number desynchronises all three. An
+  instance created before the engine runs is therefore dormant rather than refused: it holds the
+  panel's writes command-side and registers on the engine's first graph batch, at that engine's
+  rate.
+- The native chain renders hosted plugins and the timeline graph built through the graph-command
   surface (`commands/graph.rs` — tracks, clips, buses, sends, device chains), started lazily by the
   first `apply_graph_commands`. Web Audio remains the live product path until the D3.c cutover;
   nothing else may make the native chain sound.
+- A device naming a hosted plugin instance the engine already owns is spliced into the strip chain
+  under that instance's own engine plugin id: the chain borrows the plugin, it does not register a
+  second one. The instance's lifetime stays with the load that created it, so such a device is
+  _released_ from its chain, never retired — retiring it would free a plugin a panel, an editor and
+  a parameter path are all still holding. Its parameters are the plugin's own and travel on the
+  plugin's control path; the graph carries only its bypass and its place in the chain.
+- One plugin instance is processed once per block. While the monitor is shadowed the bridge drives
+  it and the chain skips it; while the monitor is audible the chain runs it over the strip's signal
+  and the bridge's blocks are drained unprocessed rather than left to fill a ring that would refuse
+  every later push. Neither side may be made to process without the other being made to stop.
+- No instance can be bound where no engine holds one: an offline render, and any batch mapped before
+  its own attach ran, map with an empty lookup and fall back on the degradation law.
 
 ## Constraints
 

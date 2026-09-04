@@ -1,8 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
 import {
+    captureDurableDocumentWitness,
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
@@ -24,8 +25,10 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
+import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
 
 export async function loadProject(): Promise<boolean> {
+    await whenProjectIdentityTransitionDependenciesConfigured();
     // Boot restore is subordinate: if the user picked a project on the
     // LaunchScreen while `initializeAudioEngine()` was resolving, that
     // transition is already preparing and must win. Yield to any mid-flight
@@ -93,13 +96,41 @@ export async function loadProject(): Promise<boolean> {
             // `projectCrdtToStores` so both sides of the comparison are current.
             verifyAudioBufferReferences();
 
-            clearUndoHistory();
+            // `getDurableProjectOwnerId()` is not usable here: it demands
+            // `initialized`, which this batch has not flipped true yet, so it
+            // would read undefined for every restore. The raw projectId
+            // `projectCrdtToStores` just hydrated is compared instead. A
+            // legacy project without a canonical id tags `undefined` here,
+            // so its first post-migration reload clears the mirror once;
+            // `migrateActiveProjectIdentity` below then persists the
+            // canonical id, and every later session tags and compares that
+            // migrated id, so matching resumes from that reload on.
+            reconcileSessionUndoForProject({
+                projectId: projectStore.value?.projectId,
+                captureWitness: captureDurableDocumentWitness,
+            });
         });
     } finally {
         preparedBuffers.cancel();
     }
 
-    await migrateActiveProjectIdentity();
+    try {
+        await migrateActiveProjectIdentity();
+    } catch (error) {
+        // The migration seam knows only about its own successors, so a project
+        // *transition* that replaced the projection while its persistence was
+        // in flight looks to it like a discarded write and it throws. That is
+        // not a load failure — `loadProject` rejecting here reaches
+        // `useAppInitialization` uncaught and toasts a boot failure over a
+        // recent-project load that succeeded. `transaction.isCurrent()` is the
+        // signal that a different project owns the projection now, so a
+        // superseded load ends exactly as the guard below would end it, and a
+        // genuine failure of this project's own migration still propagates.
+        if (transaction.isCurrent()) {
+            throw error;
+        }
+        return false;
+    }
     if (!transaction.isCurrent()) {
         return false;
     }

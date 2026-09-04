@@ -42,6 +42,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -377,6 +380,7 @@ describe('mix prompt workflow', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -693,7 +697,10 @@ describe('mix prompt workflow', () => {
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
     });
 
-    it('rejects a stale later pan guard before any earlier runtime effect', async () => {
+    // The edit below changes the exact pan guard this proposal names, so the divergence port
+    // classifies it against that target rather than reporting a bare "the project changed": the
+    // status, the named target and the repair candidate are all specific to the conflicted track.
+    it('leaves no runtime effect or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
@@ -706,16 +713,29 @@ describe('mix prompt workflow', () => {
             ),
         });
         runtimeMocks.pans.set('track-guitar-left', 12);
+        flushAutomergeStorageWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
 
-        expect(result).toMatchObject({ status: 'failed' });
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-guitar-left']),
+        });
         expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackPan).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackMute).not.toHaveBeenCalled();
         expect(getTrack('track-lead-vocal').gain).toBe(1);
         expect(getTrack('track-guitar-left').pan).toBe(12);
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
+                ?.content
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-guitar-left']));
     });
 
     it.each(['write', 'touch', 'latch'] as const)(

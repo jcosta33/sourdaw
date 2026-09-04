@@ -11,9 +11,18 @@
 export type EngineStreamErrorKind =
     'deviceNotAvailable' | 'deviceBusy' | 'deviceChanged' | 'streamInvalidated' | 'xrun' | 'backendSpecific';
 
+/**
+ * Which of the engine's device streams a report came from. A failing capture
+ * stream costs the take being recorded; a failing playback stream costs
+ * monitoring outright, and nothing downstream can tell them apart without
+ * this.
+ */
+export type EngineStreamSide = 'output' | 'input';
+
 /** One drained engine event, discriminated on `type`. */
 export type EngineEvent = {
     type: 'streamError';
+    side: EngineStreamSide;
     kind: EngineStreamErrorKind;
 };
 
@@ -32,8 +41,27 @@ export type EngineRtDiagnostics = {
     bridgeOutputBlocksDropped: number;
     unmatchedBridgeBlocks: number;
     bridgeBacklogBlocksShed: number;
+    /**
+     * Blocks a bridge returned unprocessed because the plugin it names is on a
+     * track or bus device chain and the monitor is audible: that chain runs the
+     * instance over the strip's own signal, so the bridge's blocks are drained
+     * rather than processed. Expected to climb whenever a plugin is spliced into
+     * a chain and audible, and to stay flat while the monitor is shadowed.
+     */
+    bridgeBlocksPassedChainBound: number;
     callbackFramesOverBridgeReach: number;
     bridgeInputBlocksRefused: number;
+    captureConsumerRefusals: number;
+    captureBlocksDropped: number;
+    captureInputUnderruns: number;
+    /**
+     * Frames of latency the capture path is currently adding, or zero while
+     * capture is not serving. Zero means no figure, not no delay: it reads
+     * zero when capture was refused, when no input device is open, and while
+     * the ring has not yet settled on a cadence — see
+     * `audio_thread::new_input_latency_slot` (`crates/daw-engine`).
+     */
+    inputLatencyFrames: number;
     /**
      * Events drained by this read. The engine hands each event out exactly
      * once, so a reader that discards them loses them.
@@ -52,7 +80,12 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     bridgeOutputBlocksDropped: 0,
     unmatchedBridgeBlocks: 0,
     bridgeBacklogBlocksShed: 0,
+    bridgeBlocksPassedChainBound: 0,
     callbackFramesOverBridgeReach: 0,
     bridgeInputBlocksRefused: 0,
+    captureConsumerRefusals: 0,
+    captureBlocksDropped: 0,
+    captureInputUnderruns: 0,
+    inputLatencyFrames: 0,
     events: [],
 };

@@ -128,7 +128,6 @@ export const clipTools: readonly ToolSchema[] = [
         },
         ['clipId', 'locked']
     ),
-    tool('reverseClip', 'Reverse the audio/MIDI content of a clip.', { clipId: { type: 'string' } }, ['clipId']),
     tool('normalizeClip', 'Normalize clip volume to peak level.', { clipId: { type: 'string' } }, ['clipId']),
     tool(
         'setClipLoop',

@@ -1,4 +1,4 @@
-import { change, clone, from, merge, type Doc } from '@automerge/automerge';
+import { change, clone, from, getHeads, merge, type Doc } from '@automerge/automerge';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -133,6 +133,125 @@ describe('Yeast collaboration storage', () => {
         ]);
     });
 
+    it('does not change the document when processor params are logically unchanged', () => {
+        const peer = createPeer(from<RootDocument>({}));
+        const storage = createStorage();
+        configureAutomergeStoragePort(peer.port);
+        storage.set(createState([{ ...createProcessor('processor'), params: { zeta: 1, alpha: 2 } }]));
+        flushAutomergeStorageWrites();
+        const headsBeforeNoOp = getHeads(peer.getDoc());
+
+        storage.set(createState([{ ...createProcessor('processor'), params: { zeta: 1, alpha: 2 } }]));
+        flushAutomergeStorageWrites();
+
+        expect(getHeads(peer.getDoc())).toEqual(headsBeforeNoOp);
+    });
+
+    it('merges concurrent edits to different params on one processor', () => {
+        const baseline = createBaseline(
+            createState([{ ...createProcessor('processor'), params: { rate: 1, depth: 2 } }])
+        );
+        const leftPeer = createPeer(clone(baseline));
+        const rightPeer = createPeer(clone(baseline));
+        const leftStorage = createStorage();
+        const rightStorage = createStorage();
+
+        configureAutomergeStoragePort(leftPeer.port);
+        leftStorage.hydrate();
+        leftStorage.set(createState([{ ...createProcessor('processor'), params: { rate: 9, depth: 2 } }]));
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(rightPeer.port);
+        rightStorage.hydrate();
+        rightStorage.set(createState([{ ...createProcessor('processor'), params: { rate: 1, depth: 8 } }]));
+        flushAutomergeStorageWrites();
+
+        for (const merged of [
+            merge(clone(leftPeer.getDoc()), rightPeer.getDoc()),
+            merge(clone(rightPeer.getDoc()), leftPeer.getDoc()),
+        ]) {
+            const mergedPeer = createPeer(merged);
+            const mergedStorage = createStorage();
+            configureAutomergeStoragePort(mergedPeer.port);
+            mergedStorage.hydrate();
+
+            expect(mergedStorage.get()?.processors[0]?.params).toEqual({ rate: 9, depth: 8 });
+        }
+    });
+
+    it('merges concurrent first param keys on a processor that had none', () => {
+        // Issue #3186: a processor flushed without `params` used to omit the
+        // map field. Each peer's first key then assigned a whole map, and
+        // Automerge last-writer-wins dropped the other key.
+        const baseline = createBaseline(createState([createProcessor('processor')]));
+        const leftPeer = createPeer(clone(baseline));
+        const rightPeer = createPeer(clone(baseline));
+        const leftStorage = createStorage();
+        const rightStorage = createStorage();
+
+        configureAutomergeStoragePort(leftPeer.port);
+        leftStorage.hydrate();
+        leftStorage.set(createState([{ ...createProcessor('processor'), params: { rate: 9 } }]));
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(rightPeer.port);
+        rightStorage.hydrate();
+        rightStorage.set(createState([{ ...createProcessor('processor'), params: { depth: 8 } }]));
+        flushAutomergeStorageWrites();
+
+        for (const merged of [
+            merge(clone(leftPeer.getDoc()), rightPeer.getDoc()),
+            merge(clone(rightPeer.getDoc()), leftPeer.getDoc()),
+        ]) {
+            const mergedPeer = createPeer(merged);
+            const mergedStorage = createStorage();
+            configureAutomergeStoragePort(mergedPeer.port);
+            mergedStorage.hydrate();
+
+            expect(mergedStorage.get()?.processors[0]?.params).toEqual({ rate: 9, depth: 8 });
+        }
+    });
+
+    it('keeps an empty params map after clearing so concurrent first keys still merge', () => {
+        const withKeys = createBaseline(
+            createState([{ ...createProcessor('processor'), params: { rate: 1, depth: 2 } }])
+        );
+        const clearerPeer = createPeer(clone(withKeys));
+        const clearerStorage = createStorage();
+        configureAutomergeStoragePort(clearerPeer.port);
+        clearerStorage.hydrate();
+        clearerStorage.set(createState([createProcessor('processor')]));
+        flushAutomergeStorageWrites();
+
+        const cleared = clearerPeer.getDoc();
+        const leftPeer = createPeer(clone(cleared));
+        const rightPeer = createPeer(clone(cleared));
+        const leftStorage = createStorage();
+        const rightStorage = createStorage();
+
+        configureAutomergeStoragePort(leftPeer.port);
+        leftStorage.hydrate();
+        leftStorage.set(createState([{ ...createProcessor('processor'), params: { rate: 9 } }]));
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(rightPeer.port);
+        rightStorage.hydrate();
+        rightStorage.set(createState([{ ...createProcessor('processor'), params: { depth: 8 } }]));
+        flushAutomergeStorageWrites();
+
+        for (const merged of [
+            merge(clone(leftPeer.getDoc()), rightPeer.getDoc()),
+            merge(clone(rightPeer.getDoc()), leftPeer.getDoc()),
+        ]) {
+            const mergedPeer = createPeer(merged);
+            const mergedStorage = createStorage();
+            configureAutomergeStoragePort(mergedPeer.port);
+            mergedStorage.hydrate();
+
+            expect(mergedStorage.get()?.processors[0]?.params).toEqual({ rate: 9, depth: 8 });
+        }
+    });
+
     it('rebases a pending local edit over a newly hydrated remote processor', () => {
         const baseline = createBaseline(createState([createProcessor('local')]));
         const localPeer = createPeer(clone(baseline));
@@ -157,6 +276,38 @@ describe('Yeast collaboration storage', () => {
 
         flushAutomergeStorageWrites();
         expect(localStorage.get()?.processors.map((processor) => processor.id)).toEqual(['local', 'remote']);
+    });
+
+    it('rebases a pending local reorder over a newly hydrated remote field edit', () => {
+        const baseline = createBaseline(
+            createState([createProcessor('a'), createProcessor('b'), createProcessor('c')])
+        );
+        const localPeer = createPeer(clone(baseline));
+        const remotePeer = createPeer(clone(baseline));
+        const localStorage = createStorage();
+        const remoteStorage = createStorage();
+
+        configureAutomergeStoragePort(remotePeer.port);
+        remoteStorage.hydrate();
+        remoteStorage.set(
+            createState([
+                createProcessor('a'),
+                { ...createProcessor('b'), name: 'Remote renamed' },
+                createProcessor('c'),
+            ])
+        );
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(localPeer.port);
+        localStorage.hydrate();
+        localStorage.set(createState([createProcessor('c'), createProcessor('a'), createProcessor('b')]));
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        expect(localStorage.hydrate()).toBe(true);
+        expect(localStorage.get()?.processors).toEqual([
+            createProcessor('c'),
+            createProcessor('a'),
+            { ...createProcessor('b'), name: 'Remote renamed' },
+        ]);
     });
 
     it('round-trips a reorder of the processor list through storage', () => {

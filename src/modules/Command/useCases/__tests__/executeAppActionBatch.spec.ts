@@ -7,14 +7,25 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    createTrack,
+    getArrangementHandlers,
+    getTrackStoreState,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
-import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type UndoEntry } from '../../models/UndoEntry';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { undoStore } from '../../stores/undoStore';
+import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
+import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
+import { undo } from '../undo';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
@@ -23,6 +34,7 @@ type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
 type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
+type AddTrackAction = Extract<AppAction, { type: 'addTrack' }>;
 
 const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
@@ -35,7 +47,7 @@ const mocks = vi.hoisted(() => ({
     } satisfies Logger,
     setSemanticContext: vi.fn(),
     clearSemanticContext: vi.fn(),
-    recordActionHistoryMetadata: vi.fn(() => []),
+    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(() => []),
     commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
     // Reached only through the barrel's import graph — `sessionManagement`
@@ -57,9 +69,17 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
         record: mocks.recordActionHistoryMetadata,
+        recordBatch: (entries: readonly ActionHistoryMetadata[]) =>
+            entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
     },
 }));
-vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
+vi.mock('../commitUndoEntries', () => ({
+    commitUndoEntries: (entries: readonly unknown[]) => {
+        for (const entry of entries) {
+            mocks.commitUndoEntry(entry);
+        }
+    },
+}));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 function createHandler<Action extends AppAction>(input: {
@@ -68,6 +88,7 @@ function createHandler<Action extends AppAction>(input: {
     describe?: ActionHandler<Action>['describe'];
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
+    materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
     validate?: ActionHandler<Action>['validate'];
     requiresAbortCompensation?: boolean;
     undoable?: boolean;
@@ -78,6 +99,7 @@ function createHandler<Action extends AppAction>(input: {
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
         isNoop: input.isNoop,
+        materializeCommandArguments: input.materializeCommandArguments,
         validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
@@ -146,6 +168,7 @@ describe('executeAppActionBatch', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+        commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
     it('commits every action as one project document mutation', async () => {
@@ -221,20 +244,42 @@ describe('executeAppActionBatch', () => {
         expect(secondEffect).not.toHaveBeenCalled();
     });
 
+    it('rejects a batch before dispatch when handler argument materialization fails', async () => {
+        const execute = vi.fn();
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                materializeCommandArguments: () => {
+                    throw new Error('editing tool arguments are invalid');
+                },
+            }),
+        });
+
+        await expect(executeAppActionBatch([action])).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Could not preflight setEditingTool: editing tool arguments are invalid',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
+    });
+
     it('passes the exact execution signal through the command boundary to project handlers', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const controller = new AbortController();
-        const execute = vi.fn((_action: SetEditingToolAction, context?: { signal?: AbortSignal }) => {
+        const onDeferredEffectAttempt = vi.fn();
+        const execute = vi.fn((_action: SetEditingToolAction, context?: HandlerValidationContext) => {
             expect(context?.signal).toBe(controller.signal);
+            expect(context?.onDeferredEffectAttempt).toBe(onDeferredEffectAttempt);
             return { status: 'written' as const };
         });
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({ execute }),
         });
 
-        await expect(executeAppActionBatch([action], { signal: controller.signal })).resolves.toMatchObject({
-            status: 'committed',
-        });
+        await expect(
+            executeAppActionBatch([action], { signal: controller.signal, onDeferredEffectAttempt })
+        ).resolves.toMatchObject({ status: 'committed' });
         expect(execute).toHaveBeenCalledOnce();
     });
 
@@ -641,6 +686,76 @@ describe('executeAppActionBatch', () => {
                     remediation: 'reconcile',
                     state: 'pending',
                 },
+            ],
+        });
+    });
+
+    it.each(['reconcile', 'manual-repair'] as const)(
+        'records declared external-effect %s remediation after commit',
+        async (remediation) => {
+            const failure = new Error('section render follow-up requires review');
+            Reflect.set(failure, 'pendingEffect', {
+                kind: 'external-effect',
+                remediation,
+                reason: 'Exact section render evidence requires review.',
+                state: 'pending',
+            });
+            const afterCommit = vi.fn().mockRejectedValue(failure);
+            const afterAmbiguousCommit = vi.fn().mockRejectedValue(failure);
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit }),
+                }),
+            });
+
+            const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+            expect(result).toMatchObject({
+                status: 'committed-with-warning',
+                warningDetails: [
+                    expect.objectContaining({
+                        pendingEffect: {
+                            commandId: expect.any(String),
+                            kind: 'external-effect',
+                            operation: 'setEditingTool',
+                            reason: 'Exact section render evidence requires review.',
+                            remediation,
+                            state: 'pending',
+                        },
+                    }),
+                ],
+            });
+        }
+    );
+
+    it('records declared retention-capacity failure metadata after commit', async () => {
+        const failure = new Error('section render retention capacity exceeded');
+        Reflect.set(failure, 'failureKind', 'retention-capacity');
+        Reflect.set(failure, 'pendingEffect', {
+            kind: 'external-effect',
+            remediation: 'manual-repair',
+            reason: 'Section render retention capacity exceeded.',
+            state: 'pending',
+        });
+        const afterCommit = vi.fn().mockRejectedValue(failure);
+        const afterAmbiguousCommit = vi.fn().mockRejectedValue(failure);
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            warningDetails: [
+                expect.objectContaining({
+                    pendingEffect: expect.objectContaining({
+                        failureKind: 'retention-capacity',
+                        remediation: 'manual-repair',
+                    }),
+                }),
             ],
         });
     });
@@ -1090,6 +1205,155 @@ describe('executeAppActionBatch', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
+    it('commits and undoes a compensated automation-mode batch through the production handler', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-automation', kind: 'audio', name: 'Automation' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+
+        try {
+            const result = await executeAppActionBatch(
+                [{ type: 'setAutomationMode', payload: { trackId: 'track-automation', mode: 'write' } }],
+                { requireCompensation: true }
+            );
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'write'
+            );
+
+            const undoEntry = mocks.commitUndoEntry.mock.calls[0]?.[0] as UndoEntry | undefined;
+            if (!undoEntry) {
+                throw new Error('Expected the automation-mode batch to create an undo entry');
+            }
+            undoStore.set({ past: [undoEntry], future: [] });
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'read'
+            );
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
+            }
+        }
+    });
+
+    it('rejects a missing automation target before a valid sibling can write', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-existing', kind: 'audio', name: 'Existing' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+
+        try {
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'setAutomationMode', payload: { trackId: 'track-existing', mode: 'write' } },
+                    { type: 'setAutomationMode', payload: { trackId: 'track-missing', mode: 'touch' } },
+                ],
+                { requireCompensation: true }
+            );
+
+            expect(result).toEqual({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: setAutomationMode',
+                actions: [],
+            });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-existing')?.automationMode).toBe(
+                'read'
+            );
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+        }
+    });
+
+    it('records each planned automation mode so one grouped undo restores the original mode', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-automation', kind: 'audio', name: 'Automation' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+        const writeAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'write' as const },
+        };
+        const touchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'touch' as const, expectedMode: 'write' as const },
+        };
+        const latchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'latch' as const, expectedMode: 'touch' as const },
+        };
+
+        try {
+            const result = await executeAppActionBatch([writeAction, touchAction, latchAction], {
+                groupId: 'automation-mode-batch',
+                groupLabel: 'Set automation modes',
+                requireCompensation: true,
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'latch'
+            );
+
+            const undoEntries = mocks.commitUndoEntry.mock.calls.map(([entry]) => entry as UndoEntry);
+            expect(undoEntries).toMatchObject([
+                {
+                    groupId: 'automation-mode-batch',
+                    action: writeAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'read', expectedMode: 'write' },
+                    },
+                },
+                {
+                    groupId: 'automation-mode-batch',
+                    action: touchAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'write', expectedMode: 'touch' },
+                    },
+                },
+                {
+                    groupId: 'automation-mode-batch',
+                    action: latchAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'touch', expectedMode: 'latch' },
+                    },
+                },
+            ]);
+            undoStore.set({ past: undoEntries, future: [] });
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'read'
+            );
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
+            }
+        }
+    });
+
     it('accepts a canonical no-op without requiring an inverse inside an atomic batch', async () => {
         const execute = vi.fn();
         registerHandlerMap({
@@ -1347,6 +1611,98 @@ describe('executeAppActionBatch', () => {
         });
         expect(execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('gates on the requested footprint, then captures and rechecks the handler-materialized one', async () => {
+        const capturedTools: string[] = [];
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: vi.fn(),
+                materializeCommandArguments: (candidate) => {
+                    candidate.payload.tool = 'marquee';
+                },
+            }),
+        });
+        productionBriefAdmissionPort.setGuard((actions) => {
+            const candidate = actions[0];
+            const tool = candidate?.type === 'setEditingTool' ? candidate.payload.tool : 'missing';
+            return {
+                allowsCurrent: () => {
+                    capturedTools.push(tool);
+                    return true;
+                },
+            };
+        });
+
+        await expect(executeAppActionBatch([action])).resolves.toMatchObject({ status: 'committed' });
+
+        expect(action.payload.tool).toBe('select');
+        // The pre-canonicalization gate sees what the caller asked for; the admission that carries
+        // authority, and its commit-time recheck, both see what the handler will actually write.
+        expect(capturedTools).toEqual(['select', 'marquee', 'marquee']);
+    });
+
+    it('spends no application default on a batch the production brief refuses', async () => {
+        const palette = ['oklch(0.40 0.08 250)', 'oklch(0.55 0.09 140)'];
+        let reservations = 0;
+        commandTrackDefaultsPort.setTrackColorProvider(() => palette[reservations++] ?? 'oklch(0 0 0)');
+        const executedColors: Array<string | undefined> = [];
+        registerHandlerMap({
+            addTrack: createHandler<AddTrackAction>({
+                execute: (action) => {
+                    executedColors.push(action.payload.color);
+                },
+            }),
+        });
+        const addTrack: AddTrackAction = { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } };
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
+
+        await expect(executeAppActionBatch([addTrack])).resolves.toMatchObject({ status: 'conflicted' });
+
+        expect(reservations).toBe(0);
+
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+
+        await expect(executeAppActionBatch([addTrack])).resolves.toMatchObject({ status: 'committed' });
+
+        // The refused batch left the palette where it found it, so the first accepted track still
+        // draws the colour it would have drawn had that batch never been dispatched.
+        expect(executedColors).toEqual([palette[0]]);
+    });
+
+    it('reports the caller action objects to onCommitted while handlers execute canonical arguments', async () => {
+        const executedTools: string[] = [];
+        const materializedAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const plainAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    executedTools.push(action.payload.tool);
+                },
+                materializeCommandArguments: (candidate) => {
+                    candidate.payload.tool = 'marquee';
+                },
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({ execute: vi.fn() }),
+        });
+        const onCommitted = vi.fn<(actions: readonly AppAction[]) => void>();
+
+        await expect(
+            executeAppActionBatch([materializedAction, plainAction], {
+                groupId: 'batch-committed-identity',
+                onCommitted,
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(executedTools).toEqual(['marquee']);
+        expect(materializedAction.payload.tool).toBe('select');
+        // Grouped redo correlates committed actions to their history entries by object identity,
+        // so a canonical clone reported here would leave that correlation with nothing to match.
+        const reportedActions = onCommitted.mock.calls[0]?.[0];
+        expect(reportedActions?.[0]).toBe(materializedAction);
+        expect(reportedActions?.[1]).toBe(plainAction);
+        expect(reportedActions).toHaveLength(2);
     });
 
     it('returns a typed no-op without history when every action already matches project truth', async () => {

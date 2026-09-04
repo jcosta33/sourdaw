@@ -9,37 +9,62 @@ import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProj
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-const {
-    cancelPendingAudioBufferImport,
-    cancelPreparedBuffers,
-    prepareCachedAudioBuffersFromIdb,
-    publishPreparedBuffers,
-} = vi.hoisted(() => ({
-    cancelPendingAudioBufferImport: vi.fn(),
+const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
     cancelPreparedBuffers: vi.fn(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
 }));
 
+// switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
+// runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    cancelPendingAudioBufferImport,
+    cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     prepareCachedAudioBuffersFromIdb,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
+// switchArrangement imports stopPlayback; loadSnapshot imports restoreTimelineMapSnapshot.
+vi.mock('#/modules/Transport/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Transport/useCases')>('#/modules/Transport/useCases');
     return {
-        ...actual,
         stopPlayback: vi.fn(),
+        restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+// switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority; executeAppAction is listed for live Transport/Arrangement barrel load, not switchArrangement.
+vi.mock('#/modules/Command/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
-        ...actual,
         clearUndoHistory: vi.fn(),
+        resetActionReplayAuthority: actual.resetActionReplayAuthority,
+        executeAppAction: actual.executeAppAction,
+    };
+});
+// loadSnapshot imports restoreTrackSnapshot and restoreArrangementMetadataSnapshot.
+vi.mock('#/modules/Arrangement/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+        '#/modules/Arrangement/useCases'
+    );
+    return {
+        restoreArrangementMetadataSnapshot: actual.restoreArrangementMetadataSnapshot,
+        restoreTrackSnapshot: actual.restoreTrackSnapshot,
+    };
+});
+// loadSnapshot imports restoreAutomationSnapshot.
+vi.mock('#/modules/Automation/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Automation/useCases')>(
+        '#/modules/Automation/useCases'
+    );
+    return {
+        restoreAutomationSnapshot: actual.restoreAutomationSnapshot,
+    };
+});
+// loadSnapshot imports setMidiStoreState.
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        setMidiStoreState: actual.setMidiStoreState,
     };
 });
 

@@ -6,4 +6,5 @@ export { resetPreferences } from './resetPreferences';
 export { setTrackHeight } from './setTrackHeight';
 export { setTimelineMinimapHeight } from './setTimelineMinimapHeight';
 export { gridSnapBeats } from './gridSnapBeats';
+export { normalizeUiScale } from './normalizeUiScale';
 export { defaultPreferences, TRACK_HEIGHT_VALUES } from './preferencesDefaults';

@@ -4,6 +4,7 @@ import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
+import { resetProjectIdentityTransitionDependencies } from '../../resetProjectIdentityTransitionDependencies';
 import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({ cancelPendingAudioBufferImport: vi.fn() }));
@@ -52,6 +53,35 @@ describe('runProjectLoadTransaction', () => {
 
         expect(authority.isCurrent()).toBe(false);
         expect(first.signal.aborted).toBe(true);
+    });
+
+    it('does not leave collaboration while identity-transition deps are withheld', async () => {
+        resetProjectIdentityTransitionDependencies();
+        const leaveCollaborationSession = vi.fn(() => Promise.resolve());
+
+        const transaction = runProjectLoadTransaction();
+        const preparing = transaction.prepare();
+        let settled: boolean | 'pending' = 'pending';
+        void preparing.then(
+            (value) => {
+                settled = value;
+            },
+            () => {
+                settled = false;
+            }
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(settled).toBe('pending');
+        expect(leaveCollaborationSession).not.toHaveBeenCalled();
+        expect(resetActionReplayAuthority).not.toHaveBeenCalled();
+
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession });
+
+        await expect(preparing).resolves.toBe(true);
+        expect(leaveCollaborationSession).toHaveBeenCalledOnce();
+        expect(resetActionReplayAuthority).toHaveBeenCalledOnce();
     });
 
     it('should reject activation when collaboration shutdown fails', async () => {

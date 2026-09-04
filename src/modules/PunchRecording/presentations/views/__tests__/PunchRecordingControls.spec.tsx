@@ -56,8 +56,12 @@ const capture = (overrides: Partial<BackgroundCapture> = {}): BackgroundCapture 
     ...overrides,
 });
 
-function renderUi(): void {
-    render(<PunchRecordingControls />);
+function renderUi(compact = false): void {
+    render(<PunchRecordingControls compact={compact} />);
+}
+
+function openSettings(): void {
+    fireEvent.click(screen.getByRole('button', { name: 'Punch recording settings' }));
 }
 
 describe('PunchRecordingControls', () => {
@@ -179,6 +183,27 @@ describe('PunchRecordingControls', () => {
             renderUi();
             fireEvent.click(screen.getByRole('button', { name: 'Mark punch region from current capture' }));
             expect(definePunchRegion).toHaveBeenCalledWith('cap-live', 4, 16);
+        });
+    });
+
+    describe('compact layout', () => {
+        it('hides punch fields until settings are opened', () => {
+            renderUi(true);
+            expect(screen.queryByTestId('punch-in-beat')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('punch-out-beat')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('punch-pre-roll')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('punch-post-roll')).not.toBeInTheDocument();
+            expect(
+                screen.queryByRole('button', { name: 'Mark punch region from current capture' })
+            ).not.toBeInTheDocument();
+
+            openSettings();
+
+            expect(screen.getByTestId('punch-in-beat')).toBeInTheDocument();
+            expect(screen.getByTestId('punch-out-beat')).toBeInTheDocument();
+            expect(screen.getByTestId('punch-pre-roll')).toBeInTheDocument();
+            expect(screen.getByTestId('punch-post-roll')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Mark punch region from current capture' })).toBeInTheDocument();
         });
     });
 });

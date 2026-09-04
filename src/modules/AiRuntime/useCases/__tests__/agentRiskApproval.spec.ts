@@ -8,7 +8,7 @@ import {
     parseVersionedCommandBatchEnvelope,
     parseVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { chatStore } from '../../stores/chatStore';
@@ -24,6 +24,11 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { getExactAgentActionHash } from '../getExactAgentActionHash';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
+
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
 
 const baseCollaborationState = structuredClone(collaborationStore.value!);
 const executeSetTrackGain = vi.fn();
@@ -91,6 +96,7 @@ describe('agent risk approval', () => {
     let targetFingerprint = 'track-vocal:v1';
 
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         targetFingerprint = 'track-vocal:v1';
         collaborationStore.set({ ...baseCollaborationState, localPeerId: 'actor-a' });
         commandBatchPreflightPort.setProvider(({ targetIds }) => ({
@@ -98,7 +104,7 @@ describe('agent risk approval', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, targetFingerprint])),
         }));
@@ -121,6 +127,7 @@ describe('agent risk approval', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         clearPendingActionConfirmations();
         clearHandlerRegistry();
         commandBatchPreflightPort.setProvider(null);

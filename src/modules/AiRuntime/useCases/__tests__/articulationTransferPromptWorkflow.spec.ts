@@ -34,9 +34,13 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { landProjectEdit } from './landProjectEdit';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
@@ -191,18 +195,6 @@ function addSecondMidiAndAudioTracks(): void {
             ],
         },
     });
-}
-
-/**
- * A CRDT-backed store write reaches the Automerge project document on a
- * deferred animation frame, so a confirm flow that starts in the same tick
- * races that frame: it observes the edit only when the frame happens to land
- * inside one of its awaits. A collaborator edit is not an edit to this project
- * until the document holds it, so commit the pending write first and let the
- * confirm flow judge the proposal against a project state every run shares.
- */
-function landCollaboratorEditInProjectDocument(): void {
-    flushAutomergeStorageWrites();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -503,6 +495,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -519,41 +512,42 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         clearAiHistory();
         clearPendingActionConfirmations();
-        trackStore.set({ tracks: [createTrack()], selectedTrackId: null, ghostClips: [] });
-        markerStore.set({
-            markers: [],
-            sections: [
-                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 0, endBeat: 16, color: '#ffffff' },
-                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 16, endBeat: 32, color: '#ffffff' },
-            ],
-        });
-        midiStore.set({
-            notesByClipId: {
-                'clip-chorus-one': [
-                    Object.assign(
-                        { id: 'source-high', pitch: 67, startBeat: 4, duration: 1, velocity: 96 },
-                        { articulation: 'marcato' }
-                    ),
-                    Object.assign(
-                        { id: 'source-low', pitch: 60, startBeat: 0, duration: 1, velocity: 110 },
-                        { articulation: 'staccato' }
-                    ),
+        landProjectEdit(() => {
+            trackStore.set({ tracks: [createTrack()], selectedTrackId: null, ghostClips: [] });
+            markerStore.set({
+                markers: [],
+                sections: [
+                    { id: 'section-chorus-one', name: 'Chorus One', startBeat: 0, endBeat: 16, color: '#ffffff' },
+                    { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 16, endBeat: 32, color: '#ffffff' },
                 ],
-                'clip-chorus-two': [
-                    Object.assign(
-                        { id: 'target-low', pitch: 62, startBeat: 0, duration: 1, velocity: 72 },
-                        { articulation: 'legato' }
-                    ),
-                    Object.assign(
-                        { id: 'target-high', pitch: 69, startBeat: 4, duration: 1, velocity: 84 },
-                        { articulation: 'sustain' }
-                    ),
-                ],
-            },
-            ccByClipId: {},
-            pitchBendByClipId: {},
+            });
+            midiStore.set({
+                notesByClipId: {
+                    'clip-chorus-one': [
+                        Object.assign(
+                            { id: 'source-high', pitch: 67, startBeat: 4, duration: 1, velocity: 96 },
+                            { articulation: 'marcato' }
+                        ),
+                        Object.assign(
+                            { id: 'source-low', pitch: 60, startBeat: 0, duration: 1, velocity: 110 },
+                            { articulation: 'staccato' }
+                        ),
+                    ],
+                    'clip-chorus-two': [
+                        Object.assign(
+                            { id: 'target-low', pitch: 62, startBeat: 0, duration: 1, velocity: 72 },
+                            { articulation: 'legato' }
+                        ),
+                        Object.assign(
+                            { id: 'target-high', pitch: 69, startBeat: 4, duration: 1, velocity: 84 },
+                            { articulation: 'sustain' }
+                        ),
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
         });
-        flushAutomergeStorageWrites();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
@@ -731,8 +725,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
     });
 
     it('includes every unambiguous MIDI chorus pair and protects audio clips and non-articulation fields', async () => {
-        addSecondMidiAndAudioTracks();
-        flushAutomergeStorageWrites();
+        landProjectEdit(addSecondMidiAndAudioTracks);
 
         await sendChatMessage(PROMPT);
 
@@ -905,22 +898,23 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(getConfirmationId()).toBe('');
     });
 
-    // Invalidation here follows from the project changing at all, not from the
-    // changed target being one this proposal names — see #2894.
+    // The collaborator changed a source note this proposal reads, so the divergence port classifies
+    // the conflict against that note rather than reporting that the project moved at all.
     it('invalidates a confirmed proposal after a collaborator changes a source articulation', async () => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
-        const state = midiStore.value!;
-        midiStore.set({
-            ...state,
-            notesByClipId: {
-                ...state.notesByClipId,
-                'clip-chorus-one': state.notesByClipId['clip-chorus-one']!.map((note, index) =>
-                    index === 0 ? { ...note, articulation: 'sustain' } : note
-                ),
-            },
+        landProjectEdit(() => {
+            const state = midiStore.value!;
+            midiStore.set({
+                ...state,
+                notesByClipId: {
+                    ...state.notesByClipId,
+                    'clip-chorus-one': state.notesByClipId['clip-chorus-one']!.map((note, index) =>
+                        index === 0 ? { ...note, articulation: 'sustain' } : note
+                    ),
+                },
+            });
         });
-        landCollaboratorEditInProjectDocument();
 
         await confirmPendingChatActions({ confirmationId });
 
@@ -932,6 +926,49 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             'legato',
             'sustain',
         ]);
+    });
+
+    // The local marker edit below lands on a new marker section, not on the plan's track or either
+    // of its clips: the divergence port classifies it as non-overlapping, so the unchanged plan is
+    // revalidated and rebound rather than discarded outright.
+    it('asks for reapproval instead of discarding the proposal after an unrelated marker edit, then commits the unchanged plan on the second confirm', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+
+        landProjectEdit(() => {
+            const markers = markerStore.value;
+            if (!markers) {
+                throw new TypeError('Expected marker state');
+            }
+            markerStore.set({
+                ...markers,
+                sections: [
+                    ...markers.sections,
+                    { id: 'section-bridge', name: 'Bridge', startBeat: 32, endBeat: 40, color: '#ffffff' },
+                ],
+            });
+        });
+
+        const firstConfirm = await confirmPendingChatActions({ confirmationId });
+        expect(firstConfirm).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('proposed');
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
+        ).toContain(
+            'The project changed after the prior approval. Divergence was classified as non-overlapping; the unchanged command plan was revalidated and rebound to the current project revision. Review and confirm again:'
+        );
+
+        const secondConfirm = await confirmPendingChatActions({ confirmationId });
+        expect(secondConfirm).toEqual({ status: 'executed' });
+
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'staccato',
+            'marcato',
+        ]);
+        expect(markerStore.value?.sections.map((section) => section.id)).toContain('section-bridge');
     });
 
     it('fails closed before confirmation when the target track has no per-note articulation instrument', async () => {
@@ -975,8 +1012,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
     });
 
     it('keeps a grouped redo retryable when a collaborator changes a source articulation after undo', async () => {
-        addSecondMidiAndAudioTracks();
-        flushAutomergeStorageWrites();
+        landProjectEdit(addSecondMidiAndAudioTracks);
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmationId() });
         await undo();
@@ -1069,8 +1105,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
             },
         ],
     ])('keeps grouped undo retryable when replay eligibility changes through %s', async (_label, mutateGuard) => {
-        addSecondMidiAndAudioTracks();
-        flushAutomergeStorageWrites();
+        landProjectEdit(addSecondMidiAndAudioTracks);
         await sendChatMessage(PROMPT);
         await confirmPendingChatActions({ confirmationId: getConfirmationId() });
         const eligibleTrackState = structuredClone(trackStore.value!);
@@ -1132,32 +1167,29 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
-    // The edit below conflicts with the second pair this proposal names, but the
-    // status, reason and receipt asserted here are what *any* project change
-    // after the proposal produces — renaming an unrelated audio track reaches
-    // the same terminal state through the same code path. This test therefore
-    // pins the project-changed disposition, not target-conflict detection; that
-    // the two are indistinguishable is the production defect filed as #2894.
+    // The edit below conflicts with the second pair this proposal names, and the refusal says so:
+    // the divergence port names the conflicted note, so a change elsewhere does not read the same.
     it('leaves no receipt or history residue when the project changes before confirmation', async () => {
-        addSecondMidiAndAudioTracks();
-        flushAutomergeStorageWrites();
+        landProjectEdit(addSecondMidiAndAudioTracks);
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
-        const state = midiStore.value!;
-        midiStore.set({
-            ...state,
-            notesByClipId: {
-                ...state.notesByClipId,
-                'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) =>
-                    note.id === 'brass-source' ? { ...note, articulation: 'sforzando' } : note
-                ),
-            },
+        landProjectEdit(() => {
+            const state = midiStore.value!;
+            midiStore.set({
+                ...state,
+                notesByClipId: {
+                    ...state.notesByClipId,
+                    'brass-chorus-one': state.notesByClipId['brass-chorus-one']!.map((note) =>
+                        note.id === 'brass-source' ? { ...note, articulation: 'sforzando' } : note
+                    ),
+                },
+            });
         });
-        landCollaboratorEditInProjectDocument();
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['brass-source']),
         });
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
@@ -1175,8 +1207,6 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toBe(ambiguousSameObjectDivergenceMessage(['brass-source']));
     });
 });

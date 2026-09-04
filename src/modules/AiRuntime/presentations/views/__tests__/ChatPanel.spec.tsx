@@ -1,7 +1,20 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPendingEffectRecoveryPolicy';
+import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
+
+const retainedPreviewMocks = vi.hoisted(() => ({
+    cache: vi.fn(),
+    play: vi.fn(),
+    release: vi.fn(),
+    exportWav: vi.fn(),
+    getExact: vi.fn(),
+    settle: vi.fn(),
+    stopVerse: vi.fn(),
+    stopChorus: vi.fn(),
+}));
 
 // Mock external dependencies - factories are hoisted, so define mocks inside
 vi.mock('#/infra/store/useStore', () => ({
@@ -63,6 +76,22 @@ vi.mock('remark-gfm', () => ({
     default: vi.fn(),
 }));
 
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: retainedPreviewMocks.cache,
+    playCachedAudioBufferPreview: retainedPreviewMocks.play,
+    releasePreviewAudioBuffer: retainedPreviewMocks.release,
+}));
+
+// Non-spread so the AudioRendering barrel does not walk unread AudioEngine names.
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    exportExactAgentSectionRenderArtifactAsWav: retainedPreviewMocks.exportWav,
+    getExactAgentSectionRenderArtifact: retainedPreviewMocks.getExact,
+}));
+
+vi.mock('../../../useCases/settleRetainedSectionRenderManualReview', () => ({
+    settleRetainedSectionRenderManualReview: retainedPreviewMocks.settle,
+}));
+
 vi.mock('../../components/ChatComposer', () => ({
     ChatComposer: ({
         executionMode,
@@ -113,6 +142,7 @@ const { confirmPendingChatActions } = await import('../../../useCases/confirmPen
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
+const { agentSectionRenderArtifactStore } = await import('#/modules/AudioRendering/stores');
 const { capabilityStore, isWebGpuAvailable } = await import('#/modules/BrowserAi/stores');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
@@ -143,6 +173,60 @@ const capabilityReport = {
     detectedAt: 0,
 };
 
+type RetainedReview = ReturnType<typeof retainedReviewProjection.selectRetainedSectionRenderManualReviews>[number];
+
+const verseBuffer = { numberOfChannels: 2 } as AudioBuffer;
+const chorusBuffer = { numberOfChannels: 2 } as AudioBuffer;
+
+function createRetainedReview(input: {
+    runId: string;
+    batchId: string;
+    commandId: string;
+    jobId: string;
+    sectionName: string;
+    buffer: AudioBuffer;
+}): RetainedReview {
+    const job = {
+        jobId: input.jobId,
+        sectionId: `section-${input.jobId}`,
+        sectionName: input.sectionName,
+        startBeat: input.sectionName === 'Verse' ? 0 : 16,
+        endBeat: input.sectionName === 'Verse' ? 16 : 32,
+        sampleRate: 48_000,
+        tailSeconds: 1,
+    };
+    return {
+        binding: {
+            runId: input.runId,
+            batchId: input.batchId,
+            receiptIdentity: `receipt-${input.batchId}`,
+            sourceRevision: `revision-${input.batchId}`,
+            commands: [{ commandId: input.commandId, jobs: [job] }],
+        },
+        jobs: [
+            {
+                commandId: input.commandId,
+                job,
+                availability: 'available',
+                artifact: {
+                    owner: 'agent-section-render',
+                    retention: 'session',
+                    ...job,
+                    sourceRevision: `revision-${input.batchId}`,
+                    renderedAt: 1,
+                    durationSeconds: 1,
+                    frameCount: 48_000,
+                    channelCount: 2,
+                    byteSize: 384_000,
+                    warnings: [],
+                    buffer: input.buffer,
+                },
+                warnings: [],
+            },
+        ],
+    };
+}
+
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -155,6 +239,9 @@ describe('ChatPanel', () => {
             if (store === capabilityStore) {
                 return useRealStore(capabilityStore);
             }
+            if (store === agentSectionRenderArtifactStore) {
+                return useRealStore(agentSectionRenderArtifactStore);
+            }
             return chatState;
         });
         (agentRunControls.listDecisions as ReturnType<typeof vi.fn>).mockReturnValue([]);
@@ -166,6 +253,17 @@ describe('ChatPanel', () => {
             selectedAlternativeId: 'keep-tempo',
         });
         (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        retainedPreviewMocks.cache.mockImplementation(({ buffer }: { buffer: AudioBuffer }) =>
+            buffer === verseBuffer ? 'cached-verse' : 'cached-chorus'
+        );
+        retainedPreviewMocks.play
+            .mockReturnValueOnce({ stop: retainedPreviewMocks.stopVerse })
+            .mockReturnValue({ stop: retainedPreviewMocks.stopChorus });
+        retainedPreviewMocks.exportWav.mockResolvedValue(true);
+        retainedPreviewMocks.getExact.mockImplementation(({ job }: { job: { jobId: string } }) => ({
+            buffer: job.jobId.includes('verse') ? verseBuffer : chorusBuffer,
+        }));
+        agentSectionRenderArtifactStore.set({ artifacts: [] });
     });
 
     it('should render without crashing', () => {
@@ -389,7 +487,7 @@ describe('ChatPanel', () => {
         );
     });
 
-    it('owns persisted retry, repair, reconciliation, and manual continuations after chat history is gone', () => {
+    it('shows persisted pending-effect continuations as manual guidance after chat history is gone', () => {
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
             store === agentRunStore
                 ? {
@@ -397,6 +495,7 @@ describe('ChatPanel', () => {
                       runs: [
                           {
                               runId: 'run-retry',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-retry',
@@ -417,6 +516,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-repair',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-repair',
@@ -437,6 +537,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-reconcile',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-reconcile',
@@ -457,6 +558,7 @@ describe('ChatPanel', () => {
                           },
                           {
                               runId: 'run-manual',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
                               pendingEffectContinuations: [
                                   {
                                       batchId: 'batch-manual',
@@ -506,23 +608,10 @@ describe('ChatPanel', () => {
 
         render(<ChatPanel />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Retry runtime effect' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Reconcile pending effects' }));
-        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(1, {
-            runId: 'run-retry',
-            batchId: 'batch-retry',
-        });
-        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(2, {
-            runId: 'run-repair',
-            batchId: 'batch-repair',
-        });
-        expect(recoverAgentRunPendingEffects).toHaveBeenNthCalledWith(3, {
-            runId: 'run-reconcile',
-            batchId: 'batch-reconcile',
-        });
-        expect(recoverAgentRunPendingEffects).toHaveBeenCalledTimes(3);
-        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Reconcile pending effects' })).not.toBeInTheDocument();
+        expect(recoverAgentRunPendingEffects).not.toHaveBeenCalled();
+        expect(screen.getAllByText('Manual repair required')).toHaveLength(4);
+        expect(screen.getAllByText(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON)).toHaveLength(1);
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-manual' })).toHaveTextContent(
             'publishRender: The external system cannot prove an exact retry.'
         );
@@ -536,7 +625,64 @@ describe('ChatPanel', () => {
         expect(screen.getByText('The durable graph repair is ready.')).toBeInTheDocument();
     });
 
-    it('renders recovery owned by an evicted run from the non-evictable ledger', () => {
+    it('renders the reconcile action for a render-only continuation bound to its source revision', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [
+                          {
+                              runId: 'run-reconcile',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-reconcile',
+                                      effects: [
+                                          {
+                                              commandId: 'command-reconcile',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'The publication queue is unavailable.',
+                                              remediation: 'reconcile',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      sourceRevision: 'revision-bound',
+                                      recovery: 'reconcile-batch',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                      ],
+                      pendingEffectRecoveryLedger: [],
+                  }
+                : {
+                      messages: [],
+                      isGenerating: false,
+                      chatMode: 'chat',
+                      enableReasoning: false,
+                  }
+        );
+
+        render(<ChatPanel />);
+
+        const reconcileButton = screen.getByRole('button', { name: 'Reconcile pending effects' });
+        expect(reconcileButton).toBeInTheDocument();
+        expect(screen.queryByText('Manual repair required')).not.toBeInTheDocument();
+        expect(
+            screen.getByText('Reconcile every receipt-bound external effect without replaying project actions.')
+        ).toBeInTheDocument();
+
+        fireEvent.click(reconcileButton);
+
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledTimes(1);
+        expect(recoverAgentRunPendingEffects).toHaveBeenCalledWith({
+            runId: 'run-reconcile',
+            batchId: 'batch-reconcile',
+        });
+    });
+
+    it('renders evicted-run recovery as manual guidance from the non-evictable ledger', () => {
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
             store === agentRunStore
                 ? {
@@ -576,11 +722,10 @@ describe('ChatPanel', () => {
         expect(screen.getByRole('list', { name: 'Pending effects for batch batch-evicted' })).toHaveTextContent(
             'loadExternalPlugin: The native plugin host needs a graph rebuild.'
         );
-        fireEvent.click(screen.getByRole('button', { name: 'Repair audio graph' }));
-        expect(recoverAgentRunPendingEffects).toHaveBeenCalledWith({
-            runId: 'run-evicted',
-            batchId: 'batch-evicted',
-        });
+        expect(screen.getByText('Manual repair required')).toBeInTheDocument();
+        expect(screen.getByText(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Repair audio graph' })).not.toBeInTheDocument();
+        expect(recoverAgentRunPendingEffects).not.toHaveBeenCalled();
     });
 
     it('surfaces retained prepared media when an evicted run requires manual repair', () => {
@@ -622,6 +767,256 @@ describe('ChatPanel', () => {
         expect(screen.getByText('Retained media: buffer-evicted-stems')).toBeInTheDocument();
         expect(screen.getByText(/retained command proof is invalid/i)).toBeInTheDocument();
     });
+
+    it('renders the focused retained-review surface while preserving generic manual repair guidance', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            createRetainedReview({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                commandId: 'command-render-review',
+                jobId: 'job-render-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
+        (useStore as ReturnType<typeof vi.fn>).mockImplementation((store) =>
+            store === agentRunStore
+                ? {
+                      schemaVersion: 1,
+                      runs: [
+                          {
+                              runId: 'run-render-review',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-render-review',
+                                      effects: [
+                                          {
+                                              commandId: 'command-render-review',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'The retained render must be reviewed.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                                  {
+                                      batchId: 'batch-generic-repair',
+                                      effects: [
+                                          {
+                                              commandId: 'command-publish',
+                                              kind: 'external-effect',
+                                              operation: 'publishRender',
+                                              reason: 'Publication evidence must be inspected manually.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                          {
+                              runId: 'run-unrelated-review',
+                              revisions: { created: null, planned: null, approved: null, committed: null },
+                              pendingEffectContinuations: [
+                                  {
+                                      batchId: 'batch-other-run-repair',
+                                      effects: [
+                                          {
+                                              commandId: 'command-other-run',
+                                              kind: 'external-effect',
+                                              operation: 'renderProjectSections',
+                                              reason: 'Another run still requires manual repair.',
+                                              remediation: 'manual-repair',
+                                              state: 'pending',
+                                          },
+                                      ],
+                                      recovery: 'manual-repair',
+                                      lastError: null,
+                                  },
+                              ],
+                          },
+                      ],
+                  }
+                : chatState
+        );
+
+        render(<ChatPanel />);
+
+        expect(screen.getByText('Retained section render requires review')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Play Chorus' })).toBeInTheDocument();
+        expect(
+            screen.queryByRole('list', { name: 'Pending effects for batch batch-render-review' })
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole('list', { name: 'Pending effects for batch batch-generic-repair' })).toHaveTextContent(
+            'publishRender: Publication evidence must be inspected manually.'
+        );
+        expect(
+            screen.getByRole('list', { name: 'Pending effects for batch batch-other-run-repair' })
+        ).toHaveTextContent('renderProjectSections: Another run still requires manual repair.');
+        expect(screen.getAllByText('Manual repair required')).toHaveLength(2);
+        selectReview.mockRestore();
+    });
+
+    it('announces retained-review outcomes and errors when no agent decision exists', async () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            createRetainedReview({
+                runId: 'run-render-review',
+                batchId: 'batch-render-review',
+                commandId: 'command-render-review',
+                jobId: 'job-render-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
+
+        render(<ChatPanel />);
+
+        expect(agentRunControls.listDecisions).toHaveReturnedWith([]);
+        expect(screen.queryByText('Agent decision required')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Export Chorus WAV' }));
+        expect(await screen.findByRole('status')).toHaveTextContent('Exported the exact retained WAV.');
+        expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+        expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'true');
+
+        retainedPreviewMocks.exportWav.mockRejectedValueOnce(new Error('The exact WAV encoder failed.'));
+        fireEvent.click(screen.getByRole('button', { name: 'Export Chorus WAV' }));
+        expect(await screen.findByRole('status')).toHaveTextContent('The exact WAV encoder failed.');
+        selectReview.mockRestore();
+    });
+
+    it('stops and releases the active retained preview before another review card starts', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            createRetainedReview({
+                runId: 'run-shared-review',
+                batchId: 'batch-verse-review',
+                commandId: 'command-verse-review',
+                jobId: 'job-verse-review',
+                sectionName: 'Verse',
+                buffer: verseBuffer,
+            }),
+            createRetainedReview({
+                runId: 'run-shared-review',
+                batchId: 'batch-chorus-review',
+                commandId: 'command-chorus-review',
+                jobId: 'job-chorus-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
+
+        render(<ChatPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        expect(retainedPreviewMocks.stopVerse).toHaveBeenCalledOnce();
+        expect(retainedPreviewMocks.release).toHaveBeenNthCalledWith(1, 'cached-verse');
+        expect(retainedPreviewMocks.stopVerse.mock.invocationCallOrder[0]).toBeLessThan(
+            retainedPreviewMocks.play.mock.invocationCallOrder[1]!
+        );
+        expect(retainedPreviewMocks.release.mock.invocationCallOrder[0]).toBeLessThan(
+            retainedPreviewMocks.play.mock.invocationCallOrder[1]!
+        );
+        expect(screen.getByRole('button', { name: 'Play Verse' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Stop Chorus' })).toHaveAttribute('aria-pressed', 'true');
+        selectReview.mockRestore();
+    });
+
+    it('keeps the active preview when another review card has expired', () => {
+        const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+        selectReview.mockReturnValue([
+            createRetainedReview({
+                runId: 'run-shared-review',
+                batchId: 'batch-verse-review',
+                commandId: 'command-verse-review',
+                jobId: 'job-verse-review',
+                sectionName: 'Verse',
+                buffer: verseBuffer,
+            }),
+            createRetainedReview({
+                runId: 'run-shared-review',
+                batchId: 'batch-chorus-review',
+                commandId: 'command-chorus-review',
+                jobId: 'job-chorus-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            }),
+        ]);
+        retainedPreviewMocks.getExact.mockImplementation(({ job }: { job: { jobId: string } }) =>
+            job.jobId === 'job-verse-review' ? { buffer: verseBuffer } : null
+        );
+
+        render(<ChatPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Play Verse' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play Chorus' }));
+
+        expect(retainedPreviewMocks.stopVerse).not.toHaveBeenCalled();
+        expect(retainedPreviewMocks.release).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Stop Verse' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('status')).toHaveTextContent('Preview audio for Chorus is unavailable.');
+        selectReview.mockRestore();
+    });
+
+    it.each(['expired', 'evicted'] as const)(
+        'updates retained review availability immediately when its artifact is %s',
+        (transition) => {
+            const review = createRetainedReview({
+                runId: 'run-live-review',
+                batchId: 'batch-live-review',
+                commandId: 'command-live-review',
+                jobId: 'job-live-review',
+                sectionName: 'Chorus',
+                buffer: chorusBuffer,
+            });
+            const availableArtifact = review.jobs[0]?.availability === 'available' ? review.jobs[0].artifact : null;
+            if (!availableArtifact) {
+                throw new Error('Expected an available retained artifact fixture.');
+            }
+            const freshArtifact = { ...availableArtifact, renderedAt: Date.now() };
+            const selectReview = vi.spyOn(retainedReviewProjection, 'selectRetainedSectionRenderManualReviews');
+            selectReview.mockImplementation(() => {
+                const artifact = agentSectionRenderArtifactStore.value?.artifacts[0];
+                const available = artifact !== undefined && Date.now() - artifact.renderedAt < 60_000;
+                return [
+                    {
+                        ...review,
+                        jobs: available
+                            ? review.jobs
+                            : [
+                                  {
+                                      commandId: review.jobs[0]!.commandId,
+                                      job: review.jobs[0]!.job,
+                                      availability: 'unavailable' as const,
+                                      reason: 'The exact retained render evidence is unavailable.',
+                                      warnings: [] as const,
+                                  },
+                              ],
+                    },
+                ];
+            });
+            agentSectionRenderArtifactStore.set({ artifacts: [freshArtifact] });
+            render(<ChatPanel />);
+            expect(screen.getByRole('button', { name: 'Play Chorus' })).toBeEnabled();
+
+            act(() => {
+                agentSectionRenderArtifactStore.set({
+                    artifacts: transition === 'expired' ? [{ ...freshArtifact, renderedAt: Date.now() - 60_001 }] : [],
+                });
+            });
+
+            expect(screen.getByText('The exact retained render evidence is unavailable.')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Play Chorus' })).not.toBeInTheDocument();
+            selectReview.mockRestore();
+        }
+    );
 
     it('should have correct accessibility attributes', () => {
         render(<ChatPanel />);

@@ -12,7 +12,7 @@ use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
 };
-use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
+use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
@@ -20,6 +20,7 @@ use crate::timeline::{
     TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
     MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
+use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
@@ -28,7 +29,7 @@ use triple_buffer::{Input, Output};
 /// (`GraphRegistry` in `sourdaw-native`): how far the engine has provably
 /// consumed what control pushed.
 ///
-/// The two fields are written together at the end of one callback, after
+/// The fields are written together at the end of one callback, after
 /// `update_graph` and every `process_block` of that callback, so one snapshot
 /// is coherent by construction and carries this happens-before guarantee:
 /// **every write from a fenced batch numbered at or below `batches_applied`,
@@ -41,6 +42,15 @@ use triple_buffer::{Input, Output};
 /// rolling, because parameters advance on every rendered block. The echo may
 /// lag (it is read between callbacks), so a consumer may under-release —
 /// never over-release.
+///
+/// A loop region breaks the playhead's monotonicity, and with it that
+/// guarantee's reach: the playhead is pinned below the region's end forever, so
+/// a stamp the engine consumed on every pass would never be provably consumed
+/// once. [`Self::loop_wraps`] and [`Self::last_wrap_frame`] carry the seam the
+/// playhead alone cannot state, and they are on *this* snapshot rather than
+/// read from the cursor's channel because the ledger's proof compares them
+/// against `batches_applied`: two channels read at two moments would be two
+/// engines as far as the proof is concerned.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GraphProgressSnapshot {
     /// Fenced batches ([`GraphCommand::BeginBatch`]) applied whole, in order.
@@ -50,6 +60,15 @@ pub struct GraphProgressSnapshot {
     /// The absolute frame the last rendered block ended on while playing, or
     /// stood on while stopped.
     pub playhead_frame: u64,
+    /// Loop seams closed since the engine started, monotonic — the same count
+    /// [`TransportPositionSnapshot::loop_wraps`] reports, echoed here beside
+    /// the batch horizon it has to be compared against.
+    pub loop_wraps: u64,
+    /// The frame the block walk had reached when the seam numbered
+    /// `loop_wraps` closed, so **every queued write stamped strictly below it
+    /// was consumed by the pass that seam ended** — the wrap's mirror of
+    /// `playhead_frame`. Zero until the first seam.
+    pub last_wrap_frame: u64,
 }
 
 pub struct GraphProgressReader {
@@ -65,6 +84,85 @@ impl GraphProgressReader {
 pub(crate) fn graph_progress_channel() -> (Input<GraphProgressSnapshot>, GraphProgressReader) {
     let (input, output) = triple_buffer::triple_buffer(&GraphProgressSnapshot::default());
     (input, GraphProgressReader { output })
+}
+
+/// Where the engine's transport stands, for the UI that draws a playhead.
+///
+/// Deliberately not [`GraphProgressSnapshot`]. That snapshot is the queue
+/// ledger's release evidence and its `playhead_frame` carries a
+/// happens-before guarantee the ledger reasons about; a second consumer
+/// reading it for a different question would tie the ledger's contract to the
+/// cursor's. This channel answers only "where is the transport", and it is
+/// free to say so in whatever terms the cursor needs.
+///
+/// `loop_wraps` counts the seams the engine closed itself, so a cursor can tell
+/// a position that went backwards on purpose from one that jumped: a wrap and
+/// an ordinary locate look identical in the frame number alone. The ledger asks
+/// the same question of its own snapshot ([`GraphProgressSnapshot::loop_wraps`])
+/// rather than of this one, for the reason stated there.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TransportPositionSnapshot {
+    pub playing: bool,
+    /// The absolute frame the last rendered span ended on, after any loop
+    /// wrap that span closed.
+    pub playhead_frame: u64,
+    /// Loop seams closed since the engine started, monotonic.
+    pub loop_wraps: u64,
+    /// Fenced batches applied whole, in order — the same count
+    /// [`GraphProgressSnapshot::batches_applied`] reports, carried here so a
+    /// reader can date **this** position against a command it sent.
+    ///
+    /// It rides on this channel rather than being read beside it because the
+    /// two channels are published one after the other, at the end of every
+    /// callback: a reader whose two reads straddle those writes pairs one
+    /// callback's count with the previous callback's playhead, and a count that
+    /// leads its position asserts a happens-before that has not happened. One
+    /// publish is the only thing that makes the pairing true, whatever order a
+    /// reader takes its reads in.
+    pub batches_applied: u64,
+    /// The tempo in force at the playhead — the tempo map's answer while a map
+    /// is installed, the flat scalar otherwise.
+    pub tempo: f64,
+    pub time_sig_num: u16,
+    pub time_sig_denom: u16,
+}
+
+pub struct TransportPositionReader {
+    output: Output<TransportPositionSnapshot>,
+}
+
+impl TransportPositionReader {
+    pub fn snapshot(&mut self) -> TransportPositionSnapshot {
+        *self.output.read()
+    }
+}
+
+pub(crate) fn transport_position_channel(
+) -> (Input<TransportPositionSnapshot>, TransportPositionReader) {
+    let (input, output) = triple_buffer::triple_buffer(&TransportPositionSnapshot::default());
+    (input, TransportPositionReader { output })
+}
+
+/// Timeline spans one callback can be split into.
+///
+/// A callback renders at most [`MAX_CALLBACK_FRAMES`] frames and the engine
+/// honours no loop region shorter than
+/// [`crate::transport_map::MIN_LOOP_FRAMES`], so a callback holds at most
+/// `MAX_CALLBACK_FRAMES / MIN_LOOP_FRAMES` seams and one more span than that.
+/// Deriving the bound rather than writing a number keeps it true when either
+/// constant moves.
+const MAX_TIMELINE_SPANS_PER_BLOCK: usize =
+    1 + MAX_CALLBACK_FRAMES.div_ceil(crate::transport_map::MIN_LOOP_FRAMES as usize);
+
+/// One contiguous stretch of a callback that occupies one stretch of the
+/// timeline. Two of them differ when a loop seam falls inside the callback.
+#[derive(Clone, Copy, Debug, Default)]
+struct TimelineSpan {
+    /// Absolute timeline frame this span's first sample sits on.
+    block_start: u64,
+    /// Where the span starts inside the callback's buffers.
+    offset: usize,
+    frames: usize,
 }
 
 pub enum MidiFxKind {
@@ -206,6 +304,44 @@ pub enum GraphCommand {
         is_playing: bool,
         song_pos_seconds: f64,
     },
+    /// Install the arrangement's tempo and time-signature maps — the third
+    /// owner in the transport ownership law, and the authority for tempo,
+    /// meter and beat position at the playhead while it is installed.
+    ///
+    /// The maps arrive as one already-built box on the same contract as
+    /// [`GraphCommand::AddPlugin`]: the audio thread swaps the box in and
+    /// hands the one it replaced to the retirement channel, and never builds
+    /// or frees one (ADR 0020). Building them control-side is also what makes
+    /// the per-block lookup a binary search rather than an integral — see
+    /// [`crate::transport_map::TempoMap`].
+    SetTransportMaps(Box<TransportMaps>),
+    /// State the loop region and whether the transport honours it.
+    ///
+    /// Fixed-size and `Copy`, so it crosses the ring like any other scalar
+    /// command. The engine closes the seam itself, inside the callback that
+    /// reaches it, because only the thread that owns the playhead knows which
+    /// frame the region ends on.
+    SetLoopRegion(LoopRegion),
+
+    /// Shadow the monitor: keep rendering, contribute nothing to the OS
+    /// output.
+    ///
+    /// A *session mode*, deliberately not the master fader. `true` writes the
+    /// device buffer as true zeros at the one place the engine's audio becomes
+    /// the device's (`crate::audio_thread`); everything upstream is untouched,
+    /// so the timeline still renders block-accurately, the playhead still
+    /// advances, loop seams still close on their sample and the transport maps
+    /// still govern. That is what lets a native session hold a live programme
+    /// while another engine remains the path a musician hears.
+    ///
+    /// Two consequences of siting the gate at the device boundary, both
+    /// intended. An offline render ([`crate::offline::OfflineRenderer`]) never
+    /// sees it — a bounce is not a monitor, and a shadowed session must still
+    /// export its mix. And lifting the gate steps rather than fades: the
+    /// change lands at the block boundary that drains this command, so a
+    /// cutover from a non-zero programme is a discontinuity. Ramping that edge
+    /// belongs to the slice that makes the cutover a musician-facing gesture.
+    SetMonitorShadow(bool),
 
     /// Fence announcing that the next `commands` elements on the ring are one
     /// atomically published batch.
@@ -268,7 +404,10 @@ pub enum GraphCommand {
         index: usize,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
-    /// returns to the master insert chain.
+    /// returns to its home placement — the master insert chain for everything
+    /// the engine owns end to end, and detached for a hosted plugin, whose
+    /// lifetime belongs to the load that registered it and which must not land
+    /// on the whole mix because the user took it off one track.
     RemoveTrackDevice {
         track_id: usize,
         effect_id: usize,
@@ -296,6 +435,9 @@ pub enum GraphCommand {
         entry: ChainEntry,
         index: usize,
     },
+    /// Take an effect out of a bus's chain, on the same contract as
+    /// [`GraphCommand::RemoveTrackDevice`]: the effect stays registered and
+    /// returns to its home placement.
     RemoveBusDevice {
         bus_id: usize,
         effect_id: usize,
@@ -323,6 +465,12 @@ pub enum GraphCommand {
     AddBus(Box<TimelineBus>),
     RemoveBus(usize),
     SetBusOutput(usize, RouteTarget),
+    /// Close or open the post-fader mute gate on a bus.
+    SetBusMute(usize, bool),
+    /// Close or open a bus's pre-fader solo gate — the same law as
+    /// [`GraphCommand::SetTrackSoloGate`]. See
+    /// [`crate::timeline::TimelineBus`].
+    SetBusSoloGate(usize, bool),
     /// Add a clip, with its decoded material, to a track.
     AddClip(usize, Box<TimelineClip>),
     RemoveClip(usize, usize),
@@ -362,6 +510,21 @@ pub enum GraphCommand {
         value: f32,
         at_frame: u64,
     },
+
+    /// Put a registered plugin on the engine's native input bus, so the
+    /// render callback hands it every chunk the capture ring serves
+    /// ([`AudioScheduler::deliver_capture`]).
+    ///
+    /// The id need not name a live effect yet: a batch may carry this and the
+    /// registration that creates the plugin in either order, and delivery
+    /// resolves the id every callback. A full bus or an id already on it is
+    /// refused and counted, on the same last-line contract as every other
+    /// callback-side capacity refusal.
+    RegisterCaptureConsumer(usize),
+    /// Take a plugin off the input bus. An id the bus does not hold is a
+    /// no-op, so an unregister that races the plugin's own removal is not an
+    /// error.
+    UnregisterCaptureConsumer(usize),
 
     /// Register an audio bridge that no plugin answers for.
     ///
@@ -444,6 +607,9 @@ impl GraphCommand {
             | Self::SetMidiFxParam(..)
             | Self::SetTransport(..)
             | Self::SetTransportPlayback { .. }
+            | Self::SetTransportMaps(..)
+            | Self::SetLoopRegion(..)
+            | Self::SetMonitorShadow(..)
             | Self::BeginBatch { .. }
             | Self::SwapCommandChannel { .. }
             | Self::AddTrack(..)
@@ -460,13 +626,19 @@ impl GraphCommand {
             | Self::AddBus(..)
             | Self::RemoveBus(..)
             | Self::SetBusOutput(..)
+            | Self::SetBusMute(..)
+            | Self::SetBusSoloGate(..)
             | Self::AddClip(..)
             | Self::RemoveClip(..)
             | Self::SetClipPlacement(..)
             | Self::SetClipPlayback(..)
             | Self::SeekFrames(..)
             | Self::AutomateParam { .. }
-            | Self::AutomateDeviceParam { .. } => 0,
+            | Self::AutomateDeviceParam { .. }
+            // The input bus addresses effects the table already holds; it
+            // takes no slot of its own.
+            | Self::RegisterCaptureConsumer(..)
+            | Self::UnregisterCaptureConsumer(..) => 0,
             #[cfg(test)]
             Self::RegisterAudioBridge(..) => 0,
         }
@@ -527,7 +699,9 @@ fn apply_knead_param(engine: &mut KneadEngine, param: DeviceParam, value: f32) {
 enum EffectPlacement {
     /// No track claims it, so it runs on the master insert chain over the
     /// engine's stereo pair — the crate's behaviour before the timeline
-    /// existed, and where an effect returns when it leaves a track.
+    /// existed, and where an engine-owned effect returns when it leaves a
+    /// strip. It is not where *every* effect returns: an effect returns to its
+    /// own home, and a hosted plugin's home is `Detached`.
     MasterChain,
     /// A member of the named track's device chain, processed with that track's
     /// signal instead.
@@ -557,6 +731,15 @@ struct ActiveEffect {
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
     placement: EffectPlacement,
+    /// Where a strip returns this effect when it releases it.
+    ///
+    /// The master chain is home for everything the engine itself owns end to
+    /// end, which is the crate's behaviour before the timeline existed. An
+    /// engine-owned hosted plugin is not one of those: its lifetime belongs to
+    /// the load that registered it, and the strip that borrowed it must be able
+    /// to give it back without putting a plugin the user took off one track
+    /// onto the whole mix.
+    home: EffectPlacement,
     /// Time-stamped parameter changes waiting for the playhead. Fixed
     /// capacity and held inline, so queuing one neither allocates nor is
     /// freed on the audio thread.
@@ -979,6 +1162,9 @@ pub struct RetiredGraphObjects {
     /// A track, bus, or clip the graph gave up. Each owns sample buffers, so
     /// dropping one on the callback is exactly the free ADR 0020 forbids.
     timeline_object: Option<RetiredTimelineObject>,
+    /// The tempo and meter maps a newer pair replaced. They own segment
+    /// vectors, so they leave on the same contract as everything else here.
+    transport_maps: Option<Box<TransportMaps>>,
     remaining_effects: Vec<ActiveEffect>,
     remaining_audio_bridges: Vec<PluginAudioBridge>,
     remaining_timeline: Option<TimelineGraph>,
@@ -997,6 +1183,7 @@ impl RetiredGraphObjects {
             audio_bridge,
             midi_fx,
             timeline_object: None,
+            transport_maps: None,
             remaining_effects: Vec::new(),
             remaining_audio_bridges: Vec::new(),
             remaining_timeline: None,
@@ -1030,6 +1217,12 @@ impl RetiredGraphObjects {
         Self::removed(None, None, Some(midi_fx))
     }
 
+    fn transport_maps(maps: Box<TransportMaps>) -> Self {
+        let mut retired = Self::removed(None, None, None);
+        retired.transport_maps = Some(maps);
+        retired
+    }
+
     /// The old command consumer a channel swap replaced. Its producer was
     /// dropped control-side when the swap was published, so the reclaimer's
     /// drain-until-abandoned loop terminates promptly.
@@ -1054,6 +1247,7 @@ impl RetiredGraphObjects {
             audio_bridge: pending.audio_bridge.take(),
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
+            transport_maps: pending.transport_maps.take(),
             remaining_effects,
             remaining_audio_bridges,
             remaining_timeline: Some(remaining_timeline),
@@ -1111,7 +1305,31 @@ impl ActiveEffect {
         Self::with_placement(id, instance, EffectPlacement::MasterChain)
     }
 
+    /// An effect placed somewhere other than the master chain, but still homed
+    /// there: a built-in the graph registers detached is the engine's own, and
+    /// the master chain is where it belongs once no strip holds it.
     fn with_placement(id: usize, instance: PluginCore, placement: EffectPlacement) -> Self {
+        Self::homed(id, instance, placement, EffectPlacement::MasterChain)
+    }
+
+    /// An effect that runs nowhere until a chain claims it, and runs nowhere
+    /// again once one releases it — the registration a hosted plugin gets, for
+    /// the reason on [`Self::home`].
+    fn detached(id: usize, instance: PluginCore) -> Self {
+        Self::homed(
+            id,
+            instance,
+            EffectPlacement::Detached,
+            EffectPlacement::Detached,
+        )
+    }
+
+    fn homed(
+        id: usize,
+        instance: PluginCore,
+        placement: EffectPlacement,
+        home: EffectPlacement,
+    ) -> Self {
         Self {
             id,
             instance,
@@ -1120,6 +1338,7 @@ impl ActiveEffect {
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
             placement,
+            home,
             pending_params: DeviceParamQueue::new(),
         }
     }
@@ -1149,6 +1368,15 @@ pub struct AudioScheduler {
     /// Plugin id → slot into `audio_bridges`, on the same contract as
     /// `effect_index`.
     bridge_index: IdSlotIndex,
+    /// Effect ids the render callback hands captured device audio to.
+    ///
+    /// Reserved once at [`CRUMBS_CAPTURE_RESERVE`] and never grown: it is
+    /// walked and mutated on the callback, so a push past the reserve is
+    /// refused and counted rather than allowed to reallocate inside the
+    /// deadline. It stays a flat vector rather than an [`IdSlotIndex`] because
+    /// delivery walks the whole of it every chunk and the reserve is a
+    /// handful of entries — a trie would cost a walk per id to save nothing.
+    capture_consumers: Vec<usize>,
     timeline: TimelineGraph,
     /// Absolute frame of the next block's first sample. It advances only while
     /// the transport is playing, so a clip start and a parameter stamp mean
@@ -1166,12 +1394,33 @@ pub struct AudioScheduler {
     retain_command_consumer: bool,
     sample_rate: f32,
     transport: TransportState,
+    /// The arrangement's tempo and meter, when a producer has installed them.
+    /// `None` leaves the flat scalars on `transport` authoritative, which is
+    /// exactly the behaviour every caller had before the maps existed — the
+    /// offline renderer included.
+    transport_maps: Option<Box<TransportMaps>>,
+    loop_region: LoopRegion,
+    /// Whether the monitor is shadowed ([`GraphCommand::SetMonitorShadow`]).
+    ///
+    /// A plain `bool`, not an atomic: it is written by the command drain and
+    /// read by the device write, both inside the same callback on the same
+    /// thread, so there is no cross-thread read to order. The device write is
+    /// the only consumer — nothing in this file branches on it, which is what
+    /// keeps a shadowed engine rendering exactly what an audible one renders.
+    monitor_shadowed: bool,
+    /// Loop seams this engine has closed, for
+    /// [`TransportPositionSnapshot::loop_wraps`].
+    loop_wraps: u64,
+    /// The frame the walk had reached when the seam numbered `loop_wraps`
+    /// closed, for [`GraphProgressSnapshot::last_wrap_frame`].
+    last_wrap_frame: u64,
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     /// Fenced batches applied whole, for [`GraphProgressSnapshot`].
     batches_applied: u64,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    transport_position_tx: Input<TransportPositionSnapshot>,
     #[cfg(test)]
     rt_work: RtWorkCounters,
 }
@@ -1204,6 +1453,7 @@ impl AudioScheduler {
         let (timeline_diagnostics_tx, _timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
+        let (transport_position_tx, _transport_position_reader) = transport_position_channel();
         Self::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -1211,6 +1461,7 @@ impl AudioScheduler {
             midi_rt_diagnostics_tx,
             timeline_diagnostics_tx,
             graph_progress_tx,
+            transport_position_tx,
         )
     }
 
@@ -1221,6 +1472,7 @@ impl AudioScheduler {
         midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
         timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
         graph_progress_tx: Input<GraphProgressSnapshot>,
+        transport_position_tx: Input<TransportPositionSnapshot>,
     ) -> Self {
         let command_queue_capacity = command_rx.buffer().capacity();
         Self {
@@ -1231,6 +1483,7 @@ impl AudioScheduler {
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
             audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
             bridge_index: IdSlotIndex::reserved(AUDIO_BRIDGE_TABLE_CAPACITY),
+            capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
             command_rx: Some(command_rx),
@@ -1243,11 +1496,23 @@ impl AudioScheduler {
             retain_command_consumer: !cfg!(test),
             sample_rate,
             transport: TransportState::default(),
+            transport_maps: None,
+            loop_region: LoopRegion::default(),
+            // Audible until a session says otherwise. The gate is a mode a
+            // caller opts into, so an engine nobody told behaves exactly as
+            // every engine did before the gate existed; a live session that
+            // wants silence sends the command inside the same fenced batch as
+            // its topology, which is applied before any block that could hold
+            // that session's programme.
+            monitor_shadowed: false,
+            loop_wraps: 0,
+            last_wrap_frame: 0,
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
             batches_applied: 0,
             graph_progress_tx,
+            transport_position_tx,
             #[cfg(test)]
             rt_work: RtWorkCounters::default(),
         }
@@ -1272,13 +1537,44 @@ impl AudioScheduler {
         GraphProgressSnapshot {
             batches_applied: self.batches_applied,
             playhead_frame: self.playhead_frames,
+            loop_wraps: self.loop_wraps,
+            last_wrap_frame: self.last_wrap_frame,
         }
+    }
+
+    /// Whether the device write must be silenced this callback
+    /// ([`GraphCommand::SetMonitorShadow`]).
+    #[inline]
+    pub(crate) const fn monitor_shadowed(&self) -> bool {
+        self.monitor_shadowed
     }
 
     #[inline]
     pub(crate) fn publish_graph_progress(&mut self) {
         let snapshot = self.graph_progress();
         self.graph_progress_tx.write(snapshot);
+    }
+
+    /// Where the transport stands, read directly by same-thread drivers (the
+    /// offline renderer, tests). The live path publishes the same value
+    /// through [`Self::publish_transport_position`] at the end of each
+    /// callback.
+    pub const fn transport_position(&self) -> TransportPositionSnapshot {
+        TransportPositionSnapshot {
+            playing: self.transport.is_playing,
+            playhead_frame: self.playhead_frames,
+            loop_wraps: self.loop_wraps,
+            batches_applied: self.batches_applied,
+            tempo: self.transport.tempo,
+            time_sig_num: self.transport.time_sig_num,
+            time_sig_denom: self.transport.time_sig_denom,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn publish_transport_position(&mut self) {
+        let snapshot = self.transport_position();
+        self.transport_position_tx.write(snapshot);
     }
 
     /// The routed graph, for callers proving what a command did to it.
@@ -1294,6 +1590,17 @@ impl AudioScheduler {
     #[cfg(test)]
     pub(crate) fn effect_table_len(&self) -> usize {
         self.effects.len()
+    }
+
+    /// The ids currently on the input bus.
+    ///
+    /// The control side keeps a ledger claiming to hold exactly these
+    /// ([`crate::EngineHandle`]), and it is a ledger of ids rather than a
+    /// count, so only a comparison of the two sets can catch a classification
+    /// that moves one and not the other.
+    #[cfg(test)]
+    pub(crate) fn capture_consumers(&self) -> &[usize] {
+        &self.capture_consumers
     }
 
     #[cfg(test)]
@@ -1462,11 +1769,17 @@ impl AudioScheduler {
                         None
                     }
                 }
+                // The registration is detached and homed detached. A hosted
+                // plugin belongs to the load that created it, not to the master
+                // insert chain: placed there it would render the whole mix
+                // through an instance the app is also driving over its bridge,
+                // and released there it would do the same the moment a user
+                // took it off a strip.
                 GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
                         RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
+                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
                             Some(bridge),
                         )
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY
@@ -1478,11 +1791,11 @@ impl AudioScheduler {
                         // returns blocks nothing processes.
                         self.timeline.record_capacity_refusal();
                         RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
+                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
                             Some(bridge),
                         )
                     } else {
-                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_effect(ActiveEffect::detached(id, PluginCore::Native(plugin)));
                         self.push_bridge(bridge);
                         None
                     }
@@ -1560,6 +1873,33 @@ impl AudioScheduler {
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
                     self.transport.song_pos_beats = song_pos_seconds * self.transport.tempo / 60.0;
+                    None
+                }
+                // A swap, never a build and never a free: the box that was
+                // installed leaves through the retirement channel, and the one
+                // arriving was built control-side (ADR 0020).
+                //
+                // A map built for another rate is refused rather than read at
+                // this one. Its beat integral is a function of the rate it was
+                // built against ([`TempoMap::new`]), so a 44.1 kHz map on a
+                // 48 kHz device would report every beat position 8.8% off.
+                // Refusing keeps whatever is installed — a map built for this
+                // rate, or none at all — and the unapplied box leaves over the
+                // same channel an accepted one displaces, never freed here.
+                GraphCommand::SetTransportMaps(maps) => {
+                    if maps.sample_rate == f64::from(self.sample_rate) {
+                        self.transport_maps.replace(maps)
+                    } else {
+                        Some(maps)
+                    }
+                    .map(RetiredGraphObjects::transport_maps)
+                }
+                GraphCommand::SetLoopRegion(region) => {
+                    self.loop_region = region;
+                    None
+                }
+                GraphCommand::SetMonitorShadow(shadowed) => {
+                    self.monitor_shadowed = shadowed;
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
@@ -1703,6 +2043,14 @@ impl AudioScheduler {
                     self.timeline.set_bus_output(id, target);
                     None
                 }
+                GraphCommand::SetBusMute(id, muted) => {
+                    self.timeline.set_bus_mute(id, muted);
+                    None
+                }
+                GraphCommand::SetBusSoloGate(id, gated) => {
+                    self.timeline.set_bus_solo_gate(id, gated);
+                    None
+                }
                 GraphCommand::AddClip(track_id, clip) => {
                     self.timeline.add_clip(track_id, clip).map(|rejected| {
                         RetiredGraphObjects::timeline(RetiredTimelineObject::Clip(rejected))
@@ -1752,6 +2100,14 @@ impl AudioScheduler {
                         }
                         None => self.timeline.record_unknown_target(),
                     }
+                    None
+                }
+                GraphCommand::RegisterCaptureConsumer(id) => {
+                    self.register_capture_consumer(id);
+                    None
+                }
+                GraphCommand::UnregisterCaptureConsumer(id) => {
+                    self.unregister_capture_consumer(id);
                     None
                 }
                 #[cfg(test)]
@@ -1897,15 +2253,18 @@ impl AudioScheduler {
         }
     }
 
-    /// Return an effect to the master insert chain, but only when it is the
-    /// named chain that still holds it: an effect's placement is single-valued,
-    /// so releasing one some other chain is running would move a live device.
+    /// Return an effect to its home ([`ActiveEffect::home`]), but only when it
+    /// is the named chain that still holds it: an effect's placement is
+    /// single-valued, so releasing one some other chain is running would move a
+    /// live device.
     fn release_effect(&mut self, effect_id: usize, held_by: EffectPlacement) {
         let Some(slot) = self.effect_index.lookup(effect_id) else {
             return;
         };
-        if self.effects[slot].placement == held_by {
-            self.place_effect(effect_id, EffectPlacement::MasterChain);
+        let effect = &self.effects[slot];
+        if effect.placement == held_by {
+            let home = effect.home;
+            self.place_effect(effect_id, home);
         }
     }
 
@@ -1921,7 +2280,18 @@ impl AudioScheduler {
     /// own order, every addressed command resolves through the id index, and
     /// the one iteration that reads slot order — the master insert loop —
     /// states its order contract on itself.
+    ///
+    /// This is where the input bus is pruned, because it is the one place an
+    /// effect is finally dropped — a plugin, a retired track device and a
+    /// retired bus device all leave through here. The bus holds ids, not
+    /// instances, so a consumer left on it after its effect went would resolve
+    /// to whatever id reuse puts in that slot next — or to nothing, counting a
+    /// dropped block every callback for the rest of the session. The prune
+    /// runs ahead of the lookup, so a removal for an id the table no longer
+    /// holds still clears the bus rather than stranding a registration that
+    /// arrived for an effect the graph never took.
     fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
+        self.unregister_capture_consumer(id);
         let slot = self.effect_index.delete(id)?;
         let old_tail = self.effects.len() - 1;
         self.parameter_work.remove(slot);
@@ -1948,6 +2318,86 @@ impl AudioScheduler {
             self.bridge_index.set_slot(moved.plugin_id, slot);
         }
         Some(removed)
+    }
+
+    /// Put an id on the input bus, or refuse and count it.
+    ///
+    /// Two refusals, both last-line: the bus is reserved once at
+    /// [`CRUMBS_CAPTURE_RESERVE`] and may not grow on the callback, and a
+    /// duplicate would hand one plugin the same block twice per chunk — which
+    /// a recorder writes as doubled audio rather than as an error.
+    ///
+    /// The id is not resolved here. A fenced batch may carry this command and
+    /// the `AddPlugin` that creates its target in either order, so requiring
+    /// the effect to exist would refuse half the valid orderings; delivery
+    /// resolves the id instead, every chunk, and skips one that names nothing.
+    fn register_capture_consumer(&mut self, id: usize) {
+        if self.capture_consumers.len() == CRUMBS_CAPTURE_RESERVE
+            || self.capture_consumers.contains(&id)
+        {
+            self.midi_rt_diagnostics.record_capture_consumer_refusal(1);
+            return;
+        }
+
+        self.capture_consumers.push(id);
+    }
+
+    /// Take an id off the input bus. An absent id frees nothing and refuses
+    /// nothing: an unregister may follow the plugin's own removal, which has
+    /// already pruned it.
+    fn unregister_capture_consumer(&mut self, id: usize) {
+        if let Some(slot) = self.capture_consumers.iter().position(|held| *held == id) {
+            self.capture_consumers.swap_remove(slot);
+        }
+    }
+
+    /// Hand one render chunk of captured device audio to every registered
+    /// consumer.
+    ///
+    /// Called by the render callback before the block that chunk renders, and
+    /// only while an input stream is actually feeding it: an engine with no
+    /// input device delivers nothing rather than delivering silence, because
+    /// a missing device is not a gap in a take.
+    ///
+    /// The block is shared read-only, so every consumer sees the same samples.
+    /// An id resolving to no effect, or to one whose instance is a built-in
+    /// with no input tap, takes nothing — and a block no consumer took is
+    /// counted, because a bus that delivers to nobody is a recorder writing
+    /// silence with nothing to say why.
+    #[inline]
+    pub fn deliver_capture(&mut self, block: CaptureInputBlock<'_>) {
+        if self.capture_consumers.is_empty() {
+            return;
+        }
+
+        if !block.served {
+            self.midi_rt_diagnostics.record_capture_input_underrun(1);
+        }
+
+        let Self {
+            capture_consumers,
+            effect_index,
+            effects,
+            midi_rt_diagnostics,
+            ..
+        } = self;
+        let mut taken = false;
+        for id in capture_consumers.iter().copied() {
+            let Some(effect) = effect_index
+                .lookup(id)
+                .and_then(|slot| effects.get_mut(slot))
+            else {
+                continue;
+            };
+            if let PluginCore::Native(plugin) = &mut effect.instance {
+                plugin.process_capture_input(block);
+                taken = true;
+            }
+        }
+
+        if !taken {
+            midi_rt_diagnostics.record_capture_blocks_dropped(1);
+        }
     }
 
     fn flush_pending_retirement(&mut self) -> bool {
@@ -2041,6 +2491,33 @@ impl AudioScheduler {
             let Some(effect) = effect else {
                 continue;
             };
+
+            // While the monitor is audible, a plugin a track or bus chain holds
+            // is processed inline by that chain over the strip's own signal
+            // (`TrackDeviceChain::run_device`). Its bridge still has to move —
+            // an input ring left to fill refuses every later push for good — so
+            // the blocks are returned exactly as they arrived. `pending_midi` is
+            // deliberately left alone: the chain is what consumes it this
+            // callback, and clearing it here would take the events away from the
+            // path that is going to deliver them.
+            if !self.monitor_shadowed
+                && matches!(
+                    effect.placement,
+                    EffectPlacement::Track(_) | EffectPlacement::Bus(_)
+                )
+            {
+                let drain =
+                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
+                        let _ = (left, right, n);
+                    });
+                self.midi_rt_diagnostics
+                    .record_bridge_blocks_passed_chain_bound(drain.blocks_processed as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
+                continue;
+            }
 
             if effect.bypassed {
                 // Drain input without processing (passthrough)
@@ -2233,6 +2710,7 @@ impl AudioScheduler {
             midi_rt_diagnostics,
             transport,
             sample_rate,
+            monitor_shadowed,
             ..
         } = self;
         let mut devices = TrackDeviceChain {
@@ -2243,6 +2721,7 @@ impl AudioScheduler {
             midi_rt_diagnostics,
             transport: *transport,
             sample_rate: *sample_rate,
+            monitor_shadowed: *monitor_shadowed,
         };
 
         timeline.render(
@@ -2255,25 +2734,161 @@ impl AudioScheduler {
         );
     }
 
+    /// Re-derive the plugin-visible transport for the frame a span starts on.
+    ///
+    /// Only a scheduler holding maps does this. Without them the flat scalars
+    /// stand exactly where the last transport command left them, which is the
+    /// behaviour every caller had before the maps existed — the offline
+    /// renderer's determinism above all. With them, tempo, meter and beat
+    /// position are functions of the playhead again, so a device whose clock
+    /// is the transport (the arpeggiator's step timer, a hosted plugin's
+    /// sync) hears the tempo the arrangement actually has at that frame.
+    ///
+    /// Two binary searches and a multiply. Nothing allocates.
+    #[inline]
+    fn refresh_transport_at(&mut self, frame: u64) {
+        let Some(maps) = self.transport_maps.as_ref() else {
+            return;
+        };
+        let sample_rate = f64::from(self.sample_rate);
+        let (time_sig_num, time_sig_denom) = maps.time_signature.at(frame);
+        self.transport.tempo = maps.tempo.tempo_at(frame);
+        self.transport.time_sig_num = time_sig_num;
+        self.transport.time_sig_denom = time_sig_denom;
+        self.transport.song_pos_seconds = frame as f64 / sample_rate;
+        self.transport.song_pos_beats = maps.tempo.beats_at(frame, sample_rate);
+    }
+
+    /// How many of `remaining` frames the playhead can render before it
+    /// reaches the loop end.
+    ///
+    /// A stopped transport never wraps: the playhead stands still, so the
+    /// whole callback is one span. Neither does a playhead already at or past
+    /// the loop end — playing out of a region rather than being yanked back
+    /// into it is what a locate past the loop end means in every DAW that
+    /// allows one.
+    fn frames_until_loop_end(&self, block_start: u64, remaining: usize) -> usize {
+        if !self.transport.is_playing {
+            return remaining;
+        }
+        let Some(end) = self.loop_region.active_end() else {
+            return remaining;
+        };
+        if block_start >= end {
+            return remaining;
+        }
+        ((end - block_start) as usize).min(remaining)
+    }
+
+    /// Move the playhead past a rendered span, closing the loop seam when the
+    /// span ended on it.
+    ///
+    /// The wrap is not a locate. `TimelineGraph::seek` drops every queued
+    /// automation write stamped at or after its target, which on a wrap would
+    /// be the entire region — so the second pass round a loop would run with
+    /// the automation the first pass consumed *and* the automation it had not
+    /// reached yet both gone. Leaving the queue alone is strictly better: a
+    /// write the first pass never reached is still stamped ahead of the
+    /// playhead and lands again on the next pass. What the first pass did
+    /// consume cannot be replayed from here — the graph holds a window, not a
+    /// curve — so `loop_wraps` is published for the control thread that owns
+    /// the curve to re-arm it.
+    ///
+    /// `next` is recorded with the seam because it is the one frame nothing can
+    /// recover afterwards: the span just rendered walked every frame below it,
+    /// while the published playhead is already back at the loop start by the
+    /// time any snapshot is read.
+    fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
+        if !self.transport.is_playing {
+            return;
+        }
+        let next = block_start.saturating_add(span_frames as u64);
+        match self.loop_region.active_end() {
+            Some(end) if block_start < end && next >= end => {
+                self.playhead_frames = self.loop_region.start_frame;
+                self.loop_wraps = self.loop_wraps.wrapping_add(1);
+                self.last_wrap_frame = next;
+            }
+            _ => self.playhead_frames = next,
+        }
+    }
+
+    /// Render the timeline stages of one callback, split at the loop seam.
+    ///
+    /// Returns the spans the callback was split into, so the stages that run
+    /// *after* the master insert chain can be applied against the timeline
+    /// frames each span actually occupies rather than against the callback's
+    /// first frame.
+    ///
+    /// The final span is never split, whatever the loop region says. That is
+    /// what makes this walk total — it always consumes the rest of the
+    /// callback — without depending on [`crate::transport_map::MIN_LOOP_FRAMES`]
+    /// being enforced anywhere else.
+    fn render_timeline_spans(
+        &mut self,
+        frames: usize,
+        left: &mut [f32],
+        right: &mut [f32],
+    ) -> ([TimelineSpan; MAX_TIMELINE_SPANS_PER_BLOCK], usize) {
+        let mut spans = [TimelineSpan::default(); MAX_TIMELINE_SPANS_PER_BLOCK];
+        let mut count = 0;
+        let mut offset = 0;
+
+        while offset < frames {
+            let block_start = self.playhead_frames;
+            let remaining = frames - offset;
+            let span_frames = if count + 1 == MAX_TIMELINE_SPANS_PER_BLOCK {
+                remaining
+            } else {
+                self.frames_until_loop_end(block_start, remaining)
+            };
+
+            self.refresh_transport_at(block_start);
+            self.apply_due_device_params(block_start, span_frames);
+            self.render_timeline(
+                block_start,
+                span_frames,
+                &mut left[offset..offset + span_frames],
+                &mut right[offset..offset + span_frames],
+            );
+
+            spans[count] = TimelineSpan {
+                block_start,
+                offset,
+                frames: span_frames,
+            };
+            count += 1;
+            offset += span_frames;
+            self.advance_playhead(block_start, span_frames);
+        }
+
+        (spans, count)
+    }
+
     /// Process a block of audio (called by the device's render callback,
     /// `RenderFn` in `crate::device`).
     ///
     /// The order is the strip's: the timeline renders tracks, sends, buses and
     /// the master sum; the master insert chain runs over that sum; the master
-    /// fader is applied last. The playhead then advances by exactly the frames
+    /// fader is applied last. The playhead advances by exactly the frames
     /// rendered, and only while the transport is playing, which is what makes
     /// a clip start and a parameter stamp address a position rather than a
     /// callback.
+    ///
+    /// A loop seam inside the callback splits the timeline stages — the ones
+    /// addressed in timeline frames — at the frame the region ends on, so the
+    /// seam lands on its sample rather than on the next block boundary. The
+    /// master insert chain is not split: it is a fixed device chain over the
+    /// summed mix, addressed by nothing on the timeline, and it already runs
+    /// unchanged across a stopped transport.
     #[inline]
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         let frames = num_samples
             .min(left.len())
             .min(right.len())
             .min(MAX_CALLBACK_FRAMES);
-        let block_start = self.playhead_frames;
 
-        self.apply_due_device_params(block_start, frames);
-        self.render_timeline(block_start, frames, left, right);
+        let (spans, span_count) = self.render_timeline_spans(frames, left, right);
 
         // The master list carries insertion order explicitly. It is independent
         // of the effect table's swap-remove slots, so a teardown cannot change
@@ -2402,11 +3017,17 @@ impl AudioScheduler {
             self.rt_work.master_table_visits += master_visits;
         }
 
-        self.timeline
-            .apply_master_gain(block_start, frames, left, right);
-
-        if self.transport.is_playing {
-            self.playhead_frames = block_start.saturating_add(frames as u64);
+        // The master fader is the last stage of the strip and is stamped in
+        // timeline frames, so it follows the split the timeline stages made:
+        // applied once over the whole callback, a ramp would glide through the
+        // seam as if the loop had never closed.
+        for span in &spans[..span_count] {
+            self.timeline.apply_master_gain(
+                span.block_start,
+                span.frames,
+                &mut left[span.offset..span.offset + span.frames],
+                &mut right[span.offset..span.offset + span.frames],
+            );
         }
     }
 }
@@ -2426,14 +3047,21 @@ struct TrackDeviceChain<'a> {
     midi_rt_diagnostics: &'a mut ActiveMidiRtDiagnostics,
     transport: TransportState,
     sample_rate: f32,
+    /// Whether the app is still monitoring its own Web Audio graph, read as a
+    /// plain flag rather than looked up: it decides which of the two paths owns
+    /// a bridged plugin this block, once per device per callback.
+    monitor_shadowed: bool,
 }
 
 impl DeviceChain for TrackDeviceChain<'_> {
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize) {
-        // A bridged plugin is driven from the app's own audio in
+        // While the monitor is shadowed the app is what the user hears, and a
+        // bridged plugin is driven from the app's own audio in
         // `process_audio_bridges`. Running it here as well would push the
-        // track's signal through the same stateful instance on a second path.
-        if self.bridge_index.lookup(effect_id).is_some() {
+        // strip's signal through the same stateful instance on a second path.
+        // Once the monitor is audible this chain owns the instance instead, and
+        // the bridge returns its blocks untouched.
+        if self.monitor_shadowed && self.bridge_index.lookup(effect_id).is_some() {
             return;
         }
 
@@ -2528,10 +3156,11 @@ impl Drop for AudioScheduler {
 mod tests {
     use super::*;
     use crate::midi_fx::{MIDI_EVENT_BUFFER_CAPACITY, MIDI_FX_CHAIN_CAPACITY};
+    use crate::timeline::DeviceKind;
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering},
         mpsc, Arc,
     };
     use std::thread;
@@ -4242,6 +4871,410 @@ mod tests {
         assert!(scheduler.effects[0].pending_midi.is_empty());
     }
 
+    /// What reached a consumer's input tap, recorded without allocating so the
+    /// same fake serves the delivery tests and the guard that runs
+    /// `deliver_capture` under `assert_no_alloc`.
+    #[derive(Default)]
+    struct CaptureTap {
+        blocks: AtomicUsize,
+        served_blocks: AtomicUsize,
+        frames: AtomicUsize,
+        latency_frames: AtomicUsize,
+        position_frames: AtomicU64,
+        /// `f32::to_bits` of the first sample on each side: what tells audio
+        /// that arrived from the silence an unserved block carries.
+        first_left: AtomicU32,
+        first_right: AtomicU32,
+    }
+
+    struct CaptureTapPlugin {
+        tap: Arc<CaptureTap>,
+    }
+
+    impl NativePlugin for CaptureTapPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn process_capture_input(&mut self, block: CaptureInputBlock<'_>) {
+            self.tap.blocks.fetch_add(1, Ordering::Relaxed);
+            if block.served {
+                self.tap.served_blocks.fetch_add(1, Ordering::Relaxed);
+            }
+            self.tap.frames.store(block.frames, Ordering::Relaxed);
+            self.tap
+                .latency_frames
+                .store(block.latency_frames, Ordering::Relaxed);
+            self.tap
+                .position_frames
+                .store(block.position_frames, Ordering::Relaxed);
+            self.tap
+                .first_left
+                .store(first_sample_bits(block.left), Ordering::Relaxed);
+            self.tap
+                .first_right
+                .store(first_sample_bits(block.right), Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "capture-tap-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    const TAP_LATENCY_FRAMES: usize = 480;
+    const TAP_POSITION_FRAMES: u64 = 9_600;
+    const TAP_CONSUMER_ID: usize = 5;
+
+    fn first_sample_bits(side: &[f32]) -> u32 {
+        side.first().copied().unwrap_or(0.0).to_bits()
+    }
+
+    fn capture_tap_plugin(tap: &Arc<CaptureTap>) -> Box<dyn NativePlugin> {
+        Box::new(CaptureTapPlugin {
+            tap: Arc::clone(tap),
+        })
+    }
+
+    fn capture_block<'a>(left: &'a [f32], right: &'a [f32], served: bool) -> CaptureInputBlock<'a> {
+        CaptureInputBlock {
+            left,
+            right,
+            frames: left.len(),
+            served,
+            latency_frames: TAP_LATENCY_FRAMES,
+            position_frames: TAP_POSITION_FRAMES,
+        }
+    }
+
+    #[test]
+    fn the_capture_bus_refuses_a_full_table_and_an_id_it_already_holds() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+
+        // The duplicate is refused with room to spare, so this observes the
+        // duplicate rule rather than the ceiling standing in for it.
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(0))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(0))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.capture_consumers.len(), 1);
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .capture_consumer_refusals,
+            1
+        );
+
+        // Fill the reserve, then ask for one past it.
+        for id in 1..CRUMBS_CAPTURE_RESERVE {
+            command_tx
+                .push(GraphCommand::RegisterCaptureConsumer(id))
+                .unwrap();
+        }
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(
+                CRUMBS_CAPTURE_RESERVE,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.capture_consumers.len(), CRUMBS_CAPTURE_RESERVE);
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .capture_consumer_refusals,
+            2
+        );
+        assert_eq!(
+            scheduler.capture_consumers.capacity(),
+            CRUMBS_CAPTURE_RESERVE,
+            "the bus is reserved once and never grown on the callback"
+        );
+
+        // An id the bus never held frees nothing.
+        command_tx
+            .push(GraphCommand::UnregisterCaptureConsumer(9_999))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.capture_consumers.len(), CRUMBS_CAPTURE_RESERVE);
+
+        // The slot the refusal wanted comes back when its holder leaves.
+        command_tx
+            .push(GraphCommand::UnregisterCaptureConsumer(0))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(
+                CRUMBS_CAPTURE_RESERVE,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(!scheduler.capture_consumers.contains(&0));
+        assert!(scheduler
+            .capture_consumers
+            .contains(&CRUMBS_CAPTURE_RESERVE));
+        assert_eq!(scheduler.capture_consumers.len(), CRUMBS_CAPTURE_RESERVE);
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .capture_consumer_refusals,
+            2
+        );
+    }
+
+    #[test]
+    fn a_registered_native_consumer_takes_the_capture_block_whole() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let tap = Arc::new(CaptureTap::default());
+        // Registration ahead of the plugin: the bus admits an id the graph
+        // does not hold yet, and the same drain answers it.
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                TAP_CONSUMER_ID,
+                capture_tap_plugin(&tap),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        let left = [0.25, 0.5, 0.75];
+        let right = [-0.25, -0.5, -0.75];
+        scheduler.deliver_capture(capture_block(&left, &right, true));
+
+        assert_eq!(tap.blocks.load(Ordering::Relaxed), 1);
+        assert_eq!(tap.served_blocks.load(Ordering::Relaxed), 1);
+        assert_eq!(tap.frames.load(Ordering::Relaxed), left.len());
+        assert_eq!(
+            tap.latency_frames.load(Ordering::Relaxed),
+            TAP_LATENCY_FRAMES
+        );
+        assert_eq!(
+            tap.position_frames.load(Ordering::Relaxed),
+            TAP_POSITION_FRAMES
+        );
+        assert_eq!(f32::from_bits(tap.first_left.load(Ordering::Relaxed)), 0.25);
+        assert_eq!(
+            f32::from_bits(tap.first_right.load(Ordering::Relaxed)),
+            -0.25
+        );
+
+        let diagnostics = scheduler.midi_rt_diagnostics.snapshot();
+        assert_eq!(diagnostics.capture_blocks_dropped, 0);
+        assert_eq!(diagnostics.capture_input_underruns, 0);
+    }
+
+    #[test]
+    fn an_unserved_capture_block_still_reaches_its_consumer_and_counts_one_underrun() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        let tap = Arc::new(CaptureTap::default());
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                TAP_CONSUMER_ID,
+                capture_tap_plugin(&tap),
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
+            .unwrap();
+        scheduler.update_graph();
+
+        let silence = [0.0; 4];
+        scheduler.deliver_capture(capture_block(&silence, &silence, false));
+
+        // The consumer still hears the block: a recorder writes the gap it can
+        // see rather than splicing the takes either side of it together.
+        assert_eq!(tap.blocks.load(Ordering::Relaxed), 1);
+        assert_eq!(tap.served_blocks.load(Ordering::Relaxed), 0);
+
+        let diagnostics = scheduler.midi_rt_diagnostics.snapshot();
+        assert_eq!(diagnostics.capture_input_underruns, 1);
+        assert_eq!(diagnostics.capture_blocks_dropped, 0);
+    }
+
+    #[test]
+    fn a_capture_consumer_that_resolves_to_no_native_instance_drops_the_block() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        // One id the graph does not hold, one held by a built-in device: a
+        // built-in has no input tap, so neither takes the block.
+        command_tx
+            .push(GraphCommand::AddEffect(2, knead_instance()))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(1))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(2))
+            .unwrap();
+        scheduler.update_graph();
+
+        let audio = [0.5; 4];
+        scheduler.deliver_capture(capture_block(&audio, &audio, true));
+
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .capture_blocks_dropped,
+            1
+        );
+    }
+
+    #[test]
+    fn a_bus_with_no_consumer_counts_neither_a_drop_nor_an_underrun() {
+        let (_command_tx, mut scheduler, _retired_rx) = create_scheduler();
+
+        let silence = [0.0; 4];
+        scheduler.deliver_capture(capture_block(&silence, &silence, false));
+
+        // No consumer is not a fault: an engine with no recorder is the
+        // ordinary case, and counting it would bury the faults that matter.
+        let diagnostics = scheduler.midi_rt_diagnostics.snapshot();
+        assert_eq!(diagnostics.capture_blocks_dropped, 0);
+        assert_eq!(diagnostics.capture_input_underruns, 0);
+    }
+
+    /// Register a consumer, place it however `placement` says, and assert the
+    /// bus is empty once `removal` has final-dropped it.
+    fn assert_removal_prunes_the_capture_bus(placement: Vec<GraphCommand>, removal: GraphCommand) {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+        let tap = Arc::new(CaptureTap::default());
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                TAP_CONSUMER_ID,
+                capture_tap_plugin(&tap),
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
+            .unwrap();
+        for command in placement {
+            command_tx.push(command).unwrap();
+        }
+        scheduler.update_graph();
+
+        let audio = [0.5; 4];
+        scheduler.deliver_capture(capture_block(&audio, &audio, true));
+        assert_eq!(tap.blocks.load(Ordering::Relaxed), 1);
+
+        command_tx.push(removal).unwrap();
+        scheduler.update_graph();
+        while retired_rx.pop().is_ok() {}
+
+        assert!(
+            scheduler.capture_consumers.is_empty(),
+            "a removed plugin's id left on the bus would drop every later block"
+        );
+
+        scheduler.deliver_capture(capture_block(&audio, &audio, true));
+
+        assert_eq!(tap.blocks.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .capture_blocks_dropped,
+            0
+        );
+    }
+
+    #[test]
+    fn removing_a_plugin_takes_it_off_the_capture_bus() {
+        assert_removal_prunes_the_capture_bus(
+            Vec::new(),
+            GraphCommand::RemovePlugin(TAP_CONSUMER_ID),
+        );
+    }
+
+    #[test]
+    fn removing_a_plugin_with_its_bridge_takes_it_off_the_capture_bus() {
+        assert_removal_prunes_the_capture_bus(
+            Vec::new(),
+            GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID),
+        );
+    }
+
+    /// The bus admits an id before the graph holds it, so a registration whose
+    /// `AddPlugin` never arrived is an ordinary state — and the removal that
+    /// abandons it is the only thing that will ever clear it. Pruning behind
+    /// the table lookup would strand that id, dropping a block per callback
+    /// for the rest of the session.
+    #[test]
+    fn removing_an_id_the_effect_table_never_held_still_clears_the_capture_bus() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(scheduler.capture_consumers.contains(&TAP_CONSUMER_ID));
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(scheduler.capture_consumers.is_empty());
+    }
+
+    /// A consumer spliced onto a track chain leaves through the retired
+    /// variant, not through a plugin removal — the same final drop, so the
+    /// same prune has to cover it.
+    #[test]
+    fn retiring_a_track_device_takes_it_off_the_capture_bus() {
+        assert_removal_prunes_the_capture_bus(
+            vec![
+                GraphCommand::AddTrack(TimelineTrack::new(1)),
+                GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry: ChainEntry {
+                        effect_id: TAP_CONSUMER_ID,
+                        kind: DeviceKind::Effect,
+                    },
+                    index: 0,
+                },
+            ],
+            GraphCommand::RemoveTrackDeviceRetired {
+                track_id: 1,
+                effect_id: TAP_CONSUMER_ID,
+            },
+        );
+    }
+
+    #[test]
+    fn retiring_a_bus_device_takes_it_off_the_capture_bus() {
+        assert_removal_prunes_the_capture_bus(
+            vec![
+                GraphCommand::AddBus(TimelineBus::new(50)),
+                GraphCommand::InsertBusDevice {
+                    bus_id: 50,
+                    entry: ChainEntry {
+                        effect_id: TAP_CONSUMER_ID,
+                        kind: DeviceKind::Effect,
+                    },
+                    index: 0,
+                },
+            ],
+            GraphCommand::RemoveBusDeviceRetired {
+                bus_id: 50,
+                effect_id: TAP_CONSUMER_ID,
+            },
+        );
+    }
+
     /// Allocation guards for the command drain the audio callback runs.
     ///
     /// `update_graph` is the callback's apply path, and ADR 0020 forbids it
@@ -4275,6 +5308,56 @@ mod tests {
 
         #[global_allocator]
         static ALLOCATOR: AllocDisabler = AllocDisabler;
+
+        /// Every arm of the input bus, on the callback, under the guard:
+        /// admission, refusal, delivery to a native consumer, the underrun
+        /// count, the prune a removal performs, and the drop that follows when
+        /// the ids left on the bus resolve to nothing.
+        #[test]
+        fn the_capture_bus_registers_delivers_and_prunes_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let tap = Arc::new(CaptureTap::default());
+            command_tx
+                .push(GraphCommand::AddPlugin(
+                    TAP_CONSUMER_ID,
+                    capture_tap_plugin(&tap),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
+                .unwrap();
+            // A second id the graph does not hold, so the drop arm runs once
+            // the plugin leaves; a third the reserve refuses.
+            command_tx
+                .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID + 1))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID + 2))
+                .unwrap();
+            let audio = [0.5; 8];
+            let silence = [0.0; 8];
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.deliver_capture(capture_block(&audio, &audio, true));
+                scheduler.deliver_capture(capture_block(&silence, &silence, false));
+            });
+
+            command_tx
+                .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+                scheduler.deliver_capture(capture_block(&audio, &audio, true));
+            });
+            while retired_rx.pop().is_ok() {}
+
+            let diagnostics = scheduler.midi_rt_diagnostics.snapshot();
+            assert_eq!(tap.blocks.load(Ordering::Relaxed), 2);
+            assert_eq!(diagnostics.capture_consumer_refusals, 1);
+            assert_eq!(diagnostics.capture_input_underruns, 1);
+            assert_eq!(diagnostics.capture_blocks_dropped, 1);
+        }
 
         #[test]
         fn swap_removed_tail_relocates_both_work_sets_before_they_process_without_allocating() {
@@ -4519,6 +5602,82 @@ mod tests {
             assert_eq!(retired_count, removals);
         }
 
+        /// The transport maps and the loop seam are per-block work, so they
+        /// are guarded on the render path rather than only on the apply path:
+        /// installing a map must swap a box built control-side, and rendering
+        /// across a seam must resolve the map and split the callback without
+        /// touching the allocator. A map lookup that walked its segments, or a
+        /// seam split that collected its spans, would fail here.
+        #[test]
+        fn transport_maps_and_the_loop_seam_render_without_allocating() {
+            use crate::transport_map::{
+                LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TransportMaps,
+            };
+
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let maps = Box::new(TransportMaps {
+                tempo: TempoMap::new(
+                    &[
+                        TempoSegment {
+                            start_frame: 0,
+                            beats_per_minute: 120.0,
+                        },
+                        TempoSegment {
+                            start_frame: 600,
+                            beats_per_minute: 240.0,
+                        },
+                    ],
+                    48_000.0,
+                )
+                .expect("the guard's map is well formed"),
+                time_signature: TimeSignatureMap::flat(4, 4).expect("4/4 is well formed"),
+                sample_rate: 48_000.0,
+            });
+            command_tx
+                .push(GraphCommand::SetTransportMaps(maps))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetLoopRegion(LoopRegion {
+                    enabled: true,
+                    start_frame: 0,
+                    end_frame: 512,
+                }))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds: 0.0,
+                })
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // Long enough to cross the seam twice and the tempo change once.
+            let mut left = [0.0; 1_024];
+            let mut right = [0.0; 1_024];
+            assert_no_alloc(|| {
+                scheduler.process_block(&mut left, &mut right, 1_024);
+            });
+            assert_eq!(scheduler.transport_position().loop_wraps, 2);
+
+            // Replacing an installed pair frees nothing on the callback: the
+            // box it displaces leaves over the retirement ring.
+            let replacement = Box::new(TransportMaps {
+                tempo: TempoMap::flat(90.0, 48_000.0).expect("a flat map is well formed"),
+                time_signature: TimeSignatureMap::flat(3, 4).expect("3/4 is well formed"),
+                sample_rate: 48_000.0,
+            });
+            command_tx
+                .push(GraphCommand::SetTransportMaps(replacement))
+                .unwrap();
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+            assert!(retired_rx.pop().is_ok());
+        }
+
         #[test]
         fn add_plugin_and_add_plugin_with_bridge_apply_without_allocating() {
             let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
@@ -4692,6 +5851,7 @@ mod tests {
 mod timeline_tests {
     use super::*;
     use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
+    use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -4783,6 +5943,112 @@ mod timeline_tests {
         fn as_any_mut(&mut self) -> &mut dyn Any {
             self
         }
+    }
+
+    /// Adds a constant to whatever it is handed and counts every process call
+    /// and every MIDI event delivered, so which path drove the instance — and
+    /// how many times per block — is readable in the mix and in the counts.
+    struct CountingOffsetPlugin {
+        offset: f32,
+        calls: Arc<AtomicUsize>,
+        midi_events: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for CountingOffsetPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            for index in 0..num_samples {
+                left[index] += self.offset;
+                right[index] += self.offset;
+            }
+        }
+
+        fn process_with_events(
+            &mut self,
+            left: &mut [f32],
+            right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            self.midi_events
+                .fetch_add(midi_events.len(), Ordering::Relaxed);
+            self.process_audio(left, right, num_samples);
+        }
+
+        fn name(&self) -> &str {
+            "counting-offset-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// One engine-owned hosted plugin, its bridge, and its call counters,
+    /// spliced onto a track that plays a constant.
+    struct ChainBoundPlugin {
+        handle: crate::audio_bridge::PluginAudioBridgeHandle,
+        calls: Arc<AtomicUsize>,
+        midi_events: Arc<AtomicUsize>,
+    }
+
+    /// A track playing a constant `1.0`, carrying an engine-owned plugin
+    /// registered exactly as `register_runtime_with_engine` registers one:
+    /// `AddPluginWithBridge`, then a chain splice.
+    fn track_carrying_a_bridged_plugin(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+        let (bridge, handle) = crate::audio_bridge::create_audio_bridge(effect_id);
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        harness.send(GraphCommand::AddPluginWithBridge(
+            effect_id,
+            Box::new(CountingOffsetPlugin {
+                offset,
+                calls: Arc::clone(&calls),
+                midi_events: Arc::clone(&midi_events),
+            }),
+            bridge,
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id,
+            entry: effect(effect_id),
+            index: 0,
+        });
+
+        ChainBoundPlugin {
+            handle,
+            calls,
+            midi_events,
+        }
+    }
+
+    fn bridge_blocks_passed_chain_bound(harness: &Harness) -> u64 {
+        harness
+            .scheduler
+            .midi_rt_diagnostics
+            .snapshot()
+            .bridge_blocks_passed_chain_bound
+    }
+
+    /// Push one block of `value` over the bridge and let the callback's bridge
+    /// pass run, the way a render callback does before it renders the graph.
+    fn relay_one_block(plugin: &mut ChainBoundPlugin, harness: &mut Harness, value: f32) {
+        assert!(
+            plugin.handle.push_input(&[value; 4], &[value; 4]),
+            "the bridge input ring should have room"
+        );
+        harness.scheduler.process_audio_bridges(512);
     }
 
     fn note_on(note: u8) -> MidiNoteEvent {
@@ -4880,8 +6146,8 @@ mod timeline_tests {
             track_id,
             TimelineClip::new(
                 clip_id,
-                vec![value; frames],
-                Vec::new(),
+                vec![value; frames].into(),
+                [].into(),
                 placement(0, 0, frames as u64),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -4897,8 +6163,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 8],
-                Vec::new(),
+                vec![1.0; 8].into(),
+                [].into(),
                 placement(3, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -4921,8 +6187,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 8],
-                Vec::new(),
+                vec![1.0; 8].into(),
+                [].into(),
                 placement(3, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -4947,8 +6213,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
-                Vec::new(),
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0].into(),
+                [].into(),
                 placement(0, 2, 3),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -4979,8 +6245,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 2],
-                vec![0.25; 2],
+                vec![1.0; 2].into(),
+                vec![0.25; 2].into(),
                 placement(0, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -4990,8 +6256,8 @@ mod timeline_tests {
             2,
             TimelineClip::new(
                 8,
-                vec![0.5; 2],
-                Vec::new(),
+                vec![0.5; 2].into(),
+                [].into(),
                 placement(0, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5174,17 +6440,72 @@ mod timeline_tests {
     }
 
     #[test]
-    fn a_bus_asked_to_feed_a_track_is_refused_because_buses_are_summed_last() {
+    fn a_bus_routed_at_a_track_enters_that_track_device_chain() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        // Track 1 stands in for the master strip: no clip of its own, a 0.5
+        // insert, output to the engine sum. Track 2 is muted so only its
+        // pre-fader send reaches the bus. The bus then feeds track 1. A bus
+        // that still dumped onto the sum would bypass the insert and render 1.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            Box::new(ScalingPlugin { factor: 0.5 }),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(7),
+            index: 0,
+        });
+        track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
+        harness.send(GraphCommand::SetTrackMute(2, true));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 2,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+        });
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
+
+        assert_eq!(
+            harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
+            Some(RouteTarget::Track(1))
+        );
+        let (left, _) = harness.render(4);
+        assert_eq!(left, vec![0.5; 4]);
+    }
+
+    #[test]
+    fn a_bus_and_track_that_feed_each_other_are_refused_as_a_cycle() {
         let mut harness = Harness::new(16);
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
         harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
 
-        assert_eq!(harness.diagnostics().invalid_bus_routings, 1);
+        assert_eq!(harness.diagnostics().routing_cycles_refused, 1);
         assert_eq!(
             harness.scheduler.timeline().bus(50).map(|bus| bus.output()),
             Some(RouteTarget::Master)
         );
+    }
+
+    #[test]
+    fn a_send_into_a_bus_that_feeds_the_same_track_is_refused_as_a_cycle() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: 1.0,
+        });
+
+        assert_eq!(harness.diagnostics().routing_cycles_refused, 1);
+        assert_eq!(harness.scheduler.timeline().send_tap(1, 50), None);
     }
 
     #[test]
@@ -5309,8 +6630,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 10,
-                vec![1.0; 4],
-                Vec::new(),
+                vec![1.0; 4].into(),
+                [].into(),
                 placement(0, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5420,8 +6741,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 4],
-                vec![0.0; 4],
+                vec![1.0; 4].into(),
+                vec![0.0; 4].into(),
                 placement(0, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5721,6 +7042,222 @@ mod timeline_tests {
         assert_eq!(received.load(Ordering::Relaxed), 1);
     }
 
+    /// The shadowed default: the app is what the user hears, the relay drives
+    /// the plugin from the app's own audio, and the strip chain must leave the
+    /// instance alone. Anything else runs one stateful plugin twice a block and
+    /// emits its output on a path the app is not monitoring.
+    #[test]
+    fn a_shadowed_monitor_leaves_a_chain_bound_plugin_to_its_bridge() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        relay_one_block(&mut plugin, &mut harness, 0.25);
+        let bridged = plugin
+            .handle
+            .pop_output()
+            .expect("the bridge returns a block");
+        assert_eq!(
+            &bridged.left[..4],
+            &[0.75; 4],
+            "the relay path must still process the app's audio while shadowed"
+        );
+        let after_the_bridge = plugin.calls.load(Ordering::Relaxed);
+        assert_eq!(after_the_bridge, 1);
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a shadowed monitor must leave the track's own output untouched"
+        );
+        assert_eq!(right, left);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            after_the_bridge,
+            "the chain must make no inline call while the monitor is shadowed"
+        );
+        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 0);
+    }
+
+    /// The audible side of the same session: the chain owns the instance, the
+    /// bridge keeps moving but returns its blocks exactly as they arrived, and
+    /// the plugin is driven once — not once per path.
+    #[test]
+    fn an_audible_monitor_runs_a_chain_bound_plugin_inline_and_passes_its_bridge_through() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        relay_one_block(&mut plugin, &mut harness, 0.25);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            0,
+            "the relay must not process a plugin the chain is going to run"
+        );
+        let passed = plugin
+            .handle
+            .pop_output()
+            .expect("the bridge returns a block");
+        assert_eq!(
+            &passed.left[..4],
+            &[0.25; 4],
+            "a passed-through block is the app's own audio, unprocessed"
+        );
+        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 1);
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.5; 4],
+            "an audible monitor renders the plugin over the track's own signal"
+        );
+        assert_eq!(right, left);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            1,
+            "exactly one process call for the block that was rendered"
+        );
+    }
+
+    /// The switch itself. A plugin driven twice in the block the gate moves —
+    /// or not at all — is a click on the cutover, so the count is checked per
+    /// block on both sides of the toggle rather than only at the ends.
+    #[test]
+    fn toggling_the_monitor_shadow_hands_a_bridged_plugin_over_one_block_at_a_time() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        let mut expected_calls = 0;
+        for block in 0..6 {
+            if block == 3 {
+                harness.send(GraphCommand::SetMonitorShadow(false));
+            }
+            let shadowed = block < 3;
+
+            relay_one_block(&mut plugin, &mut harness, 0.25);
+            harness.send(GraphCommand::SeekFrames(0));
+            let (left, _) = harness.render(4);
+
+            expected_calls += 1;
+            assert_eq!(
+                plugin.calls.load(Ordering::Relaxed),
+                expected_calls,
+                "block {block} must drive the plugin exactly once, on one path"
+            );
+            let expected_output = if shadowed { 1.0 } else { 1.5 };
+            assert_eq!(
+                left,
+                vec![expected_output; 4],
+                "block {block} must be rendered by the path the gate names"
+            );
+            let returned = plugin
+                .handle
+                .pop_output()
+                .expect("the bridge returns a block");
+            let expected_return = if shadowed { 0.75 } else { 0.25 };
+            assert_eq!(
+                &returned.left[..4],
+                &[expected_return; 4],
+                "block {block} must return the app's audio from the path the gate names"
+            );
+        }
+
+        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 3);
+    }
+
+    /// A hosted plugin taken off a strip goes back to running nowhere, not onto
+    /// the master insert chain: its lifetime belongs to the load that created
+    /// it, and the master chain is the whole mix.
+    #[test]
+    fn a_bridged_plugin_taken_off_a_chain_runs_nowhere_rather_than_on_the_master_mix() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+        });
+        let slot = harness
+            .scheduler
+            .effect_index
+            .lookup(7)
+            .expect("the removal must not unload the plugin");
+        assert_eq!(
+            harness.scheduler.effects[slot].placement,
+            EffectPlacement::Detached
+        );
+
+        // The mix is guarded twice over, and the placement above is the guard
+        // this test owns: the master walk also skips a bridged effect, so these
+        // two renders hold the same law from the other side — the whole mix
+        // stays the track's own signal on either side of the gate.
+        harness.send(GraphCommand::SeekFrames(0));
+        let (shadowed, _) = harness.render(4);
+        assert_eq!(shadowed, vec![1.0; 4]);
+
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (audible, _) = harness.render(4);
+        assert_eq!(
+            audible,
+            vec![1.0; 4],
+            "a released hosted plugin must not process the master mix"
+        );
+
+        // Its bridge still drains, so the app keeps its audio and the ring
+        // keeps moving for a plugin no chain holds.
+        relay_one_block(&mut plugin, &mut harness, 0.25);
+        assert!(plugin.handle.pop_output().is_some());
+    }
+
+    /// Bypass is the professional convention on the inline path too: the
+    /// instance keeps its state, passes the strip's signal through untouched,
+    /// and discards MIDI queued while it was bypassed rather than banking a
+    /// burst of stale note-ons for the moment it is enabled.
+    #[test]
+    fn a_bypassed_chain_bound_plugin_passes_the_strip_through_and_discards_queued_midi() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        let plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, _) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a bypassed device passes the strip's signal through untouched"
+        );
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 0);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 0);
+
+        // Un-bypassed, the note queued while bypassed must not arrive late.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (enabled, _) = harness.render(4);
+        assert_eq!(enabled, vec![1.5; 4]);
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            0,
+            "MIDI queued while bypassed is discarded, never banked"
+        );
+
+        // A note sent while it is enabled still reaches it, so the silence
+        // above is the discard and not a device nothing addresses.
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.render(4);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
+    }
+
     #[test]
     fn a_removed_send_stops_feeding_its_bus() {
         let mut harness = Harness::new(32);
@@ -5882,8 +7419,8 @@ mod timeline_tests {
                 1,
                 TimelineClip::new(
                     9,
-                    vec![0.5; 64],
-                    Vec::new(),
+                    vec![0.5; 64].into(),
+                    [].into(),
                     placement(0, 0, 64),
                     ClipPlayback::at_gain(1.0),
                 ),
@@ -6038,6 +7575,475 @@ mod timeline_tests {
             second,
             vec![1.0; 8],
             "a change stamped past the stop must not fire on its own later"
+        );
+    }
+
+    /// Counts the note-ons its chain hands it, so a MIDI FX whose clock is the
+    /// transport can be observed by how often it fires rather than by reading
+    /// its own state.
+    struct NoteOnCountingPlugin {
+        note_ons: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for NoteOnCountingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            let note_ons = midi_events.iter().filter(|event| event.is_note_on).count();
+            self.note_ons.fetch_add(note_ons, Ordering::Relaxed);
+        }
+
+        fn name(&self) -> &str {
+            "note-on-counting-plugin"
+        }
+
+        fn accepts_midi(&self) -> bool {
+            true
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The device period the transport tests render on: small enough that a
+    /// tempo-driven step lands close to the frame it names, and a divisor of
+    /// one second at 48 kHz so a test can split its render on a second.
+    const TRANSPORT_TEST_BLOCK: usize = 480;
+
+    /// Render `frames` frames the way a device does — a sequence of callbacks,
+    /// not one buffer. `process_block` clamps a single call to
+    /// [`MAX_CALLBACK_FRAMES`], so a test that asked for a second in one call
+    /// would silently render a fraction of it.
+    fn render_frames(harness: &mut Harness, frames: usize) {
+        let mut rendered = 0;
+        while rendered < frames {
+            let block = (frames - rendered).min(TRANSPORT_TEST_BLOCK);
+            harness.render(block);
+            rendered += block;
+        }
+    }
+
+    fn tempo_maps(segments: &[TempoSegment]) -> Box<TransportMaps> {
+        Box::new(TransportMaps {
+            tempo: TempoMap::new(segments, 48_000.0).expect("the test map is well formed"),
+            time_signature: TimeSignatureMap::flat(4, 4).expect("4/4 is well formed"),
+            sample_rate: 48_000.0,
+        })
+    }
+
+    /// The map is the transport's clock: tempo, meter and beat position at the
+    /// playhead all come from it, and the beat position is the integral across
+    /// every segment rather than the current tempo scaled by elapsed time.
+    #[test]
+    fn the_transport_reads_tempo_meter_and_beats_from_the_map_at_the_playhead() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.send(GraphCommand::SetTransportMaps(Box::new(TransportMaps {
+            tempo: TempoMap::new(
+                &[
+                    TempoSegment {
+                        start_frame: 0,
+                        beats_per_minute: 120.0,
+                    },
+                    TempoSegment {
+                        start_frame: 48_000,
+                        beats_per_minute: 240.0,
+                    },
+                ],
+                48_000.0,
+            )
+            .expect("the test map is well formed"),
+            time_signature: TimeSignatureMap::new(&[
+                TimeSignatureSegment {
+                    start_frame: 0,
+                    numerator: 4,
+                    denominator: 4,
+                },
+                TimeSignatureSegment {
+                    start_frame: 48_000,
+                    numerator: 7,
+                    denominator: 8,
+                },
+            ])
+            .expect("the test meter map is well formed"),
+            sample_rate: 48_000.0,
+        })));
+
+        render_frames(&mut harness, 48_000);
+        let transport = harness.scheduler.transport;
+        assert_eq!(transport.tempo, 120.0);
+        assert_eq!((transport.time_sig_num, transport.time_sig_denom), (4, 4));
+        // The final span of that render starts one block short of the change.
+        assert!(transport.song_pos_beats < 2.0);
+
+        render_frames(&mut harness, 48_000);
+        let transport = harness.scheduler.transport;
+        assert_eq!(transport.tempo, 240.0);
+        assert_eq!((transport.time_sig_num, transport.time_sig_denom), (7, 8));
+        // Two beats of 120 plus almost four of 240. The flat-scalar answer the
+        // map replaces would scale the whole elapsed time by the *current*
+        // tempo and land near eight.
+        assert!(transport.song_pos_beats > 5.0 && transport.song_pos_beats < 6.0);
+    }
+
+    /// The tempo map moves the output, not just a readout: the arpeggiator's
+    /// step clock is `song_pos_beats`, so a tempo change inside the render
+    /// changes the frames its notes land on. Doubling the tempo doubles the
+    /// steps the same span of frames holds.
+    #[test]
+    fn a_tempo_change_shifts_the_frames_the_arpeggiator_emits_on() {
+        const SECOND: usize = 48_000;
+
+        let steps_per_second = |segments: &[TempoSegment]| {
+            let mut harness = Harness::new(32);
+            let note_ons = Arc::new(AtomicUsize::new(0));
+            harness.send(GraphCommand::AddPlugin(
+                1,
+                Box::new(NoteOnCountingPlugin {
+                    note_ons: Arc::clone(&note_ons),
+                }),
+            ));
+            harness.send(GraphCommand::AddMidiFx(1, MidiFxKind::Arpeggiator.build()));
+            harness.send(GraphCommand::SetTransportMaps(tempo_maps(segments)));
+            harness.playing();
+            // One held note is the whole chord: the arp keeps its active-note
+            // list across blocks and steps on the transport alone.
+            harness.send(GraphCommand::SendMidiNote(1, note_on(60)));
+
+            render_frames(&mut harness, SECOND);
+            let first_second = note_ons.load(Ordering::Relaxed);
+            render_frames(&mut harness, SECOND);
+            (
+                first_second,
+                note_ons.load(Ordering::Relaxed) - first_second,
+            )
+        };
+
+        // The arp's default rate is a sixteenth note, so 120 BPM is eight steps
+        // a second and 240 BPM is sixteen.
+        let (flat_first, flat_second) = steps_per_second(&[TempoSegment {
+            start_frame: 0,
+            beats_per_minute: 120.0,
+        }]);
+        assert_eq!((flat_first, flat_second), (8, 8));
+
+        let (changed_first, changed_second) = steps_per_second(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 120.0,
+            },
+            TempoSegment {
+                start_frame: SECOND as u64,
+                beats_per_minute: 240.0,
+            },
+        ]);
+        assert_eq!((changed_first, changed_second), (8, 16));
+    }
+
+    /// A track carrying a clip whose every sample names its own timeline
+    /// frame, so a rendered buffer reads back as the sequence of frames the
+    /// engine actually played.
+    fn track_with_frame_stamped_clip(harness: &mut Harness, track_id: usize, frames: usize) {
+        let material: Arc<[f32]> = (0..frames).map(|frame| (frame + 1) as f32).collect();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                1,
+                material,
+                [].into(),
+                placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// The loop seam is closed on its own sample. Every frame of the region is
+    /// played exactly once per pass: a seam that dropped a frame would skip a
+    /// stamp, and one that doubled a frame would repeat the region's last.
+    #[test]
+    fn a_loop_wraps_on_the_region_boundary_without_dropping_or_doubling_a_frame() {
+        const LOOP_START: u64 = 512;
+        const LOOP_END: u64 = 1_536;
+        const MATERIAL: usize = 4_096;
+
+        let mut harness = Harness::new(32);
+        track_with_frame_stamped_clip(&mut harness, 1, MATERIAL);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: LOOP_START,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SeekFrames(LOOP_START));
+
+        // One callback long enough to hold the seam and keep going past it.
+        let (left, _right) = harness.render(1_536);
+
+        let stamp_at = |frame: u64| (frame + 1) as f32;
+        let expected: Vec<f32> = (LOOP_START..LOOP_END)
+            .chain(LOOP_START..LOOP_START + 512)
+            .map(stamp_at)
+            .collect();
+        assert_eq!(left, expected);
+
+        // And the playhead stands where the last rendered frame left it, one
+        // wrap later.
+        let position = harness.scheduler.transport_position();
+        assert_eq!(position.playhead_frame, LOOP_START + 512);
+        assert_eq!(position.loop_wraps, 1);
+    }
+
+    /// A loop region the engine refuses to honour changes nothing: playback
+    /// runs straight through it. The floor exists to bound the seam split, so
+    /// a region under it must be inert rather than half-applied.
+    #[test]
+    fn a_loop_region_shorter_than_the_floor_plays_straight_through() {
+        const MATERIAL: usize = 2_048;
+
+        let mut harness = Harness::new(32);
+        track_with_frame_stamped_clip(&mut harness, 1, MATERIAL);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: crate::transport_map::MIN_LOOP_FRAMES - 1,
+        }));
+        harness.playing();
+
+        let (left, _right) = harness.render(1_024);
+
+        let expected: Vec<f32> = (0..1_024u64).map(|frame| (frame + 1) as f32).collect();
+        assert_eq!(left, expected);
+        assert_eq!(harness.scheduler.transport_position().loop_wraps, 0);
+    }
+
+    /// A wrap keeps the automation the first pass never reached. The graph
+    /// holds a window rather than a curve, so a wrap that treated itself as a
+    /// locate would drop the whole region's queue and leave every later pass
+    /// running on the level the first pass ended on.
+    #[test]
+    fn a_loop_wrap_keeps_the_automation_the_first_pass_had_not_reached() {
+        const LOOP_END: u64 = 1_024;
+
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4_096);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        // Stamped inside the region and never reached on the first pass,
+        // because that pass only renders as far as frame 512.
+        harness.send(GraphCommand::AutomateParam {
+            target: AutomationTarget::TrackGain(1),
+            write: AutomationWrite::Append(AutomationEvent {
+                at_frame: 768,
+                duration_frames: 0,
+                value: 0.25,
+                shape: RampShape::Step,
+            }),
+        });
+
+        let (first, _) = harness.render(512);
+        assert_eq!(first, vec![1.0; 512]);
+
+        // Second callback runs 512 → 1024, wraps, then 0 → 512 again. The
+        // stamp at 768 falls inside it and must still be there.
+        let (second, _) = harness.render(1_024);
+        assert_eq!(second[0], 1.0, "before the stamp the gain is still unity");
+        assert_eq!(second[256], 0.25, "the stamp at frame 768 landed");
+        assert_eq!(
+            second[512], 0.25,
+            "and the level it set carries across the seam"
+        );
+        assert_eq!(harness.scheduler.transport_position().loop_wraps, 1);
+    }
+
+    /// The ledger's release evidence across a seam. The published playhead is
+    /// back at the loop start the moment a pass ends, so it can never prove a
+    /// stamp inside the region was consumed; `last_wrap_frame` states the frame
+    /// the closing pass walked to, which is exactly that proof.
+    #[test]
+    fn the_progress_echo_reports_the_frame_each_loop_seam_walked_to() {
+        const LOOP_END: u64 = 1_024;
+
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        // Nothing has wrapped yet, so there is no seam to report.
+        harness.render(512);
+        let before = harness.scheduler.graph_progress();
+        assert_eq!(before.loop_wraps, 0);
+        assert_eq!(before.last_wrap_frame, 0);
+
+        harness.render(512);
+        let closed = harness.scheduler.graph_progress();
+        assert_eq!(closed.loop_wraps, 1);
+        assert_eq!(
+            closed.last_wrap_frame, LOOP_END,
+            "the pass walked to the region's end before the seam closed"
+        );
+        assert_eq!(
+            closed.playhead_frame, 0,
+            "and the playhead alone proves nothing about the region it just walked"
+        );
+
+        // The seam is not a one-off: every pass restates the frame it reached.
+        harness.render(LOOP_END as usize);
+        let again = harness.scheduler.graph_progress();
+        assert_eq!(again.loop_wraps, 2);
+        assert_eq!(again.last_wrap_frame, LOOP_END);
+    }
+
+    /// The position channel is the cursor's, and separate from the ledger's on
+    /// purpose: reading it must not disturb what the ledger's own snapshot
+    /// says.
+    #[test]
+    fn the_position_channel_reports_the_transport_without_touching_the_ledgers() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.render(256);
+
+        let position = harness.scheduler.transport_position();
+        assert!(position.playing);
+        assert_eq!(position.playhead_frame, 256);
+        assert_eq!(position.loop_wraps, 0);
+        assert_eq!(position.tempo, 120.0);
+        assert_eq!((position.time_sig_num, position.time_sig_denom), (4, 4));
+
+        // The ledger's own snapshot still answers its own question.
+        assert_eq!(harness.scheduler.graph_progress().playhead_frame, 256);
+        assert_eq!(harness.scheduler.graph_progress().batches_applied, 0);
+    }
+
+    /// The cursor's channel carries the ledger's batch count, and carries the
+    /// same number the ledger's own snapshot reports.
+    ///
+    /// A consumer holds this count against the fence a command was admitted at
+    /// to decide whether this position postdates that command. Read from the
+    /// progress channel instead, it would be a count from one callback beside a
+    /// playhead from another, because the two channels are published in
+    /// sequence and a reader between them sees only one of the two writes.
+    #[test]
+    fn the_position_channel_carries_the_batch_count_the_ledger_reports() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        assert_eq!(harness.scheduler.transport_position().batches_applied, 0);
+
+        // Two fenced batches, each pushed whole before the drain runs: the
+        // fence defers the drain until every command of it is visible.
+        for track_id in [1_usize, 2] {
+            harness
+                .command_tx
+                .push(GraphCommand::BeginBatch { commands: 1 })
+                .expect("the fence fits");
+            harness
+                .command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(track_id)))
+                .expect("the body fits");
+            harness.scheduler.update_graph();
+        }
+        harness.render(256);
+
+        let position = harness.scheduler.transport_position();
+        assert_eq!(position.batches_applied, 2);
+        assert_eq!(
+            position.batches_applied,
+            harness.scheduler.graph_progress().batches_applied,
+            "one count, however many channels report it"
+        );
+        assert_eq!(position.playhead_frame, 256);
+    }
+
+    /// The maps arrive built and leave through the retirement channel, exactly
+    /// as every other owning payload does: the callback never builds one and
+    /// never frees one (ADR 0020).
+    #[test]
+    fn installing_new_maps_retires_the_pair_they_replaced() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetTransportMaps(tempo_maps(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 100.0,
+            },
+        ])));
+        assert!(
+            harness.retired_rx.pop().is_err(),
+            "the first install replaces nothing, so it retires nothing"
+        );
+
+        harness.send(GraphCommand::SetTransportMaps(tempo_maps(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 200.0,
+            },
+        ])));
+        assert!(
+            harness.retired_rx.pop().is_ok(),
+            "the replaced pair leaves over the retirement ring"
+        );
+
+        harness.playing();
+        harness.render(48_000);
+        assert_eq!(harness.scheduler.transport.tempo, 200.0);
+    }
+
+    /// A tempo map's beat integral is a function of the rate it was built
+    /// against, so a map for another rate is refused rather than read here —
+    /// and refused the same way everything else is, by retiring the box the
+    /// callback did not take.
+    #[test]
+    fn a_map_built_for_another_sample_rate_is_retired_unapplied() {
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetTransportMaps(tempo_maps(&[
+            TempoSegment {
+                start_frame: 0,
+                beats_per_minute: 100.0,
+            },
+        ])));
+        assert!(harness.retired_rx.pop().is_err());
+
+        // The harness opens at 48 kHz; this pair was integrated at 44.1 kHz.
+        harness.send(GraphCommand::SetTransportMaps(Box::new(TransportMaps {
+            tempo: TempoMap::flat(200.0, 44_100.0).expect("a flat map is well formed"),
+            time_signature: TimeSignatureMap::flat(3, 4).expect("3/4 is well formed"),
+            sample_rate: 44_100.0,
+        })));
+        assert!(
+            harness.retired_rx.pop().is_ok(),
+            "the refused pair leaves over the retirement ring rather than being freed here"
+        );
+
+        harness.playing();
+        harness.render(48_000);
+        // The 100 BPM map built for this rate is still the one in force. Had
+        // the refused map been installed, the transport would read 200 BPM and
+        // 3/4, and every beat position it reported would be 8.8% adrift.
+        assert_eq!(harness.scheduler.transport.tempo, 100.0);
+        assert_eq!(
+            (
+                harness.scheduler.transport.time_sig_num,
+                harness.scheduler.transport.time_sig_denom
+            ),
+            (4, 4)
         );
     }
 }

@@ -228,7 +228,11 @@ fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
         bridge_output_blocks_dropped: u64::MAX,
         unmatched_bridge_blocks: u64::MAX,
         bridge_backlog_blocks_shed: u64::MAX,
+        bridge_blocks_passed_chain_bound: u64::MAX,
         callback_frames_over_bridge_reach: u64::MAX,
+        capture_consumer_refusals: u64::MAX,
+        capture_blocks_dropped: u64::MAX,
+        capture_input_underruns: u64::MAX,
     };
     let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
@@ -248,8 +252,16 @@ fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
     diagnostics.record_unmatched_bridge_blocks(1);
     diagnostics.record_bridge_backlog_blocks_shed(u64::MAX);
     diagnostics.record_bridge_backlog_blocks_shed(1);
+    diagnostics.record_bridge_blocks_passed_chain_bound(u64::MAX);
+    diagnostics.record_bridge_blocks_passed_chain_bound(1);
     diagnostics.record_callback_frames_over_bridge_reach(u64::MAX);
     diagnostics.record_callback_frames_over_bridge_reach(1);
+    diagnostics.record_capture_consumer_refusal(u64::MAX);
+    diagnostics.record_capture_consumer_refusal(1);
+    diagnostics.record_capture_blocks_dropped(u64::MAX);
+    diagnostics.record_capture_blocks_dropped(1);
+    diagnostics.record_capture_input_underrun(u64::MAX);
+    diagnostics.record_capture_input_underrun(1);
 
     assert_eq!(diagnostics.snapshot(), maximum);
 }

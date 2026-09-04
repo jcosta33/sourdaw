@@ -11,6 +11,7 @@ export function recordAgentRunPendingEffectContinuation(input: {
     runId: string;
     receipt: VerifiedBatchReceipt;
     commandBatch: CommandBatch;
+    sourceRevision?: string;
     recordedAt?: number;
 }): void {
     if (input.receipt.pendingEffects.length === 0) {

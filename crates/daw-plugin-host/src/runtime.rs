@@ -97,6 +97,18 @@ impl AudioPlugin for HostedRuntime {
         delegate!(self, backend => backend.set_editor_content_scale(scale))
     }
 
+    fn editor_can_resize(&self) -> bool {
+        delegate!(self, backend => backend.editor_can_resize())
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        delegate!(self, backend => backend.request_editor_size(width, height))
+    }
+
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        delegate!(self, backend => backend.apply_editor_content_scale(scale))
+    }
+
     fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
         delegate!(self, backend => backend.apply_pending_editor_resize())
     }
@@ -189,6 +201,18 @@ impl HostedPluginRuntime for HostedRuntime {
     fn latency_samples(&self) -> u32 {
         delegate!(self, backend => backend.latency_samples())
     }
+
+    fn tail_samples(&self) -> u32 {
+        delegate!(self, backend => backend.tail_samples())
+    }
+
+    fn take_tail_change(&mut self) -> Option<u32> {
+        delegate!(self, backend => backend.take_tail_change())
+    }
+
+    fn report_plugin_observations(&mut self) {
+        delegate!(self, backend => backend.report_plugin_observations())
+    }
 }
 
 impl HostedRuntime {
@@ -214,14 +238,15 @@ impl HostedRuntime {
     /// [`crate::traits::PluginHostRequest`].
     ///
     /// A loader concern like the latency wake, and installed the same way.
-    /// Reports whether a wake was installed, which is `false` both for a second
-    /// install and for a format that raises none of these asks: VST3 answers its
-    /// editor resize synchronously on the frame the plugin calls into, and its
-    /// component handler is not the one that carries `setDirty`.
+    /// Reports whether a wake was installed, which is `false` for a second
+    /// install. Both formats raise at least one ask — CLAP its editor resize,
+    /// parameter rescan and state change; VST3 the `IComponentHandler2`
+    /// `setDirty` state change, its editor resize being answered
+    /// synchronously on the frame the plugin calls into.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
         match self {
             Self::Clap(backend) => backend.set_plugin_host_request_notifier(notifier),
-            Self::Vst3(_) => false,
+            Self::Vst3(backend) => backend.set_plugin_host_request_notifier(notifier),
         }
     }
 

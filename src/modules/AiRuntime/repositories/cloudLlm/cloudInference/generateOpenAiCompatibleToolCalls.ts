@@ -1,9 +1,12 @@
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { buildWireToolNameCodec } from './buildWireToolNameCodec';
+import { isGpt56FamilyModel } from './openAiModelFamilies';
 import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
 
 type GenerateOpenAiCompatibleToolCallsInput = {
@@ -11,6 +14,7 @@ type GenerateOpenAiCompatibleToolCallsInput = {
     systemPrompt: string;
     userMessage: string;
     toolSchemas: readonly ToolSchema[];
+    maxOutputTokens: number;
     signal?: AbortSignal;
 };
 
@@ -58,7 +62,7 @@ function parseArguments(value: unknown): Record<string, unknown> | null {
     }
 }
 
-function parseToolCalls(response: unknown): ToolCallResult[] {
+function parseToolCalls(response: unknown, decodeWireName: (wireName: string) => string): ToolCallResult[] {
     if (!isRecord(response) || !Array.isArray(response.choices)) {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
     }
@@ -78,6 +82,9 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
         throw new ToolPlanningRejectedError('Hosted AI refused tool planning');
     }
     const finishReason = firstChoice.finish_reason;
+    if (finishReason === 'length') {
+        throw new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit');
+    }
     const hasValidFinishReason = finishReason === 'tool_calls' || finishReason === 'stop';
     if (!hasValidFinishReason) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
@@ -114,7 +121,11 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
         ) {
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
         }
-        results.push({ ...(typeof id === 'string' ? { id } : {}), name, arguments: arguments_ });
+        results.push({
+            ...(typeof id === 'string' ? { id } : {}),
+            name: decodeWireName(name),
+            arguments: arguments_,
+        });
     }
     if (finishReason === 'tool_calls' && results.length === 0) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
@@ -127,18 +138,30 @@ export async function generateOpenAiCompatibleToolCalls({
     systemPrompt,
     userMessage,
     toolSchemas,
+    maxOutputTokens,
     signal,
 }: GenerateOpenAiCompatibleToolCallsInput): Promise<ToolCallResult[]> {
+    const codec = buildWireToolNameCodec(toolSchemas);
     const body = JSON.stringify({
         model: runtime.model,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
         ],
-        tools: toolSchemas,
+        tools: toolSchemas.map((schema) => ({
+            ...schema,
+            function: {
+                ...schema.function,
+                name: codec.encode(schema.function.name),
+            },
+        })),
         tool_choice: 'auto',
         n: 1,
         stream: false,
+        ...(runtime.provider === 'openai'
+            ? { max_completion_tokens: maxOutputTokens }
+            : { max_tokens: maxOutputTokens }),
+        ...(runtime.provider === 'openai' && isGpt56FamilyModel(runtime.model) ? { reasoning_effort: 'none' } : {}),
     });
     const chunks: Uint8Array[] = [];
     const response = await requestOpenAiCompatibleProvider({
@@ -148,7 +171,10 @@ export async function generateOpenAiCompatibleToolCalls({
         onBodyChunk: (chunk) => chunks.push(chunk),
     });
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Hosted AI tool request failed with status ${String(response.status)}`);
+        throw new HostedAiHttpStatusError(
+            response.status,
+            `Hosted AI tool request failed with status ${String(response.status)}`
+        );
     }
     let payload: unknown;
     try {
@@ -166,7 +192,7 @@ export async function generateOpenAiCompatibleToolCalls({
         }
         throw error;
     }
-    return parseToolCalls(payload);
+    return parseToolCalls(payload, codec.decode);
 }
 
 function hasErrorName(value: unknown, name: string): boolean {

@@ -9,7 +9,15 @@
  * - PianoRollToolbar.tsx        (toolbar controls — pure component)
  * - PianoRollContextMenu.tsx    (right-click menu — view component)
  */
-import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
+import {
+    type ReactElement,
+    type Dispatch,
+    type SetStateAction,
+    useEffect,
+    useRef,
+    useLayoutEffect,
+    useState,
+} from 'react';
 
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
@@ -17,6 +25,7 @@ import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { CANVAS_EDITOR_COMMAND_EVENT, isCanvasEditorCommandRequest } from '#/modules/CommandInterface/useCases';
 import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     setNoteVelocity,
@@ -320,6 +329,38 @@ export const PianoRoll = ({
         constrainToScale,
         notePreviewEnabled,
     });
+
+    // The native application menu cannot synthesize a keyboard event: its
+    // mouse clicks are explicit editor commands. Keep the command at the
+    // focused Piano Roll boundary so arrangement editing never steals it.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (canvas === null) {
+            return undefined;
+        }
+        const handleNativeEdit = (event: Event): void => {
+            const request =
+                event instanceof CustomEvent && isCanvasEditorCommandRequest(event.detail) ? event.detail : undefined;
+            if (request?.action === 'edit:deselect-all') {
+                onSelectedNoteIdsChange(new Set());
+                request.handled = true;
+                return;
+            }
+            if (request?.action !== 'edit:select-all') {
+                return;
+            }
+            const allIds = new Set(notes.map((note) => note.id));
+            for (const openedNotes of Object.values(openedClipNotes ?? {})) {
+                for (const note of openedNotes) {
+                    allIds.add(note.id);
+                }
+            }
+            onSelectedNoteIdsChange(allIds);
+            request.handled = true;
+        };
+        canvas.addEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
+        return () => canvas.removeEventListener(CANVAS_EDITOR_COMMAND_EVENT, handleNativeEdit);
+    }, [notes, openedClipNotes, onSelectedNoteIdsChange]);
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);

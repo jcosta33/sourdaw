@@ -38,9 +38,10 @@ use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
 use crate::params::PluginParameter;
+use crate::scanner::{category_from_clap_features, clap_library_path, owned_feature_list};
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    PluginHostRequestNotifier, ProcessingGate,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, PluginHostRequestNotifier, ProcessingGate,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -71,17 +72,21 @@ use clap_sys::ext::params::{
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
+use clap_sys::ext::tail::{clap_plugin_tail, CLAP_EXT_TAIL};
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::fixedpoint::{CLAP_BEATTIME_FACTOR, CLAP_SECTIME_FACTOR};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
-use clap_sys::process::clap_process;
+use clap_sys::process::{clap_process, clap_process_status, CLAP_PROCESS_ERROR};
 use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
+use std::path::Path;
 use std::ptr;
 use std::sync::Arc;
+#[cfg(feature = "engine-owned-command-fixture")]
+use std::sync::Mutex;
 
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
@@ -110,6 +115,8 @@ pub struct ClapWrapper {
     gui_ext: *const clap_plugin_gui,
     /// Cached pointer to the plugin's latency extension (may be null).
     latency_ext: *const clap_plugin_latency,
+    /// Cached pointer to the plugin's tail extension (may be null).
+    tail_ext: *const clap_plugin_tail,
     /// Per-instance host callback state, pinned into `host.host_data`. Owns the
     /// latency-dirty flag the plugin sets via `clap_host_latency.changed()` /
     /// `request_restart()`. Must outlive the plugin (dropped after it in field order).
@@ -130,10 +137,30 @@ pub struct ClapWrapper {
     /// Whether the host has supplied a timeline yet. Until it has, the plugin
     /// gets a null transport, which CLAP defines as "no timeline available".
     has_transport: bool,
+    /// Frames handed to the plugin since this activation began, which is what
+    /// CLAP's `steady_time` is: "a steady sample time counter … not counting the
+    /// steady time of the transport", monotonic and coherent with the block
+    /// sizes. Reset by every activation, because the counter describes one
+    /// activation and a plugin taken through a deactivate/reactivate cycle is
+    /// entitled to start again from zero. Written on the audio thread only, and
+    /// a plain field because that thread is the only one that touches it.
+    steady_time: i64,
+    /// Whether the plugin has returned `CLAP_PROCESS_ERROR`. Raised by the audio
+    /// thread, which may not allocate or take the I/O lock, and read by the
+    /// control path, which is the only thread that may report it.
+    process_refused: bool,
+    /// Whether that refusal has already been reported. A plugin that fails every
+    /// block would otherwise print once per control visit for the rest of the
+    /// session.
+    process_refusal_reported: bool,
     /// The plugin's declared audio port layout and the preallocated buffers
     /// that honour it. Replaces a hardcoded stereo pair that ignored the
     /// declaration entirely.
     audio: AudioBusLayout,
+    /// Whether the plugin's own descriptor calls it an instrument. Read once at
+    /// load, because the descriptor is fixed for the instance's life and the
+    /// audio thread may not walk the C strings it is written in.
+    is_instrument: bool,
     /// Whether the plugin declared at least one note input port speaking the
     /// dialect this host's note events are in. Read once at load; a plugin
     /// that declares none never gains one while it lives.
@@ -159,10 +186,58 @@ pub struct ClapWrapper {
 struct EngineOwnedCommandFixture {
     state: Vec<u8>,
     has_gui: bool,
+    /// The answer the fixture's open editor gives to "do you accept a size the
+    /// host chose".
+    ///
+    /// Separate from `has_gui` because the two are independent in every real
+    /// plugin — a fixed-layout editor has a GUI and refuses host sizing — and a
+    /// fixture that derived one from the other could only ever be driven through
+    /// the arm that says yes. Defaults to `has_gui`, so a fixture nobody
+    /// configures answers exactly as it did before this knob existed.
+    editor_resizable: bool,
     /// Values the fixture answers `get_parameters` with. Writable so a test can
     /// stage a change the host never made — the plugin-side edit a user performs
     /// in the plugin's own editor.
     parameters: Vec<PluginParameter>,
+    /// Every thread the fixture's editor lifecycle was called on, in order.
+    ///
+    /// The `gui` extension is `[main-thread]`, so which thread reached the
+    /// plugin is the contract — not an implementation detail — and a host that
+    /// gets it wrong is unobservable from anything else the fixture answers.
+    gui_lifecycle_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    /// Every thread the fixture's editor support was asked on, in order.
+    ///
+    /// A separate log rather than the lifecycle one because the two questions
+    /// draw different crowds: support is asked by the load path and the
+    /// capability commands, the lifecycle only by the open/close path, and a
+    /// host may be wrong about one and right about the other.
+    editor_support_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    /// Run at the top of this wrapper's teardown, standing in for the plugin
+    /// calls a real drop makes — `deactivate`, `destroy`, the entry point's
+    /// `deinit`.
+    ///
+    /// Which is third-party code of unbounded duration, so *when* a host drops a
+    /// runtime is a contract and not an implementation detail: dropping one
+    /// inside a lock the rest of the app takes stalls everything behind it. A
+    /// fixture has no plugin to be slow, so the only way a host can prove it
+    /// drops in the clear is to be told the moment it does.
+    teardown_observer: Option<Box<dyn Fn() + Send + Sync>>,
+    /// Run as this fixture's host-request wake is installed.
+    ///
+    /// Installing one reaches the runtime through the host's own access seam,
+    /// which waits on whatever holds the instance — so *where* a host installs
+    /// is a contract for the same reason teardown is, and the only way to prove
+    /// it is to be told what the installing thread was holding at the time.
+    notifier_install_observer: Option<Box<dyn Fn() + Send + Sync>>,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+fn record_gui_lifecycle_thread(fixture: &EngineOwnedCommandFixture) {
+    fixture
+        .gui_lifecycle_threads
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(std::thread::current().id());
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -580,9 +655,11 @@ impl ClapWrapper {
     ///   differ, and the plugin only ever sees engine-rendered audio, so
     ///   activating on the device's clock detunes everything the plugin does.
     pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
+        let path = Path::new(plugin_path);
+        let library_path = clap_library_path(path)?;
         unsafe {
             // 1. Load the shared library
-            let library = Library::new(plugin_path)
+            let library = Library::new(&library_path)
                 .map_err(|e| format!("Failed to load CLAP plugin at {}: {}", plugin_path, e))?;
 
             // 2. Get the clap_entry symbol
@@ -731,7 +808,9 @@ impl ClapWrapper {
         let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
         let latency_ext =
             Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
+        let tail_ext = Self::query_extension::<clap_plugin_tail>(plugin_ref, CLAP_EXT_TAIL);
         let audio = Self::read_audio_bus_layout(plugin_ref)?;
+        let is_instrument = descriptor_declares_instrument(plugin);
         let accepts_note_events = Self::reads_note_input_ports(plugin_ref);
 
         if !params_ext.is_null() {
@@ -774,13 +853,18 @@ impl ClapWrapper {
             state_ext,
             gui_ext,
             latency_ext,
+            tail_ext,
             host_state,
             gui_open: false,
             editor_resizer: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
+            steady_time: 0,
+            process_refused: false,
+            process_refusal_reported: false,
             audio,
+            is_instrument,
             accepts_note_events,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -806,13 +890,18 @@ impl ClapWrapper {
             state_ext: ptr::null(),
             gui_ext: ptr::null(),
             latency_ext: ptr::null(),
+            tail_ext: ptr::null(),
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
             processing: Arc::new(ProcessingGate::fixture_already_processing()),
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
+            steady_time: 0,
+            process_refused: false,
+            process_refusal_reported: false,
             audio: AudioBusLayout::portless(),
+            is_instrument: false,
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -821,9 +910,41 @@ impl ClapWrapper {
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
                 has_gui,
+                editor_resizable: has_gui,
                 parameters: Vec::new(),
+                gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
+                editor_support_threads: Arc::new(Mutex::new(Vec::new())),
+                teardown_observer: None,
+                notifier_install_observer: None,
             }),
         }
+    }
+
+    /// The log every editor lifecycle call on this fixture writes its thread to.
+    ///
+    /// Handed out as a handle rather than read back through the runtime,
+    /// because by the time a host has one the plugin is behind an access seam a
+    /// test cannot reach around.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_gui_threads(
+        &self,
+    ) -> Option<Arc<Mutex<Vec<std::thread::ThreadId>>>> {
+        self.command_fixture
+            .as_ref()
+            .map(|fixture| Arc::clone(&fixture.gui_lifecycle_threads))
+    }
+
+    /// The log every editor-support ask on this fixture writes its thread to.
+    /// Handed out as a handle for the same reason the lifecycle log is.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_editor_support_threads(
+        &self,
+    ) -> Option<Arc<Mutex<Vec<std::thread::ThreadId>>>> {
+        self.command_fixture
+            .as_ref()
+            .map(|fixture| Arc::clone(&fixture.editor_support_threads))
     }
 
     /// Stage the values the fixture reports from `get_parameters`.
@@ -842,6 +963,73 @@ impl ClapWrapper {
         }
     }
 
+    /// Stage the answer the fixture's open editor gives to a host-chosen size.
+    ///
+    /// Stands in for a fixed-layout editor, which is the arm no fixture could
+    /// otherwise reach: `open_gui` refuses a fixture with no GUI, so a host
+    /// driving the open path end to end could only ever see the resizable
+    /// answer, and a window told the wrong thing gives every fixed editor a
+    /// draggable frame the plugin will refuse.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_editor_resizable(&mut self, editor_resizable: bool) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.editor_resizable = editor_resizable;
+        }
+    }
+
+    /// Be told the moment this fixture is torn down.
+    ///
+    /// Stands in for the plugin's own `deactivate`/`destroy`/`deinit`, which is
+    /// where a host pays for dropping a runtime in the wrong place: those calls
+    /// run on the dropping thread, take as long as the plugin takes, and a host
+    /// that makes them inside a lock another thread needs has hung that thread
+    /// for the duration. The observer runs at the top of the teardown, so it can
+    /// read what the dropping thread still holds.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_teardown(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.teardown_observer = Some(observe);
+        }
+    }
+
+    /// Be told the moment this fixture's host-request wake is installed.
+    ///
+    /// The install crosses the host's access seam, which waits on the control
+    /// gate an open editor holds and then on the audio thread's own claim. A
+    /// host that installs under a lock the rest of the app takes has parked
+    /// everything behind that wait, and no other answer of this wrapper's shows
+    /// it — so the observer runs during the install, where it can read what the
+    /// installing thread still holds.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_notifier_install(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.notifier_install_observer = Some(observe);
+        }
+    }
+
+    /// Leave a fixture unactivated, as a plugin whose `activate` failed is.
+    ///
+    /// A fixture has no plugin to fail an activation, and a host cannot make one
+    /// fail from outside: the wrapper activates during construction. This is the
+    /// only way a downstream host can drive the path that refuses to register an
+    /// unactivated runtime with the engine.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn deactivate_engine_owned_command_fixture(&mut self) {
+        if self.command_fixture.is_some() {
+            self.activated = false;
+        }
+    }
+
     /// The host callback state a fixture's plugin would call into.
     ///
     /// Stands in for the plugin raising a host callback: a crate that hosts this
@@ -853,6 +1041,24 @@ impl ClapWrapper {
     #[doc(hidden)]
     pub fn engine_owned_command_fixture_host_state(&self) -> &HostCallbackState {
         &self.host_state
+    }
+
+    /// Latch a process failure on a fixture, exactly as the audio thread does:
+    /// the wrapper's own flag, and the process-wide hint that wakes the control
+    /// path. A fixture has no plugin to fail a real block, so this is the only
+    /// way a downstream host can drive the visit that reports one.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn latch_engine_owned_command_fixture_process_refusal(&mut self) {
+        self.latch_process_refusal();
+    }
+
+    /// Whether the recorded failure has already been said out loud. Read back to
+    /// prove the visit reported it, and reported it once.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_refusal_reported(&self) -> bool {
+        self.process_refusal_reported
     }
 
     /// Query a plugin extension by ID. Returns null if not supported.
@@ -962,6 +1168,14 @@ impl ClapWrapper {
     pub fn has_gui(&self) -> bool {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            // Recorded because the real VST3 backend answers this question with
+            // a `createView` — an editor call — so a host that asks it on the
+            // wrong thread is misbehaving in a way only the callee can see.
+            fixture
+                .editor_support_threads
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(std::thread::current().id());
             return fixture.has_gui;
         }
 
@@ -1029,6 +1243,49 @@ impl ClapWrapper {
         api != CLAP_WINDOW_API_COCOA
     }
 
+    /// How many plugin-stated units one logical window unit is worth here.
+    ///
+    /// gui.h states editor sizes in physical pixels for win32 and x11, and in
+    /// logical pixels for cocoa — the same split [`Self::scale_applies_to`]
+    /// encodes, because it is the same clause of the spec. The shell's window
+    /// seam is logical everywhere, so a physical-pixel API converts by the
+    /// display scale and cocoa converts by nothing.
+    ///
+    /// A scale nothing could be sized by converts nothing rather than
+    /// destroying every size that crosses.
+    fn plugin_units_per_logical_unit(&self) -> f64 {
+        if !Self::scale_applies_to(Self::platform_api()) {
+            return 1.0;
+        }
+        if self.editor_content_scale.is_finite() && self.editor_content_scale > 0.0 {
+            self.editor_content_scale
+        } else {
+            crate::traits::DEFAULT_EDITOR_CONTENT_SCALE
+        }
+    }
+
+    /// A size scaled by `factor`, rounded, and never scaled away to nothing: a
+    /// window of zero extent is not a smaller editor, it is no editor.
+    fn scaled_size((width, height): (u32, u32), factor: f64) -> (u32, u32) {
+        let convert = |value: u32| {
+            (f64::from(value) * factor)
+                .round()
+                .clamp(1.0, f64::from(u32::MAX)) as u32
+        };
+        (convert(width), convert(height))
+    }
+
+    /// A size the plugin stated, in the logical units the window seam sizes in.
+    fn to_logical_units(&self, size: (u32, u32)) -> (u32, u32) {
+        Self::scaled_size(size, 1.0 / self.plugin_units_per_logical_unit())
+    }
+
+    /// A size the host holds, in the units this platform's `gui` extension
+    /// speaks.
+    fn to_plugin_units(&self, size: (u32, u32)) -> (u32, u32) {
+        Self::scaled_size(size, self.plugin_units_per_logical_unit())
+    }
+
     /// Open the plugin GUI, parenting it into the given native window handle.
     ///
     /// `handle_ptr` is the platform-specific handle:
@@ -1046,6 +1303,7 @@ impl ClapWrapper {
     pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
             if !fixture.has_gui {
                 return Err("Plugin does not support GUI".to_string());
             }
@@ -1141,11 +1399,14 @@ impl ClapWrapper {
             }
 
             self.gui_open = true;
+            // Reported in the window seam's units, like every other size that
+            // leaves here: `get_size` answered in the plugin's.
+            let opened = self.to_logical_units((width, height));
             eprintln!(
                 "[CLAP] Opened GUI for '{}' ({}x{})",
-                self.name, width, height
+                self.name, opened.0, opened.1
             );
-            Ok((width, height))
+            Ok(opened)
         }
     }
 
@@ -1167,20 +1428,217 @@ impl ClapWrapper {
         self.host_state.set_editor_resize_available(false);
     }
 
+    /// Resize the window this editor is drawn into, where the host gave one.
+    ///
+    /// Absent for a caller that opened the editor with no window — the scan
+    /// worker and the tests both do — in which case there is nothing to move.
+    fn resize_host_window(&self, width: u32, height: u32) {
+        if let Some(resize) = self.editor_resizer.as_ref() {
+            resize(width, height);
+        }
+    }
+
+    /// The `gui` extension of an editor that is open, or nothing.
+    ///
+    /// Every host-initiated editor operation asks for this first: `can_resize`,
+    /// `adjust_size` and `set_size` are all `[main-thread]` calls against a GUI
+    /// that exists, and asking a plugin whose editor was never created is a call
+    /// into a plugin state the format does not define.
+    ///
+    /// # Safety
+    /// The returned reference borrows the plugin's own extension struct, which
+    /// lives as long as the plugin does. Control path only.
+    unsafe fn open_gui_extension(&self) -> Option<&clap_plugin_gui> {
+        if self.gui_ext.is_null() || self.plugin.is_null() || !self.gui_open {
+            return None;
+        }
+        Some(&*self.gui_ext)
+    }
+
+    /// Whether the plugin accepts a size the host chose.
+    ///
+    /// `clap_plugin_gui.can_resize` is the plugin's own answer, and a plugin
+    /// that does not implement it has not said yes: gui.h defines the whole
+    /// host-driven resize sequence as reachable only when it returns true.
+    pub fn editor_can_resize(&self) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.editor_resizable && self.gui_open;
+        }
+
+        // SAFETY: control path only; the extension outlives this borrow.
+        unsafe {
+            let Some(gui) = self.open_gui_extension() else {
+                return false;
+            };
+            match gui.can_resize {
+                Some(can_resize) => can_resize(self.plugin),
+                None => false,
+            }
+        }
+    }
+
+    /// Resize the editor because the host's window was resized, reporting the
+    /// size the plugin adjusted the request to. **Control path only.**
+    ///
+    /// gui.h's own host-driven sequence: ask `adjust_size` for a size the plugin
+    /// will run at, then hand it that size through `set_size`. The host window
+    /// moves between the two — the order VST3 states outright, and the one every
+    /// embedded editor depends on, because a plugin told to lay out at a size
+    /// its window has not taken yet lays out against the window it is still in.
+    ///
+    /// A plugin that refuses the adjusted size leaves the host holding a window
+    /// it moved for nothing, so the refusal puts the window back before it is
+    /// reported.
+    ///
+    /// The size arrives and leaves in the window seam's logical units; the
+    /// plugin is asked and told in its own, which on win32 and x11 are physical
+    /// pixels.
+    pub fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            if !self.gui_open {
+                return Err("Plugin has no open editor to resize".to_string());
+            }
+            self.resize_host_window(width, height);
+            return Ok((width, height));
+        }
+
+        if !self.editor_can_resize() {
+            return Err(format!(
+                "Plugin '{}' has no resizable open editor",
+                self.name
+            ));
+        }
+
+        let previous = self.get_gui_size();
+        let (mut granted_width, mut granted_height) = self.to_plugin_units((width, height));
+        // SAFETY: control path only, with the editor open; every call below is
+        // one this platform's `gui` extension declared.
+        unsafe {
+            let Some(gui) = self.open_gui_extension() else {
+                return Err(format!(
+                    "Plugin '{}' has no open editor to resize",
+                    self.name
+                ));
+            };
+
+            if let Some(adjust_size) = gui.adjust_size {
+                if !adjust_size(self.plugin, &mut granted_width, &mut granted_height) {
+                    return Err(format!(
+                        "Plugin '{}' refused the requested editor size",
+                        self.name
+                    ));
+                }
+            }
+
+            let granted = self.to_logical_units((granted_width, granted_height));
+            self.resize_host_window(granted.0, granted.1);
+
+            if let Some(set_size) = gui.set_size {
+                if !set_size(self.plugin, granted_width, granted_height) {
+                    if let Some(previous) = previous {
+                        let (width, height) = self.to_logical_units(previous);
+                        self.resize_host_window(width, height);
+                    }
+                    return Err(format!(
+                        "Plugin '{}' refused to move to the adjusted editor size",
+                        self.name
+                    ));
+                }
+            }
+
+            Ok(granted)
+        }
+    }
+
+    /// Restate the display scale for an editor that is already open, reporting
+    /// the size its host window must take now. **Control path only.**
+    ///
+    /// The scale is kept as well as applied, so an editor closed and reopened on
+    /// the display it was moved to opens at the scale it is on. The size is
+    /// re-read rather than assumed: `set_scale` is what makes a plugin lay itself
+    /// out at the new density, and `get_size` is the only way to learn what that
+    /// came to.
+    pub fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
+            let Some((width, height)) = self.get_gui_size().filter(|_| self.gui_open) else {
+                return Err("Plugin has no open editor to re-scale".to_string());
+            };
+            self.editor_content_scale = scale;
+            self.resize_host_window(width, height);
+            return Ok((width, height));
+        }
+
+        if !(scale.is_finite() && scale > 0.0) {
+            return Err(format!(
+                "Plugin '{}' cannot be told a display scale of {scale}",
+                self.name
+            ));
+        }
+        self.editor_content_scale = scale;
+
+        // SAFETY: control path only, with the editor open.
+        unsafe {
+            let Some(gui) = self.open_gui_extension() else {
+                return Err(format!(
+                    "Plugin '{}' has no open editor to re-scale",
+                    self.name
+                ));
+            };
+            // Skipped for cocoa for the same reason the open path skips it:
+            // its logical sizes already carry the OS scale.
+            if Self::scale_applies_to(Self::platform_api()) {
+                if let Some(set_scale) = gui.set_scale {
+                    set_scale(self.plugin, scale);
+                }
+            }
+        }
+
+        let stated = self.get_gui_size().ok_or_else(|| {
+            format!(
+                "Plugin '{}' states no editor size at the new display scale",
+                self.name
+            )
+        })?;
+        // Converted through the scale just stored: what the plugin lays out at
+        // the new density is stated in its own units, and the window it sits in
+        // is sized in the seam's.
+        let (width, height) = self.to_logical_units(stated);
+        self.resize_host_window(width, height);
+        Ok((width, height))
+    }
+
     /// Apply a size the plugin asked for through `clap_host_gui.request_resize`,
     /// reporting what was applied. Control path only — it reaches the shell's
     /// window server.
     pub fn apply_pending_editor_resize(&mut self) -> Option<(u32, u32)> {
-        let (width, height) = self.host_state.take_editor_resize()?;
+        let requested = self.host_state.take_editor_resize()?;
         let resize = self.editor_resizer.as_ref()?;
+        // The plugin asked in its own units; the window is sized in the seam's.
+        let (width, height) = self.to_logical_units(requested);
         resize(width, height);
         Some((width, height))
     }
 
-    /// Install the wake fired for every plugin-initiated ask this host answers
-    /// off the calling thread. First install wins; a second call reports
-    /// `false`.
+    /// Install the wake fired for this host's `[main-thread]` asks, answered off
+    /// the calling thread. First install wins; a second call reports `false`.
+    ///
+    /// The install also gates the `[thread-safe]` asks' acceptance — the drain
+    /// thread that answers them serves exactly the instances the native engine
+    /// took, which is exactly where this is installed.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.notifier_install_observer.as_ref())
+        {
+            observe();
+        }
         self.host_state.set_request_notifier(notifier)
     }
 
@@ -1232,7 +1690,8 @@ impl ClapWrapper {
         self.release_editor_window_resizer();
 
         #[cfg(feature = "engine-owned-command-fixture")]
-        if self.command_fixture.is_some() {
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            record_gui_lifecycle_thread(fixture);
             self.gui_open = false;
             return;
         }
@@ -1529,7 +1988,7 @@ impl ClapWrapper {
                 };
                 let out_events = capture_output_events(&self.parameter_events);
                 let process_data = clap_process {
-                    steady_time: -1,
+                    steady_time: self.steady_time,
                     frames_count: n_samp as u32,
                     transport,
                     audio_inputs: ptr::null(),
@@ -1539,7 +1998,15 @@ impl ClapWrapper {
                     in_events,
                     out_events: &out_events,
                 };
-                unsafe { process_fn(self.plugin, &process_data) };
+                let status = unsafe { process_fn(self.plugin, &process_data) };
+                self.advance_steady_time(n_samp);
+                if process_failed(status) {
+                    // A plugin with no audio ports wrote no audio to invalidate:
+                    // the block passes through its slot either way, and the
+                    // failure costs only the output events this call was made
+                    // for. Recording it is all the host can honestly do.
+                    self.latch_process_refusal();
+                }
             }
             copy_inputs_to_outputs(inputs, outputs, num_samples);
             return;
@@ -1579,7 +2046,7 @@ impl ClapWrapper {
 
             let out_events = capture_output_events(&self.parameter_events);
             let process_data = clap_process {
-                steady_time: -1,
+                steady_time: self.steady_time,
                 frames_count: n_samp as u32,
                 transport,
                 audio_inputs: input_buffers,
@@ -1590,10 +2057,121 @@ impl ClapWrapper {
                 out_events: &out_events,
             };
 
-            let _status = process_fn(self.plugin, &process_data);
+            let status = process_fn(self.plugin, &process_data);
+            self.advance_steady_time(n_samp);
+
+            if process_failed(status) {
+                self.latch_process_refusal();
+                // CLAP defines the error as "the plugin failed to process, and
+                // the output buffers are in an undefined state", so the output
+                // scratch is not audio and is never copied out. What reaches the
+                // bus instead is what ADR 0021 DG-003 decides for a failed slot:
+                // only an effect with a valid dry input passes it, because
+                // muting a crashed EQ takes the track with it. An instrument
+                // falls silent even when it declares an input port — the
+                // Surge XT shape, where routed audio feeds the oscillators — and
+                // its slot is a synth voice, not a path that signal was ever
+                // meant to travel through.
+                //
+                // What the plugin calls itself decides that; the input bus only
+                // stands in when the descriptor says nothing, and a plugin with
+                // no input bus has no dry signal to pass whatever it claims.
+                //
+                // The failure invalidates the scratch, not the caller's
+                // `inputs` — `fill_input_scratch` copies out of them — so this
+                // block's dry signal is still there to pass.
+                //
+                // A hard switch, like the bypass paths above: DG-003's ramp into
+                // the failure signal is failure-policy machinery that arrives
+                // with the rest of that policy.
+                if self.is_instrument || self.audio.input_buffers.is_empty() {
+                    silence_outputs(outputs, n_samp);
+                } else {
+                    copy_inputs_to_outputs(inputs, outputs, num_samples);
+                }
+                return;
+            }
 
             read_output_scratch(&self.audio, outputs, n_samp);
         }
+    }
+
+    /// Charge one processed block to the activation's steady sample clock.
+    ///
+    /// Saturating because CLAP types `steady_time` as a signed 64-bit frame
+    /// count and requires it to be increasing: at 48 kHz the saturation point is
+    /// six million years away, and wrapping into negatives there would hand a
+    /// plugin a counter that ran backwards.
+    fn advance_steady_time(&mut self, frames: usize) {
+        self.steady_time = self.steady_time.saturating_add(frames as i64);
+    }
+
+    /// Record a process failure, and wake the control path the first time.
+    ///
+    /// Audio thread. The store happens on the first failing block only: a plugin
+    /// failing every block latches once and then costs one bool test, and the
+    /// control path is told once about news it can only report once.
+    fn latch_process_refusal(&mut self) {
+        if self.process_refused {
+            return;
+        }
+        self.process_refused = true;
+        signal_pending_process_refusal();
+    }
+
+    /// Say out loud what the audio thread recorded.
+    ///
+    /// The audio thread cannot report anything itself — it may not allocate or
+    /// take the I/O lock — so what it saw is left as a flag for the control path
+    /// to read. Latched, so a plugin that fails every block still produces one
+    /// line.
+    fn report_plugin_observations(&mut self) {
+        if !self.process_refused || self.process_refusal_reported {
+            return;
+        }
+        self.process_refusal_reported = true;
+        eprintln!(
+            "[CLAP] '{}' failed a process call; the host did not use its output for those blocks",
+            self.name
+        );
+    }
+}
+
+/// Whether a process status means the block's output is not the plugin's.
+///
+/// CLAP defines every other status as a success: `CONTINUE`,
+/// `CONTINUE_IF_NOT_QUIET`, `TAIL` and `SLEEP` all describe whether the plugin
+/// still has something to add, which is a scheduling hint this host does not act
+/// on because it processes continuously. Only the error invalidates the block.
+fn process_failed(status: clap_process_status) -> bool {
+    status == CLAP_PROCESS_ERROR
+}
+
+/// Whether the plugin's descriptor calls it an instrument.
+///
+/// Read through the same feature mapping the scanner categorises with, so the
+/// browser and the audio path cannot disagree about what a plugin is. A plugin
+/// that declares no features, or none this host recognises, is not an
+/// instrument — the same default the scanner falls back to.
+///
+/// # Safety
+///
+/// `plugin` is either null or a live plugin whose descriptor outlives it, which
+/// CLAP requires of `clap_plugin.desc`.
+unsafe fn descriptor_declares_instrument(plugin: *const clap_plugin) -> bool {
+    if plugin.is_null() || (*plugin).desc.is_null() {
+        return false;
+    }
+    let features = owned_feature_list((*(*plugin).desc).features);
+    category_from_clap_features(&features) == "instrument"
+}
+
+/// Write silence over the engine's bus, for a block whose output the plugin
+/// did not produce.
+fn silence_outputs(outputs: &mut [&mut [f32]], num_samples: usize) {
+    for out in outputs.iter_mut() {
+        let len = num_samples.min(out.len());
+        out[..len].fill(0.0);
     }
 }
 
@@ -1766,6 +2344,22 @@ unsafe fn read_latency_ext(
     }
 }
 
+/// Read a CLAP plugin's reported processing tail through its tail extension.
+///
+/// Zero when the extension pointer, its `get` callback, or the plugin pointer is
+/// null — CLAP's own default for a plugin that does not implement `clap.tail`,
+/// which is "no tail". Free function so it can be unit-tested against a stub
+/// `clap_plugin_tail` without a live plugin.
+unsafe fn read_tail_ext(tail_ext: *const clap_plugin_tail, plugin: *const clap_plugin) -> u32 {
+    if tail_ext.is_null() || plugin.is_null() {
+        return 0;
+    }
+    match (*tail_ext).get {
+        Some(get) => get(plugin),
+        None => 0,
+    }
+}
+
 impl ClapWrapper {
     /// The plugin's current reported latency in samples. `0` when the plugin has
     /// no latency extension or is not active — CLAP defines `clap_plugin_latency.get`
@@ -1795,6 +2389,30 @@ impl ClapWrapper {
             return 0.0;
         }
         f64::from(self.latency_samples()) / self.sample_rate * 1000.0
+    }
+
+    /// The plugin's current reported processing tail in frames of the rate it
+    /// was activated with. `0` when it declares no `clap.tail`, which is the
+    /// spec's own answer for a plugin without the extension.
+    ///
+    /// Not gated on activation: CLAP annotates `clap_plugin_tail.get`
+    /// `[main-thread & audio-thread]` and states no activation precondition,
+    /// unlike latency, which is only defined while active.
+    pub fn tail_samples(&self) -> u32 {
+        unsafe { read_tail_ext(self.tail_ext, self.plugin) }
+    }
+
+    /// Take a tail change the plugin flagged through `clap_host_tail.changed`,
+    /// answering the tail it reports now. `None` when nothing was flagged.
+    ///
+    /// The flag is consumed whether or not the value moved, because the flag
+    /// records that the plugin spoke, not that the answer differs.
+    /// Main/control-thread only.
+    pub fn take_tail_change(&mut self) -> Option<u32> {
+        if !self.host_state.take_tail_dirty() {
+            return None;
+        }
+        Some(self.tail_samples())
     }
 
     /// Install the wake fired when this plugin flags a runtime latency change.
@@ -1840,6 +2458,10 @@ impl ClapWrapper {
                     ));
                 }
                 self.activated = true;
+                // A new activation is a new steady clock: the counter describes
+                // one activation, and carrying the old one across would hand the
+                // plugin frames it was never given.
+                self.steady_time = 0;
                 // The next audio block re-enters the processing state, on the
                 // thread CLAP requires for it.
                 self.processing.request_start();
@@ -1855,6 +2477,8 @@ impl ClapWrapper {
     /// consumed (read-and-cleared) whether or not a reactivation follows.
     /// Main/control-thread only.
     pub fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        self.report_plugin_observations();
+
         if !self.host_state.take_latency_dirty() {
             return Ok(None);
         }
@@ -2160,6 +2784,18 @@ impl AudioPlugin for ClapWrapper {
             self.editor_content_scale = scale;
         }
     }
+
+    fn editor_can_resize(&self) -> bool {
+        ClapWrapper::editor_can_resize(self)
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        ClapWrapper::request_editor_size(self, width, height)
+    }
+
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        ClapWrapper::apply_editor_content_scale(self, scale)
+    }
 }
 
 /// CLAP's implementation of the runtime seam. Same forwarding rule as the
@@ -2227,11 +2863,24 @@ impl HostedPluginRuntime for ClapWrapper {
     fn latency_samples(&self) -> u32 {
         ClapWrapper::latency_samples(self)
     }
+
+    fn tail_samples(&self) -> u32 {
+        ClapWrapper::tail_samples(self)
+    }
+
+    fn take_tail_change(&mut self) -> Option<u32> {
+        ClapWrapper::take_tail_change(self)
+    }
+
+    fn report_plugin_observations(&mut self) {
+        ClapWrapper::report_plugin_observations(self)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clap_host::RESIZE_SIGNAL_TEST_LOCK;
 
     // ── Latency query + change notification (PH-4) ──────────────────────
 
@@ -2344,6 +2993,10 @@ mod tests {
         let latency_ext = unsafe {
             ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY)
         };
+        // Queried the same way the loader does, so a stub that declares
+        // `clap.tail` is hosted exactly as a real plugin declaring it would be.
+        let tail_ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_tail>(&*plugin, CLAP_EXT_TAIL) };
         // Mirrors what a successful load leaves behind: activated, and asking to
         // process as soon as the audio thread next runs the plugin.
         let processing = Arc::new(ProcessingGate::default());
@@ -2360,13 +3013,21 @@ mod tests {
             state_ext: ptr::null(),
             gui_ext: ptr::null(),
             latency_ext,
+            tail_ext,
             host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             editor_resizer: None,
             processing,
             transport_scratch: Box::new(empty_transport_event()),
             has_transport: false,
+            steady_time: 0,
+            process_refused: false,
+            process_refusal_reported: false,
             audio,
+            // Derived from the stub's own descriptor, the way the loader
+            // derives it, so a stub declaring `instrument` is hosted exactly as
+            // a real plugin declaring it would be.
+            is_instrument: unsafe { descriptor_declares_instrument(plugin) },
             accepts_note_events: true,
             editor_content_scale: crate::traits::DEFAULT_EDITOR_CONTENT_SCALE,
             midi_scratch: Vec::with_capacity(MAX_MIDI),
@@ -2845,6 +3506,12 @@ mod tests {
     /// assertion would have accepted.
     #[test]
     fn a_resize_request_reaches_the_host_window_carrying_its_dimensions() {
+        // The accepted ask raises the process-wide resize hint, so this test
+        // must serialise against every asserter of that hint, which all live
+        // in the host module's tests.
+        let _guard = RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut wrapper = stub_wrapper(stub_plugin_ptr());
         let applied: Arc<std::sync::Mutex<Vec<(u32, u32)>>> =
             Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -2877,6 +3544,11 @@ mod tests {
     /// previous one's size.
     #[test]
     fn closing_the_editor_stops_the_backend_answering_resize_requests() {
+        // The ask accepted before the close raises the process-wide resize
+        // hint, so this test must serialise against every asserter of it.
+        let _guard = RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut wrapper = stub_wrapper(stub_plugin_ptr());
         assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
         wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));
@@ -2993,7 +3665,7 @@ mod tests {
             }
         };
         *CAPTURED_TRANSPORT.lock().unwrap() = Some(captured);
-        0
+        CLAP_PROCESS_CONTINUE
     }
 
     /// A stub that counts its processing transitions and records the transport
@@ -3396,7 +4068,7 @@ mod tests {
                 samples.fill((channel + 1) as f32);
             }
         }
-        0
+        CLAP_PROCESS_CONTINUE
     }
 
     fn buffer_capturing_plugin_ptr() -> *const clap_plugin {
@@ -3887,10 +4559,11 @@ mod tests {
 
     /// The host states its display scale before the editor opens; a plugin
     /// told 1.0 on a 2.0 screen lays its editor out at half size. The old code
-    /// hardcoded 1.0 and dropped whatever the host had stated. This drives the
-    /// physical-pixel API this platform selects (x11 here), which is the one
-    /// the scale does apply to; the cocoa half of the rule is pinned by
-    /// `set_scale_is_skipped_for_the_logical_pixel_cocoa_api`.
+    /// hardcoded 1.0 and dropped whatever the host had stated.
+    ///
+    /// The expectation is the platform's, because the open path this drives is:
+    /// win32 and x11 are told the host's scale, and cocoa — whose logical sizes
+    /// already carry the OS scale — is told nothing at all.
     #[test]
     fn opening_the_editor_hands_the_plugin_the_host_stated_scale() {
         let _guard = GUI_SCALE_TEST_LOCK.lock().unwrap();
@@ -3914,10 +4587,16 @@ mod tests {
             ClapWrapper::platform_api().to_str().expect("api is utf-8"),
             "the test opens the editor through this platform's own window API"
         );
+        let stated: &[f64] = if ClapWrapper::scale_applies_to(ClapWrapper::platform_api()) {
+            &[2.0]
+        } else {
+            &[]
+        };
         assert_eq!(
             SCALES_PASSED_TO_PLUGIN.lock().unwrap().as_slice(),
-            [2.0],
-            "set_scale receives the host's display scale, not a hardcoded 1.0"
+            stated,
+            "set_scale receives the host's display scale, not a hardcoded 1.0, and a \
+             logical-pixel API receives no scale at all"
         );
     }
 
@@ -3950,6 +4629,324 @@ mod tests {
         assert!(!ClapWrapper::scale_applies_to(CLAP_WINDOW_API_COCOA));
         assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_X11));
         assert!(ClapWrapper::scale_applies_to(CLAP_WINDOW_API_WIN32));
+    }
+
+    /// The same clause decides the units: a window API told a scale states its
+    /// sizes in physical pixels, and the seam converts them. Rounded, and
+    /// floored at one — a size scaled away to nothing is not a smaller editor,
+    /// it is no editor.
+    #[test]
+    fn a_size_crossing_the_unit_boundary_is_rounded_and_never_reaches_zero() {
+        assert_eq!(ClapWrapper::scaled_size((500, 450), 2.0), (1000, 900));
+        assert_eq!(
+            ClapWrapper::scaled_size((1001, 751), 1.0 / 1.25),
+            (801, 601)
+        );
+        assert_eq!(ClapWrapper::scaled_size((1, 1), 1.0 / 100.0), (1, 1));
+    }
+
+    // ── The host's window and the editor's size move together ─────────────
+
+    static EDITOR_RESIZE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Every step of the host-driven resize sequence, in the order it happened:
+    /// the plugin's own calls and the host's window moves in one log, because
+    /// the order between them is the contract.
+    static EDITOR_RESIZE_TRACE: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    /// The size `get_size` states, which `set_size` and `set_scale` both move.
+    static STATED_EDITOR_SIZE: std::sync::Mutex<(u32, u32)> =
+        std::sync::Mutex::new(UNSCALED_EDITOR);
+    /// The editor's size at a scale of 1, which a stated scale is applied to.
+    const UNSCALED_EDITOR: (u32, u32) = (640, 480);
+
+    fn record_editor_step(step: String) {
+        EDITOR_RESIZE_TRACE.lock().unwrap().push(step);
+    }
+
+    fn editor_steps() -> Vec<String> {
+        EDITOR_RESIZE_TRACE.lock().unwrap().clone()
+    }
+
+    unsafe extern "C" fn resizable_can_resize(_plugin: *const clap_plugin) -> bool {
+        true
+    }
+
+    /// A plugin that only runs at one size, which is what `adjust_size` is for.
+    unsafe extern "C" fn quantising_adjust_size(
+        _plugin: *const clap_plugin,
+        width: *mut u32,
+        height: *mut u32,
+    ) -> bool {
+        record_editor_step(format!("adjust_size({}x{})", *width, *height));
+        *width = 800;
+        *height = 600;
+        true
+    }
+
+    unsafe extern "C" fn recording_set_size(
+        _plugin: *const clap_plugin,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        record_editor_step(format!("set_size({width}x{height})"));
+        *STATED_EDITOR_SIZE.lock().unwrap() = (width, height);
+        true
+    }
+
+    unsafe extern "C" fn stated_get_size(
+        _plugin: *const clap_plugin,
+        width: *mut u32,
+        height: *mut u32,
+    ) -> bool {
+        let (stated_width, stated_height) = *STATED_EDITOR_SIZE.lock().unwrap();
+        *width = stated_width;
+        *height = stated_height;
+        true
+    }
+
+    /// A plugin that lays itself out at the density it is told, the way a real
+    /// one on a physical-pixel window API does.
+    unsafe extern "C" fn scale_following_set_scale(
+        _plugin: *const clap_plugin,
+        scale: f64,
+    ) -> bool {
+        record_editor_step(format!("set_scale({scale})"));
+        *STATED_EDITOR_SIZE.lock().unwrap() = (
+            (f64::from(UNSCALED_EDITOR.0) * scale) as u32,
+            (f64::from(UNSCALED_EDITOR.1) * scale) as u32,
+        );
+        true
+    }
+
+    unsafe extern "C" fn resizable_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        static RESIZABLE_GUI: clap_plugin_gui = clap_plugin_gui {
+            is_api_supported: Some(always_supported),
+            get_preferred_api: None,
+            create: Some(succeeding_create),
+            destroy: None,
+            set_scale: Some(scale_following_set_scale),
+            get_size: Some(stated_get_size),
+            can_resize: Some(resizable_can_resize),
+            get_resize_hints: None,
+            adjust_size: Some(quantising_adjust_size),
+            set_size: Some(recording_set_size),
+            set_parent: Some(succeeding_set_parent),
+            set_transient: None,
+            suggest_title: None,
+            show: None,
+            hide: None,
+        };
+        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+            return &raw const RESIZABLE_GUI as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// The same editor without the three calls gui.h defines the host-driven
+    /// resize sequence in terms of — which is how a fixed-size CLAP editor
+    /// declares itself.
+    unsafe extern "C" fn fixed_size_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        static FIXED_SIZE_GUI: clap_plugin_gui = clap_plugin_gui {
+            is_api_supported: Some(always_supported),
+            get_preferred_api: None,
+            create: Some(succeeding_create),
+            destroy: None,
+            set_scale: Some(scale_following_set_scale),
+            get_size: Some(stated_get_size),
+            can_resize: None,
+            get_resize_hints: None,
+            adjust_size: None,
+            set_size: None,
+            set_parent: Some(succeeding_set_parent),
+            set_transient: None,
+            suggest_title: None,
+            show: None,
+            hide: None,
+        };
+        if CStr::from_ptr(id) == CLAP_EXT_GUI {
+            return &raw const FIXED_SIZE_GUI as *const c_void;
+        }
+        ptr::null()
+    }
+
+    /// A wrapper whose editor is open over the given `gui` extension, with the
+    /// host's window seam recording into the same trace the plugin's calls do.
+    fn wrapper_with_open_editor(
+        get_extension: unsafe extern "C" fn(*const clap_plugin, *const i8) -> *const c_void,
+    ) -> ClapWrapper {
+        *STATED_EDITOR_SIZE.lock().unwrap() = UNSCALED_EDITOR;
+        EDITOR_RESIZE_TRACE.lock().unwrap().clear();
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(get_extension);
+        let plugin_ptr = Box::into_raw(Box::new(plugin)) as *const clap_plugin;
+        let gui_ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_gui>(&*plugin_ptr, CLAP_EXT_GUI) };
+        let mut wrapper = stub_wrapper(plugin_ptr);
+        wrapper.gui_ext = gui_ext;
+        wrapper.set_editor_window_resizer(Arc::new(|width, height| {
+            record_editor_step(format!("window({width}x{height})"));
+        }));
+        wrapper
+            .open_gui(ptr::null_mut())
+            .expect("the recording gui opens");
+        EDITOR_RESIZE_TRACE.lock().unwrap().clear();
+        wrapper
+    }
+
+    /// The user drags the window; the plugin decides what it will run at. A host
+    /// that applies its own number leaves the editor drawing outside its window,
+    /// and one that tells the plugin before moving the window has it lay out
+    /// against the shape it is leaving.
+    #[test]
+    fn a_host_window_resize_lands_on_the_size_the_plugin_adjusted_it_to() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(resizable_get_extension);
+
+        let granted = wrapper
+            .request_editor_size(1000, 900)
+            .expect("a resizable editor must accept an adjusted size");
+
+        assert_eq!(
+            granted,
+            (800, 600),
+            "the seam must report what adjust_size wrote, which is the size the window snaps to"
+        );
+        assert_eq!(
+            editor_steps(),
+            [
+                "adjust_size(1000x900)",
+                "window(800x600)",
+                "set_size(800x600)"
+            ],
+            "the window must be moved to the adjusted size before the plugin is told to move into it"
+        );
+    }
+
+    /// `can_resize` is the plugin's own answer, and gui.h defines the whole
+    /// host-driven sequence as reachable only through it. A host that asks
+    /// anyway drags a fixed-layout editor into a shape it never agreed to.
+    #[test]
+    fn a_fixed_size_editor_is_never_asked_for_a_size_the_host_chose() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(fixed_size_get_extension);
+
+        assert!(!wrapper.editor_can_resize());
+
+        let refusal = wrapper
+            .request_editor_size(1000, 900)
+            .expect_err("a fixed-size editor must refuse a host-chosen size");
+
+        assert!(
+            refusal.contains("no resizable open editor"),
+            "got: {refusal}"
+        );
+        assert_eq!(
+            editor_steps(),
+            Vec::<String>::new(),
+            "neither the plugin nor the window may move for a refused resize"
+        );
+    }
+
+    /// A window dragged to a display of another density has to tell the editor,
+    /// and then find out what the editor became: the plugin lays itself out
+    /// again, and the window it sits in has to follow it.
+    ///
+    /// The two sides speak different units. On win32 and x11 the editor states
+    /// physical pixels, so an editor that doubles at a 2.0 scale is drawing the
+    /// same window at twice the density — and a host that passed that number
+    /// straight to its logical window seam would double the window instead,
+    /// leaving the editor in the corner of a window four times its area.
+    #[test]
+    fn a_display_scale_change_restates_the_scale_and_resizes_the_window_to_what_it_produced() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(resizable_get_extension);
+
+        let granted = wrapper
+            .apply_editor_content_scale(2.0)
+            .expect("an open editor must accept the scale of the display it moved to");
+
+        let physical_pixels = ClapWrapper::scale_applies_to(ClapWrapper::platform_api());
+        // cocoa states logical sizes that already carry the OS scale, so it is
+        // told nothing and lays out nothing again.
+        let stated_by_plugin = if physical_pixels {
+            (1280, 960)
+        } else {
+            UNSCALED_EDITOR
+        };
+        assert_eq!(
+            *STATED_EDITOR_SIZE.lock().unwrap(),
+            stated_by_plugin,
+            "the plugin lays itself out in its own units, got: {:?}",
+            editor_steps()
+        );
+        assert_eq!(
+            granted,
+            UNSCALED_EDITOR,
+            "the window keeps its logical size on every platform: a denser display \
+             redraws the editor, it does not grow the window, got: {:?}",
+            editor_steps()
+        );
+        assert_eq!(
+            editor_steps().last(),
+            Some(&format!(
+                "window({}x{})",
+                UNSCALED_EDITOR.0, UNSCALED_EDITOR.1
+            )),
+            "the window must end at the logical size the re-scaled editor states"
+        );
+        assert_eq!(
+            wrapper.editor_content_scale, 2.0,
+            "the scale is kept, so an editor reopened on that display opens at it"
+        );
+    }
+
+    /// The host chooses in the units its window seam speaks, and gui.h states
+    /// the plugin's in physical pixels for win32 and x11. A host that skips the
+    /// conversion asks a plugin on a 2.0 display for half the size the user
+    /// dragged to, and then sizes the window to twice what the plugin granted.
+    #[test]
+    fn a_host_resize_crosses_the_seam_in_the_units_each_side_speaks() {
+        let _guard = EDITOR_RESIZE_TEST_LOCK.lock().unwrap();
+        let mut wrapper = wrapper_with_open_editor(resizable_get_extension);
+        wrapper.set_editor_content_scale(2.0);
+        EDITOR_RESIZE_TRACE.lock().unwrap().clear();
+
+        let granted = wrapper
+            .request_editor_size(500, 450)
+            .expect("a resizable editor must accept an adjusted size");
+
+        // `quantising_adjust_size` answers 800x600 in the plugin's own units,
+        // whatever it was asked for.
+        let physical_pixels = ClapWrapper::scale_applies_to(ClapWrapper::platform_api());
+        let asked = if physical_pixels {
+            "adjust_size(1000x900)"
+        } else {
+            "adjust_size(500x450)"
+        };
+        let expected = if physical_pixels {
+            (400, 300)
+        } else {
+            (800, 600)
+        };
+        assert_eq!(
+            granted, expected,
+            "the seam must report the adjusted size in the window's units"
+        );
+        assert_eq!(
+            editor_steps(),
+            [
+                asked.to_string(),
+                format!("window({}x{})", expected.0, expected.1),
+                "set_size(800x600)".to_string()
+            ],
+            "the plugin is asked and told in its units, and the window moved in the seam's"
+        );
     }
 
     // ── Sidechain input ports get silence, not leftover engine channels ───
@@ -4167,7 +5164,7 @@ mod tests {
         process: *const clap_process,
     ) -> i32 {
         emit_staged_events((*process).out_events);
-        0
+        CLAP_PROCESS_CONTINUE
     }
 
     unsafe extern "C" fn stub_params_flush_emitting(
@@ -4557,10 +5554,456 @@ mod tests {
         assert!(AudioPlugin::take_parameters_rescan(&mut wrapper));
         assert!(!AudioPlugin::take_parameters_rescan(&mut wrapper));
     }
+
+    // ── Process status ────────────────────────────────────────────────────
+    //
+    // CLAP's `process()` answers with a status, and `CLAP_PROCESS_ERROR` means
+    // "the plugin failed to process, and the output buffers are in an undefined
+    // state". A host that discards the answer plays those buffers.
+
+    use crate::traits::{take_pending_process_refusal_signal, PROCESS_REFUSAL_HINT_TEST_LOCK};
+    use clap_sys::process::{
+        CLAP_PROCESS_CONTINUE, CLAP_PROCESS_CONTINUE_IF_NOT_QUIET, CLAP_PROCESS_SLEEP,
+        CLAP_PROCESS_TAIL,
+    };
+    use std::sync::atomic::AtomicI32;
+
+    /// What the failing stub leaves in the output buffers before answering. Not
+    /// audio, and the value the bus carries if the host copies it out anyway.
+    const UNDEFINED_SAMPLE: f32 = 0.75;
+    /// What the engine's output buffer already holds when a block starts — the
+    /// previous block, which a host that neither writes nor silences leaves
+    /// sounding.
+    const STALE_SAMPLE: f32 = -0.5;
+    /// CLAP's primary category for a plugin that generates rather than
+    /// processes, as it appears in `clap_plugin_descriptor.features`.
+    const INSTRUMENT_FEATURE: &CStr = c"instrument";
+
+    static STUB_PROCESS_STATUS: AtomicI32 = AtomicI32::new(CLAP_PROCESS_CONTINUE);
+    static STATUS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Writes into every declared output channel and *then* answers with the
+    /// staged status — the exact shape CLAP's "undefined state" describes, and
+    /// the one a stub that wrote nothing could not tell from a correct host.
+    unsafe extern "C" fn stub_process_with_status(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> clap_process_status {
+        for buffer_index in 0..(*process).audio_outputs_count {
+            let buffer = &mut *(*process).audio_outputs.add(buffer_index as usize);
+            for channel in 0..buffer.channel_count {
+                let channel_data = *(buffer.data32.add(channel as usize));
+                let samples =
+                    std::slice::from_raw_parts_mut(channel_data, (*process).frames_count as usize);
+                samples.fill(UNDEFINED_SAMPLE);
+            }
+        }
+        STUB_PROCESS_STATUS.load(Ordering::Relaxed)
+    }
+
+    fn status_plugin_ptr() -> *const clap_plugin {
+        status_plugin_ptr_with_features(&[])
+    }
+
+    /// The same failing stub, behind a descriptor declaring `features`.
+    ///
+    /// Leaked deliberately: CLAP requires `clap_plugin.desc` to outlive the
+    /// plugin, and the stub plugin itself is leaked for the same reason.
+    fn status_plugin_ptr_with_features(features: &[&'static CStr]) -> *const clap_plugin {
+        use clap_sys::plugin::clap_plugin_descriptor;
+
+        let mut feature_pointers: Vec<*const std::os::raw::c_char> =
+            features.iter().map(|feature| feature.as_ptr()).collect();
+        feature_pointers.push(ptr::null());
+        let feature_pointers: &'static [*const std::os::raw::c_char] = Vec::leak(feature_pointers);
+
+        let mut descriptor: clap_plugin_descriptor = unsafe { mem::zeroed() };
+        descriptor.features = feature_pointers.as_ptr();
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.desc = Box::leak(Box::new(descriptor));
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_with_status);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    /// Render one block into an output bus that already holds the previous
+    /// block, and answer what it carries afterwards.
+    ///
+    /// Pre-filled deliberately: a host that returns without writing leaves the
+    /// stale block sounding, and an output buffer the test zeroed itself would
+    /// read as silence either way.
+    fn process_block_over_stale_output(
+        wrapper: &mut ClapWrapper,
+        left: f32,
+        right: f32,
+    ) -> (f32, f32) {
+        let input_left = [left; 8];
+        let input_right = [right; 8];
+        let mut out_left = [STALE_SAMPLE; 8];
+        let mut out_right = [STALE_SAMPLE; 8];
+        let inputs: [&[f32]; 2] = [&input_left, &input_right];
+        let mut outputs: [&mut [f32]; 2] = [&mut out_left, &mut out_right];
+        wrapper.process(&inputs, &mut outputs, 8);
+        (out_left[3], out_right[3])
+    }
+
+    fn stereo_layout() -> AudioBusLayout {
+        AudioBusLayout::declared(&[2], &[2]).expect("stereo layout builds")
+    }
+
+    /// ADR 0021 DG-003: a failed slot that has a dry input passes it, and
+    /// all-zero was rejected by name because a crashed EQ would mute the track.
+    /// The three sentinels tell the three wrong answers apart: the plugin's
+    /// undefined buffers, the previous block left standing, and silence.
+    #[test]
+    fn a_failed_effect_passes_its_dry_input_rather_than_the_undefined_output() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "a failed effect keeps its slot open with the dry signal: neither \
+             its undefined buffers nor the previous block may reach the bus"
+        );
+        assert!(
+            wrapper.process_refused,
+            "the failure is recorded for the control path to report"
+        );
+    }
+
+    /// The other half of DG-003: an instrument has no dry input to pass, and
+    /// passing the engine's buffer would put whatever fed the slot on the bus.
+    #[test]
+    fn a_failed_instrument_falls_silent_because_it_has_no_dry_input() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let layout = AudioBusLayout::declared(&[], &[2]).expect("an output-only layout builds");
+        let mut wrapper = stub_wrapper_over(layout, status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a generator with no input bus has no dry signal, so its failed \
+             slot is silent rather than passing what was fed to it"
+        );
+        assert!(wrapper.process_refused);
+    }
+
+    /// DG-003 groups instruments with the effects that have no valid dry input,
+    /// and an instrument is what the plugin says it is rather than what its port
+    /// list implies. A synth that takes routed audio into its oscillators — the
+    /// Surge XT shape — declares an input port and still has no dry signal its
+    /// failed slot could honestly pass, so passing that routed signal out of a
+    /// synth slot at unity is the wrong answer twice over.
+    #[test]
+    fn a_failed_instrument_that_declares_an_input_port_still_falls_silent() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let plugin = status_plugin_ptr_with_features(&[INSTRUMENT_FEATURE]);
+        let mut wrapper = stub_wrapper_over(stereo_layout(), plugin);
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.0, 0.0),
+            "a failed instrument is silent whatever it declared for input: not \
+             its undefined buffers, not the previous block, and not the signal \
+             that was routed into it"
+        );
+        assert!(wrapper.process_refused);
+    }
+
+    #[test]
+    fn every_other_status_is_a_success_whose_output_reaches_the_bus() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for status in [
+            CLAP_PROCESS_CONTINUE,
+            CLAP_PROCESS_CONTINUE_IF_NOT_QUIET,
+            CLAP_PROCESS_TAIL,
+            CLAP_PROCESS_SLEEP,
+        ] {
+            STUB_PROCESS_STATUS.store(status, Ordering::Relaxed);
+            let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+            let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+            assert_eq!(
+                (left, right),
+                (UNDEFINED_SAMPLE, UNDEFINED_SAMPLE),
+                "status {status} is a success and its audio must play"
+            );
+            assert!(
+                !wrapper.process_refused,
+                "status {status} is not a failure and must not be recorded as one"
+            );
+        }
+    }
+
+    /// The portless path calls `process` for the output events a note effect
+    /// owes the host, so it has a status to read as well.
+    #[test]
+    fn a_portless_plugin_that_fails_records_it_and_still_passes_the_block() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper_over(AudioBusLayout::portless(), status_plugin_ptr());
+
+        let (left, right) = process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+
+        assert_eq!(
+            (left, right),
+            (0.25, 0.5),
+            "a plugin with no audio ports produced no audio to invalidate, so \
+             its slot still passes the block"
+        );
+        assert!(
+            wrapper.process_refused,
+            "the portless path reads the status too"
+        );
+    }
+
+    /// The audio thread may not print, so it latches the failure and raises the
+    /// process-wide hint the control path wakes on. Raised on the first failing
+    /// block and not again: the store is news, and a plugin failing every block
+    /// has no further news to deliver at block rate.
+    ///
+    /// Reporting itself is driven by the recurring visit that reads this hint —
+    /// covered where that visit lives, in `sourdaw-native`.
+    #[test]
+    fn a_failed_block_latches_and_wakes_the_control_path_once() {
+        let _guard = STATUS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Both backends raise the one process-wide hint, so the VST3 test that
+        // reads it is held off while this one owns it.
+        let _hint_guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_PROCESS_STATUS.store(CLAP_PROCESS_ERROR, Ordering::Relaxed);
+        take_pending_process_refusal_signal();
+        let mut wrapper = stub_wrapper_over(stereo_layout(), status_plugin_ptr());
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+        assert!(
+            !wrapper.process_refusal_reported,
+            "the audio thread records the failure and reports nothing itself"
+        );
+        assert!(
+            take_pending_process_refusal_signal(),
+            "the first failing block wakes the control path"
+        );
+
+        process_block_over_stale_output(&mut wrapper, 0.25, 0.5);
+        assert!(
+            !take_pending_process_refusal_signal(),
+            "a plugin already latched must not store to the hint on every block"
+        );
+    }
+
+    // ── steady_time ──────────────────────────────────────────────────────
+    //
+    // CLAP: "a steady sample time counter … it must be monotonically increasing
+    // and coherent with the block sizes". `-1` means the host has none, which
+    // stops a plugin from placing anything on that clock.
+
+    static CAPTURED_STEADY_TIMES: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+    static STEADY_TIME_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    unsafe extern "C" fn stub_process_recording_steady_time(
+        _plugin: *const clap_plugin,
+        process: *const clap_process,
+    ) -> clap_process_status {
+        CAPTURED_STEADY_TIMES
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((*process).steady_time);
+        CLAP_PROCESS_CONTINUE
+    }
+
+    fn steady_time_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        plugin.process = Some(stub_process_recording_steady_time);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    fn take_captured_steady_times() -> Vec<i64> {
+        std::mem::take(
+            &mut *CAPTURED_STEADY_TIMES
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+    }
+
+    #[test]
+    fn steady_time_advances_by_each_block_on_both_process_paths() {
+        let _guard = STEADY_TIME_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        for (path, layout) in [
+            ("portless", AudioBusLayout::portless()),
+            ("ported", stereo_layout()),
+        ] {
+            take_captured_steady_times();
+            let mut wrapper = stub_wrapper_over(layout, steady_time_plugin_ptr());
+
+            process_one_block(&mut wrapper);
+            process_one_block(&mut wrapper);
+            process_one_block(&mut wrapper);
+
+            assert_eq!(
+                take_captured_steady_times(),
+                vec![0, 8, 16],
+                "the {path} path starts the activation's clock at zero and \
+                 charges it the frames of each block it hands over"
+            );
+        }
+    }
+
+    /// The counter describes one activation. A plugin taken through a
+    /// deactivate/reactivate cycle is entitled to a clock that starts again,
+    /// and one carried across would place its first block eight frames in.
+    #[test]
+    fn steady_time_restarts_at_zero_after_a_reactivation() {
+        let _guard = STEADY_TIME_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        take_captured_steady_times();
+        let mut wrapper = stub_wrapper_over(stereo_layout(), steady_time_plugin_ptr());
+
+        process_one_block(&mut wrapper);
+        process_one_block(&mut wrapper);
+        wrapper
+            .reactivate_for_latency()
+            .expect("the stub reactivates");
+        process_one_block(&mut wrapper);
+
+        assert_eq!(take_captured_steady_times(), vec![0, 8, 0]);
+    }
+
+    // ── Tail ─────────────────────────────────────────────────────────────
+
+    static STUB_TAIL: AtomicU32 = AtomicU32::new(0);
+    static TAIL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    unsafe extern "C" fn stub_tail_get(_plugin: *const clap_plugin) -> u32 {
+        STUB_TAIL.load(Ordering::Relaxed)
+    }
+
+    static STUB_TAIL_EXT: clap_plugin_tail = clap_plugin_tail {
+        get: Some(stub_tail_get),
+    };
+
+    unsafe extern "C" fn stub_get_extension_with_tail(
+        plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        if CStr::from_ptr(id) == CLAP_EXT_TAIL {
+            return &STUB_TAIL_EXT as *const clap_plugin_tail as *const c_void;
+        }
+        stub_get_extension(plugin, id)
+    }
+
+    fn tail_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension_with_tail);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    #[test]
+    fn a_declared_tail_is_what_the_runtime_seam_reports() {
+        let _guard = TAIL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_TAIL.store(4_800, Ordering::Relaxed);
+        let wrapper = stub_wrapper(tail_plugin_ptr());
+
+        assert_eq!(HostedPluginRuntime::tail_samples(&wrapper), 4_800);
+    }
+
+    /// CLAP's own answer for a plugin that does not implement `clap.tail`: no
+    /// tail. Not an infinite one, which is what the top of the range means.
+    #[test]
+    fn a_plugin_without_the_tail_extension_reports_no_tail() {
+        let wrapper = stub_wrapper(stub_plugin_ptr());
+
+        assert_eq!(wrapper.tail_samples(), 0);
+    }
+
+    #[test]
+    fn a_flagged_tail_change_answers_the_value_the_plugin_reports_now() {
+        let _guard = TAIL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        STUB_TAIL.store(1_000, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(tail_plugin_ptr());
+
+        assert_eq!(
+            wrapper.take_tail_change(),
+            None,
+            "nothing was flagged, so nothing is pending"
+        );
+
+        // What `clap_host_tail.changed` does from the plugin's audio thread.
+        wrapper.host_state.mark_tail_dirty();
+        STUB_TAIL.store(96_000, Ordering::Relaxed);
+
+        assert_eq!(
+            HostedPluginRuntime::take_tail_change(&mut wrapper),
+            Some(96_000),
+            "the flag is answered by re-reading the plugin, not by a cached value"
+        );
+        assert_eq!(
+            wrapper.take_tail_change(),
+            None,
+            "one flagged change is answered once"
+        );
+    }
 }
 
 impl Drop for ClapWrapper {
     fn drop(&mut self) {
+        // First, so the observer sees what the dropping thread holds before any
+        // of the teardown below has run.
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.teardown_observer.as_ref())
+        {
+            observe();
+        }
+
         // Close GUI if it's still open
         if self.gui_open {
             self.close_gui();

@@ -177,4 +177,19 @@ describe('TrackAutomationSection', () => {
         fireEvent.click(screen.getByLabelText('Remove lane'));
         expect(mockRemoveAutomationLane).toHaveBeenCalledWith('lane-1');
     });
+
+    it('opens popover menu when clicking add button and adds automation lane on selecting gain', () => {
+        render(<TrackAutomationSection track={mockTrack} />);
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByLabelText(/Add automation lane/i));
+        expect(screen.getByRole('menu', { name: /Add automation lane/i })).toBeInTheDocument();
+
+        const gainOption = screen.getByRole('menuitem', { name: 'Gain' });
+        expect(gainOption).toBeInTheDocument();
+
+        fireEvent.click(gainOption);
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'gain', 'Gain');
+        expect(screen.queryByRole('menu', { name: /Add automation lane/i })).not.toBeInTheDocument();
+    });
 });

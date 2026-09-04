@@ -1,65 +1,62 @@
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::ui_thread::UiThread;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::EngineHandle;
+use daw_plugin_host::scanner::ScannedPlugin;
+// The trait, the resizer and the raw handle are how a plugin's editor is
+// reached, and no production body here does that any more: the stores hold
+// concrete runtimes, and every editor call lives in `commands::plugin_gui`.
+// The fixtures below still implement the trait, so the imports stay for them.
+#[cfg(test)]
 use daw_plugin_host::AudioPlugin;
+#[cfg(test)]
 use daw_plugin_host::EditorWindowResizer;
 use daw_plugin_host::HostedRuntime;
 use daw_plugin_host::PluginParameter;
 use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
+#[cfg(test)]
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
+/// An instance the command layer owns outright, because no engine was running
+/// when it was loaded.
+///
+/// The runtime is held as the concrete `HostedRuntime` the loader built rather
+/// than behind `dyn AudioPlugin`: the engine takes this very value when it
+/// starts (`commands::plugins::attach_dormant_plugins`), and the shared runtime
+/// owner it is handed to is generic over the backend, so a trait object could
+/// never be attached at all. Every editor call still reaches the plugin through
+/// `AudioPlugin`, whose `HostedRuntime` implementation delegates to the backend
+/// this instance actually is.
+///
+/// `name`, `parameters` and `has_gui` mirror `EnginePluginInstanceData`: they
+/// are what the load read off the plugin, and the attach registers the instance
+/// under exactly those rather than asking a plugin that has since been edited.
 pub struct PluginInstanceData {
-    pub plugin: Box<dyn AudioPlugin>,
+    pub plugin: HostedRuntime,
+    pub name: String,
+    pub parameters: Vec<PluginParameter>,
+    pub has_gui: bool,
 }
 
-/// Every method here reaches the plugin through `AudioPlugin` and nothing else.
-///
-/// The editor path used to downcast to `ClapWrapper` and answer "no editor",
-/// "not a CLAP plugin" or nothing at all for anything else — which made the
-/// CLAP-only assumption invisible at the call site and wrong for any second
-/// format. The honest answers now live on the trait, where a backend states its
-/// own, and `as_any`/`as_any_mut` are gone with the downcasts they existed for.
 impl PluginInstanceData {
-    /// Check if this plugin instance supports a custom GUI.
-    pub fn has_gui(&self) -> bool {
-        self.plugin.has_gui()
-    }
-
-    /// Get the display name of this plugin.
-    pub fn get_name(&self) -> &str {
-        self.plugin.get_name()
-    }
-
-    /// Hand the plugin the host's own window resizer.
+    /// A dormant record around a runtime, read off the runtime itself.
     ///
-    /// A plugin editor resizes itself, and no return value can carry that: the
-    /// request arrives while the editor is open, from inside the plugin's own
-    /// call into the host. Installed before `open_gui`, because a view laying
-    /// itself out against its new parent may ask during the attach.
-    pub fn set_editor_window_resizer(&mut self, resize: EditorWindowResizer) {
-        self.plugin.set_editor_window_resizer(resize);
-    }
-
-    /// Tell the plugin the display scale its editor's host window runs at.
-    ///
-    /// Stated before `open_gui` for the same reason the resizer is: a view may
-    /// state its size, in units this scale converts, from inside the attach.
-    pub fn set_editor_content_scale(&mut self, scale: f64) {
-        self.plugin.set_editor_content_scale(scale);
-    }
-
-    /// Open the plugin GUI, parenting it into the given native handle.
-    pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
-        self.plugin.open_gui(handle_ptr)
-    }
-
-    /// Close the plugin GUI.
-    pub fn close_gui(&mut self) {
-        self.plugin.close_gui();
+    /// The load path spells the three fields out instead, from the values it
+    /// already read while the plugin was in its hands — it is the load's own
+    /// reading that the attach must register under. This is for the tests that
+    /// park a fixture runtime and care about none of them.
+    #[cfg(test)]
+    pub fn dormant_fixture(plugin: HostedRuntime) -> Self {
+        Self {
+            name: plugin.get_name().to_string(),
+            parameters: plugin.get_parameters(),
+            has_gui: plugin.has_gui(),
+            plugin,
+        }
     }
 }
 
@@ -81,33 +78,6 @@ impl Default for PluginRelayScratch {
         Self {
             left: Vec::with_capacity(MAX_BLOCK_FRAMES),
             right: Vec::with_capacity(MAX_BLOCK_FRAMES),
-        }
-    }
-}
-
-/// The command-side producer end of every crumbs sampler's record bridge.
-///
-/// One struct so the record feed takes exactly one lock per block: the bridge
-/// handles and the de-interleave scratch they share come back together, the
-/// same one-lock discipline `process_plugin_audio` keeps for the CLAP relay.
-/// The lock is command-side only — the native audio callback pops the far end
-/// of these rings through the scheduler and never touches this struct.
-pub struct CrumbsRecordFeed {
-    /// Bridge handles keyed by engine_plugin_id. Holds only crumbs bridges:
-    /// CLAP handles live on their `EnginePluginInstanceData`.
-    pub bridges: HashMap<usize, PluginAudioBridgeHandle>,
-    /// De-interleave scratch refilled in place by every `feed_record_input`
-    /// call, then copied into each bridge's preallocated block. Never grows
-    /// past `MAX_BLOCK_FRAMES`: an oversized block is refused before the
-    /// de-interleave, mirroring `process_plugin_audio`.
-    pub scratch: PluginRelayScratch,
-}
-
-impl Default for CrumbsRecordFeed {
-    fn default() -> Self {
-        Self {
-            bridges: HashMap::new(),
-            scratch: PluginRelayScratch::default(),
         }
     }
 }
@@ -136,6 +106,163 @@ pub struct EnginePluginInstanceData {
     pub parameter_events: Option<Arc<PluginParameterEventQueue>>,
 }
 
+/// The signal one editor teardown completes on.
+///
+/// A reopen that claims a stale editor's record tears the editor behind it
+/// down on its own thread, and the OS-close report that lost the same claim
+/// must not answer the shell until that teardown is done: the shell destroys
+/// the window the moment the report returns, and both plugin formats un-parent
+/// an editor from a live parent or from nothing at all. The loser waits on
+/// this signal; the claiming reopen completes it once its teardown returns.
+///
+/// A condvar pair rather than an atomic flag because the loser has to park
+/// rather than poll — the report already crossed a thread to get here, and
+/// spinning it for a whole teardown would take that thread back from the
+/// executor the teardown itself is running on.
+#[derive(Default)]
+pub struct EditorTeardownSignal {
+    completed: Mutex<bool>,
+    completed_notify: Condvar,
+}
+
+impl EditorTeardownSignal {
+    /// Mark the teardown complete and wake every waiter. Idempotent.
+    pub fn complete(&self) {
+        *self
+            .completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+        self.completed_notify.notify_all();
+    }
+
+    /// Wait until [`Self::complete`] ran, or `bound` elapses.
+    ///
+    /// Answers whether the teardown completed. The bound exists because no
+    /// teardown is worth parking a report behind forever: the claiming reopen
+    /// is itself bounded by the editor-call deadlines, and the shell holds its
+    /// own destroy deadline besides — see the caller for how this bound is
+    /// sized against that one.
+    pub fn wait_until_completed(&self, bound: Duration) -> bool {
+        let deadline = std::time::Instant::now() + bound;
+        let mut completed = self
+            .completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while !*completed {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let (guard, timed_out) = self
+                .completed_notify
+                .wait_timeout(completed, deadline - now)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            completed = guard;
+            if timed_out.timed_out() {
+                return *completed;
+            }
+        }
+        true
+    }
+}
+
+/// The host's plugin editor window bookkeeping.
+///
+/// Two maps behind the one mutex the whole editor lifecycle already shares:
+/// the recorded window labels, and the teardown handshake for records a reopen
+/// has claimed but not yet finished tearing down. Behind one mutex because
+/// claiming a record and registering the handshake that claim owes are a
+/// single step — a report that loses the claim must find the teardown it is
+/// held to, with no gap between the record's removal and the registration
+/// naming who is tearing the editor down.
+///
+/// The wait itself never happens under this mutex: the claimant registers,
+/// tears the editor down with the lock released, and completes; the loser
+/// takes the signal out, drops the guard, and parks on the signal alone.
+#[derive(Default)]
+pub struct PluginWindowRecords {
+    /// Recorded editor windows, keyed by instance id → window label. A label
+    /// names one opening — see
+    /// [`plugin_editor_window_label`](crate::host::plugin_window::plugin_editor_window_label).
+    labels: HashMap<String, String>,
+    /// The teardown in flight for a claimed record, keyed by instance id.
+    /// Present only between a reopen's claim of a stale record and the
+    /// completion of the teardown that claim owns.
+    teardowns: HashMap<String, Arc<EditorTeardownSignal>>,
+}
+
+impl PluginWindowRecords {
+    /// The instance's recorded editor window label, if it has one.
+    pub fn get(&self, instance_id: &str) -> Option<&String> {
+        self.labels.get(instance_id)
+    }
+
+    /// Record the window label of one editor opening.
+    pub fn insert(&mut self, instance_id: String, window_label: String) {
+        self.labels.insert(instance_id, window_label);
+    }
+
+    /// Remove the instance's recorded window label and answer it.
+    ///
+    /// Handshake state is not touched: it belongs to the claim that put it
+    /// there, and only that claim's completion takes it back out.
+    pub fn remove(&mut self, instance_id: &str) -> Option<String> {
+        self.labels.remove(instance_id)
+    }
+
+    /// Whether no editor window is recorded — the question the shutdown and
+    /// unload passes ask as "is there any editor left?".
+    pub fn is_empty(&self) -> bool {
+        self.labels.is_empty()
+    }
+
+    /// Every instance with a recorded editor window.
+    pub fn instance_ids(&self) -> impl Iterator<Item = &str> {
+        self.labels.keys().map(String::as_str)
+    }
+
+    /// Every recorded window label.
+    pub fn labels(&self) -> impl Iterator<Item = &str> {
+        self.labels.values().map(String::as_str)
+    }
+
+    /// Take every recorded window label, leaving none behind.
+    ///
+    /// For the pass that destroys every editor window: the labels come out and
+    /// the record empties in the one step, under the lock the caller holds.
+    pub fn take_labels(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.labels).into_values().collect()
+    }
+
+    /// Register the teardown a claiming reopen is about to run.
+    ///
+    /// Replaces any teardown still registered for the instance: a claim that
+    /// never completed has nothing left to wait for once a newer claim owns
+    /// the editor, and that older claim's waiters are bounded anyway.
+    pub fn register_teardown(&mut self, instance_id: &str, signal: Arc<EditorTeardownSignal>) {
+        self.teardowns.insert(instance_id.to_string(), signal);
+    }
+
+    /// The teardown in flight for the instance, if a claim is mid-teardown.
+    pub fn teardown_in_flight(&self, instance_id: &str) -> Option<Arc<EditorTeardownSignal>> {
+        self.teardowns.get(instance_id).cloned()
+    }
+
+    /// Forget the registered teardown, but only if it is still this one.
+    ///
+    /// A newer claim may have replaced it, and taking that one out would leave
+    /// the new claim's losing reports nothing to find.
+    pub fn forget_teardown(&mut self, instance_id: &str, signal: &Arc<EditorTeardownSignal>) {
+        let still_this_one = self
+            .teardowns
+            .get(instance_id)
+            .is_some_and(|registered| Arc::ptr_eq(registered, signal));
+        if still_this_one {
+            self.teardowns.remove(instance_id);
+        }
+    }
+}
+
 pub struct AppState {
     /// Native audio engine handle (audio-owner thread + lock-free scheduler).
     /// None until the first `apply_graph_commands` batch lazily starts it
@@ -149,16 +276,12 @@ pub struct AppState {
     /// Registry mapping plugin_id → (file_path, clap_plugin_id).
     /// Populated by scan_plugins so load_plugin can find the library.
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
-    /// Open plugin GUI windows, keyed by instance_id → window label.
-    pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
-    /// The crumbs samplers' record feed: bridge handles keyed by
-    /// engine_plugin_id, plus the shared de-interleave scratch the feed
-    /// command refills per block. Only crumbs registration writes the map;
-    /// `feed_record_input` reads it once per monitored-input block.
-    /// A CLAP instance's handle is not here — it lives on its
-    /// `EnginePluginInstanceData`, because the relay resolves it by instance id
-    /// on the audio relay path.
-    pub audio_bridges: Arc<Mutex<CrumbsRecordFeed>>,
+    /// Open plugin GUI windows and the teardown handshake that holds a losing
+    /// OS-close report behind the claiming reopen's teardown, keyed by
+    /// instance id. One mutex, because claiming a record and registering the
+    /// teardown that claim owes are a single step — see
+    /// [`PluginWindowRecords`].
+    pub plugin_windows: Arc<Mutex<PluginWindowRecords>>,
     /// Retired engine-owned runtimes kept alive after scheduler removal is
     /// queued so the render callback never final-drops a hosted plugin. Declared
     /// after `engine` so app teardown drops the stream before these runtimes.
@@ -168,10 +291,9 @@ pub struct AppState {
     /// invariant.
     pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedHostedPlugin>>>>,
     /// Input blocks `process_plugin_audio` could not hand to a bridge because
-    /// its input ring was full. Each one is audio the plugin never saw, and on
-    /// the native sampler's record feed it is a hole in the recording — so the
-    /// refusal is counted and reported through `engine_rt_diagnostics` rather
-    /// than discarded with the block.
+    /// its input ring was full. Each one is audio the hosted plugin never saw,
+    /// so the refusal is counted and reported through `engine_rt_diagnostics`
+    /// rather than discarded with the block.
     pub bridge_input_blocks_refused: Arc<AtomicU64>,
     /// Decoded timeline material, keyed by the app's stable source id.
     ///
@@ -207,9 +329,16 @@ pub struct AppState {
 /// own convention, and `sample_rate` is the *material's* rate — a clip
 /// scheduled onto an engine running at a different rate is converted at the
 /// clip's `playback_rate` (rate conversion, not time stretch).
+///
+/// The channels are shared, not owned: one registration allocates the PCM once
+/// and every clip scheduled over it holds the same allocation. Material is
+/// immutable once registered — re-registering an id replaces the whole sample —
+/// so there is nothing for sharing to race against, and the clips a project
+/// makes of one take (loop passes, comp regions, gap fills) cost a pointer each
+/// instead of a copy each.
 pub struct TimelineSample {
-    pub left: Vec<f32>,
-    pub right: Vec<f32>,
+    pub left: Arc<[f32]>,
+    pub right: Arc<[f32]>,
     pub sample_rate: f32,
 }
 
@@ -240,6 +369,32 @@ pub struct PluginRegistryEntry {
     pub capability_metadata_reason: Option<String>,
 }
 
+impl PluginRegistryEntry {
+    /// The registry row a scanned plugin resolves to.
+    ///
+    /// The single mapping from a scan result to a registry row: the scan's own
+    /// index, the persisted registry and the activation rescan all go through
+    /// it, so none of them can come to disagree about what a scanned plugin
+    /// means.
+    ///
+    /// `capability_metadata_reason` travels with the values it qualifies and is
+    /// never dropped on the way through. A row that kept the counts and lost
+    /// the reason would state as fact what the scan recorded as unknown.
+    pub fn from_scanned(plugin: &ScannedPlugin) -> Self {
+        Self {
+            path: plugin.path.clone(),
+            stable_id: plugin.id.clone(),
+            descriptor_id: plugin.descriptor_id.clone(),
+            format: plugin.format.clone(),
+            name: plugin.name.clone(),
+            num_inputs: plugin.num_inputs,
+            num_outputs: plugin.num_outputs,
+            has_custom_ui: plugin.has_custom_ui,
+            capability_metadata_reason: plugin.capability_metadata_reason.clone(),
+        }
+    }
+}
+
 impl AppState {
     /// App state whose plugin registry is backed by the scan registry file in
     /// the platform's app-data directory. The production constructor.
@@ -265,8 +420,7 @@ impl Default for AppState {
             plugins: Arc::new(Mutex::new(HashMap::new())),
             engine_plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
-            plugin_windows: Arc::new(Mutex::new(HashMap::new())),
-            audio_bridges: Arc::new(Mutex::new(CrumbsRecordFeed::default())),
+            plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
             bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
             timeline_samples: Arc::new(Mutex::new(HashMap::new())),
@@ -291,7 +445,16 @@ pub struct LivePluginInstances {
     /// the watcher threads hold clones — so dropping one runs the plugin's
     /// teardown only once every other clone is gone.
     pub engine_owned: Vec<EnginePluginInstanceData>,
+    /// One message per store this pass could not take at all, so its instances
+    /// are still in it. A store, not a name: a store that would not open cannot
+    /// be read for the names it holds.
+    pub left_in_a_busy_store: Vec<String>,
 }
+
+/// What the report says about command-owned instances the exit pass could not
+/// reach. Their teardown did not run.
+const COMMAND_OWNED_STORE_WAS_BUSY: &str =
+    "Command-owned plugin instances were busy; they were not torn down";
 
 /// Take a lock whose data stays usable after a panic elsewhere.
 ///
@@ -303,6 +466,44 @@ pub(crate) fn locked_or_poisoned<Value>(lock: &Mutex<Value>) -> MutexGuard<'_, V
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
+}
+
+/// Take a store's lock, refusing rather than parking when this is the shell's
+/// UI thread.
+///
+/// `None` means the store was busy and the caller must do without it. Only the
+/// UI thread refuses: a worker may hold one of these across an editor call it
+/// needs the UI thread to run (`commands::plugin_gui`), so the UI thread waiting
+/// here waits for itself. Every other caller is a worker, and a worker waiting
+/// closes no cycle.
+///
+/// A poisoned store is still handed over, for the reason
+/// [`locked_or_poisoned`] gives: teardown is exactly what must survive a panic
+/// somewhere else.
+fn claimed_unless_the_ui_thread_would_park<'store, Value, Ui: UiThread + ?Sized>(
+    lock: &'store Mutex<Value>,
+    ui: &Ui,
+) -> Option<MutexGuard<'store, Value>> {
+    if !ui.is_ui_thread() {
+        return Some(locked_or_poisoned(lock));
+    }
+
+    match lock.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(TryLockError::WouldBlock) => None,
+        Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+    }
+}
+
+/// Empty a store into a vec of its values, every one handed back **undropped**.
+///
+/// Dropping a plugin instance runs the plugin's own teardown — third-party code
+/// of unbounded duration — and running that inside the store's critical section
+/// parks every other plugin command for its whole length. So the values leave
+/// the guard alive and the caller drops them outside it, the discipline
+/// [`sweep_retired_runtimes`] keeps for the retirement vec.
+fn take_store_values<Value>(store: &mut HashMap<String, Value>) -> Vec<Value> {
+    std::mem::take(store).into_values().collect()
 }
 
 fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtime: Arc<Runtime>) {
@@ -390,6 +591,33 @@ impl AppState {
         runtime.with_control(Duration::from_secs(2), operation)
     }
 
+    /// The same operation, but refusing an instance whose control gate is busy
+    /// rather than waiting for it.
+    ///
+    /// For callers that must not park: the gate's wait is unbounded, and a
+    /// caller running on the shell's UI thread cannot afford one — the worker
+    /// holding the gate may itself be waiting for that very thread, and the
+    /// refusal is what breaks the cycle. See
+    /// [`SharedHostedPlugin::try_with_control`](crate::host::native_bridge::SharedHostedPlugin::try_with_control).
+    pub fn try_with_engine_plugin_control<ResultValue>(
+        &self,
+        instance_id: &str,
+        operation: impl FnOnce(&mut HostedRuntime) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let runtime = {
+            let engine_plugins = self
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            engine_plugins
+                .get(instance_id)
+                .map(|instance| Arc::clone(&instance.runtime))
+                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
+        };
+
+        runtime.try_with_control(Duration::from_secs(2), operation)
+    }
+
     pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedHostedPlugin>) {
         match self.retired_engine_plugins.lock() {
             Ok(mut retired_plugins) => {
@@ -419,22 +647,41 @@ impl AppState {
     /// inside a store's critical section parks every other plugin command for
     /// its whole duration — the discipline `sweep_retired_runtimes` keeps for
     /// the retirement vec.
-    pub fn take_live_plugin_instances(&self) -> LivePluginInstances {
+    ///
+    /// `ui` is here because this pass runs on the shell's UI thread at exit, and
+    /// the command-owned store is held across editor calls that need that very
+    /// thread. Waiting for it there is a deadlock the shell only leaves through
+    /// its force-exit, which kills every plugin mid-flight — so the store is
+    /// claimed without parking, and a store that will not open is reported
+    /// instead of waited for.
+    ///
+    /// The engine-owned store is taken outright: nothing holds it across an
+    /// editor call, so no holder of it is waiting on the thread this pass runs
+    /// on.
+    pub fn take_live_plugin_instances<Ui: UiThread + ?Sized>(
+        &self,
+        ui: &Ui,
+    ) -> LivePluginInstances {
         let engine_owned = {
             let mut engine_plugins = locked_or_poisoned(&self.engine_plugins);
             for instance in engine_plugins.values() {
                 instance.runtime.begin_unload();
             }
-            std::mem::take(&mut *engine_plugins).into_values().collect()
+            take_store_values(&mut engine_plugins)
         };
 
-        let command_owned = std::mem::take(&mut *locked_or_poisoned(&self.plugins))
-            .into_values()
-            .collect();
+        let Some(mut plugins) = claimed_unless_the_ui_thread_would_park(&self.plugins, ui) else {
+            return LivePluginInstances {
+                command_owned: Vec::new(),
+                engine_owned,
+                left_in_a_busy_store: vec![COMMAND_OWNED_STORE_WAS_BUSY.to_string()],
+            };
+        };
 
         LivePluginInstances {
-            command_owned,
+            command_owned: take_store_values(&mut plugins),
             engine_owned,
+            left_in_a_busy_store: Vec::new(),
         }
     }
 
@@ -451,13 +698,14 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_window::NoWindowHost;
 
     /// A hosted plugin that is not a `ClapWrapper`.
     ///
-    /// The editor methods below used to be reachable only by downcasting the
-    /// boxed plugin to that one concrete type, so a backend like this one got
-    /// "Plugin", "no editor" and a refusal naming CLAP no matter what it
-    /// implemented. Restore either downcast and every assertion in
+    /// The editor path used to reach a plugin only by downcasting it to that
+    /// one concrete type, so a backend like this one got "Plugin", "no editor"
+    /// and a refusal naming CLAP no matter what it implemented. Restore either
+    /// downcast and every assertion in
     /// `a_non_clap_backend_is_reached_through_the_trait` fails.
     struct EditorBackedTestPlugin {
         editor_open: Arc<std::sync::atomic::AtomicBool>,
@@ -568,15 +816,13 @@ mod tests {
     fn the_window_resizer_reaches_the_plugin_before_its_editor_opens() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let (resize, sizes) = recording_resizer(&calls);
-        let mut instance = PluginInstanceData {
-            plugin: Box::new(SelfResizingTestPlugin {
-                calls: Arc::clone(&calls),
-                resize: None,
-            }),
+        let mut plugin = SelfResizingTestPlugin {
+            calls: Arc::clone(&calls),
+            resize: None,
         };
 
-        instance.set_editor_window_resizer(resize);
-        let size = instance
+        plugin.set_editor_window_resizer(resize);
+        let size = plugin
             .open_gui(std::ptr::null_mut())
             .expect("a plugin given a resizer before the open can use it during one");
 
@@ -613,19 +859,17 @@ mod tests {
     #[test]
     fn a_non_clap_backend_is_reached_through_the_trait() {
         let editor_open = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let mut instance = PluginInstanceData {
-            plugin: Box::new(EditorBackedTestPlugin {
-                editor_open: Arc::clone(&editor_open),
-            }),
+        let mut plugin = EditorBackedTestPlugin {
+            editor_open: Arc::clone(&editor_open),
         };
 
-        assert_eq!(instance.get_name(), "Test Backend Plugin");
+        assert_eq!(plugin.get_name(), "Test Backend Plugin");
         assert!(
-            instance.has_gui(),
+            plugin.has_gui(),
             "a backend that reports an editor must be believed"
         );
         assert_eq!(
-            instance.open_gui(std::ptr::null_mut()),
+            plugin.open_gui(std::ptr::null_mut()),
             Ok((640, 480)),
             "the editor size must come from the plugin, not from a downcast that missed"
         );
@@ -634,7 +878,7 @@ mod tests {
             "open_gui must mark the editor open"
         );
 
-        instance.close_gui();
+        plugin.close_gui();
         assert!(
             !editor_open.load(std::sync::atomic::Ordering::SeqCst),
             "close_gui must mark the editor closed"
@@ -646,14 +890,12 @@ mod tests {
     /// subject, and it will be wrong again for the next format.
     #[test]
     fn a_backend_with_no_editor_refuses_without_naming_a_format() {
-        let mut instance = PluginInstanceData {
-            plugin: Box::new(SilentTestPlugin),
-        };
+        let mut plugin = SilentTestPlugin;
 
-        assert_eq!(instance.get_name(), "Plugin");
-        assert!(!instance.has_gui());
+        assert_eq!(plugin.get_name(), "Plugin");
+        assert!(!plugin.has_gui());
 
-        let refusal = instance
+        let refusal = plugin
             .open_gui(std::ptr::null_mut())
             .expect_err("a plugin with no editor cannot open one");
         assert_eq!(refusal, "Plugin does not support GUI");
@@ -664,7 +906,7 @@ mod tests {
 
         // A plugin with no editor has nothing to close, and closing it is not an
         // error a caller has to guard against.
-        instance.close_gui();
+        plugin.close_gui();
     }
 
     #[test]
@@ -823,34 +1065,18 @@ mod tests {
     /// plugin teardown is third-party code of unbounded duration, and running
     /// it inside a store's critical section parks every concurrent plugin
     /// command for its whole length.
+    type ProbeStore = Arc<Mutex<HashMap<String, StoreLockProbe>>>;
+
     struct StoreLockProbe {
-        plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
+        store: ProbeStore,
         dropped: Arc<std::sync::atomic::AtomicBool>,
         store_lock_was_free: Arc<std::sync::atomic::AtomicBool>,
-    }
-
-    impl AudioPlugin for StoreLockProbe {
-        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
-
-        fn set_parameter(&mut self, _: u32, _: f64) {}
-
-        fn get_parameters(&self) -> Vec<PluginParameter> {
-            Vec::new()
-        }
-
-        fn get_state(&self) -> Result<Vec<u8>, String> {
-            Ok(Vec::new())
-        }
-
-        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
-            Ok(())
-        }
     }
 
     impl Drop for StoreLockProbe {
         fn drop(&mut self) {
             self.store_lock_was_free.store(
-                self.plugins.try_lock().is_ok(),
+                self.store.try_lock().is_ok(),
                 std::sync::atomic::Ordering::Relaxed,
             );
             self.dropped
@@ -858,34 +1084,40 @@ mod tests {
         }
     }
 
+    /// The seam both plugin stores are drained through
+    /// ([`AppState::take_live_plugin_instances`]), probed with a value that
+    /// answers from inside its own teardown — a real instance cannot, because
+    /// the runtime it holds is the plugin's and has no hook to lend.
     #[test]
-    fn taking_live_instances_hands_them_back_undropped() {
-        let state = AppState::default();
+    fn taking_a_stores_values_hands_them_back_undropped() {
+        let store: ProbeStore = Arc::new(Mutex::new(HashMap::new()));
         let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let store_lock_was_free = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        state.plugins.lock().expect("plugins lock").insert(
+        store.lock().expect("probe store lock").insert(
             "command-instance".to_string(),
-            PluginInstanceData {
-                plugin: Box::new(StoreLockProbe {
-                    plugins: Arc::clone(&state.plugins),
-                    dropped: Arc::clone(&dropped),
-                    store_lock_was_free: Arc::clone(&store_lock_was_free),
-                }),
+            StoreLockProbe {
+                store: Arc::clone(&store),
+                dropped: Arc::clone(&dropped),
+                store_lock_was_free: Arc::clone(&store_lock_was_free),
             },
         );
 
-        let instances = state.take_live_plugin_instances();
+        let taken = {
+            let mut guard = store.lock().expect("probe store lock");
+            let taken = take_store_values(&mut guard);
+            assert!(
+                !dropped.load(std::sync::atomic::Ordering::Relaxed),
+                "a value dropped inside the drain runs its teardown under the store lock"
+            );
+            taken
+        };
 
-        assert!(
-            !dropped.load(std::sync::atomic::Ordering::Relaxed),
-            "an instance dropped inside the drain runs its teardown under the store lock"
-        );
-
-        drop(instances);
+        assert!(store.lock().expect("probe store lock").is_empty());
+        drop(taken);
 
         assert!(
             dropped.load(std::sync::atomic::Ordering::Relaxed),
-            "the caller's drop must be what tears the instance down"
+            "the caller's drop must be what tears the value down"
         );
         assert!(
             store_lock_was_free.load(std::sync::atomic::Ordering::Relaxed),
@@ -927,7 +1159,7 @@ mod tests {
             "the fixture must start wanted, or the withdrawal below proves nothing"
         );
 
-        let instances = state.take_live_plugin_instances();
+        let instances = state.take_live_plugin_instances(&NoWindowHost);
 
         assert_eq!(instances.engine_owned.len(), 1);
         assert!(

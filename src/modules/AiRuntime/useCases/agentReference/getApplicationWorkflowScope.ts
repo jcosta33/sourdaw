@@ -12,7 +12,12 @@ import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
 import { getMidiOverlapTransformPromptScope } from './getMidiOverlapTransformPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './getSyncopatedArpeggioPromptScope';
 
-type WorkflowTargetScope = Pick<AgentRunScope, 'targetIds' | 'targetRanges' | 'protectedRanges'>;
+/**
+ * What a workflow capability owns about its own scope: the objects it admits as targets, and any
+ * range it wants protected beyond them. Target ranges are not here — they belong to the commands
+ * the batch compiles, and a strategy restating them can only ever agree or be wrong.
+ */
+type WorkflowTargetScope = Pick<AgentRunScope, 'targetIds' | 'protectedRanges'>;
 type WorkflowScopeStrategy = (context: ProjectContext) => WorkflowTargetScope | undefined;
 
 function uniqueIds(ids: readonly string[]): string[] {
@@ -29,10 +34,6 @@ const workflowScopeStrategies: Readonly<Partial<Record<WorkflowCapabilityId, Wor
             targetIds: uniqueIds(
                 scope.clipPairs.flatMap((pair) => [pair.trackId, pair.sourceClipId, pair.targetClipId])
             ),
-            targetRanges: scope.clipPairs.map((pair) => ({
-                startBeat: Math.min(...pair.notePairs.map((notePair) => notePair.relativeStartBeat)),
-                endBeat: Math.max(...pair.notePairs.map((notePair) => notePair.relativeStartBeat)),
-            })),
             protectedRanges: [],
         };
     },
@@ -42,14 +43,7 @@ const workflowScopeStrategies: Readonly<Partial<Record<WorkflowCapabilityId, Wor
             return undefined;
         }
         return {
-            targetIds: uniqueIds([
-                ...scope.entries.flatMap((entry) => [entry.layer.id, ...entry.layer.affectedTrackIds]),
-                scope.targetSection.id,
-            ]),
-            targetRanges: scope.entries.map((entry) => ({
-                startBeat: entry.targetRegion.startBeat,
-                endBeat: entry.targetRegion.endBeat,
-            })),
+            targetIds: uniqueIds(scope.entries.flatMap((entry) => [entry.layer.id, ...entry.layer.affectedTrackIds])),
             protectedRanges: [],
         };
     },
@@ -60,7 +54,6 @@ const workflowScopeStrategies: Readonly<Partial<Record<WorkflowCapabilityId, Wor
         }
         return {
             targetIds: [scope.snare.trackId, scope.hiHat.trackId, scope.snare.clipId, scope.hiHat.clipId],
-            targetRanges: [{ startBeat: scope.section.startBeat, endBeat: scope.section.endBeat }],
             protectedRanges: [],
         };
     },
@@ -71,7 +64,6 @@ const workflowScopeStrategies: Readonly<Partial<Record<WorkflowCapabilityId, Wor
         }
         return {
             targetIds: [scope.busId, ...scope.targetIds],
-            targetRanges: [],
             protectedRanges: [],
         };
     },
@@ -82,10 +74,6 @@ const workflowScopeStrategies: Readonly<Partial<Record<WorkflowCapabilityId, Wor
         }
         return {
             targetIds: scope.entries.flatMap((entry) => [entry.clipId, entry.trackId]),
-            targetRanges: scope.entries.map((entry) => ({
-                startBeat: Math.min(...entry.expectedNotes.map((note) => note.startBeat)),
-                endBeat: Math.max(...entry.expectedNotes.map((note) => note.startBeat)),
-            })),
             protectedRanges: [],
         };
     },
@@ -96,7 +84,6 @@ const workflowScopeStrategies: Readonly<Partial<Record<WorkflowCapabilityId, Wor
         }
         return {
             targetIds: [scope.trackId, scope.clipId],
-            targetRanges: [],
             protectedRanges: [],
         };
     },
@@ -107,6 +94,7 @@ export function getApplicationWorkflowScope(input: {
     actions: readonly AppAction[];
     context: ProjectContext;
     prompt: string;
+    targetRanges: AgentRunScope['targetRanges'];
     workflowCapabilityId: WorkflowCapabilityId | undefined;
 }): AgentRunScope | undefined {
     const strategy = input.workflowCapabilityId ? workflowScopeStrategies[input.workflowCapabilityId] : undefined;
@@ -116,6 +104,7 @@ export function getApplicationWorkflowScope(input: {
     }
     return {
         ...targetScope,
+        targetRanges: input.targetRanges.map((range) => ({ ...range })),
         protectedTargetIds: getApplicationProtectedObjects(input).map((object) => object.id),
     };
 }

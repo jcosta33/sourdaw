@@ -67,7 +67,7 @@ export const ClipView = (): ReactElement => {
     }
 
     // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
-    const openedClipIds: string[] | undefined = (() => {
+    const getOpenedClipIds = (): string[] | undefined => {
         const ids = clipSelection.selectedClipIds;
         if (ids.length <= 1) {
             return undefined;
@@ -76,7 +76,8 @@ export const ClipView = (): ReactElement => {
             tracks.some((time) => time.kind === 'midi' && time.clips.some((context) => context.id === id))
         );
         return midiClipIds.length > 1 ? midiClipIds : undefined;
-    })();
+    };
+    const openedClipIds = getOpenedClipIds();
 
     const handleSelectClip = (clipId: string): void => {
         selectClip(clipId);
@@ -90,33 +91,32 @@ export const ClipView = (): ReactElement => {
             automationScrollRef.current.scrollLeft = sl;
         }
     };
-    const renderIife_8 = () => {
-        if (selectedTrack.kind === 'audio' && selectedClip) {
-            return (
-                <Row gap={1} className="ml-4 bg-muted/50 p-0.5 rounded-md">
-                    <Button
-                        variant={audioEditMode === 'waveform' ? 'secondary' : 'ghost'}
-                        size="xs"
-                        className="h-5 px-2 text-[10px]"
-                        onClick={() => setAudioEditMode('waveform')}
-                    >
-                        Waveform
-                    </Button>
-                    <Button
-                        variant={audioEditMode === 'pitch' ? 'secondary' : 'ghost'}
-                        size="xs"
-                        className="h-5 px-2 text-[10px]"
-                        onClick={() => setAudioEditMode('pitch')}
-                    >
-                        Knead (Pitch)
-                    </Button>
-                </Row>
-            );
-        } else {
+    const renderAudioEditModeToggle = (): ReactElement | null => {
+        if (selectedTrack.kind !== 'audio' || !selectedClip) {
             return null;
         }
+        return (
+            <Row gap={1} className="ml-4 bg-muted/50 p-0.5 rounded-md">
+                <Button
+                    variant={audioEditMode === 'waveform' ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className="h-5 px-2 text-[10px]"
+                    onClick={() => setAudioEditMode('waveform')}
+                >
+                    Waveform
+                </Button>
+                <Button
+                    variant={audioEditMode === 'pitch' ? 'secondary' : 'ghost'}
+                    size="xs"
+                    className="h-5 px-2 text-[10px]"
+                    onClick={() => setAudioEditMode('pitch')}
+                >
+                    Knead (Pitch)
+                </Button>
+            </Row>
+        );
     };
-    const renderIife_9 = () => {
+    const renderEditorBody = (): ReactElement => {
         if (selectedTrack.kind === 'midi' && selectedClip) {
             return (
                 <PianoRoll
@@ -130,26 +130,23 @@ export const ClipView = (): ReactElement => {
                     onContentWidthChange={setPianoRollContentWidth}
                 />
             );
-        } else {
-            if (selectedClip && audioEditMode === 'pitch') {
-                return <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />;
-            } else {
-                if (selectedClip) {
-                    return <WaveformEditor clipId={selectedClip.id} audioBufferId={selectedClip.audioBufferId} />;
-                } else {
-                    return (
-                        <Row align="stretch" grow className="p-4">
-                            <DawEmptyState
-                                compact
-                                className="flex-1"
-                                title="No clips on this track"
-                                description="Add or record a clip in Arrange view, then return here to edit it."
-                            />
-                        </Row>
-                    );
-                }
-            }
         }
+        if (selectedClip && audioEditMode === 'pitch') {
+            return <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />;
+        }
+        if (selectedClip) {
+            return <WaveformEditor clipId={selectedClip.id} audioBufferId={selectedClip.audioBufferId} />;
+        }
+        return (
+            <Row align="stretch" grow className="p-4">
+                <DawEmptyState
+                    compact
+                    className="flex-1"
+                    title="No clips on this track"
+                    description="Add or record a clip in Arrange view, then return here to edit it."
+                />
+            </Row>
+        );
     };
 
     return (
@@ -197,10 +194,10 @@ export const ClipView = (): ReactElement => {
                         ))}
                     </Row>
                 ) : null}
-                {renderIife_8()}
+                {renderAudioEditModeToggle()}
             </DawControlStrip>
             <Row align="stretch" grow className="overflow-hidden">
-                {renderIife_9()}
+                {renderEditorBody()}
             </Row>
             <ClipEditorTray className="h-28">
                 <AutomationLane

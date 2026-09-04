@@ -9,6 +9,7 @@ import {
     PREFERENCES_SCHEMA_VERSION,
     defaultPreferences,
     isAutoSaveIntervalMs,
+    normalizeUiScale,
     type Preferences,
 } from '../models/Preferences';
 
@@ -54,7 +55,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     timelineMinimapHeight: isFiniteNumber,
     voiceCommandKey: (value) => typeof value === 'string',
     theme: isOneOf('dark', 'light'),
-    uiScale: isFiniteNumber,
+    uiScale: (value) => normalizeUiScale(value) === value,
     panelPlacementSidebar: isOneOf('left', 'right'),
     panelPlacementInspector: isOneOf('left', 'right'),
     panelPlacementChat: isOneOf('left', 'right'),

@@ -13,6 +13,7 @@ import { type CommandApprovalBinding, type CommandApprovalValidationResult } fro
 import { commandRequiresDynamicEffects } from './commandRequiresDynamicEffects';
 import { getBatchLocalDependentTargetIds } from './getBatchLocalDependentTargetIds';
 import { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
+import { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 import { getVersionedCommandTargetReferences } from './getVersionedCommandTargetReferences';
 import { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatchEnvelope';
@@ -69,20 +70,6 @@ function getScopeTargetIds(
     return [...targetIds];
 }
 
-function getTargetRanges(commands: readonly VersionedCommandEnvelope[]): CommandBatchRange[] {
-    const ranges: CommandBatchRange[] = [];
-    for (const command of commands) {
-        const beats = command.time
-            .filter((time) => time.domain === 'musical' && time.unit === 'beats')
-            .map((time) => time.value);
-        if (beats.length === 0) {
-            continue;
-        }
-        ranges.push({ startBeat: Math.min(...beats), endBeat: Math.max(...beats) });
-    }
-    return ranges;
-}
-
 function hasDeclaredDynamicEffects(dynamicEffects: CommandBatchDynamicEffects | undefined): boolean {
     return (
         (dynamicEffects?.affectedTrackIds?.length ?? 0) > 0 ||
@@ -131,7 +118,7 @@ function buildEnvelope(input: CompileVersionedCommandBatchEnvelopeInput): Versio
     ];
     const scope = {
         targetIds: targetIds.filter((targetId) => !protectedTargetIds.includes(targetId)),
-        targetRanges: getTargetRanges(commands),
+        targetRanges: getVersionedCommandTargetRanges(commands),
         protectedTargetIds,
         protectedRanges: structuredClone(input.protectedRanges ?? []),
     };

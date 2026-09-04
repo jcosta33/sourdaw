@@ -12,6 +12,8 @@ import { trackStore } from '../../stores/trackStore';
 import { getPluginById } from '../getPluginById';
 
 import { detectSilentBake } from './detectSilentBake';
+import { freezeCompensationOmitTypes } from './freezeCompensationOmitTypes';
+import { freezeCompensationPinSeconds } from './freezeCompensationPinSeconds';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
@@ -193,11 +195,18 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         const freezeId = freezeIdOverride ?? `freeze-${trackId}-${String(renderedAt)}`;
         cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId, freezeProjectId: project.createdAt });
 
-        // FX-4 residual — pin the compensation the chain carried while the
-        // buffer was baked. Frozen playback compensates against this, so a later
-        // plugin-latency change cannot drift the frozen take out of alignment
-        // (nothing marks a frozen track stale on a latency change).
-        const compensationSeconds = getCompensationDelay(trackId);
+        // FX-4 residual — pin only latency the offline print did not bake.
+        // `scheduleTrackClips` already shifts clips by live PDC; pinning the full
+        // omit-list figure would double-apply that delay on frozen playback.
+        // Pin omittedDelay − liveDelay (clamped at 0): plugin/bridge residual
+        // when another track owns session max, or the full omitted figure when
+        // this track is session max (live = 0).
+        const liveDelay = getCompensationDelay(trackId);
+        const omittedDelay = getCompensationDelay(
+            trackId,
+            freezeCompensationOmitTypes(track.devices, scheduleTally.withheldDeviceTypes)
+        );
+        const compensationSeconds = freezeCompensationPinSeconds(liveDelay, omittedDelay);
 
         scope(() => {
             updateTrack(trackId, (time) => ({

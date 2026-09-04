@@ -1,5 +1,9 @@
 // Project/useCases — public contract surface for cross-module project access.
 export { newProject } from './projectPersistence/newProject';
+export { discardProjectChanges } from './projectPersistence/discardProjectChanges';
+export { getProjectSnapshotKey } from './projectPersistence/getProjectSnapshotKey';
+export { quiesceProjectSession } from './projectPersistence/quiesceProjectSession';
+export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
@@ -9,9 +13,12 @@ export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/i
 export { loadProject } from './projectPersistence/loadProject';
 export { migrateLegacyProjectSnapshots } from './projectPersistence/migrateLegacyProjectSnapshots';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
+export { whenProjectIdentityTransitionDependenciesConfigured } from './projectPersistence/whenProjectIdentityTransitionDependenciesConfigured';
+export { failProjectIdentityTransitionDependencies } from './projectPersistence/failProjectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
 export { importSclFile } from './importSclFile';
 export { finishProjectLoading } from './finishProjectLoading';
+export { reportProjectLoadFailure } from './reportProjectLoadFailure';
 export { setProjectKeyRoot } from './setProjectKeyRoot';
 export { setProjectScaleName } from './setProjectScaleName';
 export { pickFiles } from './fileDialog';
@@ -23,6 +30,7 @@ export {
     doesProductionBriefAllowActionBatch,
     productionBriefActionBatchAdmission,
 } from './doesProductionBriefAllowActionBatch';
+export { getProjectScopedBriefLock } from './getProjectScopedBriefLock';
 export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';
@@ -38,7 +46,7 @@ export { runProjectLoadTransaction } from './projectPersistence/helpers/runProje
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
-export { getRecentProjects } from './recentProjects/helpers';
+export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)

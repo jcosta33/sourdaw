@@ -92,6 +92,28 @@ describe('OnboardingTour', () => {
         expect(container.firstChild).toBeNull();
     });
 
+    it('uses the visible mixer anchor when responsive controls render a hidden duplicate', () => {
+        storeState.stepIndex = 3;
+        const hiddenAnchor = document.createElement('button');
+        hiddenAnchor.dataset.onboarding = 'mixer-button';
+        hiddenAnchor.getBoundingClientRect = () => new DOMRect(0, 0, 0, 0);
+        const visibleAnchor = document.createElement('button');
+        visibleAnchor.dataset.onboarding = 'mixer-button';
+        visibleAnchor.getBoundingClientRect = () => new DOMRect(96, 16, 24, 24);
+        document.body.append(hiddenAnchor, visibleAnchor);
+
+        try {
+            render(<OnboardingTour />);
+
+            const spotlight = document.querySelector('rect[stroke="var(--color-accent-orange)"]');
+            expect(spotlight).toHaveAttribute('x', '88');
+            expect(spotlight).toHaveAttribute('width', '40');
+        } finally {
+            hiddenAnchor.remove();
+            visibleAnchor.remove();
+        }
+    });
+
     it('should advance on ArrowRight', async () => {
         render(<OnboardingTour />);
         fireEvent.keyDown(window, { key: 'ArrowRight' });

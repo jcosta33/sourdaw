@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Check } from 'lucide-react';
 
@@ -7,6 +7,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { MODEL_RELEASE_ADMISSION } from '#/infra/release/modelReleaseAdmission';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
@@ -36,30 +37,6 @@ const TIER_COLORS = {
     cloud: 'border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]',
     webllm: 'border-primary/30 bg-primary/20 text-primary',
 } as const;
-
-const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }): ReactElement => {
-    const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClick = (event: MouseEvent) => {
-            if (ref.current && !ref.current.contains(event.target as Node)) {
-                onClose();
-            }
-        };
-        document.addEventListener('mousedown', handleClick);
-        return () => document.removeEventListener('mousedown', handleClick);
-    }, [onClose]);
-
-    return (
-        <div
-            ref={ref}
-            className="daw-floating-surface absolute top-full right-0 z-50 mt-2 overflow-hidden rounded-xl"
-            style={{ width: '260px' }}
-        >
-            {children}
-        </div>
-    );
-};
 
 function getHostedProviderLabel(provider: 'anthropic' | 'openai' | 'openai-compatible'): string {
     if (provider === 'anthropic') {
@@ -149,94 +126,98 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Idle: model selector + load button ─────────────────────────────────
     if (status.state === 'idle') {
-        const renderIife_3 = () =>
+        const loadButtonLabel = (): string =>
             `Download & Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
 
         return (
-            <div className="relative">
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    type="button"
-                    onClick={() => setShowPanel((prev) => !prev)}
-                    className="h-6 gap-1 px-2 text-[10px] font-medium text-primary hover:text-primary hover:bg-primary/10 transition-all"
-                    title="Load AI model"
+            <Popover open={showPanel} onOpenChange={setShowPanel}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        type="button"
+                        className="h-6 gap-1 px-2 text-[10px] font-medium text-primary hover:text-primary hover:bg-primary/10 transition-all"
+                        title="Load AI model"
+                    >
+                        <Sparkles className="size-2.5" aria-hidden="true" />
+                        {backend === 'cloud' ? 'Hosted AI' : 'Load AI'}
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="end"
+                    sideOffset={8}
+                    aria-label="AI Model Setup"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
                 >
-                    <Sparkles className="size-2.5" aria-hidden="true" />
-                    {backend === 'cloud' ? 'Hosted AI' : 'Load AI'}
-                </Button>
-                {showPanel ? (
-                    <DropdownPanel onClose={() => setShowPanel(false)}>
-                        <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
-                            <Row justify="between" gap={2}>
-                                <Row gap={1.5}>
-                                    <Sparkles className="size-3 text-primary" aria-hidden="true" />
-                                    <span className="text-xs font-semibold text-foreground">AI Model</span>
-                                </Row>
-                                <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
-                                    {backendLabel}
-                                </DawMicroBadge>
+                    <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
+                        <Row justify="between" gap={2}>
+                            <Row gap={1.5}>
+                                <Sparkles className="size-3 text-primary" aria-hidden="true" />
+                                <span className="text-xs font-semibold text-foreground">AI Model</span>
                             </Row>
-                        </div>
+                            <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
+                                {backendLabel}
+                            </DawMicroBadge>
+                        </Row>
+                    </div>
 
-                        <Stack gap={1.5} className="px-2 py-2">
-                            {backend === 'webllm' ? (
-                                <>
-                                    {WEBLLM_MODELS.map((model) => (
-                                        <ModelOption
-                                            key={model.id}
-                                            model={model}
-                                            isSelected={model.id === selectedModelId}
-                                            onSelect={() => setSelectedModelId(model.id)}
-                                        />
-                                    ))}
-                                </>
-                            ) : (
-                                <div className="px-1 py-1">
-                                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                                        {modelInfo.description}
-                                    </p>
-                                    <Row align="stretch" gap={3} className="mt-1.5 text-[10px] text-muted-foreground">
-                                        <Row as="span" gap={1} className="inline-flex">
-                                            <Download className="size-3 opacity-60" aria-hidden="true" />
-                                            {modelInfo.downloadSize}
-                                        </Row>
-                                        <Row as="span" gap={1} className="inline-flex">
-                                            <Cpu className="size-3 opacity-60" aria-hidden="true" />
-                                            {modelInfo.ramUsage}
-                                        </Row>
-                                    </Row>
-                                </div>
-                            )}
-
-                            {backend === 'cloud' ? (
-                                <p className="px-1 py-1 text-[10px] text-muted-foreground">
-                                    Configured credentials are verified on the first request.
+                    <Stack gap={1.5} className="px-2 py-2">
+                        {backend === 'webllm' ? (
+                            <>
+                                {WEBLLM_MODELS.map((model) => (
+                                    <ModelOption
+                                        key={model.id}
+                                        model={model}
+                                        isSelected={model.id === selectedModelId}
+                                        onSelect={() => setSelectedModelId(model.id)}
+                                    />
+                                ))}
+                            </>
+                        ) : (
+                            <div className="px-1 py-1">
+                                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                    {modelInfo.description}
                                 </p>
-                            ) : (
-                                <>
-                                    {backend === 'webllm' ? (
-                                        <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
-                                            Downloads and verifies this model for private use in this browser.
-                                        </p>
-                                    ) : null}
-                                    <Button
-                                        size="sm"
-                                        className="w-full text-xs h-7 mt-1"
-                                        onClick={() => {
-                                            setShowPanel(false);
-                                            onLoad(backend === 'webllm' ? selectedModelId : undefined);
-                                        }}
-                                    >
-                                        <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                        {renderIife_3()}
-                                    </Button>
-                                </>
-                            )}
-                        </Stack>
-                    </DropdownPanel>
-                ) : null}
-            </div>
+                                <Row align="stretch" gap={3} className="mt-1.5 text-[10px] text-muted-foreground">
+                                    <Row as="span" gap={1} className="inline-flex">
+                                        <Download className="size-3 opacity-60" aria-hidden="true" />
+                                        {modelInfo.downloadSize}
+                                    </Row>
+                                    <Row as="span" gap={1} className="inline-flex">
+                                        <Cpu className="size-3 opacity-60" aria-hidden="true" />
+                                        {modelInfo.ramUsage}
+                                    </Row>
+                                </Row>
+                            </div>
+                        )}
+
+                        {backend === 'cloud' ? (
+                            <p className="px-1 py-1 text-[10px] text-muted-foreground">
+                                Configured credentials are verified on the first request.
+                            </p>
+                        ) : (
+                            <>
+                                {backend === 'webllm' ? (
+                                    <p className="px-1 text-[10px] text-muted-foreground leading-relaxed">
+                                        Downloads and verifies this model for private use in this browser.
+                                    </p>
+                                ) : null}
+                                <Button
+                                    size="sm"
+                                    className="w-full text-xs h-7 mt-1"
+                                    onClick={() => {
+                                        setShowPanel(false);
+                                        onLoad(backend === 'webllm' ? selectedModelId : undefined);
+                                    }}
+                                >
+                                    <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
+                                    {loadButtonLabel()}
+                                </Button>
+                            </>
+                        )}
+                    </Stack>
+                </PopoverContent>
+            </Popover>
         );
     }
 
@@ -255,52 +236,55 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     // ── Ready: compact pill + unload panel ──────────────────────────────────
     if (status.state === 'ready') {
         return (
-            <div className="relative">
-                <Button
-                    variant="secondary"
-                    size="xs"
-                    type="button"
-                    onClick={() => setShowPanel((prev) => !prev)}
-                    className="h-6 gap-1 px-2 text-[10px] font-medium text-primary transition-all"
-                    title="AI model loaded — click to manage"
+            <Popover open={showPanel} onOpenChange={setShowPanel}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="secondary"
+                        size="xs"
+                        type="button"
+                        className="h-6 gap-1 px-2 text-[10px] font-medium text-primary transition-all"
+                        title="AI model loaded — click to manage"
+                    >
+                        <Sparkles className="size-2.5" aria-hidden="true" />
+                        AI Ready
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="end"
+                    sideOffset={8}
+                    aria-label="AI Model Status"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
                 >
-                    <Sparkles className="size-2.5" aria-hidden="true" />
-                    AI Ready
-                </Button>
-
-                {showPanel ? (
-                    <DropdownPanel onClose={() => setShowPanel(false)}>
-                        <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
-                            <Row justify="between" gap={2}>
-                                <span className="text-xs font-semibold text-foreground truncate">
-                                    {modelInfo.displayName}
-                                </span>
-                                <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
-                                    {backendLabel}
-                                </DawMicroBadge>
-                            </Row>
-                        </div>
-                        <Stack gap={2.5} className="px-3 py-2.5">
-                            <Row gap={1.5} className="text-[10px] text-primary">
-                                <DawStatusDot tone="primary" pulse />
-                                <span>Active · {modelInfo.ramUsage} RAM</span>
-                            </Row>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                className="w-full text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
-                                onClick={() => {
-                                    setShowPanel(false);
-                                    void unloadEngine();
-                                }}
-                            >
-                                <Power className="size-3 mr-1.5" aria-hidden="true" />
-                                Unload from Memory
-                            </Button>
-                        </Stack>
-                    </DropdownPanel>
-                ) : null}
-            </div>
+                    <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
+                        <Row justify="between" gap={2}>
+                            <span className="text-xs font-semibold text-foreground truncate">
+                                {modelInfo.displayName}
+                            </span>
+                            <DawMicroBadge rounded="full" className={TIER_COLORS[tierKey]}>
+                                {backendLabel}
+                            </DawMicroBadge>
+                        </Row>
+                    </div>
+                    <Stack gap={2.5} className="px-3 py-2.5">
+                        <Row gap={1.5} className="text-[10px] text-primary">
+                            <DawStatusDot tone="primary" pulse />
+                            <span>Active · {modelInfo.ramUsage} RAM</span>
+                        </Row>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+                            onClick={() => {
+                                setShowPanel(false);
+                                void unloadEngine();
+                            }}
+                        >
+                            <Power className="size-3 mr-1.5" aria-hidden="true" />
+                            Unload from Memory
+                        </Button>
+                    </Stack>
+                </PopoverContent>
+            </Popover>
         );
     }
 

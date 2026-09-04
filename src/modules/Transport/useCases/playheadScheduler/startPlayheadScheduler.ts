@@ -14,7 +14,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
 
-import { getTempoAtBeat } from '../../models/TempoMap';
+import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -31,6 +31,7 @@ import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
+import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
@@ -338,11 +339,34 @@ export function startPlayheadScheduler(): void {
         }
 
         schedulerSession.accumulatedPosition = newPosition;
-        playheadPositionRef.current = newPosition;
+        // The cursor follows the transport that is producing the sound. While
+        // the native engine is that transport it reports where it actually
+        // rendered to — loop wraps included — and this integration is only the
+        // scheduling clock; the rest of the time there is no engine reading and
+        // the two are the same number.
+        //
+        // The cursor, and only the cursor. Every decision this tick takes below
+        // — the punch window, the follow-action crossing, the clip and MIDI
+        // windows they share — is about material *this* scheduler emitted, and
+        // it emitted it against `newPosition`. Reading a different clock for
+        // some of those decisions and not the others would let punch open on a
+        // beat whose window was never scheduled, or a follow action jump from a
+        // crossing the emitter never saw. One clock decides, and it is the one
+        // that scheduled the sound (ADR 0039). When the engine becomes the
+        // audible transport this integration is what gets re-anchored on it,
+        // and every decision here follows without being rewritten.
+        playheadPositionRef.current = readNativeEngineCursorBeats() ?? newPosition;
 
-        // Sync to AudioEngine for real-time DSP (SAB-backed)
+        // Sync to AudioEngine for real-time DSP (SAB-backed).
+        //
+        // The beat goes over with the seconds it maps to. A worklet cannot
+        // integrate the tempo map — it does not have one — so publishing only
+        // the beat and the tempo in force leaves every seconds-domain reader
+        // dividing one by the other, which is the flat conversion that drifts
+        // across a tempo change.
         audioEngine.setTransportInfo(
             newPosition,
+            secondsBetweenBeats(changes, 0, newPosition, current.tempo),
             currentTempo,
             current.isPlaying,
             current.loopStart,

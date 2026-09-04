@@ -40,9 +40,14 @@ type CapturedStoreOptions = {
 };
 
 function getArrangementStoreOptions(): CapturedStoreOptions {
-    const calls = vi.mocked(createStore).mock.calls;
-    expect(calls.length).toBeGreaterThanOrEqual(1);
-    return calls[0]![0] as CapturedStoreOptions;
+    // Select by the sanitize guard, not by call position: importing the store
+    // module now also evaluates the MIDI stores it imports, whose own
+    // createStore calls land in the same mock first.
+    const arrangementCall = vi
+        .mocked(createStore)
+        .mock.calls.find((call) => call[0]?.sanitize === sanitize_arrangement_store_state);
+    expect(arrangementCall).toBeDefined();
+    return arrangementCall![0] as CapturedStoreOptions;
 }
 
 describe('arrangementStore hydration guard', () => {

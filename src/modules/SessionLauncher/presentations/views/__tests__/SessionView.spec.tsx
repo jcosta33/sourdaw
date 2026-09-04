@@ -180,11 +180,9 @@ describe('SessionView', () => {
     });
 
     describe('render-output structure pin (#2518)', () => {
-        // Pins the DOM the grid/slot rendering paths produce, so the restore
-        // of the renderIife_* outline residue to ordinary named JSX helpers
-        // changes no rendered output: this test passes identically before and
-        // after that restore, and any structural drift (classes, icons, badge
-        // styling, state branches) fails it.
+        // Pins the DOM the grid/slot rendering paths produce, so refactors of
+        // the named JSX helpers change no rendered output: any structural
+        // drift (classes, icons, badge styling, state branches) fails it.
         beforeEach(async () => {
             const { useTracks } = await import('../../hooks/useTracks');
             vi.mocked(useTracks).mockReturnValue({

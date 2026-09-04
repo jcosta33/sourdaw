@@ -18,6 +18,8 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandProjectRevisionPort,
+    configureCommandBatchIdempotency,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -43,6 +45,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -613,9 +618,25 @@ describe('bass compressor prompt workflow', () => {
         runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
         runtimeMocks.fetch.mockImplementation(createTurnTrackedHostedResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
+        // jsdom has no navigator.locks; the durable project checkpoint is
+        // written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // Production shape, from `src/app/bootstrap.ts`. Only a batch executed
+        // under the durable idempotency ledger reaches a project checkpoint, and
+        // only a configured revision provider can expose that checkpoint's exact
+        // revision — which the confirmation path requires before it may report a
+        // clean commit.
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -676,8 +697,10 @@ describe('bass compressor prompt workflow', () => {
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
+        commandProjectRevisionPort.setProvider(null);
         await cloudSession.clear();
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 
@@ -1025,7 +1048,9 @@ describe('bass compressor prompt workflow', () => {
         expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
     });
 
-    it('rejects the stale proposal when a later target chain changed after approval', async () => {
+    // The edit below changes the exact target chain this proposal names, and the refusal names that
+    // chain: the divergence port classifies the conflict rather than reporting that anything moved.
+    it('invalidates the stale proposal when a later target chain changed after approval', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
@@ -1044,10 +1069,17 @@ describe('bass compressor prompt workflow', () => {
                 };
             }),
         });
+        // Settle the foreign write into the document so confirmation observes the
+        // divergence deterministically instead of racing the rAF-deferred flush.
+        flushFixtureTrackStore();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-bass-amp']),
+        });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
             ...BASS_AMP_DEVICE_IDS,
@@ -1055,6 +1087,14 @@ describe('bass compressor prompt workflow', () => {
         ]);
         expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-bass-amp']));
     });
 
     it('applies no project, runtime, or undo change when the stale proposal is rejected before execution', async () => {
@@ -1177,7 +1217,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
@@ -1228,7 +1268,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
@@ -1293,7 +1333,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
@@ -1353,7 +1393,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         const receipt = chatStore.value?.messages.find(

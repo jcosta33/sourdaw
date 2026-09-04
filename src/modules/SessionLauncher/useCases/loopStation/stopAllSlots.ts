@@ -7,10 +7,14 @@ export function stopAllSlots(): void {
     }
     loopStationStore.set({
         ...state,
-        slots: state.slots.map((state1) =>
-            state1.state === 'playing' || state1.state === 'overdubbing'
-                ? { ...state1, state: 'stopped' as const }
-                : state1
-        ),
+        slots: state.slots.map((slot) => {
+            if (slot.state !== 'playing' && slot.state !== 'overdubbing' && slot.state !== 'recording') {
+                return slot;
+            }
+            if (slot.layers.length === 0) {
+                return { ...slot, state: 'empty' as const, lengthBeats: 0 };
+            }
+            return { ...slot, state: 'stopped' as const };
+        }),
     });
 }

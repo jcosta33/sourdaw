@@ -5,7 +5,7 @@ import { compileAudioGraphTopology } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureCommandTargetFingerprints } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 type CaptureCommandBatchPreflightStateInput = {
     assetReferences: readonly { assetHash?: string; audioBufferId?: string }[];
@@ -98,6 +98,16 @@ function projectInvariantsAreValid(context: ReturnType<typeof getProjectContext>
     return context.vcaGroups?.every((group) => group.trackIds.every((trackId) => trackIds.has(trackId))) ?? true;
 }
 
+function recordId(id: unknown, ids: Set<string>, duplicates: Set<string>): void {
+    if (typeof id !== 'string' || id.length === 0) {
+        return;
+    }
+    if (ids.has(id)) {
+        duplicates.add(id);
+    }
+    ids.add(id);
+}
+
 function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<string>, visited: WeakSet<object>): void {
     if (Array.isArray(value)) {
         for (const item of value) {
@@ -110,12 +120,7 @@ function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<stri
     }
     visited.add(value);
     const record = value as Record<string, unknown>;
-    if (typeof record.id === 'string' && record.id.length > 0) {
-        if (ids.has(record.id)) {
-            duplicates.add(record.id);
-        }
-        ids.add(record.id);
-    }
+    recordId(record.id, ids, duplicates);
     for (const child of Object.values(record)) {
         findDuplicateIds(child, ids, duplicates, visited);
     }
@@ -430,10 +435,43 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
     };
 }
 
-function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspectionStateInput) {
-    const allIds = new Set<string>();
+/**
+ * Duplicate ids across the project, counting each arrangement as its own id
+ * namespace.
+ *
+ * An arrangement snapshot holds a copy of the track state it arranges, so it
+ * repeats the live `tracks` slot's track, clip, alternative and device ids by
+ * design — that shared identity is what makes it an arrangement *of* those
+ * tracks rather than an unrelated set. Scanning the whole document into one
+ * namespace reports every one of those as a duplicate, so any project carrying
+ * an arrangement fails `projectInvariantsValid` permanently, and
+ * `inspectCurrentAgentProjectRepairState` then holds the project in
+ * repair-required: every mutation is refused and every save fails.
+ *
+ * A collision within the live project, or within one snapshot, is still a real
+ * defect and is still reported. So is a repeated arrangement `id`: it is the
+ * one field `duplicateArrangement` remints, so two snapshots may share every
+ * track, clip, alternative and device id but never their own. Two snapshots
+ * under one id are indistinguishable to `syncCurrentArrangementToStore`, which
+ * overwrites every match with the active snapshot and destroys the other
+ * arrangement, so those ids are scanned in one namespace shared across
+ * snapshots while each snapshot's contents keep their own.
+ */
+function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
-    findDuplicateIds(input.projectDocument, allIds, duplicateIds, new WeakSet<object>());
+    const { arrangements, ...liveDocument } = document;
+    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>());
+    const snapshots = asRecord(arrangements)?.arrangements;
+    const arrangementIds = new Set<string>();
+    for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+        recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
+        findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
+    }
+    return duplicateIds;
+}
+
+function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspectionStateInput) {
+    const duplicateIds = findProjectDuplicateIds(input.projectDocument);
     const inspection = inspectStagedProjectDocument(input.projectDocument);
     return {
         audioGraphValid: inspection.audioGraphValid,
@@ -457,7 +495,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: false,
             targetFingerprints: addSystemTargetFingerprints({}, input.targetIds),
         };
@@ -518,7 +556,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         lockedRanges: (context?.productionBrief?.locks ?? []).flatMap((lock) =>
             lock.scope.kind === 'range' ? [{ startBeat: lock.scope.startBeat, endBeat: lock.scope.endBeat }] : []
         ),
-        projectId: captureProjectRevision(),
+        projectId: captureProjectIdentity(),
         projectInvariantsValid: documentInspection.projectInvariantsValid && authoritativeProjectInvariantsValid,
         targetFingerprints,
     };

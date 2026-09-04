@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntimeConfigurationChangedError';
+import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../../models/HostedAnthropicModels';
 import { streamCloudChatCompletion } from '../streamCloudChatCompletion';
 
 type CloudStreamInput = {
@@ -37,6 +38,7 @@ type CloudStreamEvent =
 type CompatibleStreamInput = {
     runtime: {
         provider: 'openai' | 'openai-compatible';
+        authentication: 'api-key' | 'none';
         session_id: string | null;
         model: string;
         base_url: string;
@@ -104,6 +106,7 @@ describe('streamCloudChatCompletion', () => {
         ]);
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'anthropic',
+            authentication: 'api-key',
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'test-model',
         });
@@ -138,6 +141,23 @@ describe('streamCloudChatCompletion', () => {
         expect(args.messages).toHaveLength(2);
         expect(args.messages[0]).toEqual({ role: 'user', content: 'Hi there' });
         expect(args.messages[1]).toEqual({ role: 'assistant', content: 'Hello' });
+    });
+
+    it('falls back to the catalog default model when the configured runtime carries none', async () => {
+        mocks.getCloudProviderRuntime.mockReturnValue({
+            provider: 'anthropic',
+            authentication: 'api-key',
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: '',
+        });
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn());
+
+        const firstCall = mocks.stream.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        expect(firstCall[0].model).toBe(DEFAULT_HOSTED_ANTHROPIC_MODEL);
     });
 
     it('yields tokens to the onToken callback', async () => {
@@ -236,6 +256,7 @@ describe('streamCloudChatCompletion', () => {
     it('dispatches OpenAI-compatible providers through the fetch stream adapter', async () => {
         const runtime = {
             provider: 'openai-compatible' as const,
+            authentication: 'none' as const,
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
@@ -260,6 +281,7 @@ describe('streamCloudChatCompletion', () => {
     it('aborts a hosted request before its first token when the caller stops', async () => {
         const runtime = {
             provider: 'openai' as const,
+            authentication: 'api-key' as const,
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'gpt-5.2',
             base_url: 'https://api.openai.com/v1',
@@ -291,6 +313,7 @@ describe('streamCloudChatCompletion', () => {
     it('warns when an OpenAI-compatible stream reaches its token limit', async () => {
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
@@ -306,6 +329,7 @@ describe('streamCloudChatCompletion', () => {
     it('rejects when configuration changes as an OpenAI-compatible stream completes', async () => {
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'openai' as const,
+            authentication: 'api-key' as const,
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'gpt-5.2',
             base_url: 'https://api.openai.com/v1',

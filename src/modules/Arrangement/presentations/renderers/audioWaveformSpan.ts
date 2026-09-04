@@ -42,9 +42,11 @@ export type AudioWaveformDrawSpan = {
  * stretchRatio`): the offset span is source time, and crossing it at the
  * clip's playback rate costs `span / rate` of the timeline.
  *
- * The audible span's sample count keeps the renderers' pre-existing
- * `timelineBeats / ratio` consumption convention so every clip that drew
- * correctly before (non-negative offsets) keeps its exact drawn window.
+ * The audible span consumes `timelineBeats * ratio` of source, matching the
+ * scheduler's `playbackRate = stretchRatio` (source consumed over destination
+ * time T is T * stretchRatio). Fit-to-beats stores ratio 0.5 when stretching
+ * 4 beats of material across 8 destination beats, so the draw shows 4 source
+ * beats over those 8.
  *
  * Pure: both renderers must derive identical spans from identical inputs.
  */
@@ -65,7 +67,7 @@ export function computeAudioWaveformDrawSpan({
     const leadingSilenceBeats = Math.max(0, -offsetBeats) / ratio;
     const audibleTimelineBeats = clipBeats - leadingSilenceBeats;
     const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
-    const beatsConsumed = audibleTimelineBeats / ratio;
+    const beatsConsumed = audibleTimelineBeats * ratio;
     const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
     return { startSample, endSample, leadingSilenceBeats, audibleTimelineBeats };
 }

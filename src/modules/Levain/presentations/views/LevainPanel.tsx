@@ -96,8 +96,8 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     });
 
     return (
-        <div className="levain-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
+        <div className="levain-faceplate h-full min-h-[440px] rounded-[26px] p-3">
+            <div className="grid h-full min-h-[440px] grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
                 <Stack as="aside" gap={3}>
                     <Stack as="section" gap={3} className="levain-window p-3">
                         <Row align="start" justify="between" gap={3}>

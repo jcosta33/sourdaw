@@ -13,10 +13,8 @@ export { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 export { getFactoryDrumKitByIndex } from './audioEngineQueries/getFactoryDrumKitByIndex';
 
 export { startAudioRecording } from './audioRecorder/startAudioRecording';
-export { startCrumbsRecordFeed } from './audioRecorder/startCrumbsRecordFeed';
 export { startInputMonitoring } from './audioRecorder/startInputMonitoring';
 export { stopAudioRecording } from './audioRecorder/stopAudioRecording';
-export { stopCrumbsRecordFeed } from './audioRecorder/stopCrumbsRecordFeed';
 export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
@@ -105,6 +103,14 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
+
+export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
+export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
+export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
+export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
+export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/updateNativeLiveGraphSessionTransportMaps';
 
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';

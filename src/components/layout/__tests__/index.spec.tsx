@@ -3,7 +3,7 @@ import { createRef } from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { Divider, Grid, Row, Spacer, Stack } from '../index';
+import { Divider, Grid, Row, Stack } from '../index';
 
 function exercisePublicTypeContract(): void {
     const buttonRef = createRef<HTMLButtonElement>();
@@ -38,11 +38,7 @@ function exercisePublicTypeContract(): void {
     for (const flow of ['row', 'col'] as const) {
         void (<Grid flow={flow}>Grid flow fixture</Grid>);
     }
-    for (const size of [1, 2, 3, 4, 6, 8, 12, 16] as const) {
-        void (<Spacer size={size} />);
-    }
     for (const axis of ['x', 'y'] as const) {
-        void (<Spacer size={1} axis={axis} />);
         void (<Divider axis={axis} />);
     }
     for (const tone of ['subtle', 'default', 'strong'] as const) {
@@ -123,14 +119,6 @@ function exercisePublicTypeContract(): void {
     // @ts-expect-error -- Grid polymorphism is limited to real React element types.
     void (<Grid as="not-a-real-element">Invalid Grid element</Grid>);
 
-    void (<Spacer ref={divRef} size={0} axis="x" data-public-fixture="spacer" aria-hidden="false" />);
-    // @ts-expect-error -- Spacer rejects sizes outside its public scale.
-    void (<Spacer size={5} />);
-    // @ts-expect-error -- Spacer axis accepts x or y only.
-    void (<Spacer size={1} axis="z" />);
-    // @ts-expect-error -- Spacer remains a fixed div and has no as prop.
-    void (<Spacer size={1} as="section" />);
-
     void (<Divider ref={divRef} axis="y" tone="strong" spacing={4} data-public-fixture="divider" />);
     // @ts-expect-error -- Divider axis accepts x or y only.
     void (<Divider axis="z" />);
@@ -145,12 +133,11 @@ function exercisePublicTypeContract(): void {
 void exercisePublicTypeContract;
 
 describe('layout public barrel', () => {
-    it('exports all five primitives for runtime consumers', () => {
+    it('exports all four primitives for runtime consumers', () => {
         render(
             <Stack data-testid="stack">
                 <Row data-testid="row">
                     <Grid data-testid="grid">
-                        <Spacer size={1} data-testid="spacer" />
                         <Divider data-testid="divider" />
                     </Grid>
                 </Row>
@@ -160,7 +147,6 @@ describe('layout public barrel', () => {
         expect(screen.getByTestId('stack')).toBeInTheDocument();
         expect(screen.getByTestId('row')).toBeInTheDocument();
         expect(screen.getByTestId('grid')).toBeInTheDocument();
-        expect(screen.getByTestId('spacer')).toBeInTheDocument();
         expect(screen.getByTestId('divider')).toBeInTheDocument();
     });
 });

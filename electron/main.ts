@@ -30,23 +30,60 @@ import {
     registerDialogChannels,
     registerPathChannels,
     registerScanCommand,
+    registerNativeMenuChannels,
     registerWindowControlChannels,
     SCAN_COMMAND,
 } from './appIpc.js';
-import { EVENT_CHANNEL, STREAM_CHANNEL, WINDOW_MAXIMIZED_CHANGED_CHANNEL } from './channels.js';
+import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
+import {
+    EVENT_CHANNEL,
+    NATIVE_MENU_ACTION_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CHANNEL,
+    STREAM_CHANNEL,
+    WINDOW_MAXIMIZED_CHANGED_CHANNEL,
+} from './channels.js';
 import { EXPOSED_COMMANDS } from './commands.js';
 import { createCommandStream, createEventForwarder } from './events.js';
-import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
+import {
+    bindMainWindowOwnerTeardown,
+    destroyCrashedMainWindow,
+    isApprovedRendererTerminal,
+    notifyCurrentWindowDestroying,
+} from './mainWindowTeardown.js';
+import {
+    loadNativeAddon,
+    NATIVE_ADDON_PATH_ENV,
+    resolveNativeAddonPath,
+    resolveScanHelperPath,
+    type NativeHost,
+} from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
-import { registerPluginWindowHost, type EditorWindowOptions, type EditorWindow } from './pluginGui.js';
+import { createNativeMenuActionDispatcher } from './nativeMenuActionDispatcher.js';
+import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
+import { createPluginCommandAdmission } from './pluginCommandAdmission.js';
+import {
+    registerPluginWindowHost,
+    type EditorWindow,
+    type EditorWindowOptions,
+    type PluginWindowHost,
+} from './pluginGui.js';
 import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolveContentRoots } from './protocol.js';
+import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
+import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
+import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
+import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
+import { publishScanWorkerLaunch } from './scanWorker.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
-import { createQuitHandler, runShutdownWithDeadline, type ShutdownOutcome } from './shutdown.js';
+import { createProductionShellComposition, requestApprovedWindowClose } from './shellComposition.js';
+import { runBeforeQuitCascade, type QuitPreparationOutcome, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
 import { getWindowChromeOptions } from './windowChrome.js';
+import { createWindowCloseCoordinator } from './windowCloseCoordinator.js';
+import { askToSaveBeforeClose } from './windowCloseDialog.js';
 
 import type { WebContents } from 'electron';
 
@@ -94,6 +131,137 @@ const isAllowedNavigation = (url: string): boolean => isNavigationAllowed(allowe
 const isAllowedFrameUrl = trustedFrameGuard(allowedOrigins);
 
 let mainWindow: BrowserWindow | undefined;
+let pluginWindowHost: PluginWindowHost | undefined;
+let destroyMainWindowAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined;
+let closeSessionQuiescedWindow: BrowserWindow | undefined;
+const rendererSessionLifecycle = createRendererSessionLifecycle();
+const rendererSessionQuiescer = createRendererSessionQuiescer(
+    RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL
+);
+
+const createAndActivateWindow = (): BrowserWindow => {
+    rendererSessionLifecycle.startWindow();
+    closeSessionQuiescedWindow = undefined;
+    const window = createWindow();
+    mainWindow = window;
+    nativeMenuActionDispatcher.registerWindow(window);
+    return window;
+};
+
+const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
+    isMac: process.platform === 'darwin',
+    actionChannel: NATIVE_MENU_ACTION_CHANNEL,
+    getWindow: () => mainWindow,
+    createWindow: createAndActivateWindow,
+});
+
+let shellComposition: ReturnType<typeof createProductionShellComposition<ReturnType<typeof Menu.buildFromTemplate>>>;
+
+const nativeMenuAction = (intent: NativeMenuIntent): void => {
+    shellComposition.sendMenuIntent(intent);
+};
+
+const rebuildMacApplicationMenu = (
+    recentProjects: readonly { readonly key: string; readonly name: string }[] = []
+): void => {
+    if (process.platform !== 'darwin') {
+        return;
+    }
+    shellComposition.installMenu(
+        createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects })
+    );
+};
+
+const windowCloseCoordinator = createWindowCloseCoordinator({
+    ask: (title) => askToSaveBeforeClose({ window: mainWindow, dialog, title }),
+    send: (operation, requestId, expected) =>
+        nativeMenuAction({
+            action: operation === 'save' ? 'project:save' : 'project:discard',
+            requestId,
+            projectKey: expected.projectKey,
+            revision: expected.revision,
+        }),
+    onApprovalRevoked: () => {
+        closeSessionQuiescedWindow = undefined;
+        rendererSessionQuiescer.cancel();
+        rendererSessionLifecycle.cancelTeardown();
+    },
+});
+
+const nativeMenuProjectStateController = createNativeMenuProjectStateController({
+    updateCloseState: (state) => windowCloseCoordinator.updateProject(state),
+    getWindow: () => mainWindow,
+    rebuildApplicationMenu: rebuildMacApplicationMenu,
+});
+
+const quiesceApprovedMainWindow = async (): Promise<QuitPreparationOutcome> => {
+    const window = mainWindow;
+    if (window === undefined || window.isDestroyed()) {
+        return 'success';
+    }
+    let destroyed = false;
+    try {
+        if (!window.isDestroyed()) {
+            const outcome = await rendererSessionQuiescer.request(window);
+            if (outcome !== 'success') {
+                if (outcome === 'terminal') {
+                    return 'terminal';
+                }
+                if (
+                    isApprovedRendererTerminal({
+                        owner: window,
+                        currentWindow: () => mainWindow,
+                        permitsClose: () => windowCloseCoordinator.permitsClose(),
+                    })
+                ) {
+                    return 'success';
+                }
+                rendererSessionLifecycle.cancelTeardown();
+                if (windowCloseCoordinator.permitsClose() && rendererSessionQuiescer.timedOut(window)) {
+                    return 'timed-out';
+                }
+                return 'rejected';
+            }
+            if (destroyMainWindowAfterEditorsDetach !== undefined) {
+                destroyed = await destroyMainWindowAfterEditorsDetach();
+            } else {
+                if (!windowCloseCoordinator.permitsClose()) {
+                    return 'rejected';
+                }
+                window.hide();
+                windowCloseCoordinator.markClosing();
+                window.destroy();
+                destroyed = true;
+            }
+        }
+        const quiesced = destroyed || window.isDestroyed();
+        if (!quiesced) {
+            rendererSessionLifecycle.cancelTeardown();
+        }
+        return quiesced ? 'success' : 'rejected';
+    } catch (error) {
+        console.error('[shell] failed to quiesce the renderer before shutdown:', error);
+        try {
+            if (!window.isDestroyed() && windowCloseCoordinator.permitsClose()) {
+                window.hide();
+                window.destroy();
+                destroyed = true;
+            }
+        } catch (destroyError) {
+            console.error('[shell] failed to force renderer teardown before shutdown:', destroyError);
+        }
+        const quiesced = destroyed || window.isDestroyed();
+        if (!quiesced) {
+            rendererSessionLifecycle.cancelTeardown();
+        }
+        return quiesced ? 'success' : 'rejected';
+    } finally {
+        if ((destroyed || window.isDestroyed()) && mainWindow === window) {
+            mainWindow = undefined;
+        }
+    }
+};
 
 const attachWebContentsPolicy = (window: BrowserWindow): void => {
     window.webContents.on('will-navigate', (event, url) => {
@@ -136,6 +304,8 @@ const attachWebContentsPolicy = (window: BrowserWindow): void => {
 };
 
 const createWindow = (): BrowserWindow => {
+    windowCloseCoordinator.resetForWindow();
+    const contentRoots = resolveContentRoots();
     const window = new BrowserWindow({
         width: 1440,
         height: 900,
@@ -144,6 +314,7 @@ const createWindow = (): BrowserWindow => {
         title: 'Sourdaw',
         backgroundColor: '#0a0a0a',
         show: false,
+        ...(process.platform === 'linux' ? { icon: join(contentRoots.distDir, 'icon-transparent.png') } : {}),
         ...getWindowChromeOptions(process.platform),
         webPreferences: {
             // Stated rather than inherited: these three are Electron's defaults
@@ -155,6 +326,12 @@ const createWindow = (): BrowserWindow => {
             // The audio graph, the transport clock and the meters keep running
             // when the window is behind another app. Chromium's background
             // timer throttling would stall them — unacceptable while recording.
+            // The native-engine playhead feed's animation-frame poll is the
+            // live automation writer's only steady-state clock — arm itself
+            // pumps once more, from `armNativeLiveAutomationWriter.ts`, to
+            // prime the first write (`nativeEnginePlayheadFeedState.ts`) — so
+            // this option is also what keeps automation moving while the
+            // window is hidden.
             backgroundThrottling: false,
             // The bundle from `scripts/buildElectronPreload.ts`, not `tsc`'s
             // `preload.js`. A sandboxed preload is CommonJS and its `require`
@@ -165,12 +342,70 @@ const createWindow = (): BrowserWindow => {
     });
 
     window.once('ready-to-show', () => window.show());
+    window.once('closed', () => rendererSessionQuiescer.finalize(window));
     // The frameless chrome's maximize button mirrors the native state; each
     // window reports its own transitions so a recreated window is wired fresh.
     window.on('maximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, true));
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
+    window.on('close', (event) => {
+        if (closeSessionQuiescedWindow === window || windowCloseCoordinator.permitsClose()) {
+            if (process.platform === 'darwin' && closeSessionQuiescedWindow !== window) {
+                event.preventDefault();
+                void completeMacCloseAfterSessionQuiesce({
+                    request: () => rendererSessionQuiescer.request(window),
+                    shouldProceed: () => windowCloseCoordinator.permitsClose() && !window.isDestroyed(),
+                    close: () => {
+                        closeSessionQuiescedWindow = window;
+                        window.close();
+                    },
+                    cancel: () => {
+                        closeSessionQuiescedWindow = undefined;
+                        rendererSessionLifecycle.cancelTeardown();
+                    },
+                });
+                return;
+            }
+            rendererSessionLifecycle.approveTeardown();
+            nativeMenuActionDispatcher.clearPending(window);
+            if (destroyMainWindowAfterEditorsDetach === undefined) {
+                windowCloseCoordinator.markClosing();
+            }
+            return;
+        }
+        requestApprovedWindowClose({
+            event,
+            requestClose: () => windowCloseCoordinator.requestClose(),
+            close: () => {
+                if (!window.isDestroyed()) {
+                    window.close();
+                }
+            },
+        });
+    });
     attachWebContentsPolicy(window);
     void window.loadURL(entryUrl);
+    destroyMainWindowAfterEditorsDetach = bindMainWindowOwnerTeardown(
+        window,
+        pluginWindowHost,
+        () => windowCloseCoordinator.permitsClose(),
+        () => {
+            closeSessionQuiescedWindow = undefined;
+            rendererSessionQuiescer.cancel();
+            rendererSessionLifecycle.cancelTeardown();
+        },
+        () => {
+            notifyCurrentWindowDestroying({
+                isCurrentWindow: () => mainWindow === window,
+                notify: () => {
+                    windowCloseCoordinator.markClosing();
+                },
+            });
+        },
+        () =>
+            windowCloseCoordinator.permitsClose() &&
+            (process.platform !== 'darwin' || closeSessionQuiescedWindow === window),
+        { timers: systemTimers }
+    );
     return window;
 };
 
@@ -275,6 +510,15 @@ const nativeAddonPath = (): string =>
         repoRoot: repoRoot(),
     });
 
+const scanHelperPath = (): string =>
+    resolveScanHelperPath({
+        env: process.env,
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        repoRoot: repoRoot(),
+        platform: process.platform,
+    });
+
 /**
  * The live renderer, for the event and stream paths.
  *
@@ -289,6 +533,36 @@ const rendererTarget = (): BrowserWindow['webContents'] | undefined =>
 
 let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
+const pluginCommandAdmission = createPluginCommandAdmission();
+
+shellComposition = createProductionShellComposition({
+    isMac: process.platform === 'darwin',
+    buildMenu: (template) => Menu.buildFromTemplate(template),
+    setMenu: (menu) => Menu.setApplicationMenu(menu),
+    getMainWindow: () => mainWindow,
+    getFocusedWindow: () => BaseWindow.getFocusedWindow(),
+    sendToFirstResponder: (action) => Menu.sendActionToFirstResponder(action),
+    menuDispatcher: nativeMenuActionDispatcher,
+    runShutdown: (): Promise<ShutdownOutcome> =>
+        runBeforeQuitCascade({
+            refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
+            disposeScanSupervisor: () => scanSupervisor?.dispose(),
+            host: nativeHost,
+            timers: systemTimers,
+        }),
+    closeCoordinator: windowCloseCoordinator,
+    quit: {
+        exit: (code) => app.exit(code),
+        report: (outcome) => {
+            if (outcome.status !== 'completed') {
+                console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
+            }
+        },
+        quiesceBeforeQuit: quiesceApprovedMainWindow,
+        timers: systemTimers,
+    },
+    lifecycle: rendererSessionLifecycle,
+});
 
 /**
  * The plugin-scan supervisor, over a real `utilityProcess`.
@@ -302,11 +576,16 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
     createScanSupervisor({
         timers: systemTimers,
         fork: () => {
+            // The fork inherits the leaf launch command through `...process.env`
+            // rather than recomputing it: `startNativeSurface` publishes it into
+            // the main process's own environment once, before this supervisor is
+            // built, and that one publish is the only place the command is
+            // computed.
             const child = utilityProcess.fork(join(import.meta.dirname, 'scanWorker.js'), [], {
-                // The addon path is passed rather than re-derived: the utility
-                // process has no `app` and cannot ask whether this is a
-                // packaged build.
-                env: { ...process.env, [NATIVE_ADDON_PATH_ENV]: addonPath },
+                env: {
+                    ...process.env,
+                    [NATIVE_ADDON_PATH_ENV]: addonPath,
+                },
                 stdio: 'ignore',
             });
             return {
@@ -325,25 +604,29 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
     });
 
 /**
- * A bare native window for one CLAP editor: no webcontents, hidden until the
- * addon has run the GUI lifecycle and knows the plugin's preferred size,
- * `resizable: false` because that size is the plugin's to choose. 800×600 is
- * only the pre-lifecycle placeholder the addon immediately resizes.
- */
-/**
- * The scale of the display a new plugin editor window lands on.
+ * The scale of the display a plugin editor window is on.
  *
- * Matched against the DAW window, because that is where the editor opens: an
- * editor sized against the primary display's scale is the wrong size on every
- * other one. Read once per create — an editor dragged to a display of a
- * different scale is not re-scaled, which is tracked separately.
+ * The editor's own window when there is one, because an editor dragged to a
+ * display of a different density has to be told; the DAW window otherwise,
+ * which is where an editor is about to open, since an editor sized against the
+ * primary display's scale is the wrong size on every other one.
  */
-const editorWindowScaleFactor = (): number => {
+const editorWindowScaleFactor = (editor?: EditorWindow): number => {
     const daw = mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    const display = daw === undefined ? screen.getPrimaryDisplay() : screen.getDisplayMatching(daw.getBounds());
-    return display.scaleFactor;
+    const bounds = editor?.getBounds() ?? daw?.getBounds();
+    return bounds === undefined
+        ? screen.getPrimaryDisplay().scaleFactor
+        : screen.getDisplayMatching(bounds).scaleFactor;
 };
 
+/**
+ * A bare native window for one plugin editor: no webcontents, hidden until the
+ * addon has run the GUI lifecycle and knows the plugin's preferred size, and
+ * `resizable: false` until the plugin has said whether its editor accepts a
+ * size the host chose — an answer that does not exist until that lifecycle has
+ * run. 800×600 is only the pre-lifecycle placeholder the addon immediately
+ * resizes.
+ */
 const createEditorWindow = (options: EditorWindowOptions): EditorWindow =>
     new BaseWindow({
         width: 800,
@@ -370,6 +653,12 @@ const startNativeSurface = (): void => {
         channel: EVENT_CHANNEL,
     });
 
+    // Published before nativeHost is built, so it is in place before either
+    // scanning call that can follow: the batch scan through the forked
+    // supervisor and the targeted rescan `load_plugin` runs directly on this
+    // host. The addon load itself does not depend on it.
+    publishScanWorkerLaunch(process.env, scanHelperPath());
+
     const addonPath = nativeAddonPath();
     try {
         const addon = loadNativeAddon({ path: addonPath, load: createRequire(import.meta.url) });
@@ -392,6 +681,7 @@ const startNativeSurface = (): void => {
         native: () => nativeHost,
         isTrustedFrameUrl: isAllowedFrameUrl,
         createStream: (streamId) => createCommandStream({ streamId, target: rendererTarget, channel: STREAM_CHANNEL }),
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
         // Every exposed command except the one whose backend is another
         // process. Its channel is registered by `registerScanCommand`, so the
         // renderer-visible surface is identical either way.
@@ -401,13 +691,23 @@ const startNativeSurface = (): void => {
     registerVoiceDictation({ ipcMain, native: () => nativeHost, isTrustedFrameUrl: isAllowedFrameUrl });
 
     scanSupervisor = createUtilityScanSupervisor(addonPath);
-    registerScanCommand({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, supervisor: scanSupervisor });
+    registerScanCommand({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        supervisor: scanSupervisor,
+        acceptsCommand: pluginCommandAdmission.acceptsCommand,
+    });
 
     if (nativeHost !== undefined) {
-        registerPluginWindowHost(nativeHost, {
+        pluginWindowHost = registerPluginWindowHost(nativeHost, {
             createWindow: createEditorWindow,
             getParentWindow: () => (mainWindow !== undefined && !mainWindow.isDestroyed() ? mainWindow : undefined),
             getScaleFactor: editorWindowScaleFactor,
+            // A display added, removed, or rescaled changes the density under
+            // every open editor at once, and none of them moved.
+            watchDisplayChanges: (onChanged) => {
+                screen.on('display-metrics-changed', onChanged);
+            },
         });
     }
 };
@@ -423,9 +723,16 @@ void app.whenReady().then(() => {
     // chrome, menu included.
     if (process.platform === 'linux') {
         Menu.setApplicationMenu(null);
+    } else if (process.platform === 'darwin') {
+        rebuildMacApplicationMenu();
     }
 
-    registerDialogChannels({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, dialogs: dialog });
+    registerDialogChannels({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        dialogs: dialog,
+        native: () => nativeHost,
+    });
     registerPathChannels({
         ipcMain,
         isTrustedFrameUrl: isAllowedFrameUrl,
@@ -445,9 +752,41 @@ void app.whenReady().then(() => {
                 ? BrowserWindow.fromWebContents(sender as WebContents)
                 : null,
     });
+    registerNativeMenuChannels({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        onProjectState: (state, sender) => {
+            const senderWindow =
+                typeof sender === 'object' && sender !== null
+                    ? BrowserWindow.fromWebContents(sender as WebContents)
+                    : null;
+            if (senderWindow !== mainWindow) {
+                return;
+            }
+            nativeMenuProjectStateController.apply(state);
+            nativeMenuActionDispatcher.rendererReady(senderWindow, state.rendererReady === true);
+        },
+        onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
+        onSessionQuiesced: (result, sender) => {
+            const senderWindow =
+                typeof sender === 'object' && sender !== null
+                    ? BrowserWindow.fromWebContents(sender as WebContents)
+                    : null;
+            if (senderWindow !== null) {
+                rendererSessionQuiescer.resolve(senderWindow, result);
+            }
+        },
+        onSessionQuiesceStarted: (requestId, sender) => {
+            const senderWindow =
+                typeof sender === 'object' && sender !== null
+                    ? BrowserWindow.fromWebContents(sender as WebContents)
+                    : null;
+            return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
+        },
+    });
     startNativeSurface();
 
-    mainWindow = createWindow();
+    createAndActivateWindow();
 });
 
 /**
@@ -459,32 +798,7 @@ void app.whenReady().then(() => {
  * shell exits anyway, because a musician who cannot close the app will kill it,
  * and that is strictly worse.
  */
-app.on(
-    'before-quit',
-    createQuitHandler(
-        async (): Promise<ShutdownOutcome> => {
-            // The scan worker first. It holds its own addon instance and its
-            // own tree of per-plugin child processes, and it is the one part of
-            // the shell that a hostile plugin can already have wedged — waiting
-            // on the host's cascade with a scan still running would spend the
-            // deadline on a process that only needs killing.
-            scanSupervisor?.dispose();
-            const host = nativeHost;
-            if (host === undefined) {
-                return { status: 'completed', report: undefined };
-            }
-            return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers: systemTimers });
-        },
-        {
-            exit: (code) => app.exit(code),
-            report: (outcome) => {
-                if (outcome.status !== 'completed') {
-                    console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
-                }
-            },
-        }
-    )
-);
+app.on('before-quit', shellComposition.beforeQuit);
 
 /**
  * Recreate budget for a crashing renderer.
@@ -499,7 +813,22 @@ app.on(
  */
 const MAX_RECREATES = 3;
 const RECREATE_WINDOW_MS = 60_000;
-let recreateTimestamps: number[] = [];
+const rendererCrashRecovery = createRendererCrashRecovery({
+    shouldRecreate: shellComposition.shouldRecreateAfterCrash,
+    createReplacement: createAndActivateWindow,
+    clearPending: (window) => nativeMenuActionDispatcher.clearPending(window),
+    recoverPending: (crashed, replacement) => nativeMenuActionDispatcher.recoverPendingWindow(crashed, replacement),
+    clearCurrent: () => {
+        mainWindow = undefined;
+    },
+    clearForNoWindow: () => {
+        windowCloseCoordinator.clearForNoWindow();
+        mainWindow = undefined;
+    },
+    now: () => Date.now(),
+    maxRecreates: MAX_RECREATES,
+    recreateWindowMs: RECREATE_WINDOW_MS,
+});
 
 app.on('render-process-gone', (_event, contents, details) => {
     console.error(`[shell] render process gone: ${details.reason} (exitCode ${details.exitCode})`);
@@ -514,20 +843,19 @@ app.on('render-process-gone', (_event, contents, details) => {
         return;
     }
 
+    // Captured before the replacement window rebinds teardown to itself:
+    // destroying the new window after a crash would leave the dead parent —
+    // and every editor parented to it — on the CloseImmediately path.
+    const destroyCrashed = destroyMainWindowAfterEditorsDetach;
     const destroyCrashedWindow = (): void => {
-        if (crashedWindow !== null && !crashedWindow.isDestroyed()) {
-            crashedWindow.destroy();
+        if (crashedWindow === null) {
+            return;
         }
+        destroyCrashedMainWindow(crashedWindow, destroyCrashed);
     };
 
-    const now = Date.now();
-    recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
-    if (recreateTimestamps.length >= MAX_RECREATES) {
-        destroyCrashedWindow();
-        mainWindow = undefined;
-        console.error(
-            `[shell] renderer crashed ${String(recreateTimestamps.length + 1)} times within ${String(RECREATE_WINDOW_MS / 1000)}s, not recreating`
-        );
+    rendererCrashRecovery.recover(crashedWindow, destroyCrashedWindow, () => {
+        console.error(`[shell] renderer crashed repeatedly, not recreating`);
         // Deliberately ends with no window. `showErrorBox` is modal, so the
         // user reads the reason first; afterwards `window-all-closed` quits on
         // Windows and Linux, and on macOS the app sits windowless, which is
@@ -536,19 +864,7 @@ app.on('render-process-gone', (_event, contents, details) => {
             'Sourdaw stopped responding',
             `The window crashed repeatedly (last reason: ${details.reason}). Sourdaw has stopped reopening it to avoid a crash loop. Quit and reopen the app; if it keeps happening, the log from this run is the place to start.`
         );
-        return;
-    }
-
-    recreateTimestamps.push(now);
-    // Replacement first, dead window second. `window-all-closed` quits the app
-    // everywhere but macOS, and destroying the only window is what raises it —
-    // so a destroy-then-create order leaves an instant with zero windows in
-    // which the recovery path quits instead of recovering, on two of the three
-    // platforms. Building the replacement first means that instant never
-    // exists, and no ordering question about when Electron emits the event has
-    // to be answered.
-    mainWindow = createWindow();
-    destroyCrashedWindow();
+    });
 });
 
 // A GPU or utility process can die without the session being lost. Record it
@@ -567,7 +883,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-    if (mainWindow === undefined || mainWindow.isDestroyed()) {
-        mainWindow = createWindow();
-    }
+    activateRendererWindow({
+        hasLiveWindow: () => mainWindow !== undefined && !mainWindow.isDestroyed(),
+        clearPending: () => nativeMenuActionDispatcher.clearPending(),
+        createWindow: createAndActivateWindow,
+    });
 });

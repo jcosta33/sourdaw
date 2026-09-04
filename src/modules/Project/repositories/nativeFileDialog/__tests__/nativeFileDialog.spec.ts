@@ -1,21 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { desktopSaveDialog, isDesktopRuntime, readFileBytes } from '#/utils/desktopBridge';
+import { isDesktopRuntime, readFileBytes } from '#/utils/desktopBridge';
 
-import { openViaBrowser } from '../helpers';
-import { openFileDialog } from '../openFileDialog';
 import { openViaNative } from '../openViaNative';
 import { pickFiles } from '../pickFiles';
-import { saveFileDialog } from '../saveFileDialog';
 
 vi.mock('#/utils/desktopBridge', () => ({
     isDesktopRuntime: vi.fn(),
     readFileBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
-    desktopSaveDialog: vi.fn().mockResolvedValue('/save/path.wav'),
-}));
-
-vi.mock('../helpers', () => ({
-    openViaBrowser: vi.fn(),
 }));
 
 vi.mock('../openViaNative', () => ({
@@ -25,42 +17,6 @@ vi.mock('../openViaNative', () => ({
 describe('nativeFileDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-    });
-
-    describe('openFileDialog', () => {
-        it('should use openViaNative on desktop', async () => {
-            vi.mocked(isDesktopRuntime).mockReturnValue(true);
-            vi.mocked(openViaNative).mockResolvedValue(['/path/file.wav']);
-
-            const result = await openFileDialog();
-            expect(result).toEqual(['/path/file.wav']);
-            expect(openViaNative).toHaveBeenCalled();
-        });
-
-        it('should use openViaBrowser in the browser', async () => {
-            vi.mocked(isDesktopRuntime).mockReturnValue(false);
-            vi.mocked(openViaBrowser).mockResolvedValue(['file.wav']);
-
-            const result = await openFileDialog();
-            expect(result).toEqual(['file.wav']);
-            expect(openViaBrowser).toHaveBeenCalled();
-        });
-    });
-
-    describe('saveFileDialog', () => {
-        it('should return null in the browser', async () => {
-            vi.mocked(isDesktopRuntime).mockReturnValue(false);
-            const result = await saveFileDialog();
-            expect(result).toBeNull();
-        });
-
-        it('should use the native save dialog on desktop', async () => {
-            vi.mocked(isDesktopRuntime).mockReturnValue(true);
-            vi.mocked(desktopSaveDialog).mockResolvedValue('/save/path.wav');
-
-            const result = await saveFileDialog({ defaultPath: 'test.wav' });
-            expect(result).toBe('/save/path.wav');
-        });
     });
 
     describe('pickFiles', () => {

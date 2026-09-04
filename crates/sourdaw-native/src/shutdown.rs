@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use crate::commands::collab::{shutdown_discovery, CollabState};
 use crate::commands::plugin_gui::close_every_plugin_gui;
 use crate::host::native_bridge::SharedHostedPlugin;
-use crate::host::plugin_window::PluginWindowHost;
+use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::state::{locked_or_poisoned, AppState, EnginePluginInstanceData};
 
 /// How long the teardown pass may spend *waiting* for the scheduler to release
@@ -62,7 +62,7 @@ const SCHEDULER_RELEASE_POLL: Duration = Duration::from_millis(2);
 /// approach it, because reaching it means the graceful path was abandoned and
 /// every plugin still waiting is killed mid-flight — the outcome this module
 /// exists to prevent.
-const SHELL_FORCE_EXIT_DEADLINE: Duration = Duration::from_millis(5_000);
+pub(crate) const SHELL_FORCE_EXIT_DEADLINE: Duration = Duration::from_millis(5_000);
 
 const _: () = assert!(
     SCHEDULER_RELEASE_BUDGET.as_millis() * 4 <= SHELL_FORCE_EXIT_DEADLINE.as_millis(),
@@ -82,9 +82,10 @@ pub struct ShutdownReport {
     pub editor_close_error: Option<String>,
     /// Live instances whose own teardown ran before the process exited.
     pub destroyed_instances: usize,
-    /// Live instances left standing because something else still held the
-    /// runtime when the waiting budget ran out, one name each. Their teardown
-    /// did *not* run here.
+    /// Live instances left standing, one entry each: a name when the runtime
+    /// was still held elsewhere as the waiting budget ran out, a message when a
+    /// whole store was busy and could not be read for the names in it. Their
+    /// teardown did *not* run here.
     pub abandoned_instances: Vec<String>,
     /// Runtimes still sitting in the retirement vec when the pass gave up,
     /// including every abandoned instance above — they are retained there
@@ -105,6 +106,11 @@ pub fn shutdown(
 ) -> ShutdownReport {
     shutdown_discovery(collab);
 
+    // A quit that has already lost its windows has also lost the shell thread
+    // they lived on, and `NoWindowHost` says so: what is left of the cascade
+    // runs here, on the only thread there is.
+    let editor_thread = windows.unwrap_or(&NoWindowHost);
+
     let mut report = ShutdownReport::default();
     match close_every_plugin_gui(windows, app_state) {
         Ok((closed, refused)) => {
@@ -118,7 +124,7 @@ pub fn shutdown(
     // could not run is exactly the case where reclamation still matters.
     app_state.sweep_retired_engine_plugins();
 
-    destroy_live_plugin_instances(app_state, &mut report);
+    destroy_live_plugin_instances(app_state, editor_thread, &mut report);
 
     report
 }
@@ -142,9 +148,24 @@ pub fn shutdown(
 /// shell's force-exit instead. The window is as wide as whatever remains of an
 /// in-flight `load_plugin` — the tens to hundreds of milliseconds a plugin takes
 /// to instantiate and activate — not an instant, and its cost is that one plugin
-/// missing the teardown this pass exists to give it. #2977 tracks closing it.
-fn destroy_live_plugin_instances(app_state: &AppState, report: &mut ShutdownReport) {
-    let instances = app_state.take_live_plugin_instances();
+/// missing the teardown this pass exists to give it. The shell closes plugin
+/// IPC admission before calling this cascade (#2977); anything already past
+/// that gate when quit began is the only residual window.
+///
+/// It also takes no store the shell's UI thread would have to wait for. The
+/// close pass ahead of it already refuses a busy store rather than parking, and
+/// a pass that then parked on that same store would put the freeze back one
+/// step later — with the editor hops behind it burning their own deadlines
+/// against a pump only this thread can run.
+fn destroy_live_plugin_instances(
+    app_state: &AppState,
+    editor_thread: &dyn PluginWindowHost,
+    report: &mut ShutdownReport,
+) {
+    let instances = app_state.take_live_plugin_instances(editor_thread);
+    report
+        .abandoned_instances
+        .extend(instances.left_in_a_busy_store);
 
     // Command-owned instances are owned outright, so this drop *is* their
     // teardown.
@@ -308,7 +329,7 @@ mod tests {
     use crate::host::plugin_window::{NoWindowHost, PluginEditorWindow};
     use daw_plugin_host::ProcessingGate;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
 
     /// Records what the stores held at `destroy_window` time.
     ///
@@ -321,6 +342,10 @@ mod tests {
         live_engine_plugins_at_destroy: AtomicUsize,
         destroyed: Mutex<Vec<String>>,
     }
+
+    /// The default: this fake has no thread of its own, so editor calls run on
+    /// whichever thread the cascade is already on.
+    impl crate::host::ui_thread::UiThread for OrderRecordingHost {}
 
     impl PluginWindowHost for OrderRecordingHost {
         fn window_exists(&self, _label: &str) -> bool {
@@ -416,15 +441,14 @@ mod tests {
             .expect("plugins lock should be available")
             .insert(
                 instance_id.to_string(),
-                crate::state::PluginInstanceData {
-                    plugin: Box::new(
-                        daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
-                            "Command Fixture",
-                            Vec::new(),
-                            false,
-                        ),
-                    ),
-                },
+                crate::state::PluginInstanceData::dormant_fixture(
+                    daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+                        "Command Fixture",
+                        Vec::new(),
+                        false,
+                    )
+                    .into(),
+                ),
             );
     }
 
@@ -653,6 +677,52 @@ mod tests {
         assert!(
             elapsed < SHELL_FORCE_EXIT_DEADLINE / 4,
             "an abandoned instance must cost a fraction of the shell's force-exit deadline, took {elapsed:?}"
+        );
+    }
+
+    /// The cascade runs synchronously on the shell's UI thread, and a worker
+    /// closing an editor holds the command-owned store across a call that needs
+    /// that thread to run. Parking on the store there waits for this thread, and
+    /// the only way out is the force-exit that kills every plugin mid-flight.
+    ///
+    /// The cascade runs on its own thread here so a pass that parks fails the
+    /// wait instead of hanging the test run.
+    #[test]
+    fn the_teardown_pass_refuses_a_command_owned_store_the_ui_thread_cannot_take() {
+        let state = Arc::new(AppState::default());
+        insert_command_owned_plugin(&state, "command-instance");
+        let held = state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available");
+
+        let (reported, report) = mpsc::channel();
+        let cascade_state = Arc::clone(&state);
+        thread::spawn(move || {
+            let _ = reported.send(shutdown(
+                &CollabState::default(),
+                &cascade_state,
+                Some(&NoWindowHost),
+            ));
+        });
+
+        let report = report
+            .recv_timeout(SHELL_FORCE_EXIT_DEADLINE)
+            .expect("the cascade must not park on a store the UI thread itself has to release");
+
+        assert_eq!(
+            report.destroyed_instances, 0,
+            "an instance the pass never took must not be counted as torn down"
+        );
+        assert_eq!(
+            report.abandoned_instances,
+            ["Command-owned plugin instances were busy; they were not torn down".to_string()],
+            "a store the pass could not take must be named in the report"
+        );
+        assert_eq!(
+            held.len(),
+            1,
+            "the instances must be left in the store rather than half-taken"
         );
     }
 

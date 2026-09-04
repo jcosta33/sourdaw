@@ -1,13 +1,13 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check, RotateCw } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
+import { SafeMarkdown } from '#/components/SafeMarkdown';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { cn } from '#/utils/Styles/cn';
 
@@ -23,62 +23,15 @@ import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActi
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
+import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
 import { ChatComposer } from '../components/ChatComposer';
 
-/**
- * Strict allow-list of markdown-derived HTML elements rendered from streamed,
- * model-produced (and thus untrusted) assistant content. Raw HTML is already
- * off by default (no rehype-raw), but constraining the element set removes the
- * remaining exfiltration vectors: `img` (referer / IP leak on render) and any
- * `svg` / embedded element are absent here, so they are dropped.
- */
-export const ALLOWED_MARKDOWN_ELEMENTS: ReadonlyArray<string> = [
-    'p',
-    'br',
-    'strong',
-    'em',
-    'del',
-    'a',
-    'code',
-    'pre',
-    'blockquote',
-    'ul',
-    'ol',
-    'li',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'hr',
-    'table',
-    'thead',
-    'tbody',
-    'tr',
-    'th',
-    'td',
-];
-
-/**
- * URL scheme allow-list for any surviving URL attribute (e.g. link `href`).
- * Blocks `javascript:`, `data:`, and other dangerous schemes regardless of
- * react-markdown's default; only http(s) and mailto links are kept.
- */
-const SAFE_URL_SCHEMES = ['http:', 'https:', 'mailto:'];
-
-export function safeUrlTransform(url: string): string {
-    try {
-        // Relative URLs (no scheme) resolve against this base and are allowed.
-        const parsed = new URL(url, 'https://sourdaw.invalid/');
-        return SAFE_URL_SCHEMES.includes(parsed.protocol) ? url : '';
-    } catch {
-        // Unparseable URL — drop it.
-        return '';
-    }
-}
+import {
+    RetainedSectionRenderManualReview,
+    type RetainedSectionRenderPreviewCoordinator,
+} from './RetainedSectionRenderManualReview';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */
 const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }): ReactElement => {
@@ -188,14 +141,7 @@ const ChatMessageItem = ({
             >
                 {msg.role === 'assistant' ? (
                     <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
-                        <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            allowedElements={ALLOWED_MARKDOWN_ELEMENTS}
-                            unwrapDisallowed
-                            urlTransform={safeUrlTransform}
-                        >
-                            {msg.content}
-                        </ReactMarkdown>
+                        <SafeMarkdown>{msg.content}</SafeMarkdown>
                         {msg.isStreaming && !!msg.content ? (
                             <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
                         ) : null}
@@ -256,6 +202,26 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
 
     const [inputValue, setInputValue] = useState('');
     const [decisionStatusMessage, setDecisionStatusMessage] = useState<string | null>(null);
+    const [retainedReviewStatusMessage, setRetainedReviewStatusMessage] = useState<string | null>(null);
+    const activeRetainedPreviewRef = useRef<{ ownerId: string; stop: () => void } | null>(null);
+    const [retainedPreviewCoordinator] = useState<RetainedSectionRenderPreviewCoordinator>(() => ({
+        stopOther: (ownerId) => {
+            const active = activeRetainedPreviewRef.current;
+            if (active === null || active.ownerId === ownerId) {
+                return;
+            }
+            activeRetainedPreviewRef.current = null;
+            active.stop();
+        },
+        register: (ownerId, stop) => {
+            activeRetainedPreviewRef.current = { ownerId, stop };
+        },
+        release: (ownerId) => {
+            if (activeRetainedPreviewRef.current?.ownerId === ownerId) {
+                activeRetainedPreviewRef.current = null;
+            }
+        },
+    }));
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -266,10 +232,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         enableReasoning: false,
     });
     const agentRunState = useStore(agentRunStore, { schemaVersion: 1, runs: [] });
+    useStore(agentSectionRenderArtifactStore, { artifacts: [] });
     const capabilityState = useStore(capabilityStore, { phase: 'idle' });
     const decisionRuns = agentRunState.schemaVersion === 1 ? agentRunControls.listDecisions() : [];
     const pendingEffectContinuations = selectAgentRunPendingEffectRecoveries(agentRunState);
     const preparedStemManualRepairs = selectPreparedStemImportManualRepairs(agentRunState);
+    const retainedSectionRenderManualReviews = selectRetainedSectionRenderManualReviews(agentRunState);
     const [executionMode, setExecutionMode] = useState<AgentExecutionMode>(
         chatState?.chatMode === 'prompt' ? 'apply' : 'explain'
     );
@@ -346,7 +314,8 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     if (
         chatState.messages.length === 0 &&
         pendingEffectContinuations.length === 0 &&
-        preparedStemManualRepairs.length === 0
+        preparedStemManualRepairs.length === 0 &&
+        retainedSectionRenderManualReviews.length === 0
     ) {
         chatPanelContent = (
             <Stack align="center" justify="center" className="h-full text-center px-6 opacity-60">
@@ -371,28 +340,24 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                 ))}
                 {pendingEffectContinuations.map((continuation) => {
                     const manualRepairRequired = continuation.recovery === 'manual-repair';
-                    const hasGenericEffect = continuation.effects.some(({ kind }) => kind === 'external-effect');
-                    const repairsCurrentRuntime = continuation.effects.some(
-                        ({ kind, remediation }) => kind === 'runtime-graph' && remediation === 'repair'
-                    );
-                    let actionLabel = 'Retry runtime effect';
-                    if (hasGenericEffect) {
-                        actionLabel = 'Reconcile pending effects';
-                    } else if (repairsCurrentRuntime) {
-                        actionLabel = 'Repair audio graph';
+                    const renderOnlyManualReview =
+                        manualRepairRequired &&
+                        continuation.effects.length > 0 &&
+                        continuation.effects.every(
+                            (effect) =>
+                                effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+                        ) &&
+                        retainedSectionRenderManualReviews.some(
+                            (review) =>
+                                review.binding.runId === continuation.runId &&
+                                review.binding.batchId === continuation.batchId
+                        );
+                    if (renderOnlyManualReview) {
+                        return null;
                     }
-                    let recoveryDescription =
-                        'Retry only the receipt-bound runtime effect without replaying project actions.';
-                    if (manualRepairRequired) {
-                        recoveryDescription =
-                            'At least one external effect cannot be retried exactly. Inspect its retained details and repair it manually; the project mutation will not replay.';
-                    } else if (hasGenericEffect) {
-                        recoveryDescription =
-                            'Reconcile every receipt-bound external effect without replaying project actions.';
-                    } else if (repairsCurrentRuntime) {
-                        recoveryDescription =
-                            'Rebuild the audio graph from the current project without replaying project actions.';
-                    }
+                    const recoveryDescription = manualRepairRequired
+                        ? 'At least one external effect cannot be retried exactly. Inspect its retained details and repair it manually; the project mutation will not replay.'
+                        : 'Reconcile every receipt-bound external effect without replaying project actions.';
                     return (
                         <div
                             key={`${continuation.runId}:${continuation.batchId}`}
@@ -422,18 +387,25 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     variant="secondary"
                                     className="mt-2 h-7 gap-1.5 text-[11px]"
                                     disabled={chatState.isGenerating}
-                                    aria-label={actionLabel}
                                     onClick={() =>
                                         handleRecoverPendingEffects(continuation.runId, continuation.batchId)
                                     }
                                 >
                                     <RotateCw className="size-3" />
-                                    {actionLabel}
+                                    Reconcile pending effects
                                 </Button>
                             )}
                         </div>
                     );
                 })}
+                {retainedSectionRenderManualReviews.map((review) => (
+                    <RetainedSectionRenderManualReview
+                        key={`${review.binding.runId}:${review.binding.batchId}`}
+                        review={review}
+                        onStatus={setRetainedReviewStatusMessage}
+                        previewCoordinator={retainedPreviewCoordinator}
+                    />
+                ))}
                 {preparedStemManualRepairs.map((recovery) => (
                     <div
                         key={`${recovery.runId}:${recovery.batchId}:prepared-stems`}
@@ -503,6 +475,16 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     void handleResumeDecision(runId, alternativeId);
                 }}
             />
+            {retainedReviewStatusMessage !== null ? (
+                <p
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="shrink-0 border-b border-border/50 bg-surface-inset px-4 py-2 text-xs text-muted-foreground"
+                >
+                    {retainedReviewStatusMessage}
+                </p>
+            ) : null}
             {/* Scrollable message list. aria-live announces streamed assistant
                 output for screen-reader users during the long (30–90s) planning
                 pass; aria-busy signals that generation is in progress. */}

@@ -414,4 +414,11 @@ describe('GrinderPanel', () => {
         act(() => setProjectTracks([grinderTrack({})]));
         await waitFor(() => expect(gain).toHaveAttribute('aria-valuenow', String(DEFAULT_PATCH.gain)));
     });
+
+    it('applies minimum height floor and does not clip overflow at root', () => {
+        const { container } = render(<GrinderPanel deviceId={device_id} />);
+        const faceplate = container.querySelector('.grinder-faceplate');
+        expect(faceplate).toHaveClass('min-h-[460px]');
+        expect(faceplate).not.toHaveClass('overflow-hidden');
+    });
 });

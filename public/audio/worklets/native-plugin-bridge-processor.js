@@ -25,10 +25,15 @@
  * view object, not a kilobyte.
  *
  * A block that cannot be sent — every pooled buffer still in flight — is counted
- * in the shared dropout tally rather than disappearing. The output is not
- * zero-filled for this: the previously processed block plays again, which is far
- * less audible than punching a hole, and the count is what makes the event
- * visible.
+ * in the shared dropout tally rather than disappearing, so the event is visible
+ * even though the audio for it is not recoverable.
+ *
+ * A hosted plugin renders on every quantum the engine runs, the way an insert
+ * stays in circuit whether or not anything is feeding it. The Web Audio spec
+ * hands a node with no actively processing upstream an input of zero channels;
+ * that is silence, so it is relayed as silence from a preallocated zero block.
+ * Skipping the quantum instead would cut a reverb or delay tail the moment its
+ * source stops, and leave a generator plugin silent forever.
  *
  * Latency: one audio block (128 samples ≈ 2.67 ms at 48 kHz). The worklet reads
  * the previous block's output while sending the current input.
@@ -61,6 +66,12 @@ function passThrough(input, output) {
     }
 }
 
+function silence(output) {
+    for (let channel = 0; channel < output.length; channel++) {
+        output[channel].fill(0);
+    }
+}
+
 class NativePluginBridgeProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
@@ -72,6 +83,11 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
         this.outputLeft = new Float32Array(MAX_QUANTUM_FRAMES);
         this.outputRight = new Float32Array(MAX_QUANTUM_FRAMES);
         this.outputFrames = 0;
+
+        // Stand-in source for a quantum whose input has no channels. Written
+        // once, by the allocator, and never again: reading zeros costs nothing.
+        this.silentLeft = new Float32Array(MAX_QUANTUM_FRAMES);
+        this.silentRight = new Float32Array(MAX_QUANTUM_FRAMES);
 
         // Transfer buffers not currently in flight. Sized once; never grown.
         this.freeBuffers = [];
@@ -173,30 +189,53 @@ class NativePluginBridgeProcessor extends AudioWorkletProcessor {
     process(inputs, outputs) {
         const input = inputs[0];
         const output = outputs[0];
-        if (!input || !output || input.length < 1) {
+        if (!output) {
             return true;
         }
 
-        const frames = Math.min(input[0].length, MAX_QUANTUM_FRAMES);
+        // Zero channels means nothing upstream is producing audio — an ended
+        // clip, an empty track. The plugin is still asked to render that
+        // quantum, because an insert has to keep running for its own tail to
+        // decay and a generator has no input to wait for. Silence is an input,
+        // not an instruction to stop.
+        const hasSource = input !== undefined && input.length > 0;
+        const left = hasSource ? input[0] : this.silentLeft;
+        const right = hasSource ? (input[1] ?? input[0]) : this.silentRight;
+        const frames = Math.min(hasSource ? input[0].length : output[0].length, MAX_QUANTUM_FRAMES);
 
         if (!this.ready) {
-            passThrough(input, output);
+            // The node is a wire until the relay starts, and a wire fed nothing
+            // carries nothing.
+            if (hasSource) {
+                passThrough(input, output);
+            } else {
+                silence(output);
+            }
             return true;
         }
 
-        // Write the PREVIOUS block's processed output. Before the first reply —
-        // and while blocks are being dropped — the dry signal is the honest
-        // fallback: silence here would be a click the plugin never asked for.
+        // Write the PREVIOUS block's processed output, and consume it: a decoded
+        // block belongs to one quantum, and leaving it in place would replay it
+        // for every quantum the relay falls behind for.
+        //
+        // A quantum with none — before the first reply, or while the relay is
+        // behind — emits silence rather than the dry input. Passing dry makes
+        // the under-run audible as the unprocessed source at full level: a chain
+        // heard as a filter or a distortion briefly plays the raw signal, and a
+        // bridged instrument plays whatever was fed into it. The Rust relay
+        // answers an empty ring the same way, so the two ends of the bridge
+        // under-run identically.
         if (this.outputFrames >= frames) {
             output[0].set(this.outputLeft.subarray(0, frames));
             if (output[1]) {
                 output[1].set(this.outputRight.subarray(0, frames));
             }
+            this.outputFrames = 0;
         } else {
-            passThrough(input, output);
+            silence(output);
         }
 
-        this.sendInput(input[0], input[1] ?? input[0], frames);
+        this.sendInput(left, right, frames);
 
         return true;
     }

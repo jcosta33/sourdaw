@@ -13,6 +13,7 @@ import {
     registerDialogChannels,
     registerPathChannels,
     registerScanCommand,
+    registerNativeMenuChannels,
     registerWindowControlChannels,
     SCAN_COMMAND,
     type NativeDialogs,
@@ -28,9 +29,14 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
 import { commandChannel } from '../commands.js';
 
+import type { NativeHost } from '../native.js';
 import type { IpcMainLike, SenderFrameCarrier } from '../router.js';
 import type { ScanSupervisor } from '../scan.js';
 import type { MessageBoxOptions, OpenDialogOptions, SaveDialogOptions } from 'electron';
@@ -52,9 +58,29 @@ const cancelledDialogs = (): NativeDialogs => ({
     showMessageBox: async (_options: MessageBoxOptions) => ({ response: 0 }),
 });
 
-const dialogHandlers = (answers: Partial<NativeDialogs> = {}): Map<string, Handler> => {
+/** No addon loaded, which is the shell that has no native file commands either. */
+const noNativeHost = (): NativeHost | undefined => undefined;
+
+/**
+ * A host that records the grants a dialog mints, standing in for the addon.
+ *
+ * `grantPath` is the only member the dialogs reach, so the rest of `NativeHost`
+ * is deliberately absent rather than stubbed: a dialog that started calling
+ * anything else should fail here, not find a fake waiting for it.
+ */
+const grantRecorder = (
+    grantPath: NativeHost['grantPath'] = async () => undefined
+): { readonly native: () => NativeHost; readonly grantPath: NativeHost['grantPath'] } => {
+    const spy = vi.fn(grantPath);
+    return { native: () => ({ grantPath: spy }) as unknown as NativeHost, grantPath: spy };
+};
+
+const dialogHandlers = (
+    answers: Partial<NativeDialogs> = {},
+    native: () => NativeHost | undefined = noNativeHost
+): Map<string, Handler> => {
     const { ipcMain, handlers } = collectingIpc();
-    registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: { ...cancelledDialogs(), ...answers } });
+    registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: { ...cancelledDialogs(), ...answers }, native });
     return handlers;
 };
 
@@ -115,6 +141,180 @@ describe('the scan command', () => {
         await expect(handler?.(APP_FRAME, '/a')).rejects.toThrow(/positional array/u);
         await expect(handler?.(APP_FRAME, [['/a'], 'yes'])).rejects.toThrow(/retry_quarantined/u);
         expect(scan).not.toHaveBeenCalled();
+    });
+});
+
+describe('native menu channels', () => {
+    it('accepts only trusted projected state and correlated close replies', async () => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onProjectState = vi.fn();
+        const onSaveResult = vi.fn();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState,
+            onSaveResult,
+            onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
+        });
+        const frame = { ...APP_FRAME, sender: 'sender' };
+
+        await handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL)?.(frame, {
+            title: 'Song',
+            dirty: true,
+            durabilityPending: false,
+            projectKey: 'project',
+            revision: 'revision-1',
+            recentProjects: [],
+        });
+        await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, {
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectKey: 'project',
+            revision: 'revision-2',
+        });
+
+        expect(onProjectState).toHaveBeenCalledWith(
+            {
+                title: 'Song',
+                dirty: true,
+                durabilityPending: false,
+                projectKey: 'project',
+                revision: 'revision-1',
+                recentProjects: [],
+            },
+            'sender'
+        );
+        expect(onSaveResult).toHaveBeenCalledWith({
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectKey: 'project',
+            revision: 'revision-2',
+        });
+    });
+
+    it('rejects projected recent projects that do not match the renderer contract', () => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult: vi.fn(),
+            onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
+        });
+        const projectState = handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL);
+
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectKey: 'project',
+                revision: 'revision-1',
+                recentProjects: 'not-an-array',
+            })
+        ).toThrow(/invalid/u);
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectKey: 'project',
+                revision: 'revision-1',
+                recentProjects: [{ key: 'recent' }],
+            })
+        ).toThrow(/recent project is invalid/u);
+        expect(() => projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: [] })).toThrow(
+            /invalid/u
+        );
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectId: 'canonical-id-is-not-close-authority',
+                revision: 'revision-1',
+                recentProjects: [],
+            })
+        ).toThrow(/invalid/u);
+    });
+
+    it.each([
+        { requestId: 1.5, projectKey: 'project', revision: 'revision-1' },
+        { requestId: 1, revision: 'revision-1' },
+        { requestId: 1, projectKey: 'project' },
+        { requestId: 1, projectId: 'legacy-id', revision: 'revision-1' },
+    ])('rejects an invalid close-save result %# before notifying the coordinator', (partial) => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onSaveResult = vi.fn();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult,
+            onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
+        });
+
+        expect(() =>
+            handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(APP_FRAME, {
+                saved: true,
+                dirty: false,
+                ...partial,
+            })
+        ).toThrow(/invalid/u);
+        expect(onSaveResult).not.toHaveBeenCalled();
+    });
+
+    it('validates both quiesce acknowledgements before calling their trusted callbacks', async () => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onSessionQuiesced = vi.fn();
+        const onSessionQuiesceStarted = vi.fn(() => true);
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult: vi.fn(),
+            onSessionQuiesced,
+            onSessionQuiesceStarted,
+        });
+        const frame = { ...APP_FRAME, sender: 'renderer' };
+
+        expect(handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId: 4 })).toBe(true);
+        const quiesced = handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL);
+        await quiesced?.(frame, { requestId: 4, outcome: 'success' });
+        await quiesced?.(frame, { requestId: 5, outcome: 'rejected' });
+        await quiesced?.(frame, { requestId: 6, outcome: 'terminal' });
+        expect(onSessionQuiesceStarted).toHaveBeenCalledWith(4, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(1, { requestId: 4, outcome: 'success' }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(2, { requestId: 5, outcome: 'rejected' }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(3, { requestId: 6, outcome: 'terminal' }, 'renderer');
+
+        for (const requestId of [0, 1.5, undefined]) {
+            expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId })).toThrow(
+                /invalid/u
+            );
+            expect(() =>
+                handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId, outcome: 'success' })
+            ).toThrow(/invalid/u);
+        }
+        expect(() =>
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 5, outcome: 'yes' })
+        ).toThrow(/invalid/u);
+        expect(() =>
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, {
+                requestId: 5,
+                outcome: 'terminal',
+                quiesced: true,
+            })
+        ).toThrow(/invalid/u);
+        expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(FOREIGN_FRAME, { requestId: 4 })).toThrow(
+            /not the application/u
+        );
+        expect(onSessionQuiesced).toHaveBeenCalledTimes(3);
     });
 });
 
@@ -227,6 +427,154 @@ describe('the save dialog', () => {
     });
 });
 
+/**
+ * The grants a dialog mints (jcosta33/sourdaw#3313).
+ *
+ * The native file commands reach the user's own folders only through these, so
+ * what each dialog grants is the access model itself: too little and a save the
+ * user just asked for is refused, too much and answering one dialog reopens the
+ * blanket directory access this replaced.
+ */
+describe('the grants a dialog mints', () => {
+    const pickedDirectories = (filePaths: readonly string[]): Partial<NativeDialogs> => ({
+        showOpenDialog: async (_options: OpenDialogOptions) => ({ canceled: false, filePaths: [...filePaths] }),
+    });
+
+    it('grants a picked directory recursively and writably, one grant per path', async () => {
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(pickedDirectories(['/samples/kit', '/samples/vox']), native).get(
+            DIALOG_OPEN_CHANNEL
+        );
+
+        await handler?.(APP_FRAME, { directory: true, multiple: true });
+
+        expect(vi.mocked(grantPath).mock.calls).toEqual([
+            ['/samples/kit', 'readwrite', true],
+            ['/samples/vox', 'readwrite', true],
+        ]);
+    });
+
+    it('grants an opened file read-only and only that file', async () => {
+        // Being shown a file is not permission to overwrite it, and the folder
+        // it sits in was never picked at all.
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(pickedDirectories(['/music/take-1.wav']), native).get(DIALOG_OPEN_CHANNEL);
+
+        await handler?.(APP_FRAME, {});
+
+        expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/take-1.wav', 'read', false]]);
+    });
+
+    it('grants a save target writably and alone', async () => {
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(
+            {
+                showSaveDialog: async (_options: SaveDialogOptions) => ({
+                    canceled: false,
+                    filePath: '/music/mix.wav',
+                }),
+            },
+            native
+        ).get(DIALOG_SAVE_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, {})).resolves.toBe('/music/mix.wav');
+        expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/mix.wav', 'readwrite', false]]);
+    });
+
+    const savePicking = (filePath: string): Partial<NativeDialogs> => ({
+        showSaveDialog: async (_options: SaveDialogOptions) => ({ canceled: false, filePath }),
+    });
+
+    it('grants every extension the save dialog offered, not only the one the user picked', async () => {
+        // A mixdown rendered as WAV and MP3 writes both by swapping the
+        // extension of the one path this dialog answers with, so a grant on
+        // the pick alone exports the first format and refuses the second.
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(savePicking('/music/Mix.wav'), native).get(DIALOG_SAVE_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, { filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }] })).resolves.toBe(
+            '/music/Mix.wav'
+        );
+        expect(vi.mocked(grantPath).mock.calls).toEqual([
+            ['/music/Mix.wav', 'readwrite', false],
+            ['/music/Mix.mp3', 'readwrite', false],
+        ]);
+    });
+
+    it('grants one path when the only offered extension is the one the user picked', async () => {
+        // The sibling of a single-format save is the pick itself; granting it
+        // twice would be a second answer to a question asked once.
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(savePicking('/music/Mix.wav'), native).get(DIALOG_SAVE_CHANNEL);
+
+        await handler?.(APP_FRAME, { filters: [{ name: 'WAV', extensions: ['wav'] }] });
+
+        expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/Mix.wav', 'readwrite', false]]);
+    });
+
+    it('refuses a filter list long enough to erase the grant file, before showing a dialog', async () => {
+        // Each grant rewrites the whole grant document, and the registry drops
+        // a document holding more grants than a person could have picked — so
+        // an unbounded filter list is a way to revoke every grant the user
+        // ever made.
+        const { native, grantPath } = grantRecorder();
+        const showSaveDialog = vi.fn(async (_options: SaveDialogOptions) => ({
+            canceled: false,
+            filePath: '/music/Mix.wav',
+        }));
+        const handler = dialogHandlers({ showSaveDialog }, native).get(DIALOG_SAVE_CHANNEL);
+        const extensions = Array.from({ length: 17 }, (_value, index) => `fmt${index}`);
+
+        await expect(handler?.(APP_FRAME, { filters: [{ name: 'Audio', extensions }] })).rejects.toThrow(
+            /at most 16 distinct filter extensions/u
+        );
+        expect(showSaveDialog).not.toHaveBeenCalled();
+        expect(grantPath).not.toHaveBeenCalled();
+
+        await expect(
+            handler?.(APP_FRAME, { filters: [{ name: 'Audio', extensions: extensions.slice(0, 16) }] })
+        ).resolves.toBe('/music/Mix.wav');
+    });
+
+    it('refuses a save pick rather than answering with a path the grant failed for', async () => {
+        // The mirror of the open handler's refusal: a save path whose grant
+        // never landed is a render that fails at its first write.
+        const { native } = grantRecorder(async () => {
+            throw new Error('the grant file is read-only');
+        });
+        const handler = dialogHandlers(savePicking('/music/Mix.wav'), native).get(DIALOG_SAVE_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, {})).rejects.toThrow(/read-only/u);
+    });
+
+    it('grants nothing when the user cancelled or picked nothing', async () => {
+        const { native, grantPath } = grantRecorder();
+        const handlers = dialogHandlers(pickedDirectories([]), native);
+
+        await handlers.get(DIALOG_OPEN_CHANNEL)?.(APP_FRAME, { directory: true });
+        await handlers.get(DIALOG_SAVE_CHANNEL)?.(APP_FRAME, {});
+
+        expect(grantPath).not.toHaveBeenCalled();
+    });
+
+    it('refuses the pick rather than answering with a path the grant failed for', async () => {
+        // Answering anyway hands the renderer a path whose first write is
+        // refused, with nothing to attribute the refusal to.
+        const { native } = grantRecorder(async () => {
+            throw new Error('the grant file is read-only');
+        });
+        const handler = dialogHandlers(pickedDirectories(['/samples/kit']), native).get(DIALOG_OPEN_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, { directory: true })).rejects.toThrow(/read-only/u);
+    });
+
+    it('still answers when no addon is loaded, because that shell has no file commands either', async () => {
+        const handler = dialogHandlers(pickedDirectories(['/samples/kit'])).get(DIALOG_OPEN_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, { directory: true })).resolves.toBe('/samples/kit');
+    });
+});
+
 describe('the message box', () => {
     it('resolves to nothing rather than to a button index', async () => {
         await expect(
@@ -280,7 +628,7 @@ describe('the path helpers', () => {
 describe('the origin guard on every non-command channel', () => {
     it('refuses a foreign frame on each one', () => {
         const { ipcMain, handlers } = collectingIpc();
-        registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: cancelledDialogs() });
+        registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: cancelledDialogs(), native: noNativeHost });
         registerPathChannels({
             ipcMain,
             isTrustedFrameUrl,

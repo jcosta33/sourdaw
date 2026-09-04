@@ -320,6 +320,12 @@ export function createGrooveTemplateAutomergeStorage() {
             reconciledConflictState = null;
             return defaultGrooveTemplateState;
         },
+        // Only a slot already in the entity-map encoding opts out of raw
+        // projection-loss detection. A slot a build predating that encoding left
+        // in the legacy `{ templates: [], assignments: [] }` shape still goes
+        // through `sanitizeGrooveTemplateState`, where a dropped template row is
+        // real loss and observable.
+        ownsCrdtEncoding: isCrdtState,
         resolveCrdtConflicts: (values) => {
             const reconciliation = reconcileCrdtRootConflicts(values);
             reconciledConflictState = reconciliation.crdtState;

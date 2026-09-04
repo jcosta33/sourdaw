@@ -164,28 +164,19 @@ esac
 SH
 chmod +x "$fake_bin/gh"
 
-# The freshness step's only external command. It lives in its own bin directory
-# because the Gitleaks controls above run real `git` through $fake_bin.
-git_tip_bin="$temp_root/bin-git-tip"
-mkdir -p "$git_tip_bin"
-cat > "$git_tip_bin/git" <<'SH'
-#!/bin/sh
-set -eu
-printf 'git %s\n' "$*" >> "${COMMAND_LOG:-/dev/null}"
-if [ -n "${FAKE_MAIN_TIP:-}" ]; then
-    printf '%s\trefs/heads/main\n' "$FAKE_MAIN_TIP"
-fi
-SH
-chmod +x "$git_tip_bin/git"
-
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" pnpm exec tsx --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
+const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import(
+    `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
+);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
+const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
+const gitleaksIgnore = readFileSync(`${process.env.REPO_ROOT}/.gitleaksignore`, 'utf8');
 const failures = [];
 
 function expect(condition, message) {
@@ -194,8 +185,42 @@ function expect(condition, message) {
     }
 }
 
+expect(
+    gitleaksIgnore ===
+        'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
+            'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3355\n',
+    '.gitleaksignore must contain exactly the two approved resolver-test fingerprints'
+);
+
+function expectNightlyDoesNotMintGate(jobs) {
+    expect(jobs?.gate === undefined, 'nightly must not mint Gate');
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const checkName = typeof job?.name === 'string' ? job.name : jobId;
+        if (checkName === 'Gate') {
+            expect(false, `nightly job ${jobId} must not mint Gate`);
+        }
+    }
+}
+
+
 function stepNamed(job, name) {
     return job?.steps?.find((step) => step.name === name);
+}
+
+function assertNightlyPnpmBeforeNodeOrder(jobs) {
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const steps = job?.steps ?? [];
+        for (let index = 0; index < steps.length; index += 1) {
+            const step = steps[index];
+            if (step?.name !== 'Set up Node' || step?.with?.cache !== 'pnpm') {
+                continue;
+            }
+            expect(
+                steps[index - 1]?.name === 'Set up pnpm',
+                `${jobId} must run Set up pnpm immediately before Set up Node when setup-node caches pnpm`
+            );
+        }
+    }
 }
 
 function runResolveScope(event, scopes) {
@@ -269,16 +294,18 @@ const prSecretsScanRun = stepNamed(prSecrets, 'Scan pull request diff for secret
 const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
 const prMergeControlRun = prMergeControl?.run ?? '';
 const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu;
-const secrets = workflow.jobs?.secrets;
+const secrets = nightly.jobs?.secrets;
 const unit = workflow.jobs?.unit;
-const e2e = workflow.jobs?.e2e;
+const nightlyUnit = nightly.jobs?.unit;
+const e2e = nightly.jobs?.e2e;
 const gate = workflow.jobs?.gate;
 const dependencyReview = workflow.jobs?.['dependency-review'];
 const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency changes')?.with ?? {};
-const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
-const nightlyReport = workflow.jobs?.['nightly-report'];
+const browserAiWebGpu = nightly.jobs?.['browser-ai-webgpu'];
+const nightlyReport = nightly.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
-const decideCheckoutUses = stepNamed(decide, 'Checkout')?.uses ?? '';
+const nightlyResolveScopeRun = stepNamed(nightly.jobs?.decide, 'Resolve scope')?.run ?? '';
+const nightlyStaticCheckoutUses = stepNamed(nightly.jobs?.static, 'Checkout')?.uses ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
@@ -310,56 +337,64 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
-    'browser-ai-webgpu',
-    'codeql',
-    'secrets',
+    'native-parity',
 ];
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
-expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
-expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
-expect(events?.schedule !== undefined, 'schedule trigger must remain present');
-expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
 expect(
-    concurrency?.group ===
-        "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}",
-    'only pull_request and approved reviews may share a PR-number concurrency group'
+    Object.keys(events ?? {}).sort().join('\0') === 'pull_request',
+    'Health gates on must be exactly pull_request'
 );
 expect(
-    concurrency?.['cancel-in-progress'] ===
-        "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}",
-    'concurrency cancellation must include pull_request and approved reviews without including other review states, schedule, or workflow_dispatch'
+    concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
+    'pull-request runs must share a PR-number concurrency group'
 );
 expect(
-    decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
-    'decide must run the heavy path only for approved pull_request_review submissions'
+    concurrency?.['cancel-in-progress'] === true,
+    'a newer pull_request run must cancel in-progress validation of the same PR'
 );
+expect(decide?.if === undefined, 'decide must run on every pull_request');
+expect(nightly.name === 'Nightly', 'nightly workflow name must stay Nightly');
+expect(
+    Object.keys(nightly.on ?? {}).sort().join('\0') === 'schedule\0workflow_dispatch',
+    'Nightly on must be exactly schedule and workflow_dispatch'
+);
+expectNightlyDoesNotMintGate(nightly.jobs);
+assertNightlyPnpmBeforeNodeOrder(nightly.jobs);
+expect(
+    nightly.concurrency?.group === 'nightly-${{ github.run_id }}',
+    'nightly must isolate each run on its own run id'
+);
+expect(nightly.concurrency?.['cancel-in-progress'] === false, 'nightly must not cancel an in-progress train');
+expect(workflow.jobs?.['deploy-web'] === undefined, 'the pull-request workflow must not deploy');
+expect(workflow.jobs?.e2e === undefined, 'the pull-request workflow must not run the end-to-end suite');
 const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
-const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
 const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
 const unclassifiedScopes = { ...allFalseScopes, unclassified: 'true' };
+function runNightlyResolveScope() {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-nightly.output`;
+    writeFileSync(outputPath, '');
+    const result = spawnSync('bash', ['-c', nightlyResolveScopeRun], {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    });
+    expect(result.status === 0, `Nightly resolve scope must execute: ${result.stderr.trim()}`);
+    return readFileSync(outputPath, 'utf8');
+}
 expect(
-    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'schedule must enable the heavy path and every scope'
+    runNightlyResolveScope() === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    'nightly must enable the heavy path and every scope'
 );
 expect(
-    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'workflow_dispatch must enable the heavy path and every scope'
+    runResolveScope('pull_request', pullRequestScopes) === 'rust=true\nserver=false\ne2e=true\nweb=false\ncode=true\n',
+    'pull_request must preserve path-filter outputs without a heavy scope'
 );
 expect(
-    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\ncode=true\n',
-    'pull_request_review must enable the heavy path and preserve path-filter outputs'
-);
-expect(
-    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\ncode=true\n',
-    'pull_request must disable the heavy path and preserve path-filter outputs'
-);
-expect(
-    runResolveScope('pull_request', allFalseScopes) === 'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=false\n',
+    runResolveScope('pull_request', allFalseScopes) === 'rust=false\nserver=false\ne2e=false\nweb=false\ncode=false\n',
     'a head that claims no scope must report no code-bearing change'
 );
 expect(
-    runResolveScope('pull_request', unclassifiedScopes) === 'heavy=false\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    runResolveScope('pull_request', unclassifiedScopes) === 'rust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
     'an unclassified path must force every fast scope rather than skipping the checks that would observe it'
 );
 expect(
@@ -367,6 +402,41 @@ expect(
     'lint and boundaries must skip a head that carries only prose'
 );
 expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
+const deviceWriteBoundaryCensusRun =
+    'pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts';
+expect(
+    stepNamed(staticJob, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
+    'static must run the device write boundary census outside unit shards'
+);
+expect(
+    stepNamed(staticJob, 'Device write boundary census')?.['continue-on-error'] === undefined,
+    'static Device write boundary census must stay blocking'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
+    'nightly static must run the device write boundary census outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Device write boundary census')?.['continue-on-error'] === undefined,
+    'nightly static Device write boundary census must stay blocking'
+);
+const releaseProofRun = 'pnpm test:run scripts/__tests__/releaseProof.spec.ts';
+expect(
+    stepNamed(staticJob, 'Release proof')?.run === releaseProofRun,
+    'static must run the release proof spec outside unit shards'
+);
+expect(
+    stepNamed(staticJob, 'Release proof')?.['continue-on-error'] === undefined,
+    'static Release proof must stay blocking'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Release proof')?.run === releaseProofRun,
+    'nightly static must run the release proof spec outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Release proof')?.['continue-on-error'] === undefined,
+    'nightly static Release proof must stay blocking'
+);
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
     'the offline smoke set must run on every pull-request run that touches the browser surface, including the review run an approval leaves reporting'
@@ -495,6 +565,61 @@ expect(
 );
 expect(gitleaksHelper.includes('--ignore-gitleaks-allow'), 'secret scan must reject PR-authored gitleaks:allow annotations');
 expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must not contain path-wide allowlists');
+const rfc4122ExampleUuid = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].join('-');
+const rfc4122ExampleUuidSuccessor = ['123e4567', 'e89b', '12d3', 'a456', '426614174001'].join('-');
+const reviewPublicationRecoveryUuid = ['2cd01237', 'cf63', '4579', '9e58', '85893794529d'].join('-');
+const deliveryLockRecoveryUuid = ['f515a71d', 'c25a', '4714', 'b725', 'ef6e9b141005'].join('-');
+const deliveryLockSecondRecoveryUuid = ['8cd2556c', 'c162', '45d7', 'bc73', '17a019c581b1'].join('-');
+function trustedAllowlistRegexes(config) {
+    const allowlist = /^\[allowlist\]\s*$([\s\S]*)/mu.exec(config)?.[1];
+    const array = allowlist === undefined ? undefined : /^\s*regexes\s*=\s*\[([\s\S]*?)^\s*\]/mu.exec(allowlist)?.[1];
+    if (array === undefined) {
+        return undefined;
+    }
+    const entries = array
+        .replace(/#.*$/gmu, '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== '');
+    const values = entries.map((entry) => /^'''([^']*)'''$/u.exec(entry));
+    return values.every((value) => value !== null) ? values.map((value) => value[1]) : undefined;
+}
+
+const configuredAllowlistRegexes = trustedAllowlistRegexes(gitleaksConfig);
+const exactAllowlistRegexes = [
+    '64c64660ceed813476b314f52136d9698e075622',
+    '0354489231f6a874331aer4927569297c7fea4d5',
+    'idempotency-1',
+    '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    rfc4122ExampleUuid,
+    rfc4122ExampleUuidSuccessor,
+    reviewPublicationRecoveryUuid,
+    deliveryLockRecoveryUuid,
+    deliveryLockSecondRecoveryUuid,
+];
+expect(
+    gitleaksConfig.includes(`'''${rfc4122ExampleUuid}'''`) &&
+        gitleaksConfig.includes(`'''${rfc4122ExampleUuidSuccessor}'''`),
+    'trusted Gitleaks config must allowlist RFC 4122 example UUID token fixtures'
+);
+expect(
+    configuredAllowlistRegexes?.includes(reviewPublicationRecoveryUuid) === true,
+    'trusted Gitleaks config must allowlist the exact PR #3342 review-publication recovery UUID'
+);
+expect(
+    JSON.stringify(configuredAllowlistRegexes) === JSON.stringify(exactAllowlistRegexes),
+    'trusted Gitleaks config must preserve the exact audited literal allowlist without wildcard or alternation broadening'
+);
+expect(
+    JSON.stringify(trustedAllowlistRegexes(gitleaksConfig.replace(`'''${reviewPublicationRecoveryUuid}'''`, `'''${reviewPublicationRecoveryUuid}|.*'''`))) !==
+        JSON.stringify(exactAllowlistRegexes),
+    'trusted Gitleaks config must reject the triple-quoted review-publication UUID-or-dot-star mutation'
+);
+expect(
+    trustedAllowlistRegexes(gitleaksConfig.replace(`'''${reviewPublicationRecoveryUuid}'''`, `"${reviewPublicationRecoveryUuid}|.*"`)) ===
+        undefined,
+    'trusted Gitleaks config must reject a basic-quoted review-publication UUID-or-dot-star mutation'
+);
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
 expect(
@@ -553,7 +678,6 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
 const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 expect(
     unit?.['continue-on-error'] === undefined,
@@ -566,12 +690,20 @@ expect(
 expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
 expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
 expect(
-    unitRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'unit Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    unitRunStep?.['continue-on-error'] === true,
+    'pull-request unit Run shard must continue on error so Gate can still report'
 );
 expect(
-    e2eRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    e2eRunStep?.['continue-on-error'] === undefined,
+    'nightly end-to-end Run shard must stay blocking'
+);
+expect(
+    stepNamed(nightlyUnit, 'Run shard')?.['continue-on-error'] === undefined,
+    'nightly unit Run shard must stay blocking'
+);
+expect(
+    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
+    'nightly unit Run shard must run through the test:run wrapper that applies the census exclusion'
 );
 expect(
     unitFailureWarning?.if === shardFailureCondition,
@@ -585,7 +717,7 @@ expectShardFailureWarning(unitFailureWarning, 'unit', 'Unit suite', '2');
 expectShardFailureWarning(e2eFailureWarning, 'e2e', 'End-to-end', '11');
 expect(
     dependencyReview?.if === 'github.event.pull_request != null',
-    'dependency review must gate on the pull request payload, not on the pull_request event, so an approval that cancels the push run still produces a verdict'
+    'dependency review must gate on the pull request payload, not on the pull_request event, so an approval run can validate the head after any in-flight push run finishes'
 );
 expect(
     dependencyReviewWith['base-ref'] === '${{ github.event.pull_request.base.sha }}',
@@ -596,12 +728,11 @@ expect(
     'dependency review must pass the explicit pull request head SHA, which the action cannot infer on a pull_request_review run'
 );
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
-expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
+expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the nightly workflow');
+expect(!gateNeeds.includes('browser-ai-webgpu'), 'Gate must not depend on browser-ai-webgpu');
 expect(
-    gate?.if ===
-        "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
-    'Gate must cancel with superseded runs and must not report success for non-approved reviews'
+    gate?.if === '${{ !cancelled() }}',
+    'Gate must cancel with superseded runs and must report on every pull_request'
 );
 expect(
     Array.isArray(gateNeeds) &&
@@ -622,8 +753,14 @@ expect(
 // The daily web train. It is the only route to production now that the Vercel
 // Git integration is off, so what it refuses to deploy from matters as much as
 // what it deploys.
-const deployWeb = workflow.jobs?.['deploy-web'];
+const deployWeb = nightly.jobs?.['deploy-web'];
 const deployWebNeeds = deployWeb?.needs ?? [];
+// Every leg that validates the web artifact. The Rust workspace leg is one
+// of them: it is the only test of daw-dsp, daw-wasm-decoder, proof-chamber
+// and scoring, which ship in the web bundle as the committed
+// `public/wasm/*` packages. The desktop shell ships nothing this deployment
+// carries, so its native legs (native-macos, native-windows) must not
+// freeze it.
 const expectedDeployWebNeeds = [
     'static',
     'lint',
@@ -631,8 +768,6 @@ const expectedDeployWebNeeds = [
     'unit',
     'build',
     'rust',
-    'native-macos',
-    'native-windows',
     'e2e',
     'browser-ai-webgpu',
     'codeql',
@@ -640,8 +775,8 @@ const expectedDeployWebNeeds = [
 ];
 const deployWebGuardStep = stepNamed(deployWeb, 'Require a validated revision of main');
 const deployWebGuardRun = deployWebGuardStep?.run ?? '';
-const deployWebFreshnessStep = stepNamed(deployWeb, 'Refuse a stale candidate revision');
-const deployWebFreshnessRun = deployWebFreshnessStep?.run ?? '';
+const deployWebResolveStep = stepNamed(deployWeb, 'Resolve the current production revision');
+const deployWebSkipReportStep = stepNamed(deployWeb, 'Report why nothing was deployed');
 const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
 const deployWebIsolationStep = stepNamed(deployWeb, 'Assert cross-origin isolation on the deployment');
 const deployWebArmingReport = stepNamed(deployWeb, 'Report the missing deployment credential')?.run ?? '';
@@ -676,15 +811,27 @@ expect(
     deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
     'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
 );
-for (const stepName of ['Pull the production environment', 'Build the validated revision', 'Deploy the prebuilt revision']) {
+for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
         stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
         `${stepName} must authenticate the Vercel CLI from the environment`
     );
 }
+const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.run ?? '';
+try {
+    assertDeployWebBuildRun(deployWebBuildRun);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
+try {
+    assertDeployWebJobNoVercelPull(deployWeb?.steps ?? []);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
 expect(
-    deployWeb?.environment === 'Production',
-    'the daily web deploy must draw its credential from the Production environment'
+    deployWeb?.environment?.name === 'Production' &&
+        deployWeb?.environment?.url === '${{ steps.deployment.outputs.url }}',
+    'the daily web deploy must draw its credential from the Production environment and publish its URL only from a real deployment'
 );
 expect(
     deployWeb?.env?.DEPLOY_CREDENTIAL_PRESENT === "${{ secrets.VERCEL_TOKEN != '' }}",
@@ -700,10 +847,7 @@ expect(
         deployWebNeeds.every((need, index) => need === expectedDeployWebNeeds[index]),
     `the daily web deploy must depend on exactly: ${expectedDeployWebNeeds.join(', ')}`
 );
-expect(
-    !gateNeeds.includes('deploy-web'),
-    'the daily web deploy must stay outside Gate, which reports what a pull request proved'
-);
+expectNightlyDoesNotMintGate(nightly.jobs);
 expect(
     deployWebDeployRun.includes('deploy --prebuilt --prod') &&
         deployWebDeployRun.includes('--meta githubCommitSha="$GITHUB_SHA"'),
@@ -738,45 +882,64 @@ for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'mai
 
 // Entry to the deploy queue is ordered by when each run's validation legs
 // finished, and a re-run replays its original run's SHA, so the candidate can
-// be a revision main has already moved past. The tip comparison is what makes
-// the newest revision win.
+// be a revision main has already moved past in the queue while still
+// descending from what production serves. The production-revision step below
+// decides on ancestry, not tip equality, and runs inside the same queue.
 expect(
-    deployWebFreshnessStep?.id === 'freshness',
-    'the daily web deploy must publish its freshness decision under a stable step id'
+    deployWebResolveStep?.id === 'production',
+    'the daily web deploy must publish its production-revision decision under a stable step id'
 );
 expect(
-    deployWebFreshnessStep?.env?.CANDIDATE_REVISION === '${{ github.sha }}',
-    'the freshness check must read the revision this run is about to deploy'
+    deployWebResolveStep?.env?.CANDIDATE_REVISION === '${{ github.sha }}',
+    'the production-revision step must read the revision this run is about to deploy'
 );
 expect(
-    deployWebFreshnessRun.includes('git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main') &&
-        deployWebFreshnessRun.includes('"$tip" != "$CANDIDATE_REVISION"'),
-    'the freshness check must compare the candidate against the current tip of main read from the remote'
+    deployWebResolveStep?.env?.GITHUB_TOKEN === '${{ github.token }}',
+    'the production-revision step must authenticate its ancestry comparison with a GitHub token'
 );
-const freshCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'";
+expect(
+    deployWebResolveStep?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}' &&
+        deployWebResolveStep?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}' &&
+        deployWebResolveStep?.env?.VERCEL_PROJECT_ID === '${{ secrets.VERCEL_PROJECT_ID }}',
+    'the production-revision step must authenticate its Vercel query from the environment'
+);
+expect(
+    deployWebResolveStep?.run === 'node scripts/resolveVercelProductionDeployment.ts',
+    'the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts'
+);
+const credentialCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
 for (const stepName of [
     'Checkout the validated revision',
     'Enable Corepack',
+    'Set up pnpm',
     'Set up Node',
     'Resolve the current production revision',
 ]) {
     expect(
-        stepNamed(deployWeb, stepName)?.if === freshCondition,
-        `${stepName} must not run for a revision that is no longer the tip of main`
+        stepNamed(deployWeb, stepName)?.if === credentialCondition,
+        `${stepName} must not run without the deployment credential`
     );
 }
 for (const stepName of [
     'Install dependencies',
-    'Pull the production environment',
+    'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
     'Assert cross-origin isolation on the deployment',
 ]) {
     expect(
-        stepNamed(deployWeb, stepName)?.if === `${freshCondition} && steps.production.outputs.deploy == 'true'`,
-        `${stepName} must run only for a fresh candidate production does not already serve`
+        stepNamed(deployWeb, stepName)?.if === `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+        `${stepName} must run only for a candidate production does not already serve`
     );
 }
+expect(
+    deployWebSkipReportStep?.if === `${credentialCondition} && steps.production.outputs.deploy != 'true'`,
+    'the daily web deploy must report why nothing was deployed only when credentialed but not deploying'
+);
+expect(
+    deployWebSkipReportStep?.env?.REASON === "${{ steps.production.outputs.reason }}",
+    'the skip report must read the decision reason the production-revision step published'
+);
 for (const precondition of [
     'VERCEL_TOKEN',
     'VERCEL_ORG_ID',
@@ -789,63 +952,14 @@ for (const precondition of [
     );
 }
 
-function runFreshness(candidateRevision, remoteTip) {
-    const outputPath = `${process.env.TEST_TEMP_ROOT}/freshness-output`;
-    const summaryPath = `${process.env.TEST_TEMP_ROOT}/freshness-summary`;
-    writeFileSync(outputPath, '');
-    writeFileSync(summaryPath, '');
-    const result = spawnSync('bash', ['-c', deployWebFreshnessRun], {
-        cwd: process.env.TEST_TEMP_ROOT,
-        encoding: 'utf8',
-        env: {
-            ...process.env,
-            PATH: `${process.env.GIT_TIP_BIN}:${process.env.PATH}`,
-            GITHUB_REPOSITORY: 'jcosta33/sourdaw',
-            CANDIDATE_REVISION: candidateRevision,
-            FAKE_MAIN_TIP: remoteTip,
-            GITHUB_OUTPUT: outputPath,
-            GITHUB_STEP_SUMMARY: summaryPath,
-        },
-    });
-    return {
-        status: result.status,
-        stdout: result.stdout,
-        outputs: readFileSync(outputPath, 'utf8'),
-        summary: readFileSync(summaryPath, 'utf8'),
-    };
-}
-
-const candidateRevision = '1'.repeat(40);
-const newerTip = '2'.repeat(40);
-const freshRun = runFreshness(candidateRevision, candidateRevision);
-expect(
-    freshRun.status === 0 && freshRun.outputs.includes('fresh=true'),
-    'the daily web deploy must proceed when the candidate is the current tip of main'
-);
-const staleRun = runFreshness(candidateRevision, newerTip);
-expect(
-    staleRun.status === 0 && staleRun.outputs.includes('fresh=false') && !staleRun.outputs.includes('fresh=true'),
-    'a candidate main has moved past must be a green refusal, not a deploy and not a failure'
-);
-expect(
-    staleRun.stdout.includes(
-        `stale candidate ${candidateRevision}, main is now ${newerTip}, deploying nothing`
-    ) && staleRun.summary.includes(`stale candidate \`${candidateRevision}\``),
-    'a stale refusal must say so loudly in the annotation and the step summary'
-);
-expect(
-    runFreshness(candidateRevision, '').status !== 0,
-    'an unreadable tip of main must fail the job rather than resolve to a deploy'
-);
-
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
 expect(
     nightlyReportCheckout !== undefined,
     'nightly reporter must run inside a real git repository, since a gh build can consult local git for repo resolution even when every invocation already passes --repo'
 );
 expect(
-    nightlyReportCheckout?.uses === decideCheckoutUses && decideCheckoutUses !== '',
-    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the workflow'
+    nightlyReportCheckout?.uses === nightlyStaticCheckoutUses && nightlyStaticCheckoutUses !== '',
+    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the nightly workflow'
 );
 expect(
     nightlyReportCheckout?.with?.['persist-credentials'] === false,

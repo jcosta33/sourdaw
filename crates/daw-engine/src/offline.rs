@@ -15,8 +15,8 @@
 
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::scheduler::{
-    graph_progress_channel, AudioScheduler, GraphCommand, GraphProgressSnapshot,
-    RetiredGraphObjects,
+    graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
+    GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -64,6 +64,7 @@ impl OfflineRenderer {
         let (timeline_diagnostics_tx, _timeline_diagnostics_reader) =
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
+        let (transport_position_tx, _transport_position_reader) = transport_position_channel();
         let scheduler = AudioScheduler::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -71,6 +72,7 @@ impl OfflineRenderer {
             midi_diagnostics_tx,
             timeline_diagnostics_tx,
             graph_progress_tx,
+            transport_position_tx,
         );
 
         Self {
@@ -111,6 +113,12 @@ impl OfflineRenderer {
     /// them.
     pub fn graph_progress(&self) -> GraphProgressSnapshot {
         self.scheduler.graph_progress()
+    }
+
+    /// Where the transport stands, read directly for the same reason
+    /// [`Self::graph_progress`] is: this thread is the render thread.
+    pub fn transport_position(&self) -> TransportPositionSnapshot {
+        self.scheduler.transport_position()
     }
 
     /// Render `frames` frames into planar stereo, in
@@ -169,8 +177,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     7,
-                    vec![0.5; 1024],
-                    vec![0.5; 1024],
+                    vec![0.5; 1024].into(),
+                    vec![0.5; 1024].into(),
                     placement,
                     ClipPlayback::at_gain(1.0),
                 ),
@@ -239,8 +247,8 @@ mod tests {
                 1,
                 TimelineClip::new(
                     7,
-                    vec![1.0; 8],
-                    Vec::new(),
+                    vec![1.0; 8].into(),
+                    [].into(),
                     placement,
                     ClipPlayback::at_gain(1.0),
                 ),

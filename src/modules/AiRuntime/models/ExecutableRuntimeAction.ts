@@ -4,10 +4,8 @@ import { type RuntimeAction } from './RuntimeAction';
 
 export type ExecutableRuntimeAction = AppAction;
 
-type CreateBusRuntimeAction = Extract<RuntimeAction, { type: 'createBus' }>;
-type CreateBusAppAction = Extract<AppAction, { type: 'createBus' }>;
-type AddDeviceRuntimeAction = Extract<RuntimeAction, { type: 'addDevice' }>;
-type AddDeviceAppAction = Extract<AppAction, { type: 'addDevice' }>;
+type CreationActionType = 'createBus' | 'addDevice' | 'addTrack' | 'addClip';
+type CreationRuntimeAction = Extract<RuntimeAction, { type: CreationActionType }>;
+type CreationAppAction = Extract<AppAction, { type: CreationActionType }>;
 
-export type MaterializableRuntimeAction =
-    Exclude<RuntimeAction, CreateBusRuntimeAction | AddDeviceRuntimeAction> | CreateBusAppAction | AddDeviceAppAction;
+export type MaterializableRuntimeAction = Exclude<RuntimeAction, CreationRuntimeAction> | CreationAppAction;

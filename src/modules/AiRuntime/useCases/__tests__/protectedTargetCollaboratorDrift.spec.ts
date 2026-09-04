@@ -20,6 +20,7 @@ import {
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -40,6 +41,11 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
 
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
@@ -174,7 +180,7 @@ function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protec
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input.id,
         batchId: input.id,
-        projectId: projectRevision,
+        projectId: captureProjectIdentity(),
         baseRevision: projectRevision,
         intent: 'add a syncopated arpeggio without touching the protected track',
         protectedTargetIds: [input.protectedTrackId],
@@ -227,6 +233,7 @@ function landCollaboratorPadNoteBeforePostcondition(): void {
 
 describe('protected target authority under collaborator drift', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('protected target collaborator drift test');
@@ -269,6 +276,7 @@ describe('protected target authority under collaborator drift', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);

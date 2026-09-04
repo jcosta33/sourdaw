@@ -13,6 +13,7 @@ import {
     renderIssueSubmission,
     resolveTemplatePath,
     runCli,
+    titleSubject,
     type IssueSubmission,
 } from '../fileTrackerIssue';
 
@@ -150,6 +151,18 @@ describe('composeIssueTitle', () => {
 
     it('keeps an already conventional title', () => {
         expect(composeIssueTitle('spec(scope): ', 'spec(arrangement): mixer')).toBe('spec(arrangement): mixer');
+    });
+
+    it('does not double prefix when scope contains parentheses', () => {
+        const ciScope = 'build / ci (TypeScript, Rust, WASM, bundling)';
+        const ciTitle = `fix(${ciScope}): Subject`;
+        expect(composeIssueTitle('fix(scope): ', ciTitle, ciScope)).toBe(ciTitle);
+        expect(titleSubject(ciTitle)).toBe('Subject');
+
+        const arrangementScope = 'arrangement (Timeline, clips, tracks, automation, transport)';
+        const arrangementTitle = `spec(${arrangementScope}): Subject`;
+        expect(composeIssueTitle('spec(scope): ', arrangementTitle, arrangementScope)).toBe(arrangementTitle);
+        expect(titleSubject(arrangementTitle)).toBe('Subject');
     });
 
     it('interpolates the selected scope into the prefix', () => {

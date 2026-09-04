@@ -43,15 +43,39 @@
 //! the length of a block is waited on under a short timeout. An instance it
 //! could not get into is skipped, and the hint goes back up for the next tick,
 //! so no plugin's knob feed is ever behind another plugin's `open_gui`.
+//!
+//! ## And the tail, process-failure, and editor-resize answers
+//!
+//! `clap_host_tail.changed` is annotated `[audio-thread]`, and a plugin that
+//! fails a `process()` call fails it on that thread by definition. Both are
+//! therefore in the same position as the flush: no channel, no allocation,
+//! nothing but a flag and a process-wide hint. This thread is already the one
+//! that wakes on those hints, so it reads them too and hands each to the module
+//! that owns what it means — [`crate::host::tail_watcher`] and
+//! [`crate::host::process_refusal_reporter`]. A second thread on a second timer
+//! would cost a wake per frame to answer an ask that arrives once in a session.
+//!
+//! `gui.request_resize` is `[thread-safe]` and so sits in that same position:
+//! recorded as a size slot plus this thread's hint, with the tick handing the
+//! apply leg to
+//! [`crate::host::plugin_host_requests::apply_pending_editor_resizes`]. That
+//! leg takes the control seam, under the same refuse-rather-than-wait rule the
+//! flush answer already follows, so a busy instance defers to the next tick
+//! rather than parking the feed.
 
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::all_engine_runtimes;
 use crate::host::native_bridge::SharedHostedPlugin;
+use crate::host::plugin_host_requests::apply_pending_editor_resizes;
+use crate::host::process_refusal_reporter::report_pending_process_refusals;
+use crate::host::tail_watcher::publish_pending_tail_changes;
 use crate::state::EnginePluginInstanceData;
 use daw_plugin_host::{
     is_empty_batch, pair_gestures, signal_pending_parameter_flush,
-    take_pending_parameter_events_signal, take_pending_parameter_flush_signal, AudioPlugin,
-    PairedParameterEvents, PluginParameterEvent, PluginParameterEventKind,
-    PluginParameterEventQueue,
+    take_pending_editor_resize_signal, take_pending_parameter_events_signal,
+    take_pending_parameter_flush_signal, take_pending_process_refusal_signal,
+    take_pending_tail_change_signal, AudioPlugin, PairedParameterEvents, PluginParameterEvent,
+    PluginParameterEventKind, PluginParameterEventQueue,
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -235,23 +259,6 @@ fn drain_once(
     }
 }
 
-/// Every engine-owned instance's id and runtime.
-///
-/// Cloned out under the map lock for the same reason the queues are: taking a
-/// plugin's control seam while still holding the instance map would block every
-/// plugin command in the process behind one busy instance.
-fn runtimes_to_flush(engine_plugins: &EnginePlugins) -> Vec<(String, Arc<SharedHostedPlugin>)> {
-    let Ok(guard) = engine_plugins.lock() else {
-        eprintln!("[Plugin] parameter flush failed to lock engine_plugins");
-        return Vec::new();
-    };
-
-    guard
-        .iter()
-        .map(|(instance_id, instance)| (instance_id.clone(), Arc::clone(&instance.runtime)))
-        .collect()
-}
-
 /// Answer the flush requests plugins raised, off the audio thread.
 ///
 /// The hint names no instance — it cannot, because it is raised from the audio
@@ -266,7 +273,7 @@ fn runtimes_to_flush(engine_plugins: &EnginePlugins) -> Vec<(String, Arc<SharedH
 fn flush_pending_parameters(engine_plugins: &EnginePlugins) -> bool {
     let mut answered = false;
 
-    for (instance_id, runtime) in runtimes_to_flush(engine_plugins) {
+    for (instance_id, runtime) in all_engine_runtimes(engine_plugins, "parameter flush") {
         let reached = runtime.try_with_control(FLUSH_CONTROL_TIMEOUT, |plugin| {
             Ok(plugin.flush_parameters_off_audio_thread())
         });
@@ -300,9 +307,10 @@ fn retry_unanswered_flush(runtime: &SharedHostedPlugin, instance_id: &str, error
 
 /// One pass of the drain thread, once its sleep is over.
 ///
-/// The two hints are read independently: a plugin that emitted events took no
-/// lock to say so, while a plugin asking for a flush needs one, and neither ask
-/// implies the other.
+/// Every hint is read independently, because no ask implies another: a plugin
+/// that emitted an edit took no lock to say so, one asking for a flush or a new
+/// editor size needs one, and one announcing a new tail or a failed block is
+/// saying something about neither.
 fn run_tick(
     engine_plugins: &EnginePlugins,
     open_gestures: &mut OpenGestures,
@@ -319,6 +327,18 @@ fn run_tick(
         // asked the host for help.
         take_pending_parameter_events_signal();
         drain_once(engine_plugins, open_gestures, events);
+    }
+
+    if take_pending_tail_change_signal() {
+        publish_pending_tail_changes(engine_plugins, events);
+    }
+
+    if take_pending_process_refusal_signal() {
+        report_pending_process_refusals(engine_plugins);
+    }
+
+    if take_pending_editor_resize_signal() {
+        apply_pending_editor_resizes(engine_plugins);
     }
 }
 
@@ -365,6 +385,9 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         take_pending_parameter_events_signal();
         take_pending_parameter_flush_signal();
+        take_pending_tail_change_signal();
+        take_pending_process_refusal_signal();
+        take_pending_editor_resize_signal();
         guard
     }
 
@@ -400,6 +423,26 @@ mod tests {
             .engine_owned_command_fixture_host_state()
             .request_parameters_flush();
         wrapper
+    }
+
+    /// One fixture whose plugin raised `clap_host_gui.request_resize` exactly as
+    /// a plugin does from its own callback — size slot recorded, process-wide
+    /// hint set, channel untouched — with every host-window move recorded into
+    /// the returned log.
+    fn wrapper_with_resize_asked(size: (u32, u32)) -> (ClapWrapper, Arc<Mutex<Vec<(u32, u32)>>>) {
+        let mut wrapper = fixture_wrapper();
+        let applied: Arc<Mutex<Vec<(u32, u32)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&applied);
+        // The notifier install is what marks the instance as one whose asks get
+        // carried — without it the ask is refused outright.
+        assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
+        wrapper.set_editor_window_resizer(Arc::new(move |width, height| {
+            sink.lock().expect("resize log").push((width, height));
+        }));
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .request_editor_resize(size.0, size.1);
+        (wrapper, applied)
     }
 
     /// One engine-owned instance in a real map, with its own parameter queue
@@ -591,6 +634,271 @@ mod tests {
         assert!(
             !take_pending_parameter_flush_signal(),
             "an instance that is never coming back must not have the hint raised for it again"
+        );
+    }
+
+    /// `gui.request_resize` is the other ask a plugin may raise from any thread,
+    /// and the tick is the only thing that answers it now the channel is gone: a
+    /// tick that skipped this leg would leave the recorded size inside the
+    /// instance for good. Delivered exactly once — the apply takes the slot.
+    #[test]
+    fn a_tick_applies_the_editor_resize_the_plugin_asked_for_exactly_once() {
+        let _guard = hint_guard();
+        let (wrapper, applied) = wrapper_with_resize_asked((1024, 768));
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            applied.lock().expect("resize log").as_slice(),
+            [(1024, 768)],
+            "the window moves to the size the plugin named"
+        );
+        assert_eq!(
+            sink.events(),
+            Vec::new(),
+            "the answer to a resize is the window changing size; nothing is emitted"
+        );
+        assert!(
+            !take_pending_editor_resize_signal(),
+            "a tick that found the hint consumes it, and an applied ask raises it for nothing"
+        );
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            applied.lock().expect("resize log").as_slice(),
+            [(1024, 768)],
+            "one ask moves the window once, not on every later tick"
+        );
+    }
+
+    /// The hint is what keeps an idle session free: without the gate every tick
+    /// would take every instance's control seam sixty times a second.
+    #[test]
+    fn a_tick_with_no_resize_hint_applies_nothing() {
+        let _guard = hint_guard();
+        let (wrapper, applied) = wrapper_with_resize_asked((640, 480));
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+        take_pending_editor_resize_signal();
+        let sink = RecordingEventSink::default();
+
+        tick(&engine_plugins, &sink);
+
+        assert!(
+            applied.lock().expect("resize log").is_empty(),
+            "a tick that found no hint must not have applied the size behind it"
+        );
+    }
+
+    /// Coalescing, pinned: the slot holds one size, so a burst of asks leaves
+    /// the newest standing and one apply carries it. The channel this replaced
+    /// collapsed the same way — every queued follow-up read the slot at drain
+    /// time — so the consumer sees exactly what it always saw: the last size,
+    /// applied once.
+    #[test]
+    fn a_burst_of_resize_asks_applies_the_newest_size_once() {
+        let _guard = hint_guard();
+        let (wrapper, applied) = wrapper_with_resize_asked((640, 480));
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .request_editor_resize(1280, 720);
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            applied.lock().expect("resize log").as_slice(),
+            [(1280, 720)],
+            "the newest size is the one applied, and it is applied once"
+        );
+    }
+
+    /// An instance mid-unload refuses public control, and the resize leg has to
+    /// survive that: the plugin is going away, and the tick serves every other
+    /// instance and the knob drain behind it.
+    #[test]
+    fn a_resize_for_an_unloading_instance_is_dropped_rather_than_fatal() {
+        let _guard = hint_guard();
+        let (wrapper, applied) = wrapper_with_resize_asked((1024, 768));
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        runtime.begin_unload();
+        let sink = RecordingEventSink::default();
+
+        tick(&engine_plugins, &sink);
+
+        assert!(
+            applied.lock().expect("resize log").is_empty(),
+            "an instance that refuses public control cannot have been resized"
+        );
+        assert!(
+            !take_pending_editor_resize_signal(),
+            "an instance that is never coming back must not have the hint raised for it again"
+        );
+    }
+
+    /// The gate an instance's control commands serialize on is held for as long
+    /// as the command holding it runs, and `open_gui` or `set_state` on a large
+    /// preset is unbounded third-party code. A resize leg that queued on it
+    /// would park this thread — and with it every other plugin's knob feed — for
+    /// that whole duration.
+    ///
+    /// The tick runs on its own thread here so a leg that parks fails the test
+    /// rather than hanging the suite.
+    #[test]
+    fn a_tick_skips_a_resize_for_an_instance_whose_control_gate_is_held_and_asks_again_later() {
+        let _guard = hint_guard();
+        let (wrapper, applied) = wrapper_with_resize_asked((1024, 768));
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = Arc::new(RecordingEventSink::default());
+
+        let (holding, gate_taken) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            runtime
+                .with_control(Duration::from_secs(5), |_plugin| {
+                    holding.send(()).expect("the test is still listening");
+                    released.recv().expect("the test releases the gate");
+                    Ok(())
+                })
+                .expect("a live fixture accepts control");
+        });
+        gate_taken
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the holder takes the gate");
+
+        let (finished, ticked) = std::sync::mpsc::channel();
+        let ticking_plugins = Arc::clone(&engine_plugins);
+        let ticking_sink = Arc::clone(&sink);
+        std::thread::spawn(move || {
+            run_tick(
+                &ticking_plugins,
+                &mut OpenGestures::new(),
+                ticking_sink.as_ref(),
+            );
+            let _ = finished.send(());
+        });
+
+        ticked
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the tick must not queue on a control gate another caller holds");
+        assert!(
+            applied.lock().expect("resize log").is_empty(),
+            "an instance the resize could not get into has not been resized"
+        );
+        assert!(
+            take_pending_editor_resize_signal(),
+            "a live instance the resize skipped must be asked again on the next tick"
+        );
+
+        release.send(()).expect("the holder is still waiting");
+        holder.join().expect("the holder thread finishes");
+    }
+
+    /// The tail hint reaches the renderer through this tick and no other path:
+    /// `clap_host_tail.changed` runs on the audio thread, so no watcher can
+    /// block on it. A tick that skipped the leg would leave every session
+    /// compensating the tail the plugin reported at load.
+    #[test]
+    fn a_tick_publishes_the_tail_a_plugin_flagged() {
+        let _guard = hint_guard();
+        let wrapper = fixture_wrapper();
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_tail_dirty();
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            vec![(
+                crate::host::tail_watcher::PLUGIN_TAIL_CHANGED_EVENT.to_string(),
+                serde_json::json!({ "instance_id": "inst-1", "tail_samples": 0 }),
+            )]
+        );
+    }
+
+    /// A tail is re-read once, when the plugin says it moved. Without the hint
+    /// gate this leg would take every instance's control seam sixty times a
+    /// second, which is the seam the audio thread is bypassed for.
+    #[test]
+    fn a_tick_with_no_tail_hint_raised_reads_no_tail() {
+        let _guard = hint_guard();
+        let wrapper = fixture_wrapper();
+        wrapper
+            .engine_owned_command_fixture_host_state()
+            .mark_tail_dirty();
+        let (engine_plugins, _queue, _runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        take_pending_tail_change_signal();
+        tick(&engine_plugins, &sink);
+
+        assert_eq!(
+            sink.events(),
+            Vec::new(),
+            "a tick that found no tail hint must not have visited the instances behind it"
+        );
+    }
+
+    /// Read one instance's refusal-reported flag back through the seam the
+    /// production visit uses, so the assertion sees what that visit left behind.
+    fn refusal_reported(runtime: &SharedHostedPlugin) -> bool {
+        runtime
+            .with_control(Duration::from_secs(2), |plugin| match plugin {
+                daw_plugin_host::HostedRuntime::Clap(wrapper) => {
+                    Ok(wrapper.engine_owned_command_fixture_refusal_reported())
+                }
+                _ => Err("the fixture is a CLAP backend".to_string()),
+            })
+            .expect("a live fixture accepts control")
+    }
+
+    /// A plugin that fails a process call takes its slot out of service, and the
+    /// audio thread that saw it may not print. This tick is the only recurring
+    /// visit that reads the latch, so without this leg a plugin failing every
+    /// block would run a whole session with nothing in the log.
+    #[test]
+    fn a_tick_reports_the_process_failure_the_audio_thread_latched() {
+        let _guard = hint_guard();
+        let mut wrapper = fixture_wrapper();
+        wrapper.latch_engine_owned_command_fixture_process_refusal();
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        assert!(
+            !refusal_reported(&runtime),
+            "the audio thread records the failure and reports nothing itself"
+        );
+
+        tick(&engine_plugins, &sink);
+
+        assert!(
+            refusal_reported(&runtime),
+            "the tick that found the hint must have said the failure out loud"
+        );
+    }
+
+    /// The report needs no latency change to reach a human, and a session where
+    /// no plugin ever flags one is the ordinary session.
+    #[test]
+    fn a_tick_with_no_failure_hint_raised_visits_nothing() {
+        let _guard = hint_guard();
+        let mut wrapper = fixture_wrapper();
+        wrapper.latch_engine_owned_command_fixture_process_refusal();
+        let (engine_plugins, _queue, runtime) = instance_map(wrapper);
+        let sink = RecordingEventSink::default();
+
+        take_pending_process_refusal_signal();
+        tick(&engine_plugins, &sink);
+
+        assert!(
+            !refusal_reported(&runtime),
+            "a tick that found no hint must not have taken the instances' control seams"
         );
     }
 

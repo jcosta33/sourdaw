@@ -1,10 +1,14 @@
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { audioEngine, stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 
+import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
+import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
@@ -46,6 +50,30 @@ export function stopPlayback(): Promise<void> {
             playheadPosition = 0;
         }
     }
+
+    // D3.c.4a (#3066): the native engine holds its own `is_playing`, so a stop
+    // it never hears leaves it running the topology forever. A session that
+    // never started declines, which is the ordinary browser-build answer.
+    const changes = tempoMapStore.value?.changes ?? [];
+    const positionSeconds = secondsBetweenBeats(changes, 0, playheadPosition, state.tempo);
+    Promise.resolve(
+        stopNativeLiveGraphSession({
+            positionSeconds,
+        })
+    ).catch((error: unknown) => {
+        logger.warn(new Error('Native live graph session failed to stop', { cause: error }));
+    });
+
+    const tempo = getTempoAtBeat(changes, playheadPosition, state.tempo);
+    audioEngine.setTransportInfo(
+        playheadPosition,
+        positionSeconds,
+        tempo,
+        false,
+        state.loopStart,
+        state.loopEnd,
+        state.isLooping
+    );
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
     playheadPositionRef.current = playheadPosition;

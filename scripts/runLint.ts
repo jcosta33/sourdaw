@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -85,6 +86,48 @@ export function lintThreads(source: NodeJS.ProcessEnv = process.env): string {
     return source.SOURDAW_LINT_THREADS ?? '2';
 }
 
+export function buildEslintArgv(
+    options: Pick<Options, 'fix' | 'full'>,
+    eslintTargets: string[],
+    env: NodeJS.ProcessEnv = process.env
+): string[] {
+    return [
+        'exec',
+        'eslint',
+        '--quiet',
+        `--concurrency=${lintConcurrency(env)}`,
+        '--cache',
+        '--cache-location',
+        'node_modules/.cache/eslint/',
+        '--cache-strategy',
+        'content',
+        ...(options.fix ? ['--fix'] : []),
+        ...eslintTargets,
+    ];
+}
+
+export function ensureServerDependencies(
+    targets: string[],
+    rootDir: string = process.cwd(),
+    existsSyncFn: typeof existsSync = existsSync,
+    spawnSyncFn: typeof spawnSync = spawnSync
+): boolean {
+    if (targets.some((target) => target === 'server' || target.startsWith('server/'))) {
+        const serverNodeModules = resolve(rootDir, 'server/node_modules');
+        if (!existsSyncFn(serverNodeModules)) {
+            const result = spawnSyncFn('npm', ['--prefix', 'server', 'ci', '--include=dev'], {
+                stdio: 'inherit',
+                cwd: rootDir,
+            });
+            if (result.status !== 0) {
+                throw new Error('failed to install server dependencies for linting');
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
     const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
     if (result.error !== undefined) {
@@ -100,6 +143,7 @@ function main(): number {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? ['src', 'scripts'] : options.files;
         const eslintTargets = options.full ? ['src/**/*.{ts,tsx}', 'scripts/**/*.ts'] : options.files;
+        ensureServerDependencies(targets);
         runStep('oxlint', [
             'exec',
             'oxlint',
@@ -109,21 +153,7 @@ function main(): number {
             ...(options.fix ? ['--fix'] : []),
             ...targets,
         ]);
-        runStep(
-            'eslint',
-            [
-                'exec',
-                'eslint',
-                '--quiet',
-                `--concurrency=${lintConcurrency()}`,
-                '--cache',
-                '--cache-location',
-                'node_modules/.cache/eslint/',
-                ...(options.fix ? ['--fix'] : []),
-                ...eslintTargets,
-            ],
-            eslintEnvironment(process.env)
-        );
+        runStep('eslint', buildEslintArgv(options, eslintTargets), eslintEnvironment(process.env));
         return 0;
     } catch (error) {
         console.error(error instanceof Error ? error.message : error);

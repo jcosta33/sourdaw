@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project } from './e2eUtils';
+import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 /**
  * Resilient workspace setup. Mirrors e2eUtils.setupWorkspace (same onboarding /
@@ -13,6 +13,7 @@ import { launch_new_project } from './e2eUtils';
 async function setup_workspace_dom_ready(page: Page): Promise<void> {
     const alphaDismissed = superjsonStringify(true);
 
+    await enable_direct_e2e_viewport(page);
     await page.addInitScript((flag) => {
         window.localStorage.clear();
         window.localStorage.setItem('wd:onboarding-completed', '1');
@@ -28,7 +29,7 @@ async function setup_workspace_dom_ready(page: Page): Promise<void> {
  * the label, then invoke the matching option and wait for the palette to close.
  */
 async function run_palette_command(page: Page, label: string): Promise<void> {
-    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().indexOf('MAC') >= 0);
+    const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
     const palette = page.getByRole('dialog', { name: /Command Palette/i });

@@ -45,16 +45,25 @@ const addonMethods = (): string[] =>
 
 /**
  * `#[napi]` items that are shell plumbing, not renderer-invokable commands:
- * the scan-worker process entry point, the engine's constructor and shutdown,
- * and the plugin-window host registration the shell itself performs. Pinned
- * by name so a new addon method lands in the registered set by default and
- * must be triaged here explicitly to escape the exposed/denied partition.
+ * the engine's constructor and shutdown, and the plugin-window host seam the
+ * shell itself drives — its registration, and the answers it needs when the
+ * user or the display resizes an editor window, neither of which the
+ * renderer can ask for. Pinned by name so a new addon method lands in the
+ * registered set by default and must be triaged here explicitly to escape the
+ * exposed/denied partition.
+ *
+ * The scan-worker leaf entry point used to be one of these, reached through a
+ * `#[napi] run_plugin_scan_worker` wrapper; it is now
+ * `sourdaw-plugin-scan-helper`, a standalone executable outside the addon
+ * entirely, and publishes nothing here to plumb.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
+    'apply_plugin_gui_scale',
     'new',
     'notify_plugin_window_closed',
     'register_plugin_window_host',
-    'run_plugin_scan_worker',
+    'resize_plugin_gui',
+    'service_plugin_editor_run_loops',
     'shutdown',
 ]);
 
@@ -152,6 +161,14 @@ describe('the Electron command surface', () => {
         expect(isExposedCommand('__proto__')).toBe(false);
     });
 
+    it('keeps close_all_plugin_guis denied as an exit-cascade command', () => {
+        // Bulk GUI close belongs to the exit cascade's in-process path
+        // (`close_every_plugin_gui`), not the renderer. Pinning by name so a
+        // move onto EXPOSED_COMMANDS fails without updating this assertion.
+        expect(DENIED_COMMANDS).toContain('close_all_plugin_guis');
+        expect(isExposedCommand('close_all_plugin_guis')).toBe(false);
+    });
+
     it('gives a denied command no channel that collides with an exposed one', () => {
         const exposedChannels = new Set(EXPOSED_COMMANDS.map(commandChannel));
 
@@ -220,8 +237,14 @@ describe('addon method naming', () => {
 
         expect(published.has('register_plugin_window_host')).toBe(true);
         expect(published.has('notify_plugin_window_closed')).toBe(true);
+        expect(published.has('service_plugin_editor_run_loops')).toBe(true);
+        expect(published.has('resize_plugin_gui')).toBe(true);
+        expect(published.has('apply_plugin_gui_scale')).toBe(true);
         expect(addonMethodName('register_plugin_window_host')).toBe('registerPluginWindowHost');
         expect(addonMethodName('notify_plugin_window_closed')).toBe('notifyPluginWindowClosed');
+        expect(addonMethodName('service_plugin_editor_run_loops')).toBe('servicePluginEditorRunLoops');
+        expect(addonMethodName('resize_plugin_gui')).toBe('resizePluginGui');
+        expect(addonMethodName('apply_plugin_gui_scale')).toBe('applyPluginGuiScale');
     });
 
     it('translates the shapes the surface actually contains', () => {
@@ -318,6 +341,7 @@ const addonSignatures = (): ReadonlyMap<string, AddonSignature> => {
  */
 const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['analyze_pitch', ['analysis_id', 'audio_path']],
+    ['apply_graph_commands', ['batch']],
     ['arm_recording', ['instance_id', 'threshold', 'target_pad', 'max_duration_secs']],
     ['cancel_provider_gateway_request', ['request_id']],
     ['close_midi_input', []],
@@ -331,16 +355,17 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['collab_merge_bundle', ['path']],
     ['collab_save_bundle', ['path']],
     ['commit_pitch_edit', ['request']],
-    ['create_crumbs', ['instance_id', 'sample_rate']],
+    ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
     ['crumbs_note_off', ['instance_id', 'note']],
     ['crumbs_note_on', ['instance_id', 'note', 'velocity']],
-    ['denoise_audio', ['request']],
+    ['denoise_audio', ['request', 'samples']],
     ['destroy_crumbs', ['instance_id']],
     ['detect_onsets', ['instance_id', 'sample_id', 'algorithm']],
     ['detect_smart_loop_points', ['instance_id', 'sample_id']],
     ['engine_rt_diagnostics', []],
-    ['feed_crumbs_record_input', ['audio_bytes']],
+    ['engine_transport_position', []],
+    ['engine_transport_set_maps', ['maps']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],
@@ -355,7 +380,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['map_graph_batch', ['prior', 'batch', 'sample_rate', 'session']],
     ['open_midi_input', ['port_index']],
     ['open_plugin_gui', ['instance_id']],
-    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source']],
+    ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source', 'credential']],
     ['open_push_transport', ['model']],
     ['parse_scl', ['content', 'root_note', 'root_freq']],
     ['process_plugin_audio', ['instance_id', 'audio_bytes']],

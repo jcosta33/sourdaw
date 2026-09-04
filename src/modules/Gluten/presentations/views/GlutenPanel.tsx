@@ -602,8 +602,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     }
 
     return (
-        <div className="gluten-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_19rem] gap-3">
+        <div className="gluten-faceplate h-full min-h-[440px] rounded-[26px] p-3">
+            <div className="grid h-full min-h-[440px] grid-cols-[15rem_minmax(0,1fr)_19rem] gap-3">
                 <DawPluginRail className="gluten-window p-3" scrollable={false}>
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={1}>

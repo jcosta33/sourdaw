@@ -1,3 +1,4 @@
+import { change } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -11,6 +12,8 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectRevisionPort,
+    configureCommandBatchIdempotency,
     executeAppAction,
     redo,
     resetActionReplayAuthority,
@@ -18,10 +21,15 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
+    DOC_PREFIX_ROOT,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -63,6 +71,8 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
+        analyzeMixFromTrackLayout: vi.fn(),
+        summarizeFeatures: vi.fn(),
         stageDurableAsset:
             vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
         commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
@@ -139,7 +149,14 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTempo }));
+// An exhaustive factory has to cover every name this spec's module graph reads from the barrel, not
+// only the ones the spec drives. The mentor lesson generator binds `analyzeMixFromTrackLayout` while
+// its module evaluates, so omitting it fails the whole file at import rather than at a call.
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    analyzeMixFromTrackLayout: mocks.analyzeMixFromTrackLayout,
+    detectTempo: mocks.detectTempo,
+    summarizeFeatures: mocks.summarizeFeatures,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -564,9 +581,25 @@ describe('stem import and starting mix workflow', () => {
         mocks.backend.value = 'webllm';
         mocks.executeBatchError.value = null;
         vi.stubGlobal('fetch', mocks.fetch);
+        // jsdom has no navigator.locks; the durable project checkpoint is
+        // written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // Production shape, from `src/app/bootstrap.ts`. Only a batch executed
+        // under the durable idempotency ledger reaches a project checkpoint, and
+        // only a configured revision provider can expose that checkpoint's exact
+        // revision — which the confirmation path requires before it may report a
+        // clean commit.
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -594,7 +627,7 @@ describe('stem import and starting mix workflow', () => {
                 reference.audioBufferId ? [reference.audioBufferId] : []
             ),
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(
                 targetIds
@@ -634,7 +667,9 @@ describe('stem import and starting mix workflow', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
+        commandProjectRevisionPort.setProvider(null);
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 
@@ -888,7 +923,8 @@ describe('stem import and starting mix workflow', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it('invalidates a stale proposal and cleans resources without touching the collaborator edit', async () => {
+    it('asks for reapproval instead of discarding a stale proposal, keeping prepared resources and the locally added track intact until the second confirm commits', async () => {
+        const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         await executeAppAction(
@@ -896,12 +932,87 @@ describe('stem import and starting mix workflow', () => {
             { skipUndo: true }
         );
 
-        const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
-
-        expect(result.status).toBe('invalidated');
+        // The stem-import plan targets no existing object (getStemImportPlanScope reports
+        // targetIds: []), so a brand new, locally added track is a non-overlapping edit: the
+        // proposal is revalidated and rebound rather than discarded, and its prepared resources
+        // stay held.
+        const firstConfirm = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+        expect(firstConfirm).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        expectPreparedStemResourcesReleased(1);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation(confirmation!.id)?.status).toBe('proposed');
         expect(undoStore.value?.past).toHaveLength(0);
+
+        const secondConfirm = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+        expect(secondConfirm).toEqual({ status: 'executed' });
+
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(6);
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledOnce();
+        const committedTracks = trackStore.value?.tracks ?? [];
+        expect(committedTracks.find((track) => track.id === 'track-collaborator')).toMatchObject({
+            name: 'Collaborator',
+        });
+        expect(committedTracks.find((track) => track.id === 'track-guide')).toEqual(originalTracks[0]);
+        expect(committedTracks.some((track) => track.name === 'Kick')).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('asks for reapproval when an unrelated collaborator edit lands through a sync', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        flushAutomergeStorageWrites();
+        const currentDoc = getCrdtDoc<{ tracks: { tracks: Track[] } }>(DOC_PREFIX_ROOT);
+        if (!currentDoc) {
+            throw new TypeError('Expected a loaded root document');
+        }
+        const syncedDoc = change(currentDoc, (draft) => {
+            draft.tracks.tracks.push(createTrack('track-collaborator', 'Collaborator'));
+        });
+        replaceCrdtDocInLineage({ id: DOC_PREFIX_ROOT, doc: syncedDoc });
+        trackStore.hydrate();
+
+        const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(confirmResult).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
+        expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    // replaceCrdtDoc moves the identity epoch the way the branch routes do, pinned in
+    // branchSwitchProjectIdentity.integration.spec.ts; this case observes the epoch gate at
+    // inspectAgentProjectDivergence.ts:103.
+    it('still hard-invalidates when the document identity moves under a pending proposal', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        flushAutomergeStorageWrites();
+        const currentDoc = getCrdtDoc<{ tracks: { tracks: Track[] } }>(DOC_PREFIX_ROOT);
+        if (!currentDoc) {
+            throw new TypeError('Expected a loaded root document');
+        }
+        const syncedDoc = change(currentDoc, (draft) => {
+            draft.tracks.tracks.push(createTrack('track-collaborator', 'Collaborator'));
+        });
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: syncedDoc });
+        trackStore.hydrate();
+
+        const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(confirmResult).toMatchObject({
+            status: 'invalidated',
+            divergence: { kind: 'ambiguous-same-object' },
+        });
+        expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expectPreparedStemResourcesReleased(1);
     });
 
     it('keeps grouped undo retryable when a collaborator changes an imported track', async () => {

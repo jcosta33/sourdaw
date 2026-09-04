@@ -19,22 +19,17 @@
  * translation is somewhere the two runtimes can drift. A contract of commands
  * maps onto it mechanically.
  *
- * It is deliberately **larger** than today's `GraphCommand`, because the web
- * strip expresses four behaviors the native timeline cannot yet
- * (jcosta33/sourdaw#2085), and a contract sized to the smaller of the two would
- * make the native backend's gaps invisible until the null test failed:
+ * It aligns the web audio strip and the native timeline
+ * (`crates/daw-engine/src/timeline.rs`) across the four timeline behaviors
+ * delivered in jcosta33/sourdaw#2085:
  *
  *   1. A **pre-fader solo gate** distinct from the post-fader mute gate
- *      ({@link AudioGraphParameterTarget}). The native strip has one `muted`
- *      flag applied post-fader; folding solo into it puts the gate downstream
- *      of the pre-fader send tap, so a non-soloed track keeps feeding its cue
- *      bus.
- *   2. **Bus device chains** ({@link AudioGraphCreateBusStripCommand}). A send
- *      bus that cannot host a reverb defeats the purpose of a send bus.
+ *      ({@link AudioGraphParameterTarget}). Placed ahead of send taps and the
+ *      fader, so a non-soloed track does not feed its cue bus or reverb tail.
+ *   2. **Bus device chains** ({@link AudioGraphCreateBusStripCommand}). A bus
+ *      hosts its own insert chain ahead of the bus fader.
  *   3. **Cancel-and-replace automation** ({@link AudioGraphParameterWrite}).
- *      The web write path re-anchors and replaces the pending ramp on every
- *      interactive tick; an append-only queue of fixed slots cannot receive
- *      that, and there is no equivalent of holding a param on transport stop.
+ *      Pending ramps re-anchor and replace on interactive parameter writes.
  *   4. **Per-clip fades, the anti-click micro-fade, and playback rate**
  *      ({@link AudioGraphClipPlayback}).
  *
@@ -64,12 +59,10 @@
  *
  * **Routing constraint.** This contract permits any strip to route to any of
  * `master`, a bus, or a track, and does not carve out bus outputs. `daw-engine`
- * today refuses `bus -> track` outright (`Timeline::set_bus_output` records
- * `invalid_bus_routing` and drops the command). A backend that cannot honour a
+ * honours `bus -> track`: the bus is rendered before the destination strip so
+ * the signal enters that strip's device chain. A backend that cannot honour a
  * route must **refuse the batch** rather than drop the route, because a dropped
- * route is a strip that silently stops reaching the mix. Closing that gap —
- * either by supporting bus -> track natively or by narrowing this law — is a
- * D3 obligation, and it is stated here so it is not discovered as a silence.
+ * route is a strip that silently stops reaching the mix.
  *
  * ── What is deliberately *not* here ───────────────────────────────────────
  *
@@ -305,8 +298,10 @@ export type AudioGraphClipPlayback = Readonly<{
     durationSeconds: number;
     /**
      * Source frames consumed per destination frame. `1` is unmodified;
-     * anything else is the clip's stretch or its transposition, and the native
-     * `TimelineClip` has nowhere to put it today (#2085 §4).
+     * anything else is varispeed resampling (transposition/speed), matching
+     * native `ClipPlayback::playback_rate` in `crates/daw-engine/src/timeline.rs`
+     * (pitch-preserving stretch is a device-shaped transform, not a clip
+     * attribute).
      */
     playbackRate: number;
     /** The clip's own level, as a linear amplitude. */
@@ -368,11 +363,11 @@ export type AudioGraphCreateTrackStripCommand = Readonly<{
 /**
  * A bus strip: a summing input, its own device chain, and an output.
  *
- * Identical in kind to a track strip, and that is the point — #2085 §2 records
- * the native bus as gain-plus-routing with nowhere to put an insert, which
- * makes a reverb bus unrepresentable. The command is separate from
- * {@link AudioGraphCreateTrackStripCommand} because **creation** differs — a
- * bus sums its inputs — not because a bus is addressed differently afterwards.
+ * Identical in kind to a track strip, matching the native timeline bus which
+ * hosts its own device chain ahead of the bus fader (delivered in #2085). The
+ * command is separate from {@link AudioGraphCreateTrackStripCommand} because
+ * **creation** differs — a bus sums its inputs — not because a bus is addressed
+ * differently afterwards.
  * Once built, a bus is reached by putting `busId` in the `trackId` of every
  * other command: one strip id space, stated as law in this file's header.
  */
@@ -468,6 +463,45 @@ export type AudioGraphSetTransportCommand = Readonly<{
     playing: boolean;
     /** Absolute position on the backend's clock. */
     positionSeconds: number;
+    /**
+     * Whether this write is also a locate. Absent means it is.
+     *
+     * A locate is destructive: the backend seeks, and a seek drops every mixer
+     * write already queued at or past the frame it lands on. A strip states its
+     * fader, its pan and each send level as writes at frame 0, so a transport
+     * write that locates to the session head *after* those strips were built
+     * erases the mix they declared — which is what a second batch that only
+     * needs to start playback would otherwise do.
+     *
+     * `false` says "roll from where you already stand". The position still
+     * travels and must still be truthful, because the backend reports it; only
+     * the seek is withheld.
+     */
+    locate?: boolean;
+}>;
+
+/**
+ * Shadow the backend's monitor: keep rendering, contribute nothing to the
+ * output a listener hears.
+ *
+ * A session mode, deliberately not the master fader. The master fader is
+ * project truth that a save and a bounce both read; this says only whether
+ * *this* backend's audio is currently allowed to reach the speakers, so a
+ * second engine can hold a live programme — rendering it block-accurately,
+ * advancing its own playhead, walking its own loop seams — while another one
+ * remains the audible path. Lifting it is the cutover.
+ *
+ * Silence means true zeros at the output, not a small gain, so a leak is
+ * something a test can assert the absence of exactly. The change lands at the
+ * next block boundary with no ramp, which makes a cutover from a non-zero
+ * programme a step; a backend that wants to declick it owns that.
+ *
+ * A backend with no monitor to shadow — an offline render is one — refuses
+ * this rather than accepting it and doing nothing.
+ */
+export type AudioGraphSetMonitorShadowCommand = Readonly<{
+    kind: 'set-monitor-shadow';
+    shadowed: boolean;
 }>;
 
 export type AudioGraphCommand =
@@ -481,7 +515,8 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphScheduleClipCommand
-    | AudioGraphSetTransportCommand;
+    | AudioGraphSetTransportCommand
+    | AudioGraphSetMonitorShadowCommand;
 
 /**
  * The correlation a graph write carries, shared with the live delta protocol
@@ -506,6 +541,21 @@ export type AudioGraphCorrelation = RuntimeGraphCorrelation;
 export type AudioGraphCommandBatch = Readonly<{
     schemaVersion: 1;
     correlation?: AudioGraphCorrelation;
+    /**
+     * Whether this batch replaces the backend's graph rather than adding to
+     * it.
+     *
+     * A stateful backend keeps its strips between batches and there is no
+     * remove-strip command, so a producer that rebuilds a whole topology — the
+     * live one rebuilds it every play, because the session drifts between
+     * plays — would otherwise collide with the strip ids it created last time.
+     * Marking the batch makes the replacement the backend's job, and therefore
+     * atomic: nothing is ever observable holding half of each topology.
+     *
+     * A backend that builds a fresh graph for every batch has nothing to
+     * replace and satisfies this by construction.
+     */
+    replaceTopology?: boolean;
     commands: readonly AudioGraphCommand[];
 }>;
 
@@ -534,6 +584,19 @@ export type AudioGraphStripReport = Readonly<{
 }>;
 
 /**
+ * One external plugin instance a batch handed to the engine.
+ *
+ * The bridge round trip is the reason the caller is given anything beyond the
+ * id: it is frames the worklet↔plugin bridge adds on top of the plugin's own
+ * latency, known only to the engine that took the instance, and the caller adds
+ * it when compensating that device.
+ */
+export type AudioGraphAttachedPlugin = Readonly<{
+    instanceId: string;
+    bridgeRoundTripFrames: number;
+}>;
+
+/**
  * The outcome vocabulary of `RuntimeGraphDeltaResult`, applied to a batch.
  *
  * The three states mean exactly what they mean there — `rejected` is refused
@@ -554,7 +617,38 @@ export type AudioGraphApplyResult =
           application: 'applied';
           correlation?: AudioGraphCorrelation;
           runtimeRevision: number;
+          /**
+           * The engine's fence number for this batch: what its
+           * `batchesApplied` count reaches once the audio thread has drained
+           * it. Present only from a backend that fenced a batch onto a live
+           * engine — a mapping and an in-process renderer have no such count.
+           *
+           * A caller that needs to know a transport reading postdates this
+           * batch compares the two. Nothing else on a reading can say it:
+           * this call resolves when the batch is queued, not when it is
+           * applied.
+           */
+          admittedBatch?: number;
           reports: readonly AudioGraphStripReport[];
+          /**
+           * External plugin instances this batch handed to the engine.
+           *
+           * A native engine starts lazily, on the first batch, and a plugin
+           * loaded before that is held by the command layer with no engine
+           * behind it — it passes silence. Batches register those instances,
+           * and this is the only report of it: the load that created them
+           * already answered "no engine", and nothing else revises that answer.
+           *
+           * Any applied batch may carry one, not only the batch that started
+           * the engine, because a batch takes only the instances it reserved
+           * room for and leaves the rest to its successor. A caller that reads
+           * this on one route and not another leaves an instance the engine is
+           * running reported as degraded for the session's whole life.
+           *
+           * Empty when the batch took none. Absent from a backend that hosts no
+           * engine at all, and from one whose payload predates the field.
+           */
+          attachedPlugins?: readonly AudioGraphAttachedPlugin[];
       }>
     | Readonly<{
           acceptance: 'accepted';

@@ -10,7 +10,9 @@ import {
     executeVersionedCommandBatchEnvelope,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
+import { SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
@@ -94,6 +96,30 @@ const duplicateClipContext = {
               }
             : track
     ),
+};
+
+const emptyMidiClipContext = {
+    ...context,
+    tracks: [
+        {
+            ...context.tracks[0]!,
+            id: 'track-midi',
+            name: 'MIDI',
+            kind: 'midi' as const,
+            clipCount: 1,
+            clips: [
+                {
+                    id: 'clip-empty-midi',
+                    name: 'Empty MIDI',
+                    type: 'midi' as const,
+                    startBeat: 0,
+                    endBeat: 4,
+                    noteCount: 0,
+                },
+            ],
+        },
+        context.tracks[1]!,
+    ],
 };
 
 const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
@@ -617,6 +643,152 @@ describe('compileArbitraryCommandList', () => {
                 commands: [{ name: 'duplicateClip', arguments: { clipId: 'clip-kick-a' } }],
             },
         });
+    });
+
+    it('compiles and replays addNotes for an unlocked empty MIDI clip with its parent-track identity', async () => {
+        const calls = [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan(['clip-empty-midi']),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'add-empty-midi-note',
+                                name: 'addNotes',
+                                arguments: { notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+                                selector: {
+                                    targetArgument: 'clipId',
+                                    entity: 'clip',
+                                    where: { name: 'Empty MIDI' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+        const compiled = compileArbitraryCommandList({
+            context: emptyMidiClipContext,
+            revision: 'revision-empty-midi',
+            calls,
+        });
+
+        expect(compiled).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: {
+                commands: [
+                    {
+                        name: 'addNotes',
+                        arguments: {
+                            clipId: 'clip-empty-midi',
+                            notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                        },
+                    },
+                ],
+            },
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            return;
+        }
+        expect(compiled.compilerEvidence.providerKnownTargetIds).toEqual(['clip-empty-midi']);
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context: emptyMidiClipContext,
+                revision: 'revision-empty-midi',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            targetOverridesByCallIndex: new Map([
+                [
+                    0,
+                    [
+                        {
+                            argument: 'clipId',
+                            capability: 'writable-midi-clip',
+                            cardinality: 'one',
+                            stableIds: ['clip-empty-midi'],
+                        },
+                    ],
+                ],
+            ]),
+        });
+
+        const agentReferenceCandidate = await import('../agentReference/isAgentReferenceCapabilityCandidate');
+        const candidate = agentReferenceCandidate.isAgentReferenceCapabilityCandidate;
+        vi.spyOn(agentReferenceCandidate, 'isAgentReferenceCapabilityCandidate').mockImplementation((input) =>
+            input.capability === 'writable-midi-clip' ? false : candidate(input)
+        );
+        expect(
+            compileArbitraryCommandList({
+                context: emptyMidiClipContext,
+                revision: 'revision-empty-midi',
+                calls,
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('target') });
+    });
+
+    it('rejects addNotes compilation and evidence replay for a MIDI clip on a frozen track', () => {
+        const calls = [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan(['clip-empty-midi']),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'add-frozen-midi-note',
+                                name: 'addNotes',
+                                arguments: { notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+                                selector: {
+                                    targetArgument: 'clipId',
+                                    entity: 'clip',
+                                    where: { name: 'Empty MIDI' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+        const frozenMidiClipContext = {
+            ...emptyMidiClipContext,
+            tracks: emptyMidiClipContext.tracks.map((track, index) =>
+                index === 0 ? { ...track, frozen: true } : track
+            ),
+        };
+
+        expect(
+            compileArbitraryCommandList({
+                context: frozenMidiClipContext,
+                revision: 'revision-frozen-midi',
+                calls,
+            })
+        ).toMatchObject({ status: 'rejected' });
+
+        const compiled = compileArbitraryCommandList({
+            context: emptyMidiClipContext,
+            revision: 'revision-frozen-midi',
+            calls,
+        });
+        expect(compiled).toMatchObject({ status: 'accepted' });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            return;
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context: frozenMidiClipContext,
+                revision: 'revision-frozen-midi',
+            })
+        ).toMatchObject({ status: 'rejected' });
     });
 
     it('fails closed when an app-derived identity has no materialization contract', async () => {
@@ -2030,7 +2202,7 @@ describe('compileArbitraryCommandList', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-duplicate-closure',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: {},
         }));
@@ -3751,6 +3923,95 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    it('rejects a createBus binding as an addNotes writable MIDI clip target in compilation and evidence replay', () => {
+        const calls = [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan([]),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'create-drum-bus',
+                                name: 'createBus',
+                                arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                            },
+                            {
+                                id: 'add-bus-note',
+                                name: 'addNotes',
+                                arguments: {
+                                    clipId: '$drum-bus',
+                                    notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                                },
+                                dependsOn: ['create-drum-bus'],
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+        expect(compileArbitraryCommandList({ context, revision: 'revision-1', calls })).toMatchObject({
+            status: 'rejected',
+            reason: expect.stringContaining('Batch-local target'),
+        });
+
+        const createBusCommand = { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } };
+        const addNotesCommand = {
+            name: 'addNotes',
+            arguments: { clipId: '$drum-bus', notes: [{ duration: 1, pitch: 60, startBeat: 0 }] },
+        };
+        const evidence = {
+            schemaVersion: 1 as const,
+            snapshotRevision: 'revision-1',
+            providerKnownTargetIds: [],
+            selectors: [],
+            commands: [createBusCommand, addNotesCommand],
+            expandedMidiTransforms: [],
+            items: [
+                {
+                    canonicalStableIds: [],
+                    declaredCommandIdentities: [
+                        '{"arguments":{"binding":"drum-bus","name":"Drum Bus"},"name":"createBus"}',
+                    ],
+                    itemId: 'create-drum-bus',
+                    commandName: 'createBus',
+                    dependsOn: [],
+                    declaredCommandCount: 1,
+                    omittedCommandCount: 0,
+                    representativeCommandIndexes: [0],
+                    stableIds: [],
+                    commandStart: 0,
+                    commandCount: 1,
+                },
+                {
+                    canonicalStableIds: [],
+                    declaredCommandIdentities: [
+                        '{"arguments":{"clipId":"$drum-bus","notes":[{"duration":1,"pitch":60,"startBeat":0}]},"name":"addNotes"}',
+                    ],
+                    itemId: 'add-bus-note',
+                    commandName: 'addNotes',
+                    dependsOn: ['create-drum-bus'],
+                    declaredCommandCount: 1,
+                    omittedCommandCount: 0,
+                    representativeCommandIndexes: [1],
+                    stableIds: [],
+                    commandStart: 1,
+                    commandCount: 1,
+                },
+            ],
+        };
+
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence,
+                calls: evidence.commands,
+                context,
+                revision: 'revision-1',
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('batch-local target') });
+    });
+
     it('carries transitive batch-local producers through serialized dependencies and partial acceptance', async () => {
         const result = compileArbitraryCommandList({
             context,
@@ -3847,7 +4108,7 @@ describe('compileArbitraryCommandList', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-graph',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: projectDocument === undefined ? {} : { [busId]: 'created-drum-bus' },
         }));
@@ -4144,6 +4405,36 @@ describe('compileArbitraryCommandList', () => {
                 ],
             })
         ).toMatchObject({ status: 'rejected' });
+    });
+
+    it('refuses an unbounded malformed batch-local target reference without quoting it back', () => {
+        const hostileReference = `$${'a'.repeat(1000)}`;
+
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'gain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: hostileReference, gain: 0.8 },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'Malformed batch-local target reference.' });
+        expect(JSON.stringify(result)).not.toContain(hostileReference);
     });
 
     it('compiles an exact ordered many-target selector into one bounded array argument', () => {
@@ -4445,6 +4736,439 @@ describe('compileArbitraryCommandList', () => {
                 },
             },
         ]);
+    });
+
+    const creationProposal = (items: ReadonlyArray<Record<string, unknown>>, scopeIds: string[] = []) => ({
+        name: 'command.batch.propose',
+        arguments: { plan: plan(scopeIds), list: { schemaVersion: 1, items } },
+    });
+
+    const creationChainItems = [
+        { id: 'make-track', name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+        {
+            id: 'make-clip',
+            name: 'addClip',
+            arguments: { trackId: '$piano', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+            dependsOn: ['make-track'],
+        },
+        {
+            id: 'add-notes',
+            name: 'addNotes',
+            arguments: { clipId: '$melody', notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+            dependsOn: ['make-clip'],
+        },
+    ];
+
+    it('compiles an addTrack and addClip producer chain and replays typed producer arguments from evidence', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation',
+            calls: [creationProposal(creationChainItems)],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        expect(result.compilerEvidence.commands).toEqual([
+            { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+            {
+                name: 'addClip',
+                arguments: { trackId: '$piano', startBeat: 0, endBeat: 4, name: 'Melody', binding: 'melody' },
+            },
+            {
+                name: 'addNotes',
+                arguments: { clipId: '$melody', notes: [{ duration: 1, pitch: 60, startBeat: 0 }] },
+            },
+        ]);
+
+        const replayed = validateArbitraryCommandListEvidence({
+            evidence: result.compilerEvidence,
+            calls: result.compilerEvidence.commands,
+            context,
+            revision: 'revision-creation',
+        });
+        expect(replayed).toMatchObject({ status: 'accepted' });
+        if (replayed.status !== 'accepted') {
+            return;
+        }
+        expect(replayed.actionCommandGraph.batchLocalBindings).toEqual([
+            { bindingId: '$piano', producerActionIndex: 0, producerArgument: 'id' },
+            { bindingId: '$melody', producerActionIndex: 1, producerArgument: 'id' },
+        ]);
+    });
+
+    it.each([
+        {
+            accepted: true,
+            kind: 'midi',
+            name: 'grants a created midi track the device-host-track capability',
+            scopeIds: [],
+            consumers: [
+                {
+                    id: 'host',
+                    name: 'addDevice',
+                    arguments: { trackId: '$made', deviceType: 'builtin-reverb' },
+                    dependsOn: ['make'],
+                },
+            ],
+        },
+        {
+            accepted: false,
+            kind: 'midi',
+            name: 'withholds the output capability from a created midi track',
+            scopeIds: ['track-hat'],
+            consumers: [
+                {
+                    id: 'route',
+                    name: 'setTrackOutput',
+                    arguments: { trackId: 'track-hat', outputId: '$made' },
+                    dependsOn: ['make'],
+                },
+            ],
+        },
+        {
+            accepted: false,
+            kind: 'midi',
+            name: 'withholds the bus capability from a created midi track',
+            scopeIds: ['track-hat'],
+            consumers: [
+                {
+                    id: 'send',
+                    name: 'addSend',
+                    arguments: { trackId: 'track-hat', busId: '$made', level: 0.25 },
+                    dependsOn: ['make'],
+                },
+            ],
+        },
+        {
+            accepted: true,
+            kind: 'audio',
+            name: 'grants a created audio track the routable-source capability',
+            scopeIds: [],
+            consumers: [
+                { id: 'make-sink', name: 'createBus', arguments: { name: 'Sink', binding: 'sink' } },
+                {
+                    id: 'route',
+                    name: 'setTrackOutput',
+                    arguments: { trackId: '$made', outputId: '$sink' },
+                    dependsOn: ['make', 'make-sink'],
+                },
+            ],
+        },
+        {
+            accepted: false,
+            kind: 'folder',
+            name: 'withholds the routable-source capability from a created folder track',
+            scopeIds: [],
+            consumers: [
+                { id: 'make-sink', name: 'createBus', arguments: { name: 'Sink', binding: 'sink' } },
+                {
+                    id: 'route',
+                    name: 'setTrackOutput',
+                    arguments: { trackId: '$made', outputId: '$sink' },
+                    dependsOn: ['make', 'make-sink'],
+                },
+            ],
+        },
+    ])('$name', ({ accepted, consumers, kind, scopeIds }) => {
+        const result = compileArbitraryCommandList({
+            context: { ...context, availableDeviceTypes: [{ id: 'builtin-reverb', name: 'Reverb' }] },
+            revision: 'revision-track-kind',
+            calls: [
+                creationProposal(
+                    [
+                        { id: 'make', name: 'addTrack', arguments: { name: 'Made', kind, binding: 'made' } },
+                        ...consumers,
+                    ],
+                    scopeIds
+                ),
+            ],
+        });
+
+        expect(result.status).toBe(accepted ? 'accepted' : 'rejected');
+    });
+
+    it.each([
+        {
+            accepted: true,
+            capability: 'writable-midi-clip',
+            consumer: 'addNotes',
+            reason: null,
+            trackKind: 'midi',
+        },
+        {
+            accepted: false,
+            capability: 'editable-midi-clip',
+            consumer: 'quantizeNotes',
+            reason: 'Batch-local target $fresh requires an earlier bounded producer dependency.',
+            trackKind: 'midi',
+        },
+        {
+            accepted: false,
+            capability: 'editable-audio-clip',
+            consumer: 'normalizeClip',
+            reason: 'Batch-local binding producer does not create a typed object: fresh',
+            trackKind: 'audio',
+        },
+        {
+            accepted: false,
+            capability: 'editable-audio-clip',
+            consumer: 'normalizeClip',
+            reason: 'Batch-local binding producer does not create a typed object: fresh',
+            trackKind: 'bus',
+        },
+    ])(
+        'admits a freshly created clip as $capability on a $trackKind parent: $accepted',
+        ({ accepted, consumer, reason, trackKind }) => {
+            const consumerArguments: Record<string, Record<string, unknown>> = {
+                addNotes: { clipId: '$fresh', notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+                normalizeClip: { clipId: '$fresh' },
+                quantizeNotes: { clipId: '$fresh', gridSize: 1 },
+            };
+            const parentItem =
+                trackKind === 'bus'
+                    ? { id: 'make-parent', name: 'createBus', arguments: { name: 'Made', binding: 'made' } }
+                    : {
+                          id: 'make-parent',
+                          name: 'addTrack',
+                          arguments: { name: 'Made', kind: trackKind, binding: 'made' },
+                      };
+
+            const result = compileArbitraryCommandList({
+                context,
+                revision: 'revision-clip-kind',
+                calls: [
+                    creationProposal([
+                        parentItem,
+                        {
+                            id: 'make-clip',
+                            name: 'addClip',
+                            arguments: {
+                                trackId: '$made',
+                                startBeat: 0,
+                                endBeat: 4,
+                                name: 'Fresh',
+                                binding: 'fresh',
+                            },
+                            dependsOn: ['make-parent'],
+                        },
+                        {
+                            id: 'consume-clip',
+                            name: consumer,
+                            arguments: consumerArguments[consumer]!,
+                            dependsOn: ['make-clip'],
+                        },
+                    ]),
+                ],
+            });
+
+            if (accepted) {
+                expect(result).toMatchObject({ status: 'accepted' });
+                return;
+            }
+            expect(result).toMatchObject({ status: 'rejected', reason });
+        }
+    );
+
+    it('refuses a batch that deletes the track its own batch-local clip is created on', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-parent-conflict',
+            calls: [
+                creationProposal([
+                    ...creationChainItems,
+                    {
+                        id: 'drop-track',
+                        name: 'removeTrack',
+                        arguments: { trackId: '$piano' },
+                        dependsOn: ['add-notes'],
+                    },
+                ]),
+            ],
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Structured command list contains contradictory mutation resources.',
+        });
+    });
+
+    const trackCreationItems = (count: number) =>
+        Array.from({ length: count }, (_unused, index) => ({
+            id: `make-track-${String(index)}`,
+            name: 'addTrack',
+            arguments: { name: `Layer ${String(index)}`, kind: 'midi', binding: `layer${String(index)}` },
+        }));
+
+    it('accepts a list that creates exactly as many project objects as the creation budget allows', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation-budget',
+            calls: [creationProposal(trackCreationItems(SEMANTIC_COMMAND_LIST_MAX_CREATIONS))],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+    });
+
+    it('refuses a list that creates one more project object than the creation budget allows', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation-budget',
+            calls: [creationProposal(trackCreationItems(SEMANTIC_COMMAND_LIST_MAX_CREATIONS + 1))],
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
+        });
+    });
+
+    it('counts every command a repeat expands to against the creation budget', () => {
+        const repeatCount = 3;
+        const items = [
+            ...trackCreationItems(SEMANTIC_COMMAND_LIST_MAX_CREATIONS - repeatCount + 1),
+            {
+                id: 'make-repeated',
+                name: 'addTrack',
+                arguments: { name: 'Repeated', kind: 'midi' },
+                repeat: { count: repeatCount },
+            },
+        ];
+
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation-budget',
+            calls: [creationProposal(items)],
+        });
+
+        // The unexpanded list holds fewer items than the budget; only the expansion exceeds it.
+        expect(items.length).toBeLessThanOrEqual(SEMANTIC_COMMAND_LIST_MAX_CREATIONS);
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
+        });
+    });
+
+    it('mints and preserves one typed track and clip identity across bridging, preview, and partial acceptance', async () => {
+        const intent =
+            'Add a midi track named Piano and add a midi clip named Melody on the Piano track from beat 0 to beat 4.';
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-typed-creation',
+            calls: [creationProposal(creationChainItems.slice(0, 2))],
+        });
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+
+        const bridged = bridgeGroundedLlmToolCalls({
+            calls: result.compilerEvidence.commands,
+            compilerEvidence: result.compilerEvidence,
+            context,
+            projectRevision: 'revision-typed-creation',
+            prompt: intent,
+        });
+        expect(bridged.rejections).toEqual([]);
+        expect(bridged.actionCommandGraph?.dependenciesByActionIndex).toEqual([[], [0]]);
+
+        const materialized = materializeBatchLocalActionIdentities(
+            bridged.actions,
+            bridged.batchLocalActionIdentities ?? []
+        );
+        expect(materialized.status).toBe('accepted');
+        if (materialized.status !== 'accepted') {
+            return;
+        }
+        const guarded = materializeActionStateGuards(materialized.actions, context);
+        expect(guarded.status).toBe('accepted');
+        if (guarded.status !== 'accepted') {
+            return;
+        }
+        const [createdTrack, createdClip] = guarded.actions;
+        if (createdTrack?.type !== 'addTrack' || createdClip?.type !== 'addClip') {
+            throw new Error('Expected the creation chain to keep its addTrack and addClip shape');
+        }
+        const trackId = createdTrack.payload.id;
+        const clipId = createdClip.payload.id;
+        if (trackId === undefined || clipId === undefined) {
+            throw new Error('Expected both creations to carry an application-minted identity');
+        }
+        expect(trackId).toMatch(/^track-ai-[\da-f-]{36}$/u);
+        expect(clipId).toMatch(/^clip-ai-[\da-f-]{36}$/u);
+        expect(createdClip.payload.trackId).toBe(trackId);
+
+        const creationHandler = {
+            describe: () => ({ label: 'Create' }),
+            execute: () => ({ status: 'written' as const }),
+            previewExecution: 'isolated-project' as const,
+            undoable: true,
+            validate: () => true,
+        };
+        registerHandlerMap({ addTrack: creationHandler, addClip: creationHandler });
+        commandTrackDefaultsPort.setTrackColorProvider(() => '#123456');
+        commandBatchPreflightPort.setProvider(({ projectDocument }) => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: captureProjectIdentity(),
+            projectInvariantsValid: true,
+            targetFingerprints:
+                projectDocument === undefined ? {} : { [trackId]: 'created-track', [clipId]: 'created-clip' },
+        }));
+        commandBatchPreviewPort.setProvider(() => ({
+            getProjectDocument: () => ({}),
+            release: () => undefined,
+            scope: (callback) => callback(),
+        }));
+
+        const compiled = compilePlannedActionCommandBatch({
+            actions: guarded.actions,
+            actionLabels: ['Add Piano', 'Add Melody'],
+            actionCommandGraph: bridged.actionCommandGraph,
+            autoCommit: false,
+            context,
+            group: { groupId: 'group-typed-creation', groupLabel: 'Add Piano' },
+            intent,
+            mode: 'preview' as const,
+            projectRevision: 'revision-typed-creation',
+            runId: 'run-typed-creation',
+        });
+        const parsed = parseVersionedCommandBatchEnvelope(compiled.commandBatch.serialized);
+        expect(parsed.status).toBe('valid');
+        if (parsed.status !== 'valid') {
+            return;
+        }
+        const [trackCommand, clipCommand] = parsed.envelope.commands;
+        expect(parsed.envelope.batchLocalBindings).toEqual([
+            { bindingId: '$piano', producerArgument: 'id', producerCommandId: trackCommand?.commandId },
+            { bindingId: '$melody', producerArgument: 'id', producerCommandId: clipCommand?.commandId },
+        ]);
+        expect(trackCommand?.applicationAssignedIds).toContainEqual({ argument: 'id', value: trackId });
+        expect(clipCommand?.applicationAssignedIds).toContainEqual({ argument: 'id', value: clipId });
+        expect(compiled.commandBatch.authority.scope.targetIds).toEqual([trackId]);
+
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: compiled.commandBatch.authority,
+            serialized: compiled.commandBatch.serialized,
+        });
+        expect(preview.status).toBe('previewed');
+        if (preview.status !== 'previewed' || clipCommand === undefined) {
+            return;
+        }
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'group-typed-creation-partial',
+            previewSelection: preview.partialAcceptance,
+            runId: 'run-typed-creation-partial',
+            selectedIntentGroupIds: [clipCommand.commandId],
+        });
+        expect(partial).toMatchObject({
+            status: 'compiled',
+            includedOriginalCommandIds: parsed.envelope.commands.map((command) => command.commandId),
+        });
+        preview.resource.release();
     });
 
     it('rejects unsupported nested semantic-list fields', () => {

@@ -415,6 +415,21 @@ class AutomergeRepository {
     }
 
     /**
+     * Replace a document with another doc sharing the stored doc's lineage — a sync merge
+     * (`receiveSyncMessage` applied to a clone of the local doc) or a rollback to earlier heads
+     * of the same doc. The document identity is unchanged, so only the mutation epoch moves. The
+     * caller registers the id first: `automergeSync.ts` calls `createCrdtDoc` before applying a
+     * sync to a new document, so this never has to decide "new vs existing" the way
+     * `mergeRemoteDoc` does.
+     */
+    replaceDocInLineage(id: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
+        this.captureBeforeMutation(id, snapshotTransaction);
+        this.docs.set(id, doc);
+        this.markMutation();
+        this.notifyListeners(id);
+    }
+
+    /**
      * Merge a remote document's binary state into a local document.
      * Used for sync and merge-on-open.
      */

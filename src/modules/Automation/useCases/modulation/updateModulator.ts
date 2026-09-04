@@ -18,6 +18,13 @@ import { revertMappingsToBase } from './revertMappingsToBase';
 export type ModulatorPatch = Partial<Pick<Modulator, 'name' | 'enabled' | 'trackId'>>;
 
 export function updateModulator(id: string, patch: ModulatorPatch): void {
+    // A modulator with no owning track can never resolve its bindings — the
+    // same permanent dead entry `addModulator` refuses to mint. The patch path
+    // must hold that invariant too, or a modulator could be orphaned after
+    // creation instead of before it.
+    if (patch.trackId === '') {
+        throw new Error('updateModulator: trackId must not be empty');
+    }
     const state = modulationStore.value;
     if (!state) {
         return;

@@ -94,6 +94,10 @@ vi.mock('#/modules/Knead/stores', () => ({
 vi.mock('#/modules/Knead/useCases', () => ({
     updateClipKneadState: vi.fn(),
     analyzeClipPitch: vi.fn(() => Promise.resolve({ status: 'no-buffer', reason: 'missing-clip-or-buffer' })),
+    captureClipPitchAnalysis: vi.fn(),
+    clearClipPitchAnalysis: vi.fn(),
+    hydrateKneadFromTrackStore: vi.fn(),
+    restoreClipPitchAnalysis: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -119,6 +123,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
@@ -343,12 +348,16 @@ describe('KneadEditor', () => {
 
             it('key and scale selects write the project settings', () => {
                 render(<KneadEditor {...defaultProps} />);
-                const selects = screen.getAllByRole('combobox');
+                const rootSelect = screen.getByRole('combobox', { name: 'Root note' });
+                const scaleSelect = screen.getByRole('combobox', { name: 'Scale' });
 
-                fireEvent.change(selects[0]!, { target: { value: '2' } });
+                expect(rootSelect).toBeInTheDocument();
+                expect(scaleSelect).toBeInTheDocument();
+
+                fireEvent.change(rootSelect, { target: { value: '2' } });
                 expect(setProjectKeyRoot).toHaveBeenCalledWith(2);
 
-                fireEvent.change(selects[1]!, { target: { value: 'minor' } });
+                fireEvent.change(scaleSelect, { target: { value: 'minor' } });
                 expect(setProjectScaleName).toHaveBeenCalledWith('minor');
             });
 

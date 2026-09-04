@@ -9,6 +9,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { commandChannel, DENIED_COMMANDS, EXPOSED_COMMANDS } from '../commands.js';
+import { createPluginCommandAdmission } from '../pluginCommandAdmission.js';
 import {
     registerCommandRouter,
     senderFrameUrl,
@@ -40,9 +41,10 @@ type SetupInput = {
     readonly host?: NativeHost | undefined;
     readonly commands?: readonly string[];
     readonly createStream?: (streamId: string) => CommandStream;
+    readonly acceptsCommand?: (command: string) => boolean;
 };
 
-const setup = ({ host, commands = ['load_plugin'], createStream = nullStream }: SetupInput) => {
+const setup = ({ host, commands = ['load_plugin'], createStream = nullStream, acceptsCommand }: SetupInput) => {
     const { ipcMain, handlers } = collectingIpc();
     registerCommandRouter({
         ipcMain,
@@ -50,6 +52,7 @@ const setup = ({ host, commands = ['load_plugin'], createStream = nullStream }: 
         isTrustedFrameUrl: (url) => url === APP_FRAME.senderFrame?.url,
         createStream,
         commands,
+        acceptsCommand,
     });
     return handlers;
 };
@@ -61,11 +64,21 @@ const refuseDictation = (name: string) => () => {
     throw new Error(`Unexpected dictation call from the command router: ${name}`);
 };
 
+// Minting a file grant is the dialog handlers' job, for the same reason: the
+// router has no channel for it and must never reach one.
+// Declared without parameters, like the dictation stubs: `NativeHost` also
+// carries a `Record<string, NativeCommand>` index signature, and a stub that
+// names its own argument types satisfies the member but not the index.
+const refuseGrant = () => {
+    throw new Error('Unexpected grant call from the command router: grantPath');
+};
+
 const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unknown>): NativeHost => ({
     shutdown: () => undefined,
     startDictation: refuseDictation('startDictation'),
     stopDictation: refuseDictation('stopDictation'),
     cancelDictation: refuseDictation('cancelDictation'),
+    grantPath: refuseGrant,
     ...methods,
 });
 
@@ -148,6 +161,39 @@ describe('argument forwarding', () => {
 
     it('leaves everything that is not bytes alone', () => {
         expect(toNativeArguments(['a', 1, true, null, { nested: [1] }])).toEqual(['a', 1, true, null, { nested: [1] }]);
+    });
+});
+
+describe('plugin command admission during quit', () => {
+    it('refuses a runtime command once quit has closed admission, before the addon runs', async () => {
+        const loadPlugin = vi.fn(() => 'loaded');
+        const admission = createPluginCommandAdmission();
+        const handlers = setup({
+            host: hostWith({ loadPlugin }),
+            acceptsCommand: admission.acceptsCommand,
+        });
+
+        admission.refusePluginCommands();
+
+        await expect(handlers.get(commandChannel('load_plugin'))?.(APP_FRAME, ['id', 'instance'])).rejects.toThrow(
+            /shutting down/u
+        );
+        expect(loadPlugin).not.toHaveBeenCalled();
+    });
+
+    it('still routes non-runtime commands after admission closes', async () => {
+        const listMidiInputs = vi.fn(() => []);
+        const admission = createPluginCommandAdmission();
+        const handlers = setup({
+            host: hostWith({ listMidiInputs }),
+            commands: ['list_midi_inputs'],
+            acceptsCommand: admission.acceptsCommand,
+        });
+
+        admission.refusePluginCommands();
+
+        await expect(handlers.get(commandChannel('list_midi_inputs'))?.(APP_FRAME, [])).resolves.toEqual([]);
+        expect(listMidiInputs).toHaveBeenCalledTimes(1);
     });
 });
 

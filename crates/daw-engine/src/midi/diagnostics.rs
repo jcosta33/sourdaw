@@ -36,9 +36,31 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// device period needs. Each one is a quantum of dry signal traded for
     /// latency that would otherwise never come back down.
     pub bridge_backlog_blocks_shed: u64,
+    /// Blocks returned to the app unprocessed because the plugin the bridge
+    /// names is on a track or bus device chain and the monitor is audible: that
+    /// chain runs the instance over the strip's own signal, so processing the
+    /// bridge's blocks as well would drive one stateful plugin twice a block.
+    /// The bridge is still drained, because a ring left to fill refuses every
+    /// later push for good.
+    pub bridge_blocks_passed_chain_bound: u64,
     /// Callbacks asking for more frames than the bridge can carry in one pass.
     /// Above that the app's pushes are refused every period, not occasionally.
     pub callback_frames_over_bridge_reach: u64,
+    /// A `RegisterCaptureConsumer` the input bus would not take: its table was
+    /// full, or the id was already on it. The control side holds its own
+    /// ledger against the same reserve and refuses first, where the caller
+    /// hears it; this counter is the callback's last line, as the effect
+    /// table's collision count is for that table.
+    pub capture_consumer_refusals: u64,
+    /// Capture blocks no consumer took, because every registered id resolved
+    /// to nothing or to an effect with no native instance. A registered bus
+    /// delivering to nobody is a recorder writing silence with no error.
+    pub capture_blocks_dropped: u64,
+    /// Capture blocks delivered with no audio behind them: the ring was
+    /// filling or had stalled. The consumers still receive the block, as
+    /// silence, so a recorder writes a gap it can see rather than splicing two
+    /// takes together.
+    pub capture_input_underruns: u64,
 }
 
 pub(crate) struct ActiveMidiRtDiagnosticsReader {
@@ -75,7 +97,11 @@ impl ActiveMidiRtDiagnostics {
                 bridge_output_blocks_dropped: 0,
                 unmatched_bridge_blocks: 0,
                 bridge_backlog_blocks_shed: 0,
+                bridge_blocks_passed_chain_bound: 0,
                 callback_frames_over_bridge_reach: 0,
+                capture_consumer_refusals: 0,
+                capture_blocks_dropped: 0,
+                capture_input_underruns: 0,
             },
         }
     }
@@ -134,11 +160,35 @@ impl ActiveMidiRtDiagnostics {
             .saturating_add(count);
     }
 
+    pub fn record_bridge_blocks_passed_chain_bound(&mut self, count: u64) {
+        self.snapshot.bridge_blocks_passed_chain_bound = self
+            .snapshot
+            .bridge_blocks_passed_chain_bound
+            .saturating_add(count);
+    }
+
     pub fn record_callback_frames_over_bridge_reach(&mut self, count: u64) {
         self.snapshot.callback_frames_over_bridge_reach = self
             .snapshot
             .callback_frames_over_bridge_reach
             .saturating_add(count);
+    }
+
+    pub fn record_capture_consumer_refusal(&mut self, count: u64) {
+        self.snapshot.capture_consumer_refusals = self
+            .snapshot
+            .capture_consumer_refusals
+            .saturating_add(count);
+    }
+
+    pub fn record_capture_blocks_dropped(&mut self, count: u64) {
+        self.snapshot.capture_blocks_dropped =
+            self.snapshot.capture_blocks_dropped.saturating_add(count);
+    }
+
+    pub fn record_capture_input_underrun(&mut self, count: u64) {
+        self.snapshot.capture_input_underruns =
+            self.snapshot.capture_input_underruns.saturating_add(count);
     }
 }
 

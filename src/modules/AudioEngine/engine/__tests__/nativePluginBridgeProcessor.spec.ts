@@ -85,8 +85,30 @@ function stereoBlock(seed: number): Float32Array[] {
     return [ramp(QUANTUM, seed), ramp(QUANTUM, seed + 500)];
 }
 
+/** One render quantum of silence, in the shape `Array.from` reads a channel as. */
+function silentQuantum(): number[] {
+    return Array.from({ length: QUANTUM }, () => 0);
+}
+
+/**
+ * An output buffer still holding the previous quantum, which is what a real host
+ * hands `process()`. A node that writes nothing leaves this sounding, and a
+ * zeroed buffer cannot tell that apart from silence written on purpose.
+ */
+function recycledOutput(): Float32Array[] {
+    return [ramp(QUANTUM, 7000), ramp(QUANTUM, 7500)];
+}
+
 function emptyOutput(): Float32Array[] {
     return [new Float32Array(QUANTUM), new Float32Array(QUANTUM)];
+}
+
+/**
+ * What the spec hands a node whose upstream is not actively processing: an
+ * input of zero channels, which is how an empty track or an ended clip arrives.
+ */
+function inactiveInput(): Float32Array[] {
+    return [];
 }
 
 /** Interleaved [L0,R0,L1,R1,…] little-endian f32 pairs, as the Rust side reads them. */
@@ -135,6 +157,29 @@ describe('native plugin bridge worklet', () => {
         expect(Array.from(output[0]!)).toEqual(Array.from(input[0]!));
         expect(Array.from(output[1]!)).toEqual(Array.from(input[1]!));
         expect(processor.port.posted).toHaveLength(0);
+    });
+
+    /**
+     * The relay is running and nothing has come back yet, so this quantum has no
+     * processed audio. Handing the dry input back makes the under-run audible as
+     * the unprocessed source at full level — a chain heard as a filter or a
+     * distortion briefly plays the raw signal. The Rust relay answers an empty
+     * ring with silence for the same reason (ADR 0021).
+     *
+     * The output buffer is pre-filled, because a real host recycles the one it
+     * hands `process()`: a node that writes nothing leaves the previous quantum
+     * sounding, and an already-zeroed buffer would read as silence either way.
+     */
+    it('emits silence rather than the dry input until the first processed block arrives', () => {
+        const processor = new ProcessorClass();
+        processor.port.deliver({ type: 'init' });
+        const output = recycledOutput();
+
+        processor.process([stereoBlock(1)], [output]);
+
+        expect(Array.from(output[0]!)).toEqual(silentQuantum());
+        expect(Array.from(output[1]!)).toEqual(silentQuantum());
+        expect(lastSentBuffer(processor.port).byteLength).toBe(QUANTUM * 8);
     });
 
     it('sends the current block as interleaved little-endian pairs', () => {
@@ -200,7 +245,13 @@ describe('native plugin bridge worklet', () => {
         expect(Atomics.load(counters, BRIDGE_DROPPED_BLOCKS_INDEX)).toBe(40 - TRANSFER_POOL_SIZE);
     });
 
-    it('keeps emitting the last processed block while blocks are being dropped', () => {
+    /**
+     * A decoded block belongs to the one quantum it is written to. Keeping it
+     * for the next under-run replays a 2.7 ms fragment for as long as the relay
+     * stays behind — a buzz at the render rate — and, worse, it hides the
+     * under-run behind audio that sounds plausible.
+     */
+    it('under-runs into silence after a processed block rather than replaying it', () => {
         const dropoutSab = new SharedArrayBuffer(4 * Int32Array.BYTES_PER_ELEMENT);
         const processor = new ProcessorClass();
         processor.port.deliver({ type: 'init', dropoutSab });
@@ -210,14 +261,80 @@ describe('native plugin bridge worklet', () => {
         processor.process([stereoBlock(1)], [emptyOutput()]);
         processor.port.deliver({ type: 'processed', audio: encodeInterleaved(wetLeft, wetRight) });
 
-        // Drain the pool without ever recycling, then render one more block.
-        for (let block = 0; block < 20; block++) {
-            processor.process([stereoBlock(block)], [emptyOutput()]);
-        }
+        const played = emptyOutput();
+        processor.process([stereoBlock(2)], [played]);
+        expect(Array.from(played[0]!)).toEqual(Array.from(wetLeft));
+        expect(Array.from(played[1]!)).toEqual(Array.from(wetRight));
+
+        // Nothing came back for this one, and the block above has been played.
+        const starved = recycledOutput();
+        processor.process([stereoBlock(3)], [starved]);
+
+        expect(Array.from(starved[0]!)).toEqual(silentQuantum());
+        expect(Array.from(starved[1]!)).toEqual(silentQuantum());
+    });
+
+    /**
+     * An inactive input is silence, not a reason to stop rendering. Every DAW
+     * keeps an insert running while the engine runs, because a reverb or delay
+     * tail has to decay past the clip that fed it and a generator plugin has no
+     * input to wait for. A skipped quantum is a plugin that is never asked to
+     * render at all.
+     */
+    it('renders a silent block when its input has no active channels', () => {
+        const processor = new ProcessorClass();
+        processor.port.deliver({ type: 'init' });
         const output = emptyOutput();
-        processor.process([stereoBlock(99)], [output]);
+
+        processor.process([inactiveInput()], [output]);
+
+        const sent = processor.port.posted.filter((entry) => entry.message.type === 'process');
+        expect(sent).toHaveLength(1);
+
+        const decoded = decodeInterleaved(lastSentBuffer(processor.port));
+        expect(decoded.left).toEqual(silentQuantum());
+        expect(decoded.right).toEqual(silentQuantum());
+    });
+
+    it('plays the processed block back even when the input is inactive', () => {
+        const processor = new ProcessorClass();
+        processor.port.deliver({ type: 'init' });
+        processor.process([inactiveInput()], [emptyOutput()]);
+
+        const wetLeft = ramp(QUANTUM, 2000);
+        const wetRight = ramp(QUANTUM, 2500);
+        processor.port.deliver({ type: 'processed', audio: encodeInterleaved(wetLeft, wetRight) });
+
+        const output = emptyOutput();
+        processor.process([inactiveInput()], [output]);
 
         expect(Array.from(output[0]!)).toEqual(Array.from(wetLeft));
+        expect(Array.from(output[1]!)).toEqual(Array.from(wetRight));
+    });
+
+    it('outputs silence, not stale data, for an inactive input before the relay is ready', () => {
+        const processor = new ProcessorClass();
+        const output = recycledOutput();
+
+        processor.process([inactiveInput()], [output]);
+
+        expect(Array.from(output[0]!)).toEqual(silentQuantum());
+        expect(Array.from(output[1]!)).toEqual(silentQuantum());
+        expect(processor.port.posted).toHaveLength(0);
+    });
+
+    it('allocates nothing per quantum for an inactive input', () => {
+        const processor = new ProcessorClass();
+        processor.port.deliver({ type: 'init' });
+
+        processor.process([inactiveInput()], [emptyOutput()]);
+        const firstBuffer = lastSentBuffer(processor.port);
+
+        // The relay hands the same backing store back once the round trip ends.
+        processor.port.deliver({ type: 'recycle', audio: firstBuffer });
+        processor.process([inactiveInput()], [emptyOutput()]);
+
+        expect(lastSentBuffer(processor.port)).toBe(firstBuffer);
     });
 
     it('transfers the payload rather than copying it across the port', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resumeEngine } from '#/modules/AudioEngine/useCases';
+import { resumeEngine, startNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -25,6 +25,10 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
+    startNativeLiveGraphSession: vi.fn(),
+    // The rate the native session is told to place its programme on. A device
+    // rate is all `startPlayback` reads, so a live context is not needed here.
+    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -46,6 +50,13 @@ describe('startPlayback', () => {
         // resumeEngine returns Promise<void>; default to a resolved promise so
         // the `.catch` chain in startPlayback has a thenable to attach to.
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
+        vi.mocked(startNativeLiveGraphSession).mockReset();
+        // Declining is what a browser build answers, so it is the default here:
+        // every case that is not about the native engine must pass with one.
+        vi.mocked(startNativeLiveGraphSession).mockResolvedValue({
+            outcome: 'declined',
+            reason: 'no desktop bridge (browser runtime)',
+        });
         vi.mocked(notifyUser).mockClear();
         vi.mocked(startPlayheadScheduler).mockClear();
         vi.mocked(ensureTrackStrips).mockClear();
@@ -178,6 +189,65 @@ describe('startPlayback', () => {
         expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 0 });
     });
 
+    it('starts the native live graph session at the beat playback actually opens on', () => {
+        // 4/4 at 120 BPM, so the 2-bar pre-roll opens at beat 4 — two seconds in.
+        // Sending the raw playhead would start the native engine four seconds
+        // ahead of the Web Audio transport it is meant to shadow.
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 12,
+            preRollEnabled: true,
+            preRollBars: 2,
+        });
+
+        startPlayback();
+
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(expect.objectContaining({ positionSeconds: 2 }));
+    });
+
+    it('gives the native session the arrangement maps the engine has to follow', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+        });
+
+        startPlayback();
+
+        // Beats out, seconds in: at the default 120 BPM the loop spans beats
+        // 4..8, which is two to four seconds on the engine's clock.
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
+            expect.objectContaining({
+                transportMaps: expect.objectContaining({
+                    loopRegion: { enabled: true, startSeconds: 2, endSeconds: 4 },
+                }),
+            })
+        );
+    });
+
+    it('starts playback whatever the native engine answers, because it is not the audible path', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 0,
+            preRollEnabled: false,
+        });
+        vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
+
+        startPlayback();
+
+        expect(startPlayheadScheduler).toHaveBeenCalled();
+        // An unhandled rejection here would fail the run, which is the point:
+        // the native session is fired, never awaited, and never fatal.
+        await vi.waitFor(() => {
+            expect(startNativeLiveGraphSession).toHaveBeenCalled();
+        });
+    });
+
     it('should not start when transport state is missing', () => {
         const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue(null);
@@ -205,6 +275,7 @@ describe('startPlayback', () => {
         expect(resumeEngine).not.toHaveBeenCalled();
         expect(ensureTrackStrips).not.toHaveBeenCalled();
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
     });
 });
