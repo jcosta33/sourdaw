@@ -15,7 +15,14 @@ import {
     selectClipWithFocus,
     setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
-import { CommandEventBus, executeAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
+import {
+    CommandEventBus,
+    executeAppAction,
+    executeUserAppAction,
+    pushUndoEntry,
+    redo,
+    undo,
+} from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
@@ -216,7 +223,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 return true;
             }
 
-            void executeAppAction(action.action);
+            void executeUserAppAction(action.action);
             return true;
         }
         if (action.type === 'callback') {

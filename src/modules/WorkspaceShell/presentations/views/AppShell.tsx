@@ -93,12 +93,14 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
+import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
+import { useProjectMutationRefusal } from '../hooks/useProjectMutationRefusal';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
@@ -223,6 +225,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     const project = useProjectState();
     const projectLoadFailure = useProjectLoadFailure();
+    const projectMutationRefusal = useProjectMutationRefusal();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const isAudioClipSelected =
@@ -644,6 +647,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     </a>
                 )}
                 <TransportBar />
+
+                {/* Non-modal on purpose: it explains a refusal, and every route out
+                    of one — the assistant panel, the production brief, undo —
+                    lives in the workspace it sits above. It is deliberately absent
+                    from `anyDialogOpen` and from the `inert` set. */}
+                {project.initialized && projectMutationRefusal !== null ? (
+                    <ProjectMutationRefusedBanner refusal={projectMutationRefusal} />
+                ) : null}
 
                 {/* ─── Main horizontal layout ─── */}
                 <Row align="stretch" grow className="overflow-hidden">

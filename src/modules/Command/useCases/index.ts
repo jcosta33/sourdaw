@@ -60,6 +60,7 @@ export { createUndoEntry } from './createUndoEntry';
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
+export { executeUserAppAction } from './executeUserAppAction';
 export { executeAppActionBatch } from './executeAppActionBatch';
 export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelope';
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';

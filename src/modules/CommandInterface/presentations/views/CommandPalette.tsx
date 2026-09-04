@@ -6,7 +6,7 @@ import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { closeCommandPalette } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -41,7 +41,7 @@ export const CommandPalette = (): ReactElement | null => {
         if (typeof entry.action === 'function') {
             entry.action();
         } else {
-            void executeAppAction(entry.action);
+            void executeUserAppAction(entry.action);
         }
     };
 

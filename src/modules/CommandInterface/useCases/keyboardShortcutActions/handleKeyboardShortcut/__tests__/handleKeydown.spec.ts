@@ -15,7 +15,7 @@ import {
     selectClipWithFocus,
     setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
-import { executeAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
 import {
@@ -159,6 +159,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     return {
         ...actual,
         executeAppAction: vi.fn(),
+        executeUserAppAction: vi.fn(),
         pushUndoEntry: vi.fn(),
         redo: vi.fn(),
         undo: vi.fn(),
@@ -435,7 +436,7 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(descriptor({ key: ' ' }));
 
             expect(prevent).toBe(true);
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
         });
 
         it('matches a single-character combo case-insensitively', () => {
@@ -512,7 +513,7 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(descriptor({ key: 'F1' }));
 
             expect(prevent).toBe(true);
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
         });
 
         it('duplicates the marquee time range instead of the clip when both a marquee and a clip are selected', () => {
