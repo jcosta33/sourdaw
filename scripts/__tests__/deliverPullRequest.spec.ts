@@ -6196,6 +6196,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6228,6 +6229,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6256,6 +6258,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6288,6 +6291,8 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6319,6 +6324,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6351,6 +6357,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
