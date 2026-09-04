@@ -134,14 +134,30 @@ export function* tomlTableLines(text: string): Generator<TomlTableLine> {
             pendingDepth = depth;
             continue;
         }
-        yield { header: currentHeader, line: stripped };
+        yield { header: currentHeader, line: stripped.trim() };
     }
 }
 
-/** The key of a `key = value` TOML line, trimmed and unquoted. */
+/**
+ * Split a raw (pre-unquote) TOML key at its first `.`, e.g. `serde.version` or
+ * `"my-crate".workspace`. Returns the unquoted head and the raw remainder, or
+ * `undefined` for `rest` when the key has no dot. Shared by `tomlLineKey` and
+ * `classifyDependencyEntry` so a dotted key like `serde.version = "1"` (a
+ * legal spelling of the `serde` entry, distinct from `serde.workspace = true`)
+ * is keyed by `serde` in both places and the two cannot drift apart.
+ */
+function splitFirstDottedKeySegment(rawKey: string): { head: string; rest: string | undefined } {
+    const dotIndex = rawKey.indexOf('.');
+    return dotIndex === -1
+        ? { head: unquoteTomlKey(rawKey), rest: undefined }
+        : { head: unquoteTomlKey(rawKey.slice(0, dotIndex)), rest: rawKey.slice(dotIndex + 1) };
+}
+
+/** The key of a `key = value` TOML line: its first dotted segment, unquoted. */
 function tomlLineKey(line: string): string {
     const equalsIndex = line.indexOf('=');
-    return unquoteTomlKey(equalsIndex === -1 ? line : line.slice(0, equalsIndex));
+    const rawKey = equalsIndex === -1 ? line : line.slice(0, equalsIndex);
+    return splitFirstDottedKeySegment(rawKey).head;
 }
 
 /** A `[workspace.dependencies.<name>]` sub-table header, unquoted — or `undefined` for any other header. */
@@ -255,12 +271,12 @@ function classifyDependencyEntry(line: string): DependencyEntryClassification | 
     const rawKey = line.slice(0, equalsIndex).trim();
     const rawValue = line.slice(equalsIndex + 1).trim();
 
-    const dotIndex = rawKey.indexOf('.');
-    if (dotIndex !== -1) {
+    const { head, rest } = splitFirstDottedKeySegment(rawKey);
+    if (rest !== undefined) {
         return {
             kind: 'dotted-key',
-            name: unquoteTomlKey(rawKey.slice(0, dotIndex)),
-            field: unquoteTomlKey(rawKey.slice(dotIndex + 1)),
+            name: head,
+            field: unquoteTomlKey(rest),
             value: rawValue,
         };
     }
@@ -299,7 +315,7 @@ export function workspaceDependencyNames(cargoTomlText: string): Set<string> {
         }
         const subTableName = dependencyHeaderMatch[1];
         if (subTableName !== undefined) {
-            if (workspaceSubTableFlagPattern.test(line.trim())) {
+            if (workspaceSubTableFlagPattern.test(line)) {
                 names.add(unquoteTomlKey(subTableName));
             }
             continue;

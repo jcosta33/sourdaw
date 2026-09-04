@@ -56,7 +56,7 @@ unused-dep = "2"
 
 [profile.release]
 opt-level = 3
-lto = true  # ship it clean
+    lto = true  # ship it clean
 `;
 
         expect(workspaceManifestFingerprintInput(editedManifest, usedDependencies)).toEqual(
@@ -124,6 +124,15 @@ workspace = true
         expect(rendered).toContain('[workspace.dependencies.tokio]');
         expect(rendered).toContain('version = "1"');
         expect(rendered).not.toContain('unused-sub');
+    });
+
+    it('renders a dotted-key [workspace.dependencies] entry (serde.version = "1") when used and drops it when unused', () => {
+        const withDottedEntry = `[workspace.dependencies]
+serde.version = "1"
+`;
+
+        expect(workspaceManifestFingerprintInput(withDottedEntry, new Set(['serde']))).toContain('serde.version = "1"');
+        expect(workspaceManifestFingerprintInput(withDottedEntry, new Set())).not.toContain('serde.version');
     });
 
     it('renders [patch.*] tables and the [workspace] resolver line verbatim', () => {
