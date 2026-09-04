@@ -1,9 +1,8 @@
 import { type ReactElement, useState, useTransition } from 'react';
 
-import { Search } from 'lucide-react';
-
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -364,20 +363,15 @@ const PresetRail = ({
                 detail={`${filteredPresets.length} shown`}
             />
 
-            <Row gap={2} className="bacteria-window px-3 py-2">
-                <Search className="size-3.5 shrink-0 text-muted-foreground/55" />
-                <label htmlFor="bacteria-preset-search" className="sr-only">
-                    Search Bacteria presets
-                </label>
-                <input
-                    id="bacteria-preset-search"
-                    type="search"
-                    value={query}
-                    onChange={(event) => onQueryChange(event.target.value)}
-                    placeholder="Search cultures"
-                    className="w-full bg-transparent text-compact text-foreground outline-none placeholder:text-muted-foreground/45"
-                />
-            </Row>
+            <DawSearchInput
+                id="bacteria-preset-search"
+                value={query}
+                onChange={onQueryChange}
+                placeholder="Search cultures"
+                aria-label="Search Bacteria presets"
+                variant="ghost"
+                className="bacteria-window px-3 py-2"
+            />
 
             <Row wrap gap={1}>
                 {categories.map((entry) => {

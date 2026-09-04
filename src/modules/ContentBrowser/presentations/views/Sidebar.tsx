@@ -2,9 +2,9 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 
 import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync, Settings } from 'lucide-react';
 
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { Input } from '#/components/ui/input';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
@@ -244,17 +244,14 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
             aria-label="Browser panel"
         >
             <Row gap={1.5} className="border-b border-border/50 p-2 bg-surface-base px-3">
-                <Search className="size-4 text-muted-foreground" aria-hidden="true" />
-                <Input
-                    type="search"
-                    placeholder="Search library..."
+                <DawSearchInput
                     value={searchQuery}
-                    onChange={(event) => {
-                        setSearchQuery(event.target.value);
-                    }}
-                    className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
+                    onChange={setSearchQuery}
+                    placeholder="Search library..."
                     aria-label="Search browser"
                     data-testid="browser-search"
+                    variant="ghost"
+                    className="flex-1 h-7 px-1 border-0 bg-transparent shadow-none"
                 />
                 <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close browser">
                     <X className="size-3.5" />

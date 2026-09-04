@@ -1,12 +1,11 @@
 import { type ReactElement, useState } from 'react';
 
-import { Search } from 'lucide-react';
-
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -117,16 +116,14 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             </DawPluginLed>
                         </Row>
 
-                        <Row as="label" gap={2} className="levain-window px-3 py-2">
-                            <Search className="size-3.5 text-muted-foreground/55" />
-                            <input
-                                value={search}
-                                onChange={(event) => setSearch(event.target.value)}
-                                placeholder="Find a section"
-                                className="min-w-0 flex-1 bg-transparent text-compact text-foreground outline-none placeholder:text-muted-foreground/45"
-                                aria-label="Search Levain instruments"
-                            />
-                        </Row>
+                        <DawSearchInput
+                            value={search}
+                            onChange={setSearch}
+                            placeholder="Find a section"
+                            aria-label="Search Levain instruments"
+                            variant="ghost"
+                            className="levain-window px-3 py-2"
+                        />
 
                         <Row align="stretch" wrap gap={1.5} role="radiogroup" aria-label="Filter instruments by family">
                             {FAMILIES.map((entry) => {
