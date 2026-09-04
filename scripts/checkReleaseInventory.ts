@@ -1792,10 +1792,10 @@ type DecodedRgbaPng = {
 
 const OWNER_ICON_BACKGROUND_TOP = [38, 34, 30] as const;
 const OWNER_ICON_BACKGROUND_BOTTOM = [8, 7, 6] as const;
-const OWNER_ICON_BACKGROUND_SHA256 = '9eb7c9370d1729bb55529e9fb6b5262397060ab4ea384bb6cf824d4320f526b6';
+const OWNER_ICON_BACKGROUND_SHA256 = '24ba0fb398972444d87c8f6149eabea7b3892ce74e6ceb89613e93b8de267226';
 const OWNER_ICON_ICNS_MAGIC = Buffer.from('icns', 'ascii');
 const OWNER_ICON_LEGACY_ARGB_MAGIC = Buffer.from('ARGB', 'ascii');
-const OWNER_ICON_PARTIAL_EDGE_SHA256 = 'fc033502f9d39b7fa77460f0a0b1cd985a8c33f60d18922ba1fc4c08754f4032';
+const OWNER_ICON_PARTIAL_EDGE_SHA256 = '535d1891e5f8f10e1a2201f463f5bd8aabd0a855d71cdd3ed4986504b2dafea3';
 const OWNER_ICON_PNG_FILE_BYTE_LIMIT = 2 * 1024 * 1024;
 const OWNER_ICON_PNG_IDAT_BYTE_LIMIT = 1024 * 1024;
 const OWNER_ICON_PNG_PIXEL_BYTE_LIMIT = 5 * 1024 * 1024;
@@ -2094,12 +2094,22 @@ function assertCanonicalOwnerIcon(root: string): void {
     if (canonical.width !== 480 || canonical.height !== 480) {
         throw new Error('owner visual asset public/icon.png must be 480x480 RGBA');
     }
-    if (authority.width !== 346 || authority.height !== 427) {
-        throw new Error('owner visual asset public/icon-transparent.png must be 346x427 RGBA');
+    if (authority.width !== 480 || authority.height !== 480) {
+        throw new Error('owner visual asset public/icon-transparent.png must be 480x480 RGBA');
     }
     for (let index = 3; index < canonical.pixels.length; index += 4) {
         if (canonical.pixels[index] !== 255) {
             throw new Error('owner visual asset public/icon.png must be fully opaque');
+        }
+    }
+    for (let x = 0; x < authority.width; x += 1) {
+        if (rgbaPixel(authority, x, 0)[3] !== 0 || rgbaPixel(authority, x, authority.height - 1)[3] !== 0) {
+            throw new Error('owner visual asset public/icon-transparent.png borders must be fully transparent');
+        }
+    }
+    for (let y = 0; y < authority.height; y += 1) {
+        if (rgbaPixel(authority, 0, y)[3] !== 0 || rgbaPixel(authority, authority.width - 1, y)[3] !== 0) {
+            throw new Error('owner visual asset public/icon-transparent.png borders must be fully transparent');
         }
     }
     let opaqueMarkPixels = 0;
@@ -2110,7 +2120,7 @@ function assertCanonicalOwnerIcon(root: string): void {
             if (source[3] === 0) {
                 continue;
             }
-            const target = rgbaPixel(canonical, x + 66, y + 24);
+            const target = rgbaPixel(canonical, x, y);
             if (source[3] === 255) {
                 opaqueMarkPixels += 1;
                 if (source.some((channel, index) => channel !== target[index])) {
@@ -2120,8 +2130,8 @@ function assertCanonicalOwnerIcon(root: string): void {
                 }
                 continue;
             }
-            // These edges were matte-authored rather than straight-alpha composited.
-            // Pin their exact source/target relationship so validation cannot alter the mark.
+            // These edges and tactile shadow sit on transparent alpha in authority.
+            // Pin their exact source/target relationship so validation cannot alter the mark or shadow.
             const evidence = Buffer.alloc(12);
             evidence.writeUInt16BE(x, 0);
             evidence.writeUInt16BE(y, 2);
@@ -2156,12 +2166,7 @@ function assertCanonicalOwnerIcon(root: string): void {
     const evidence = Buffer.alloc(8);
     for (let y = 0; y < canonical.height; y += 1) {
         for (let x = 0; x < canonical.width; x += 1) {
-            const sourceX = x - 66;
-            const sourceY = y - 24;
-            const sourceAlpha =
-                sourceX >= 0 && sourceX < authority.width && sourceY >= 0 && sourceY < authority.height
-                    ? rgbaPixel(authority, sourceX, sourceY)[3]
-                    : 0;
+            const sourceAlpha = rgbaPixel(authority, x, y)[3];
             if (sourceAlpha !== 0) {
                 continue;
             }

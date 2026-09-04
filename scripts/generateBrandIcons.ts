@@ -2,211 +2,19 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateSync, inflateSync } from 'node:zlib';
 
-type DecodedPng = {
-    readonly height: number;
-    readonly pixels: Buffer;
-    readonly width: number;
-};
+import {
+    buildIcns,
+    buildIco,
+    decodePng,
+    type DecodedPng,
+    downscaleAreaAverage,
+    encodeLegacyArgb,
+    encodePng,
+    scaleBilinear,
+} from './brandIconFormats.ts';
 
-function paethPredictor(left: number, above: number, upperLeft: number): number {
-    const p = left + above - upperLeft;
-    const pa = Math.abs(p - left);
-    const pb = Math.abs(p - above);
-    const pc = Math.abs(p - upperLeft);
-    if (pa <= pb && pa <= pc) {
-        return left;
-    }
-    return pb <= pc ? above : upperLeft;
-}
-
-function pngFilterPredictor(filter: number, left: number, above: number, upperLeft: number): number {
-    if (filter === 1) {
-        return left;
-    }
-    if (filter === 2) {
-        return above;
-    }
-    if (filter === 3) {
-        return Math.floor((left + above) / 2);
-    }
-    if (filter === 4) {
-        return paethPredictor(left, above, upperLeft);
-    }
-    return 0;
-}
-
-const crcTable = new Int32Array(256);
-for (let n = 0; n < 256; n += 1) {
-    let c = n;
-    for (let k = 0; k < 8; k += 1) {
-        c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    }
-    crcTable[n] = c;
-}
-
-function calcCrc(buf: Buffer): number {
-    let crc = -1;
-    for (let i = 0; i < buf.length; i += 1) {
-        crc = crcTable[(crc ^ buf[i]!) & 0xff]! ^ (crc >>> 8);
-    }
-    return (crc ^ -1) >>> 0;
-}
-
-function pngChunk(type: string, data: Buffer): Buffer {
-    const chunk = Buffer.alloc(12 + data.length);
-    chunk.writeUInt32BE(data.length, 0);
-    chunk.write(type, 4, 4, 'ascii');
-    data.copy(chunk, 8);
-    const crc = calcCrc(chunk.subarray(4, 8 + data.length));
-    chunk.writeUInt32BE(crc, 8 + data.length);
-    return chunk;
-}
-
-export function decodePng(buf: Buffer): DecodedPng {
-    const width = buf.readUInt32BE(16);
-    const height = buf.readUInt32BE(20);
-    let offset = 8;
-    const imageData: Buffer[] = [];
-    while (offset < buf.length) {
-        const len = buf.readUInt32BE(offset);
-        const type = buf.subarray(offset + 4, offset + 8).toString('ascii');
-        if (type === 'IDAT') {
-            imageData.push(buf.subarray(offset + 8, offset + 8 + len));
-        }
-        offset += 12 + len;
-    }
-    const stride = width * 4;
-    const inflated = inflateSync(Buffer.concat(imageData));
-    const pixels = Buffer.alloc(stride * height);
-    for (let y = 0; y < height; y += 1) {
-        const inputRow = y * (stride + 1);
-        const outputRow = y * stride;
-        const filter = inflated[inputRow]!;
-        for (let x = 0; x < stride; x += 1) {
-            const value = inflated[inputRow + 1 + x]!;
-            const left = x >= 4 ? pixels[outputRow + x - 4]! : 0;
-            const above = y > 0 ? pixels[outputRow - stride + x]! : 0;
-            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4]! : 0;
-            pixels[outputRow + x] = (value + pngFilterPredictor(filter, left, above, upperLeft)) & 0xff;
-        }
-    }
-    return { height, pixels, width };
-}
-
-export function encodePng(width: number, height: number, pixels: Buffer): Buffer {
-    const stride = width * 4;
-    const rows = Buffer.alloc((stride + 1) * height);
-    for (let y = 0; y < height; y += 1) {
-        const inRow = y * (stride + 1);
-        rows[inRow] = 0;
-        pixels.copy(rows, inRow + 1, y * stride, (y + 1) * stride);
-    }
-    const header = Buffer.alloc(13);
-    header.writeUInt32BE(width, 0);
-    header.writeUInt32BE(height, 4);
-    header[8] = 8;
-    header[9] = 6;
-    const compressed = deflateSync(rows, { level: 9 });
-    const idatChunks: Buffer[] = [];
-    const maxChunk = 65536;
-    let offset = 0;
-    while (offset < compressed.length) {
-        const len = Math.min(maxChunk, compressed.length - offset);
-        idatChunks.push(pngChunk('IDAT', compressed.subarray(offset, offset + len)));
-        offset += len;
-    }
-    return Buffer.concat([
-        Buffer.from('89504e470d0a1a0a', 'hex'),
-        pngChunk('IHDR', header),
-        ...idatChunks,
-        pngChunk('IEND', Buffer.alloc(0)),
-    ]);
-}
-
-function sampleAreaPixel(
-    srcPixels: Buffer,
-    srcW: number,
-    srcH: number,
-    dx: number,
-    dy: number,
-    xRatio: number,
-    yRatio: number
-): readonly [number, number, number, number] {
-    const sxStart = dx * xRatio;
-    const sxEnd = (dx + 1) * xRatio;
-    const syStart = dy * yRatio;
-    const syEnd = (dy + 1) * yRatio;
-
-    const sxMin = Math.floor(sxStart);
-    const sxMax = Math.min(srcW - 1, Math.floor(sxEnd));
-    const syMin = Math.floor(syStart);
-    const syMax = Math.min(srcH - 1, Math.floor(syEnd));
-
-    let totalWeight = 0;
-    let r = 0;
-    let g = 0;
-    let b = 0;
-    let a = 0;
-
-    for (let sy = syMin; sy <= syMax; sy += 1) {
-        const yOverlap = Math.min(sy + 1, syEnd) - Math.max(sy, syStart);
-        if (yOverlap <= 0) {
-            continue;
-        }
-
-        for (let sx = sxMin; sx <= sxMax; sx += 1) {
-            const xOverlap = Math.min(sx + 1, sxEnd) - Math.max(sx, sxStart);
-            if (xOverlap <= 0) {
-                continue;
-            }
-
-            const weight = xOverlap * yOverlap;
-            totalWeight += weight;
-
-            const srcOff = (sy * srcW + sx) * 4;
-            r += srcPixels[srcOff]! * weight;
-            g += srcPixels[srcOff + 1]! * weight;
-            b += srcPixels[srcOff + 2]! * weight;
-            a += srcPixels[srcOff + 3]! * weight;
-        }
-    }
-
-    if (totalWeight <= 0) {
-        return [0, 0, 0, 0];
-    }
-    return [
-        Math.round(r / totalWeight),
-        Math.round(g / totalWeight),
-        Math.round(b / totalWeight),
-        Math.round(a / totalWeight),
-    ];
-}
-
-export function downscaleAreaAverage(
-    srcPixels: Buffer,
-    srcW: number,
-    srcH: number,
-    dstW: number,
-    dstH: number
-): Buffer {
-    const dst = Buffer.alloc(dstW * dstH * 4);
-    const xRatio = srcW / dstW;
-    const yRatio = srcH / dstH;
-
-    for (let dy = 0; dy < dstH; dy += 1) {
-        for (let dx = 0; dx < dstW; dx += 1) {
-            const [r, g, b, a] = sampleAreaPixel(srcPixels, srcW, srcH, dx, dy, xRatio, yRatio);
-            const dstOff = (dy * dstW + dx) * 4;
-            dst[dstOff] = r;
-            dst[dstOff + 1] = g;
-            dst[dstOff + 2] = b;
-            dst[dstOff + 3] = a;
-        }
-    }
-    return dst;
-}
+export { decodePng, type DecodedPng, downscaleAreaAverage, encodePng };
 
 function getBg(y: number, height: number): readonly [number, number, number] {
     const t = y / (height - 1);
@@ -333,42 +141,88 @@ function compositeBackgroundAndMark(
     return pixels;
 }
 
-function scaleBilinear(srcPixels: Buffer, srcW: number, srcH: number, dstW: number, dstH: number): Buffer {
-    const dst = Buffer.alloc(dstW * dstH * 4);
-    const xRatio = (srcW - 1) / (dstW - 1);
-    const yRatio = (srcH - 1) / (dstH - 1);
-
-    for (let dy = 0; dy < dstH; dy += 1) {
-        const sy = dy * yRatio;
-        const yLow = Math.floor(sy);
-        const yHigh = Math.min(srcH - 1, Math.ceil(sy));
-        const yWeight = sy - yLow;
-
-        for (let dx = 0; dx < dstW; dx += 1) {
-            const sx = dx * xRatio;
-            const xLow = Math.floor(sx);
-            const xHigh = Math.min(srcW - 1, Math.ceil(sx));
-            const xWeight = sx - xLow;
-
-            const idx00 = (yLow * srcW + xLow) * 4;
-            const idx10 = (yLow * srcW + xHigh) * 4;
-            const idx01 = (yHigh * srcW + xLow) * 4;
-            const idx11 = (yHigh * srcW + xHigh) * 4;
-
-            const dstOff = (dy * dstW + dx) * 4;
-            for (let c = 0; c < 4; c += 1) {
-                const top = srcPixels[idx00 + c]! * (1 - xWeight) + srcPixels[idx10 + c]! * xWeight;
-                const btm = srcPixels[idx01 + c]! * (1 - xWeight) + srcPixels[idx11 + c]! * xWeight;
-                dst[dstOff + c] = Math.round(top * (1 - yWeight) + btm * yWeight);
-            }
-        }
-    }
-    return dst;
-}
-
 export function renderCanonical480(authority: DecodedPng): Buffer {
     const shadowMap = computeShadowMap(authority.pixels, authority.width, authority.height, 480, 480, 66, 30, 6, 0.75);
     return compositeBackgroundAndMark(480, 480, authority.pixels, authority.width, authority.height, 66, 24, shadowMap);
+}
+
+function compositeTransparentAndMark(
+    destW: number,
+    destH: number,
+    markPixels: Buffer,
+    markW: number,
+    markH: number,
+    markOffsetX: number,
+    markOffsetY: number,
+    shadowMap: Float32Array
+): Buffer {
+    const pixels = Buffer.alloc(destW * destH * 4);
+    for (let y = 0; y < destH; y += 1) {
+        for (let x = 0; x < destW; x += 1) {
+            const outOff = (y * destW + x) * 4;
+            const s = shadowMap[y * destW + x]!;
+
+            const srcX = x - markOffsetX;
+            const srcY = y - markOffsetY;
+            let markR = 0;
+            let markG = 0;
+            let markB = 0;
+            let markA = 0;
+
+            if (srcX >= 0 && srcX < markW && srcY >= 0 && srcY < markH) {
+                const idx = (srcY * markW + srcX) * 4;
+                markA = markPixels[idx + 3]!;
+                if (markA > 0) {
+                    markR = markPixels[idx]!;
+                    markG = markPixels[idx + 1]!;
+                    markB = markPixels[idx + 2]!;
+                }
+            }
+
+            if (markA === 255) {
+                pixels[outOff] = markR;
+                pixels[outOff + 1] = markG;
+                pixels[outOff + 2] = markB;
+                pixels[outOff + 3] = 255;
+            } else if (markA > 0) {
+                const alphaMark = markA / 255;
+                const alphaShadow = s;
+                const outAlphaNorm = alphaMark + alphaShadow * (1 - alphaMark);
+                const r = Math.round((markR * alphaMark) / outAlphaNorm);
+                const g = Math.round((markG * alphaMark) / outAlphaNorm);
+                const b = Math.round((markB * alphaMark) / outAlphaNorm);
+                pixels[outOff] = r;
+                pixels[outOff + 1] = g;
+                pixels[outOff + 2] = b;
+                pixels[outOff + 3] = Math.round(outAlphaNorm * 255);
+            } else if (s > 0) {
+                pixels[outOff] = 0;
+                pixels[outOff + 1] = 0;
+                pixels[outOff + 2] = 0;
+                pixels[outOff + 3] = Math.round(s * 255);
+            } else {
+                pixels[outOff] = 0;
+                pixels[outOff + 1] = 0;
+                pixels[outOff + 2] = 0;
+                pixels[outOff + 3] = 0;
+            }
+        }
+    }
+    return pixels;
+}
+
+export function renderTransparent480(authority: DecodedPng): Buffer {
+    const shadowMap = computeShadowMap(authority.pixels, authority.width, authority.height, 480, 480, 66, 30, 6, 0.75);
+    return compositeTransparentAndMark(
+        480,
+        480,
+        authority.pixels,
+        authority.width,
+        authority.height,
+        66,
+        24,
+        shadowMap
+    );
 }
 
 export function renderMaster1024(authority: DecodedPng): Buffer {
@@ -412,73 +266,45 @@ export function renderMaster1024(authority: DecodedPng): Buffer {
     );
 }
 
-function encodePackBits(data: Buffer): Buffer {
-    const chunks: Buffer[] = [];
-    let offset = 0;
-    while (offset < data.length) {
-        const len = Math.min(128, data.length - offset);
-        chunks.push(Buffer.from([len - 1]));
-        chunks.push(data.subarray(offset, offset + len));
-        offset += len;
-    }
-    return Buffer.concat(chunks);
-}
+export function renderMaster1024Transparent(authority: DecodedPng): Buffer {
+    const scale = 1024 / 480;
+    const targetMarkW = Math.round(346 * scale);
+    const targetMarkH = Math.round(427 * scale);
+    const targetMarkX = Math.round(66 * scale);
+    const targetMarkY = Math.round(24 * scale);
+    const shadowOffsetY = Math.round(6 * scale);
+    const shadowBlur = Math.round(6 * scale);
 
-function encodeLegacyArgb(pixels: Buffer, size: number): Buffer {
-    const pixelCount = size * size;
-    const channels = Buffer.alloc(pixelCount * 4);
-    for (let i = 0; i < pixelCount; i += 1) {
-        channels[i] = pixels[i * 4 + 3]!; // A
-        channels[pixelCount + i] = pixels[i * 4]!; // R
-        channels[pixelCount * 2 + i] = pixels[i * 4 + 1]!; // G
-        channels[pixelCount * 3 + i] = pixels[i * 4 + 2]!; // B
-    }
-    const packed = encodePackBits(channels);
-    return Buffer.concat([Buffer.from('ARGB', 'ascii'), packed]);
-}
+    const scaledMarkPixels = scaleBilinear(
+        authority.pixels,
+        authority.width,
+        authority.height,
+        targetMarkW,
+        targetMarkH
+    );
 
-function buildIcns(framesMap: ReadonlyMap<string, Buffer>): Buffer {
-    const chunks: Buffer[] = [];
-    let totalLen = 8;
-    for (const [tag, payload] of framesMap.entries()) {
-        const chunkLen = 8 + payload.length;
-        totalLen += chunkLen;
-        const header = Buffer.alloc(8);
-        header.write(tag, 0, 4, 'ascii');
-        header.writeUInt32BE(chunkLen, 4);
-        chunks.push(header, payload);
-    }
-    const containerHeader = Buffer.alloc(8);
-    containerHeader.write('icns', 0, 4, 'ascii');
-    containerHeader.writeUInt32BE(totalLen, 4);
-    return Buffer.concat([containerHeader, ...chunks]);
-}
+    const shadowMap = computeShadowMap(
+        scaledMarkPixels,
+        targetMarkW,
+        targetMarkH,
+        1024,
+        1024,
+        targetMarkX,
+        targetMarkY + shadowOffsetY,
+        shadowBlur,
+        0.75
+    );
 
-function buildIco(framesArray: ReadonlyArray<{ readonly png: Buffer; readonly size: number }>): Buffer {
-    const count = framesArray.length;
-    const header = Buffer.alloc(6);
-    header.writeUInt16LE(0, 0); // reserved
-    header.writeUInt16LE(1, 2); // ICO
-    header.writeUInt16LE(count, 4);
-
-    let currentOffset = 6 + count * 16;
-    const dirEntries: Buffer[] = [];
-    const payloads: Buffer[] = [];
-    for (const frame of framesArray) {
-        const entry = Buffer.alloc(16);
-        entry[0] = frame.size >= 256 ? 0 : frame.size;
-        entry[1] = frame.size >= 256 ? 0 : frame.size;
-        entry[2] = 0; // color count
-        entry[3] = 0; // reserved
-        entry.writeUInt16LE(1, 4); // color planes
-        entry.writeUInt16LE(32, 6); // bit depth
-        entry.writeUInt32LE(frame.png.length, 8);
-        entry.writeUInt32LE(currentOffset, 12);
-        dirEntries.push(entry);
-        payloads.push(frame.png);
-        currentOffset += frame.png.length;
-    }
-    return Buffer.concat([header, ...dirEntries, ...payloads]);
+    return compositeTransparentAndMark(
+        1024,
+        1024,
+        scaledMarkPixels,
+        targetMarkW,
+        targetMarkH,
+        targetMarkX,
+        targetMarkY,
+        shadowMap
+    );
 }
 
 function writeWebIcons(root: string, getPng: (sz: number) => Buffer): void {
@@ -604,10 +430,10 @@ function logVerificationHashes(getPixels: (sz: number) => Buffer): void {
 
 export function main(): void {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-    const authorityBuf = readFileSync(resolve(root, 'public/icon-transparent.png'));
+    const authorityBuf = readFileSync(resolve(root, 'scripts/assets/canonical-mark.png'));
     const authority = decodePng(authorityBuf);
 
-    // Render 480x480 canonical pixel buffer
+    // Render 480x480 canonical pixel buffer (opaque)
     const canonical480Pixels = renderCanonical480(authority);
     const canonical480Png = encodePng(480, 480, canonical480Pixels);
 
@@ -615,13 +441,26 @@ export function main(): void {
     writeFileSync(resolve(root, 'public/icon.png'), canonical480Png);
     writeFileSync(resolve(root, 'sourdaw.png'), canonical480Png);
 
-    // Render master 1024 directly from the transparent authority mark
+    // Render 480x480 transparent pixel buffer with tactile shadow
+    const transparent480Pixels = renderTransparent480(authority);
+    const transparent480Png = encodePng(480, 480, transparent480Pixels);
+    writeFileSync(resolve(root, 'public/icon-transparent.png'), transparent480Png);
+
+    // Render master 1024 directly from the transparent authority mark (opaque)
     const master1024Pixels = renderMaster1024(authority);
 
-    // Size pixel cache for high-precision area-averaging
+    // Render master 1024 transparent with tactile shadow
+    const master1024TransparentPixels = renderMaster1024Transparent(authority);
+
+    // Size pixel cache for high-precision area-averaging (opaque)
     const pixelCache = new Map<number, Buffer>();
     pixelCache.set(1024, master1024Pixels);
     pixelCache.set(480, canonical480Pixels);
+
+    // Size pixel cache for high-precision area-averaging (transparent)
+    const transparentPixelCache = new Map<number, Buffer>();
+    transparentPixelCache.set(1024, master1024TransparentPixels);
+    transparentPixelCache.set(480, transparent480Pixels);
 
     function getPixels(size: number): Buffer {
         const cached = pixelCache.get(size);
@@ -639,12 +478,28 @@ export function main(): void {
         return encodePng(size, size, getPixels(size));
     }
 
+    function getTransparentPixels(size: number): Buffer {
+        const cached = transparentPixelCache.get(size);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const sourceSize = size > 256 ? 1024 : 480;
+        const sourcePixels = transparentPixelCache.get(sourceSize)!;
+        const res = downscaleAreaAverage(sourcePixels, sourceSize, sourceSize, size, size);
+        transparentPixelCache.set(size, res);
+        return res;
+    }
+
+    function getTransparentPng(size: number): Buffer {
+        return encodePng(size, size, getTransparentPixels(size));
+    }
+
     writeWebIcons(root, getPng);
     writeMacIcons(root, getPixels, getPng);
     writeWindowsIcons(root, getPng);
     writeLinuxIcons(root, getPng);
     writeIosIcons(root, getPng);
-    writeAndroidIcons(root, getPng);
+    writeAndroidIcons(root, getTransparentPng);
 
     console.log('All platform icon assets generated successfully!');
     logVerificationHashes(getPixels);

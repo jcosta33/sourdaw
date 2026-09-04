@@ -3764,7 +3764,7 @@ describe('release inventory', () => {
 
         try {
             const authority = decodePngFixture(repositoryOwnerAuthority);
-            expect(authority.pixels[(81 * authority.width + 105) * 4 + 3]).toBe(128);
+            expect(authority.pixels[(105 * authority.width + 171) * 4 + 3]).toBe(131);
             const canonical = incrementPngPixelChannel(repositoryOwnerCanonical, 171, 105, 0);
             writeOwnerVisualAssetFixture(root, { canonical });
 
