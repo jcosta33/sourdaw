@@ -1197,7 +1197,7 @@
                 "tracked-set-sha256:50e391921ef973fc7ca6af8814ed67ae5395c9db9aa1719395f67d6edc5dac74:grand-boule-live-runtime",
                 "tracked-set-sha256:41f17f76ef9725c2a6d9ce2ea7c787f9bd6651c35c1143e86a3310152c349ba7:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:1bef0d9e4f72ebf264f4e65c54cefcd38d27f877c2d9dafeb693b8062a1bafee:grand-boule-release-proof"
+                "tracked-set-sha256:f9ca596cada3a339ace425b49b05a5de5c4a8eaaa054a6dee963e068b223cb39:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1328,13 +1328,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:aa108b3ab52497b10de02b9a49131b8c6f44d33f088c840661557553572fcb4a",
+                "daw-dsp sha256:b9f012cc461ba3851be220e449aadb35a73764c3d42309cfe34d7e2a6b7189cc",
                 "daw-wasm-decoder sha256:5b265f5b68d99951d7e6b73ec0f3daf7b52bbdd56971f12d08d4065e51c44dfe",
                 "proof-chamber sha256:58963155c2097b67a0ba353dffed639e1fdde1b7805e004b211cb6a729f02f8b",
                 "scoring sha256:42025a2d92a929504c3593d074d04e0f75e758c1bc42c50d99e6a457bfb78a36"
             ],
             "digests": [
-                "sha256:b8a3f70e9bf10cf88c7e2bdf1e2cd494ebfce562475a8400d3d523e8dc2a33ab:public/wasm/manifest.json"
+                "sha256:9995084c3a41b402facec4f1daebd2ab5ae1f19efc79d5600b59b8c8c743efaa:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1718,7 +1718,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "b8a3f70e9bf10cf88c7e2bdf1e2cd494ebfce562475a8400d3d523e8dc2a33ab"
+            "sha256": "9995084c3a41b402facec4f1daebd2ab5ae1f19efc79d5600b59b8c8c743efaa"
         }
     ],
     "externalReferences": [
