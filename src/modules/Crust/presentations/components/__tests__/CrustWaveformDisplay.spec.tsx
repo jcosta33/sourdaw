@@ -153,8 +153,7 @@ describe('CrustWaveformDisplay', () => {
                 />
             );
             const wrapper = container.firstElementChild as HTMLElement;
-            // jsdom normalises hex → rgb
-            expect(wrapper.style.background).toBe('rgb(14, 14, 16)');
+            expect(wrapper).toHaveClass('bg-surface-well');
         });
 
         it('uses the same neutral wrapper background in delta mode', () => {
@@ -170,7 +169,7 @@ describe('CrustWaveformDisplay', () => {
                 />
             );
             const wrapper = container.firstElementChild as HTMLElement;
-            expect(wrapper.style.background).toBe('rgb(14, 14, 16)');
+            expect(wrapper).toHaveClass('bg-surface-well');
         });
     });
 
