@@ -191,4 +191,12 @@ describe('ProofChamberPanel', () => {
             payload: { deviceId: 'test-device', paramId: 'saturation_type', value: 1 },
         });
     });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
+        const { container } = render(<ProofChamberPanel deviceId="test-device" />);
+        const faceplate = container.querySelector<HTMLElement>('.proof-chamber-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-hidden');
+    });
 });

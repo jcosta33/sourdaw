@@ -329,4 +329,16 @@ describe('CrumbsPanel', () => {
         };
         expect(screen.getAllByText(isThreeVoices).length).toBeGreaterThan(0);
     });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
+        const { container } = render(<CrumbsPanel deviceId={DEVICE} />);
+        const faceplate = container.querySelector<HTMLElement>('.crumbs-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-hidden');
+
+        const grid = faceplate?.querySelector<HTMLElement>('.grid');
+        expect(grid).not.toBeNull();
+        expect(grid?.className).toContain('min-h-[440px]');
+    });
 });

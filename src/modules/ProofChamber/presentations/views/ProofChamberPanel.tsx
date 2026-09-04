@@ -509,7 +509,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     }
 
     return (
-        <Row align="stretch" gap={3} className="proof-chamber-faceplate h-full min-h-0 overflow-hidden p-3">
+        <Row align="stretch" gap={3} className="proof-chamber-faceplate h-full min-h-[440px] p-3">
             <DawPluginRail className="h-full w-[248px] shrink-0">
                 <SectionCard title="Space tray" detail={params.space}>
                     <div>
