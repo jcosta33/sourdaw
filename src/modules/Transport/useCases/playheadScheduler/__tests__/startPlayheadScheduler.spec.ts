@@ -626,6 +626,44 @@ describe('startPlayheadScheduler', () => {
         expect(arrangementMocks.addTake).not.toHaveBeenCalled();
     });
 
+    it('pairs each loop-wrap take with the recording clip of its own armed track, not a pre-existing clip or a clip of another track', async () => {
+        // Two armed tracks recording the same session, each with a distinct
+        // active clip, and each carrying a pre-existing clip that sits FIRST in
+        // its clips array. Resolving against the wrong track (the first armed
+        // track's clips) or falling back to clips[0] while anything records
+        // both mint takes this spec rejects: the id-to-track pairing must be
+        // exact for comp resolution to find the clip.
+        trackStoreState.value = {
+            tracks: [
+                { id: 'rec-a', armed: true, kind: 'audio', clips: [{ id: 'clip-old-a' }, { id: 'clip-rec-a' }] },
+                { id: 'rec-b', armed: true, kind: 'midi', clips: [{ id: 'clip-old-b' }, { id: 'clip-rec-b' }] },
+            ],
+        };
+        activeRecordingRefState.current = ['clip-rec-a', 'clip-rec-b'];
+        takeLaneStoreState.value = null;
+        transportStoreState.value = playingState({
+            playheadPosition: 3.9,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            isRecording: true,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(2);
+        const takeCalls = arrangementMocks.addTake.mock.calls as unknown as [string, string, string, number, number][];
+        // Exact id-to-track pairing, in either call order.
+        expect(takeCalls).toContainEqual(['rec-a', 'clip-rec-a', 'Take 1', 0, 4]);
+        expect(takeCalls).toContainEqual(['rec-b', 'clip-rec-b', 'Take 1', 0, 4]);
+    });
+
     it('stops playback when a follow action requests a stop', async () => {
         const onStop = vi.fn();
         schedulerSession.onStopRequested = onStop;
