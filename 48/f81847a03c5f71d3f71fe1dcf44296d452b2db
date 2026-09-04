@@ -1,0 +1,59 @@
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_5233e0f09b7ef3 359
+  s_9b530f08172a54::t_7852526a18732d 70-74,78
+  s_9b530f08172a54::t_70fe147e84bff5 87
+  s_9b530f08172a54::t_c5488eed853786 141-142,144-145,153
+  s_9b530f08172a54::t_f7284b27b34048 182
+  s_9b530f08172a54::t_634d86c3d6f6f4 436-438
+  s_9b530f08172a54::t_eca590a83e902b 203-252
+  s_9b530f08172a54::t_a1df00207b7529 337-342,345-358,360-367,369
+  s_9b530f08172a54::t_67bd2826928143 25-47
+  s_9b530f08172a54::t_603a150976e212 382,439
+src/modules/AudioEngine/useCases/livePlayback/readAttachedExternalInstanceIds.ts
+  s_9b530f08172a54::t_612923c9bf78a3 1-25
+src/modules/AudioEngine/useCases/livePlayback/primeNativeTimelineSamples.ts
+  s_9b530f08172a54::t_4b586304145f90 52-54,57
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_6affe13e3f7834 88-94
+  s_9b530f08172a54::t_078b6ddaa6b27d 360-361,363-365
+  s_9b530f08172a54::t_3dc6a550f6f7c7 279-347
+  s_9b530f08172a54::t_229a3ff98ac834 20-21
+  s_9b530f08172a54::t_b13687fe67a5bd 466-590
+  s_9b530f08172a54::t_ded8c74e519e2d 127-144
+  s_9b530f08172a54::t_2f6fee3b70d847 145,348,366,591
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_9b530f08172a54::t_4d5486e1018702 609-611
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_e12af3e1f5d7e5 1-21
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_9b530f08172a54::t_a4146aa9ef59b6 273-274
+  s_9b530f08172a54::t_6397739f950b70 62-72
+  s_9b530f08172a54::t_0545ed62034cfe 45-48,56-60
+  s_9b530f08172a54::t_cab7ce4fdfc7cd 124-132
+  s_9b530f08172a54::t_a32b52edb4ef30 141,148-155
+  s_9b530f08172a54::t_110ca61592e21a 61,181,183,193,270-272,275-278,288
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_9b530f08172a54::t_94cd6b2a6e1723 418,425-534
+  s_9b530f08172a54::t_74173474620c8b 114
+  s_9b530f08172a54::t_254914b82f19b0 535
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readAttachedExternalInstanceIds.spec.ts
+  s_9b530f08172a54::t_71167ce259ed66 1-47
+src/modules/AudioEngine/AGENTS.md
+  s_9b530f08172a54::t_3f07ad2d13519b 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "48f81847a03c5f71d3f71fe1dcf44296d452b2db",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
