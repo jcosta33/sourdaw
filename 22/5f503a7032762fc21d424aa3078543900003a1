@@ -1,0 +1,16 @@
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  h_1228e573df1f42 63-65,69,72,79,82,362
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  h_1228e573df1f42 12,143-146,428-430,440-442,570-573,581-596
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "225f503a7032762fc21d424aa3078543900003a1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
