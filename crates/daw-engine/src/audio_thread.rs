@@ -708,11 +708,16 @@ impl DeviceRenderer {
                 continue;
             }
 
-            callback_peak = callback_peak.max(block_peak(left, right));
-
             // Adapt the rendered stereo pair to the device's actual
             // channel count.
             write_interleaved(chunk, left, right, channels, frames);
+
+            // Meter the buffer the device was actually handed, not the
+            // stereo scratch that fed it: a mono device folds left/right
+            // into one channel before this point, and a channel count
+            // above two leaves the extra channels zero-filled, which folds
+            // in harmlessly.
+            callback_peak = callback_peak.max(block_peak(&chunk[..frames * channels]));
         }
 
         self.scheduler.publish_midi_rt_diagnostics();
@@ -735,17 +740,16 @@ impl DeviceRenderer {
     }
 }
 
-/// The loudest sample either side of one rendered block holds.
+/// The loudest sample the interleaved buffer the device was just handed
+/// holds, whatever its channel layout.
 ///
-/// Runs inside the audio deadline: one pass over two slices the callback just
-/// wrote and that are still in cache, no allocation and no branch on data.
+/// Runs inside the audio deadline: one pass over the slice the callback just
+/// wrote and that is still in cache, no allocation and no branch on data.
 #[inline]
-fn block_peak(left: &[f32], right: &[f32]) -> f32 {
-    left.iter()
-        .zip(right)
-        .fold(0.0f32, |peak, (left_sample, right_sample)| {
-            peak.max(left_sample.abs()).max(right_sample.abs())
-        })
+fn block_peak(written: &[f32]) -> f32 {
+    written
+        .iter()
+        .fold(0.0f32, |peak, sample| peak.max(sample.abs()))
 }
 
 /// Open the capture side and build the ring it feeds.
@@ -2350,8 +2354,15 @@ mod device_output_tests {
         /// One device callback of `frames`, returning the interleaved buffer
         /// the device would have played.
         fn render(&mut self, frames: usize) -> Vec<f32> {
-            let mut data = vec![0.0f32; frames * DEVICE_CHANNELS];
-            self.renderer.render(&mut data, DEVICE_CHANNELS);
+            self.render_with_channels(frames, DEVICE_CHANNELS)
+        }
+
+        /// One device callback of `frames` on a device exposing `channels`
+        /// channels, returning the interleaved buffer the device would have
+        /// played.
+        fn render_with_channels(&mut self, frames: usize, channels: usize) -> Vec<f32> {
+            let mut data = vec![0.0f32; frames * channels];
+            self.renderer.render(&mut data, channels);
             // This thread is both the command side and the render side, so
             // freeing here is safe and keeps the retirement ring from
             // stalling the next drain.
@@ -2567,5 +2578,23 @@ mod device_output_tests {
 
         assert_eq!(audible.master_peak(), MATERIAL_PEAK);
         assert_eq!(shadowed.master_peak(), 0.0);
+    }
+
+    /// A mono device folds the stereo pair into one channel before the
+    /// device ever sees it (`write_interleaved`'s averaging fold). The meter
+    /// must report the peak of that folded sum, not the peak of the stereo
+    /// scratch the device was never handed.
+    #[test]
+    fn a_mono_device_meters_the_fold_it_was_handed() {
+        const FRAMES: usize = 512;
+        const MONO_CHANNELS: usize = 1;
+        const FOLDED_SAMPLE: f32 = (LEFT_SAMPLE + RIGHT_SAMPLE) * 0.5;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES);
+        let heard = harness.render_with_channels(FRAMES, MONO_CHANNELS);
+
+        assert_eq!(heard[0], FOLDED_SAMPLE);
+        assert_eq!(harness.master_peak(), FOLDED_SAMPLE.abs());
     }
 }
