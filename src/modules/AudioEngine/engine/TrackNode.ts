@@ -6,7 +6,7 @@ import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRun
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
-import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
+import { createHostedPluginControls, type HostedPluginControls } from './hostedPluginControls';
 import { findReleasedWasmDescriptor } from './wasmDeviceRegistry';
 
 import type {
@@ -44,6 +44,16 @@ const MAX_NATIVE_PLUGIN_PARAMETER_ID = 0xffff_ffff;
  * unsigned-integer spelling addresses a parameter now: `parseInt` would also
  * accept `'3abc'` and `'3.7'`, both of which name a parameter nobody meant.
  */
+/**
+ * An external-plugin device with no instance id names no native plugin, so
+ * every control it carries has nowhere to send and must not reach IPC at all.
+ */
+const NO_HOSTED_PLUGIN_CONTROLS: HostedPluginControls = Object.freeze({
+    setParam: () => {},
+    setBypass: () => {},
+    destroy: () => {},
+});
+
 function toNativePluginParameterId(name: string): number | null {
     if (!/^\d+$/.test(name)) {
         return null;
@@ -117,7 +127,6 @@ type PendingParameterWrite =
 
 type PendingDeviceLoad = {
     abortController: AbortController;
-    externalInstanceId?: string;
     bypassed?: boolean;
     parameterIds: readonly string[];
     parameterWrites: PendingParameterWrite[];
@@ -177,6 +186,12 @@ export class TrackNode {
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
 
+        const carrierGate = context.createGain();
+        carrierGate.gain.value = 1;
+
+        const preFaderSendGate = context.createGain();
+        preFaderSendGate.gain.value = 1;
+
         let meterNode: AudioWorkletNode | null = null;
         let meterBuffer: Float32Array;
 
@@ -196,6 +211,7 @@ export class TrackNode {
 
         gainNode.connect(preFaderTap);
         preFaderTap.connect(faderNode);
+        preFaderTap.connect(preFaderSendGate);
         faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
         if (meterNode) {
@@ -204,6 +220,7 @@ export class TrackNode {
         } else {
             panNode.connect(analyserNode);
         }
+        analyserNode.connect(carrierGate);
 
         this.strip = {
             trackId,
@@ -214,7 +231,10 @@ export class TrackNode {
             panNode,
             meterNode,
             analyserNode,
+            carrierGate,
+            preFaderSendGate,
             muted: false,
+            nativeCarried: false,
             soloGated: false,
             soloed: false,
             deviceNodes: [],
@@ -364,16 +384,38 @@ export class TrackNode {
      * still played the reverb tails of every "muted" track.
      *
      * The gate therefore closes `preFaderTap` itself. That node is upstream of
-     * both send taps (`preFaderTap` / `analyserNode`), upstream of the sidechain
-     * key tap, and — critically — upstream of where `scheduleFrozenTrack`
-     * injects a frozen track's baked buffer, so a frozen track is gated by the
-     * same single node as a live one. It is held separately from `muted` so the
-     * two reasons never overwrite each other: releasing solo restores the tap
-     * without touching a mute the user actually pressed.
+     * both send taps (`preFaderSendGate` / `carrierGate`), upstream of the
+     * sidechain key tap, and — critically — upstream of where
+     * `scheduleFrozenTrack` injects a frozen track's baked buffer, so a frozen
+     * track is gated by the same single node as a live one. It is held
+     * separately from `muted` so the two reasons never overwrite each other:
+     * releasing solo restores the tap without touching a mute the user actually
+     * pressed.
      */
     public setSoloGate(gated: boolean): void {
         this.strip.soloGated = gated;
         this.strip.preFaderTap.gain.setTargetAtTime(gated ? 0 : 1, this.deps.context.currentTime, 0.005);
+    }
+
+    /**
+     * Silence this strip's Web Audio *exits* because the native engine is
+     * sounding the track instead. Both gates sit at the very end of the strip —
+     * the destination edge and the two send taps — and nowhere else, so the
+     * whole chain upstream of them keeps rendering while they are closed:
+     * meters and the analyser still read real levels, a Web Audio compressor on
+     * some other track still receives this one's sidechain key, and a frozen
+     * track's baked buffer still injects at `preFaderTap`. Gating at the head of
+     * the strip would take all three away with the audio.
+     *
+     * Reopening is therefore just a gain ramp: when the native side declines the
+     * track mid-stream, Web Audio resumes sounding it in place, with no chain
+     * rebuild and no restart of anything already playing.
+     */
+    public setNativeCarried(carried: boolean): void {
+        this.strip.nativeCarried = carried;
+        const now = this.deps.context.currentTime;
+        this.strip.carrierGate.gain.setTargetAtTime(carried ? 0 : 1, now, 0.005);
+        this.strip.preFaderSendGate.gain.setTargetAtTime(carried ? 0 : 1, now, 0.005);
     }
 
     public getPeakLevel(): number {
@@ -422,10 +464,10 @@ export class TrackNode {
         let previousDestinationDisconnected = false;
         try {
             if (previousDestination) {
-                this.strip.analyserNode.disconnect(previousDestination);
+                this.strip.carrierGate.disconnect(previousDestination);
                 previousDestinationDisconnected = true;
             }
-            this.strip.analyserNode.connect(nextDestination);
+            this.strip.carrierGate.connect(nextDestination);
         } catch (error) {
             if (!previousDestinationDisconnected) {
                 throw new RuntimeGraphMutationRejected(
@@ -434,9 +476,9 @@ export class TrackNode {
                 );
             }
             try {
-                this.strip.analyserNode.disconnect(nextDestination);
+                this.strip.carrierGate.disconnect(nextDestination);
                 if (previousDestination) {
-                    this.strip.analyserNode.connect(previousDestination);
+                    this.strip.carrierGate.connect(previousDestination);
                 }
             } catch (rollbackError) {
                 throw new RuntimeGraphMutationFailure(
@@ -473,7 +515,7 @@ export class TrackNode {
     }
 
     public routeOutput(): void {
-        const { analyserNode } = this.strip;
+        const { carrierGate } = this.strip;
         const { getAdjustmentBusForTrack } = this.deps;
         const adjustmentBus = getAdjustmentBusForTrack?.(this.trackId) ?? null;
         const nextDestination = adjustmentBus ?? this.getDefaultDestination();
@@ -482,20 +524,20 @@ export class TrackNode {
         }
         if (this._outputDestination) {
             try {
-                analyserNode.disconnect(this._outputDestination);
+                carrierGate.disconnect(this._outputDestination);
             } catch {
                 // The owned output edge was already detached during a wider graph
-                // teardown. Other analyser edges still must remain untouched.
+                // teardown. Other carrier-gate edges still must remain untouched.
             }
         }
-        analyserNode.connect(nextDestination);
+        carrierGate.connect(nextDestination);
         this._outputDestination = nextDestination;
     }
 
     private reconnectSends(): void {
         const sends = this.deps.getSendsForTrack(this.trackId);
         for (const send of sends) {
-            const tap = send.preFader ? this.strip.preFaderTap : this.strip.analyserNode;
+            const tap = send.preFader ? this.strip.preFaderSendGate : this.strip.carrierGate;
             try {
                 send.sourceNode.disconnect(send.gainNode);
             } catch {
@@ -635,6 +677,9 @@ export class TrackNode {
             p.connect(s.preFaderTap);
         }
         s.preFaderTap.connect(s.faderNode);
+        // The teardown above cleared every preFaderTap edge, and the pre-fader
+        // send gate hangs off it rather than off a node the rebuild rewires.
+        s.preFaderTap.connect(s.preFaderSendGate);
         s.faderNode.connect(s.postFaderGain);
         s.postFaderGain.connect(s.panNode);
         if (s.meterNode) {
@@ -752,7 +797,6 @@ export class TrackNode {
         let promotionPublished = false;
         try {
             finalDn.parameterIds = pendingLoad.parameterIds;
-            finalDn.externalInstanceId = pendingLoad.externalInstanceId;
             for (const pending of pendingLoad.parameterWrites) {
                 if (pending.kind === 'scheduled') {
                     finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
@@ -1003,87 +1047,52 @@ export class TrackNode {
                 destroy: () => {},
             };
         } else if (deviceType === 'external-plugin') {
-            // Native plugin bridge: relays audio between Web Audio and the Rust
-            // cpal audio thread. A SharedArrayBuffer cannot reach the host
-            // process, so the hop to Rust is IPC; the instance id is the key.
-            let loadingBypass: GainNode;
+            // The native engine hosts and sounds this plugin; Web Audio keeps
+            // only a pass-through in its place, so the device occupies its slot
+            // in the chain without moving any audio across the process
+            // boundary. Nothing is loaded, so the device is ready the moment it
+            // is added, exactly like a builtin. Parameters and bypass still have
+            // to reach the instance, and that is all the controls below do.
+            let passThrough: GainNode;
             try {
-                loadingBypass = context.createGain();
+                passThrough = context.createGain();
             } catch (error) {
                 this.failDeviceConstruction(readinessToken, error);
             }
-            const pendingLoad: PendingDeviceLoad = {
-                abortController: new AbortController(),
-                ...(externalInstanceId !== undefined ? { externalInstanceId } : {}),
-                parameterIds: Object.freeze([...parameterIds]),
-                parameterWrites: [],
-                readinessToken,
-                resolved: false,
+            const hostedControls = externalInstanceId
+                ? createHostedPluginControls(externalInstanceId)
+                : NO_HOSTED_PLUGIN_CONTROLS;
+            // One report per name: a refused write arrives from the scheduler's
+            // tick grid, so logging every occurrence would bury the session log
+            // under one repeated fault.
+            const reportedParameterNames = new Set<string>();
+            const controls = {
+                setParam: (name: string, value: number) => {
+                    const parameterId = toNativePluginParameterId(name);
+                    if (parameterId === null) {
+                        if (!reportedParameterNames.has(name)) {
+                            reportedParameterNames.add(name);
+                            logger.warn(
+                                `[WebAudioEngine] Native plugin parameter "${name}" on device ${deviceId} is not a parameter id; the write was refused`
+                            );
+                        }
+                        return;
+                    }
+                    hostedControls.setParam(parameterId, value);
+                },
+                setBypass: hostedControls.setBypass,
+                destroy: hostedControls.destroy,
             };
-            awaitsAsyncNode = true;
             dn = {
                 deviceId,
                 type: deviceType,
-                nodes: [loadingBypass],
-                inputNode: loadingBypass,
-                outputNode: loadingBypass,
+                nodes: [passThrough],
+                inputNode: passThrough,
+                outputNode: passThrough,
+                nativeDspControls: controls,
+                controller: controls,
+                dispose: hostedControls.destroy,
             };
-
-            const loadingControls = this.createPlaceholderController(deviceId, pendingLoad, {
-                setParam: () => {},
-                setBypass: () => {},
-                destroy: () => {},
-            });
-            dn.nativeDspControls = {
-                setParam: loadingControls.setParam,
-                setBypass: (bypassed) => loadingControls.setBypass?.(bypassed),
-            };
-            dn.controller = loadingControls;
-            pendingLoad.placeholder = dn;
-
-            let loadPromise: Promise<void>;
-            try {
-                loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
-                    .then((result) => {
-                        // One report per name: a refused write arrives from the
-                        // scheduler's tick grid, so logging every occurrence
-                        // would bury the session log under one repeated fault.
-                        const reportedParameterNames = new Set<string>();
-                        const controls = {
-                            setParam: (name: string, value: number) => {
-                                const parameterId = toNativePluginParameterId(name);
-                                if (parameterId === null) {
-                                    if (!reportedParameterNames.has(name)) {
-                                        reportedParameterNames.add(name);
-                                        logger.warn(
-                                            `[WebAudioEngine] Native plugin parameter "${name}" on device ${deviceId} is not a parameter id; the write was refused`
-                                        );
-                                    }
-                                    return;
-                                }
-                                result.setParam(parameterId, value);
-                            },
-                            setBypass: result.setBypass,
-                            destroy: result.destroy,
-                        };
-                        const bridgeDn: BuiltinDeviceNode = {
-                            deviceId,
-                            type: deviceType,
-                            nodes: [result.workletNode],
-                            inputNode: result.workletNode,
-                            outputNode: result.workletNode,
-                            nativeDspControls: controls,
-                            controller: controls,
-                            dispose: result.destroy,
-                        };
-                        this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
-                        return;
-                    })
-                    .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
-            } catch (error) {
-                this.failDeviceConstruction(readinessToken, error, dn);
-            }
-            this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
         } else {
             let factoryNode: ReturnType<typeof createBuiltinDeviceNode>;
             try {
@@ -1438,6 +1447,8 @@ export class TrackNode {
         this.strip.postFaderGain.disconnect();
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
+        this.strip.carrierGate.disconnect();
+        this.strip.preFaderSendGate.disconnect();
         this._outputDestination = null;
         if (this.strip.meterNode) {
             this.strip.meterNode.port.postMessage({ type: 'shutdown' });

@@ -151,6 +151,7 @@ export { scheduleTrackGain } from './trackAudioControls/scheduleTrackGain';
 export { scheduleTrackPan } from './trackAudioControls/scheduleTrackPan';
 export { cancelTrackAutomationRamps } from './trackAudioControls/cancelTrackAutomationRamps';
 export { setTrackMute } from './trackAudioControls/setTrackMute';
+export { setNativeCarriedTracks } from './trackAudioControls/setNativeCarriedTracks';
 export { setTrackSoloGate } from './trackAudioControls/setTrackSoloGate';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
