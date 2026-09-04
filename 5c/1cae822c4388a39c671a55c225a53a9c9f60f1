@@ -1,0 +1,47 @@
+scripts/__tests__/restampDependencyBump.spec.ts
+  s_28abfd94826e36::t_93b4c903c1abb1 1-440
+scripts/restampDependencyBump.ts
+  s_28abfd94826e36::t_ced0ae9bda3eb9 1-481
+scripts/dependencyLicenseReport.ts
+  s_28abfd94826e36::t_2eaaa6661e0da0 961
+  s_28abfd94826e36::t_f875e903093003 1154-1180
+  s_28abfd94826e36::t_a928c441d4d95e 935-938
+  s_5029f3cec85e6d::t_eb224bacd1e98c 83,846,944,1293,1354
+package.json
+  s_28abfd94826e36::t_3d7091b83b0f14 31
+AGENTS.md
+  s_28abfd94826e36::t_3370e05c6b47e6 203
+  s_28abfd94826e36::t_44ebf0d2e53469 185-202
+scripts/generateDependencyLicenseReport.ts
+  s_28abfd94826e36::t_f7a3d2ac15cd12 14-34
+release/dependency-license-proofs.json
+  s_28abfd94826e36::t_afc75bcdaa4797 64
+release/open-source-inventory.json
+  s_28abfd94826e36::t_be291e7e5fc3e2 165,1197,1690
+scripts/checkReleaseInventory.ts
+  s_28abfd94826e36::t_07f682d96aef53 116,338,358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5c1cae822c4388a39c671a55c225a53a9c9f60f1",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5029f3cec85e6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a875046b897905cdb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
