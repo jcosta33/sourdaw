@@ -1,0 +1,105 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_28abfd94826e36::t_ea8eae5f9fa3fd 6960-7040,7405-7407,7409,7418-7537,7571-7573,7621-7648,7736,7755,7772-7773,7819-8037
+scripts/deliverPullRequest.ts
+  s_28abfd94826e36::t_83c80f7ff8220a 728-734,747-756,758-763,804,808,812,816-827,834-866,869-871,873-875,877-878,881-903,905-911,913-914,917-928,930-931,934-1009,1011-1014,1016-1031,1033-1034,1037,1040-1118
+.github/workflows/nightly.yml
+  s_4a416a40014449::t_4cf3a3ac3a326a 121-125
+.github/workflows/validation.yml
+  s_8b5206dfe4dada::t_3bcae2dafff438 256-260
+package.json
+  s_4a416a40014449::t_4fa1503e7d3b96 58
+release/dependency-license-proofs.json
+  s_4a416a40014449::t_d5889098c256ac 64
+release/open-source-inventory.json
+  s_4a416a40014449::t_6a56b819d26db5 165,1690
+scripts/__tests__/desktopLatencyProcess.spec.ts
+  s_4a416a40014449::t_3f5f68b762fa77 1-43
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  s_4a416a40014449::t_3308954aaa3fd1 1-282
+scripts/__tests__/desktopLatencyRecord.spec.ts
+  s_4a416a40014449::t_27e7a7651a88a7 1-52
+scripts/__tests__/prContract.spec.ts
+  s_4a416a40014449::t_804574ca467fcd 101,120-138
+scripts/__tests__/publishLane.spec.ts
+  s_4a416a40014449::t_98a3b71ec5b9f1 706-743,810-812
+scripts/__tests__/releaseProof.spec.ts
+  s_4a416a40014449::t_be24e5ad17dbc7 743-747,1590,1723,3026,3053-3056,3058-3064,3074
+scripts/__tests__/vitestUnitShardExclusions.spec.ts
+  s_4a416a40014449::t_8b1de0fc64f207 3,10-11,15-16,24-27,29-31,35-36,39-40,43-45,48-71,75-78,80-108,110,113
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_4a416a40014449::t_f02e0ef8b452d0 9,394,406,408
+scripts/desktopLatencyConnect.ts
+  s_4a416a40014449::t_7357b50253c65f 1-634
+scripts/desktopLatencyDiagnostics.ts
+  s_4a416a40014449::t_6ed967dabf43cb 1-145
+scripts/desktopLatencyLaunch.ts
+  s_4a416a40014449::t_42e6ba2336ee20 1-228
+scripts/desktopLatencyPreferencesRecovery.ts
+  s_4a416a40014449::t_6f66c24723d1b7 1-164
+scripts/desktopLatencyProcess.ts
+  s_4a416a40014449::t_789efeb4420661 1-193
+scripts/desktopLatencyReadings.ts
+  s_4a416a40014449::t_28e7e26beeafa2 1-278
+scripts/desktopLatencyRecord.ts
+  s_4a416a40014449::t_640acce871e351 1-353
+scripts/desktopLatencySleep.ts
+  s_4a416a40014449::t_119d36e6e6495f 1-9
+scripts/desktopLatencyUiLoad.ts
+  s_4a416a40014449::t_319acc687f6de2 1-67
+scripts/measureDesktopLatency.ts
+  s_4a416a40014449::t_8ac010087db1a3 1-263
+scripts/prContract.ts
+  s_4a416a40014449::t_5e0c450989b68c 186,208,404-412,440-442
+scripts/publishLane.ts
+  s_4a416a40014449::t_a2936580f98000 570-571,573
+scripts/vitestUnitShardExclusions.ts
+  s_4a416a40014449::t_c18b2ca13dc060 2-6,9,11-20,23,26-29,31,35,38-39
+src/infra/store/storage/createAutomergeStorage.ts
+  s_4a416a40014449::t_47e63556b7902f 933-937
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_4a416a40014449::t_1990ce60e2ce66 43,515-521,523-549,728,906-916,938-949,1015,1108,1173,1176-1186
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_4a416a40014449::t_e61d84707fbff9 44-45,835,842-848,853-854,863,870-887,892-893
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_4a416a40014449::t_0504551263129d 3,58,572-624,626-628,826-838
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_4a416a40014449::t_178bfb6c55c007 372-374
+src/modules/AiRuntime/useCases/__tests__/landProjectEdit.ts
+  s_4a416a40014449::t_22b7712c5f14b9 1-31
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_4a416a40014449::t_b984005bc48a2e 53,519-541,614-621,905-911
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_4a416a40014449::t_e89d93864b216c 11,1096-1105,1198-1251,1280-1282,1287-1288,1290-1302,1305,1310,1314-1317,1319-1359,1371-1430,1432-1440,1454-1465,1467,1477,1549-1575,1601,1660-1670,1675-1678,1692-1698,1702-1703,1709,1713-1714,1734-1740,1743,1746
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ee4b1ec91d19fe00e59e6330154540be9b9464e9",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4a416a40014449": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a725529eb2064ee6d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8b5206dfe4dada": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2d4991518e12af1e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
