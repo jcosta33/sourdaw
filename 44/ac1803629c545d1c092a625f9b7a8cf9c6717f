@@ -1,0 +1,19 @@
+crates/daw-dsp/src/proof/metering.rs
+  s_28abfd94826e36::t_3064d298721f2d 1105-1110,1116-1117,1119,1126-1127,1131-1153,1157,1160-1162,1230,2075-2182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "44ac1803629c545d1c092a625f9b7a8cf9c6717f",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
