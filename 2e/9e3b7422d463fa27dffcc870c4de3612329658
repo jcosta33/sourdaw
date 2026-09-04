@@ -1,0 +1,26 @@
+electron/main.ts
+  s_9b530f08172a54::t_47fb56b6c3809b 330-334
+electron/__tests__/security.spec.ts
+  s_9b530f08172a54::t_7f833a1c08d9b7 310-313,315-321,329-330
+  s_9b530f08172a54::t_f9447d9d0c66ce 12
+  s_9b530f08172a54::t_169ee4483a8eea 78-95
+  s_9b530f08172a54::t_679943d0855aa5 331
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  s_9b530f08172a54::t_60c35a8d61856e 11-15,23-28,34-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2e9e3b7422d463fa27dffcc870c4de3612329658",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
