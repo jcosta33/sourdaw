@@ -1,0 +1,19 @@
+scripts/__tests__/releaseArtifactFormatExemption.spec.ts
+  s_28abfd94826e36::t_a93840fdeb61df 16-17,21-23,25-28,30-41,45,48-54,56-64,66-70,72-76,78-82,84-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b5826d2a269d3291e8fc8568289def96e8620efe",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
