@@ -1,0 +1,21 @@
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_28abfd94826e36::t_9496784341d272 138-228
+scripts/trustedGithubWriteBootstrap.ts
+  s_28abfd94826e36::t_32e2c64a2c085c 241-246,249-250,322-326,332-396,603-704
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "153e8788198ba3024b180ec1e888aa3fef2ebc6c",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
