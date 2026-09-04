@@ -1654,10 +1654,12 @@ mod tests {
     }
 
     /// The stated floor, held across the reachable ratio continuum. Every
-    /// playback ratio from 4/3x (below that the nearest fold lands above
-    /// 19 kHz, inside every kernel's transition shoulder) to the 16x cap, at
-    /// half-semitone resolution, running the exact taps and beta the shipped
-    /// rules choose. Measured worst: -54.2 dB at r ~= 8.7; the bound holds 53.
+    /// playback ratio from 4/3x (below that the foldback probe source exceeds
+    /// source Nyquist, so the probe is unrealizable; audible folds there come
+    /// from near-Nyquist source content and measure at least 86 dB down with
+    /// the beta-9 baseline kernel) to the 16x cap, at half-semitone
+    /// resolution, running the exact taps and beta the shipped rules choose.
+    /// Measured worst: -54.2 dB at r ~= 8.7; the bound holds 53.
     #[test]
     fn kernel_tier_floor_holds_across_every_reachable_ratio() {
         let fractions = [0.0_f32, 0.25, 0.5, 0.75];
