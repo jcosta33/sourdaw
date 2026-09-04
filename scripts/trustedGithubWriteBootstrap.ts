@@ -43,7 +43,7 @@ export type TrustedLauncherBinding = {
  * whatever the workflow declares — absent, null, a string, or something that is not a name at all —
  * because deciding what a declaration means is the gate's rule to apply, not the launcher's.
  */
-export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
 
 export type TrustedGateWorkflow = { jobs: Record<string, TrustedWorkflowJob> } | { unreadable: string };
 
@@ -716,7 +716,9 @@ export async function summarizeGateWorkflow(source: string): Promise<TrustedGate
     // the workflow declares. A prototype-free map has no such key to hit.
     const summary: Record<string, TrustedWorkflowJob> = Object.create(null) as Record<string, TrustedWorkflowJob>;
     for (const [jobId, job] of Object.entries(jobs)) {
-        summary[jobId] = isRecord(job) ? { name: carriedName(job.name), needs: job.needs, uses: job.uses } : {};
+        summary[jobId] = isRecord(job)
+            ? { name: carriedName(job.name), needs: job.needs, uses: job.uses, strategy: job.strategy }
+            : {};
     }
     return { jobs: summary };
 }
