@@ -49,10 +49,13 @@ for alias in $ALIASES; do
 
     case "$status" in
         3??)
-            if grep -iq '^location: https://vercel\.com/sso-api' "$headers"; then
-                printf 'https://%s/ is behind Vercel Authentication; not a public production domain\n' "$alias"
-                continue
-            fi
+            location=$(awk 'tolower($1) == "location:" { print $2; exit }' "$headers")
+            case "$location" in
+                'https://vercel.com/sso-api'*)
+                    printf 'https://%s/ is behind Vercel Authentication; not a public production domain\n' "$alias"
+                    continue
+                    ;;
+            esac
             ;;
     esac
 

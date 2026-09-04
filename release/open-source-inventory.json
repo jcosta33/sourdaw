@@ -1820,6 +1820,16 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://$alias/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://vercel.com/sso-api"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/checkLgplRuntimeProvenance.ts",
             "value": "https://github.com/gideonstele/lamejs"
         },
