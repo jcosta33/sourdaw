@@ -1,0 +1,30 @@
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  h_1228e573df1f42 18,470,643-660,668-703
+src/modules/Arrangement/presentations/views/__tests__/AdjustmentLayerStrip.spec.tsx
+  h_1228e573df1f42 1,171,215,225,235,246,259
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneControls.tsx
+  h_1228e573df1f42 10,29-73
+src/modules/TimelineEditor/presentations/views/Inspector/ClipGainEnvelopeSection.tsx
+  h_1228e573df1f42 9,51-93
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_1228e573df1f42 7,369-394,417-442
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAlternativesSection.tsx
+  h_1228e573df1f42 9,27-45
+src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx
+  h_1228e573df1f42 9,34-49
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  h_1228e573df1f42 25,473-502,522-539
+src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx
+  h_1228e573df1f42 22,133-147,151-165,170-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "846c28037a43fc2c3accd5cd6f652c31341e6f0f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
