@@ -1,0 +1,21 @@
+crates/proof-chamber/tests/plate_parameter_surface.rs
+  s_a96b6d3c52e6c7::t_566c59c28e6d02 752-812
+release/open-source-inventory.json
+  s_a96b6d3c52e6c7::t_e42e72a6e88d5e 1333,1337,1721
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1f53fc1648556447bba946dbda49b72c584b8c42",
+  "prompts": {},
+  "sessions": {
+    "s_a96b6d3c52e6c7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a350d71f727c4a993",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
