@@ -6662,9 +6662,9 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * `Nightly failure report` belongs to nightly.yml, which does not run on pull requests, so the
-     * name never appears on a pull-request head and is outside `Gate`'s needs. Its silence decides
-     * nothing — and refusing on it would refuse every delivery.
+     * `Nightly failure report` belongs to nightly.yml, not to the workflow `Gate` needs, so it is
+     * outside `Gate`'s gating set whether or not a dispatch of that workflow put it on this head.
+     * Its silence decides nothing — and refusing on it would refuse every delivery.
      */
     it('merges an UNSTABLE head whose only undecided cancellation is a check the gate does not need', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
