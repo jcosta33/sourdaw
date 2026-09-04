@@ -878,6 +878,26 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert_eq!(error, "Plugin scan helper timed out");
     }
     #[cfg(unix)]
+    /// A killed process stays visible to `kill -0` until its parent reaps it,
+    /// so "the group was killed" is only provable over a reap window.
+    fn process_is_gone_within(pid: &str, window: Duration) -> bool {
+        let deadline = Instant::now() + window;
+        loop {
+            let still_alive = Command::new("kill")
+                .args(["-0", pid])
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if !still_alive {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    #[cfg(unix)]
     #[test]
     fn timeout_kills_the_helper_process_group() {
         let pid_path =
@@ -887,14 +907,20 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             "-c",
             &format!("sleep 30 & echo $! > {}; wait", pid_path.display()),
         ]);
-        assert!(run_bounded(&mut command, Duration::from_millis(50)).is_err());
-        let pid = fs::read_to_string(&pid_path).unwrap();
+        // Long enough for `sh` to fork `sleep` and write its pid even on a
+        // loaded runner; the orphaned `sleep 30` still outlives this
+        // deadline, so the group kill below is still what gets exercised.
+        assert!(run_bounded(&mut command, Duration::from_secs(2)).is_err());
+        let pid = fs::read_to_string(&pid_path).expect(
+            "the helper must write its child's pid before the deadline; \
+             a missing file means the deadline fired first",
+        );
         let _ = fs::remove_file(pid_path);
-        assert!(!Command::new("kill")
-            .args(["-0", pid.trim()])
-            .status()
-            .unwrap()
-            .success());
+        let pid = pid.trim();
+        assert!(
+            process_is_gone_within(pid, Duration::from_secs(2)),
+            "sleep {pid} is still alive after the group kill's reap window"
+        );
     }
 
     /// The only two shapes crash quarantine exists to catch.
