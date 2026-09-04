@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-09-04T02:54:52.059Z",
+  "machine": {
+    "checkoutGitSha": "9c0641a607fd6e0e6aea83788b3186c9177f7c78",
+    "workingTree": "dirty",
+    "host": {
+      "platform": "darwin",
+      "release": "25.6.0",
+      "arch": "arm64",
+      "cores": 12
+    },
+    "loadAverage1m": 1.68
+  },
+  "browser": "152.0.7977.82",
+  "grainMs": 10,
+  "lookAheadMs": 100,
+  "placementBudgetMs": 0.020833333333333332,
+  "granularity": [
+    {
+      "label": "product default (interactive, device rate)",
+      "requestedSampleRate": null,
+      "latencyHint": "interactive",
+      "actualSampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "minStepSec": 0.002666667,
+      "modalStepSec": 0.002666667,
+      "distinctSteps": 2,
+      "polls": 14350315,
+      "advances": 378
+    },
+    {
+      "label": "highCapacity profile (playback, device rate)",
+      "requestedSampleRate": null,
+      "latencyHint": "playback",
+      "actualSampleRate": 48000,
+      "baseLatencySec": 0.021333333333333333,
+      "outputLatencySec": 0.032,
+      "minStepSec": 0.002666667,
+      "modalStepSec": 0.002666667,
+      "distinctSteps": 6,
+      "polls": 14179523,
+      "advances": 235
+    },
+    {
+      "label": "explicit 44100 / interactive",
+      "requestedSampleRate": 44100,
+      "latencyHint": "interactive",
+      "actualSampleRate": 44100,
+      "baseLatencySec": 0.005351473922902495,
+      "outputLatencySec": 0.016,
+      "minStepSec": 0.002902494,
+      "modalStepSec": 0.002902494,
+      "distinctSteps": 2,
+      "polls": 14375589,
+      "advances": 343
+    },
+    {
+      "label": "explicit 48000 / interactive",
+      "requestedSampleRate": 48000,
+      "latencyHint": "interactive",
+      "actualSampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "minStepSec": 0.002666667,
+      "modalStepSec": 0.002666667,
+      "distinctSteps": 2,
+      "polls": 14357553,
+      "advances": 393
+    },
+    {
+      "label": "explicit 96000 / interactive",
+      "requestedSampleRate": 96000,
+      "latencyHint": "interactive",
+      "actualSampleRate": 96000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "minStepSec": 0.001333333,
+      "modalStepSec": 0.001333333,
+      "distinctSteps": 4,
+      "polls": 12677036,
+      "advances": 759
+    },
+    {
+      "label": "explicit 48000 / latencyHint 0.001",
+      "requestedSampleRate": 48000,
+      "latencyHint": 0.001,
+      "actualSampleRate": 48000,
+      "baseLatencySec": 0.0026666666666666666,
+      "outputLatencySec": 0.008,
+      "minStepSec": 0.002666667,
+      "modalStepSec": 0.002666667,
+      "distinctSteps": 1,
+      "polls": 14216815,
+      "advances": 450
+    }
+  ],
+  "runs": [
+    {
+      "condition": "idle",
+      "loadDescription": "no main-thread work beyond the probe itself",
+      "sampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "sampleCount": 598,
+      "interArrivalMs": {
+        "samples": 598,
+        "p50": 10.400146484375,
+        "p95": 13.5,
+        "p99": 15,
+        "max": 15.199951171875,
+        "min": 5.39990234375,
+        "mean": 9.999163879598662
+      },
+      "deliveryLatenessMs": {
+        "samples": 598,
+        "p50": 3.699951171875,
+        "p95": 4.89990234375,
+        "p99": 5.699951171875,
+        "max": 5.89990234375,
+        "min": 0.199951171875,
+        "mean": 3.5218599759615383
+      },
+      "workerWakeLatenessMs": {
+        "samples": 598,
+        "p50": 3.800048828125,
+        "p95": 5,
+        "p99": 5.699951171875,
+        "max": 5.900146484375,
+        "min": 0.300048828125,
+        "mean": 3.574796032347408
+      },
+      "rawDeltaMs": {
+        "samples": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "min": 0,
+        "mean": 0
+      },
+      "discardedMs": {
+        "samples": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "min": 0,
+        "mean": 0
+      },
+      "totalLostSec": 0,
+      "beatsAt120Bpm": 0
+    },
+    {
+      "condition": "ui-load",
+      "loadDescription": "12 ms synchronous spin every animation frame, plus a 50 ms burst every 500 ms",
+      "sampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "sampleCount": 597,
+      "interArrivalMs": {
+        "samples": 597,
+        "p50": 12.099853515625,
+        "p95": 17,
+        "p99": 66.7001953125,
+        "max": 67.2001953125,
+        "min": 0,
+        "mean": 9.994807615551716
+      },
+      "deliveryLatenessMs": {
+        "samples": 597,
+        "p50": 8.5,
+        "p95": 41.199951171875,
+        "p99": 61.900146484375,
+        "max": 64.5,
+        "min": 0.699951171875,
+        "mean": 11.156327290750628
+      },
+      "workerWakeLatenessMs": {
+        "samples": 597,
+        "p50": 3.800048828125,
+        "p95": 4.900146484375,
+        "p99": 5.800048828125,
+        "max": 6,
+        "min": 0.400146484375,
+        "mean": 3.590341437002722
+      },
+      "rawDeltaMs": {
+        "samples": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "min": 0,
+        "mean": 0
+      },
+      "discardedMs": {
+        "samples": 0,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "min": 0,
+        "mean": 0
+      },
+      "totalLostSec": 0,
+      "beatsAt120Bpm": 0
+    },
+    {
+      "condition": "stall",
+      "loadDescription": "150 ms block every 1200 ms",
+      "sampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "sampleCount": 598,
+      "interArrivalMs": {
+        "samples": 598,
+        "p50": 9.699951171875,
+        "p95": 13.5,
+        "p99": 15.10009765625,
+        "max": 159.10009765625,
+        "min": 0,
+        "mean": 9.994816298468855
+      },
+      "deliveryLatenessMs": {
+        "samples": 598,
+        "p50": 3.499755859375,
+        "p95": 79.89990234375,
+        "p99": 139.89990234375,
+        "max": 149.89990234375,
+        "min": -0.000244140625,
+        "mean": 10.894799069816054
+      },
+      "workerWakeLatenessMs": {
+        "samples": 598,
+        "p50": 3.599853515625,
+        "p95": 4.89990234375,
+        "p99": 5.599853515625,
+        "max": 5.800048828125,
+        "min": 0.199951171875,
+        "mean": 3.4997803550898827
+      },
+      "rawDeltaMs": {
+        "samples": 4,
+        "p50": 154.66666666666652,
+        "p95": 160.00000000000014,
+        "p99": 160.00000000000014,
+        "max": 160.00000000000014,
+        "min": 154.66666666666652,
+        "mean": 157.33333333333331
+      },
+      "discardedMs": {
+        "samples": 4,
+        "p50": 54.666666666666515,
+        "p95": 60.00000000000014,
+        "p99": 60.00000000000014,
+        "max": 60.00000000000014,
+        "min": 54.666666666666515,
+        "mean": 57.33333333333333
+      },
+      "totalLostSec": 0.2293333333333333,
+      "beatsAt120Bpm": 0.4586666666666666
+    },
+    {
+      "condition": "stall",
+      "loadDescription": "250 ms block every 1200 ms",
+      "sampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "sampleCount": 598,
+      "interArrivalMs": {
+        "samples": 598,
+        "p50": 9.199951171875,
+        "p95": 13.5,
+        "p99": 15.2001953125,
+        "max": 257.60009765625,
+        "min": 0,
+        "mean": 10.00518410979306
+      },
+      "deliveryLatenessMs": {
+        "samples": 598,
+        "p50": 3.599853515625,
+        "p95": 179.699951171875,
+        "p99": 239.599853515625,
+        "max": 249.999755859375,
+        "min": -0.000244140625,
+        "mean": 24.36724465666806
+      },
+      "workerWakeLatenessMs": {
+        "samples": 598,
+        "p50": 3.699951171875,
+        "p95": 4.89990234375,
+        "p99": 5.5,
+        "max": 6,
+        "min": 0.2998046875,
+        "mean": 3.5181292785848663
+      },
+      "rawDeltaMs": {
+        "samples": 4,
+        "p50": 256,
+        "p95": 256.0000000000002,
+        "p99": 256.0000000000002,
+        "max": 256.0000000000002,
+        "min": 255.99999999999977,
+        "mean": 256.00000000000006
+      },
+      "discardedMs": {
+        "samples": 4,
+        "p50": 156,
+        "p95": 156.00000000000023,
+        "p99": 156.00000000000023,
+        "max": 156.00000000000023,
+        "min": 155.99999999999977,
+        "mean": 156.00000000000006
+      },
+      "totalLostSec": 0.6240000000000002,
+      "beatsAt120Bpm": 1.2480000000000004
+    },
+    {
+      "condition": "stall",
+      "loadDescription": "500 ms block every 1200 ms",
+      "sampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "sampleCount": 598,
+      "interArrivalMs": {
+        "samples": 598,
+        "p50": 9,
+        "p95": 12.10009765625,
+        "p99": 15.199951171875,
+        "max": 508.89990234375,
+        "min": 0,
+        "mean": 9.997826413566054
+      },
+      "deliveryLatenessMs": {
+        "samples": 598,
+        "p50": 3.89990234375,
+        "p95": 429.5,
+        "p99": 489.5,
+        "max": 499.89990234375,
+        "min": 0,
+        "mean": 87.28853747517768
+      },
+      "workerWakeLatenessMs": {
+        "samples": 598,
+        "p50": 3.7998046875,
+        "p95": 4.89990234375,
+        "p99": 5.7998046875,
+        "max": 6.099853515625,
+        "min": 0.2998046875,
+        "mean": 3.6813372863973663
+      },
+      "rawDeltaMs": {
+        "samples": 4,
+        "p50": 506.6666666666668,
+        "p95": 506.6666666666668,
+        "p99": 506.6666666666668,
+        "max": 506.6666666666668,
+        "min": 501.3333333333332,
+        "mean": 505.33333333333337
+      },
+      "discardedMs": {
+        "samples": 4,
+        "p50": 406.6666666666668,
+        "p95": 406.6666666666668,
+        "p99": 406.6666666666668,
+        "max": 406.6666666666668,
+        "min": 401.3333333333332,
+        "mean": 405.33333333333337
+      },
+      "totalLostSec": 1.6213333333333335,
+      "beatsAt120Bpm": 3.242666666666667
+    },
+    {
+      "condition": "stall",
+      "loadDescription": "1000 ms block every 1200 ms",
+      "sampleRate": 48000,
+      "baseLatencySec": 0.005333333333333333,
+      "outputLatencySec": 0.016,
+      "sampleCount": 598,
+      "interArrivalMs": {
+        "samples": 598,
+        "p50": 0,
+        "p95": 10.699951171875,
+        "p99": 15,
+        "max": 1007.60009765625,
+        "min": 0,
+        "mean": 9.998996492213628
+      },
+      "deliveryLatenessMs": {
+        "samples": 598,
+        "p50": 259.19970703125,
+        "p95": 929.899658203125,
+        "p99": 989.899658203125,
+        "max": 999.999755859375,
+        "min": 0.099853515625,
+        "mean": 338.68537173063856
+      },
+      "workerWakeLatenessMs": {
+        "samples": 598,
+        "p50": 3.699951171875,
+        "p95": 4.89990234375,
+        "p99": 5.599853515625,
+        "max": 6,
+        "min": 0.39990234375,
+        "mean": 3.6323417740123327
+      },
+      "rawDeltaMs": {
+        "samples": 4,
+        "p50": 1008,
+        "p95": 1008,
+        "p99": 1008,
+        "max": 1008,
+        "min": 1008,
+        "mean": 1008
+      },
+      "discardedMs": {
+        "samples": 4,
+        "p50": 908,
+        "p95": 908,
+        "p99": 908,
+        "max": 908,
+        "min": 908,
+        "mean": 908
+      },
+      "totalLostSec": 3.632,
+      "beatsAt120Bpm": 7.264
+    }
+  ]
+}
