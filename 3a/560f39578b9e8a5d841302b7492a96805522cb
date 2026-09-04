@@ -1,0 +1,49 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_07be16ba30e6a2 1200,1463-1464,1466-1467,1469
+scripts/generateBrandIcons.ts
+  s_28abfd94826e36::t_9da31dc4f7d0f2 1-620
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_a96b6d3c52e6c7::t_b5d2c410c83d61 3716-3731
+scripts/checkReleaseInventory.ts
+  s_71651fa5c901b0::t_4f73f728f4c298 1793-1795,1798,1829-1838,1841-1846,2143-2155,2168-2169,2171-2178,2181-2183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3a560f39578b9e8a5d841302b7492a96805522cb",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_71651fa5c901b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aea1b168a15d8c06b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a96b6d3c52e6c7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a350d71f727c4a993",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
