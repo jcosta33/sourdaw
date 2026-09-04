@@ -149,7 +149,7 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 | OS | macOS 26.6.2 (25G83), arm64 |
 | Browser | **152.0.7977.65** (Google Chrome stable, headless) |
 | User agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36` |
-| **Commit measured** | **`0ae432f86798666c2b46f55f7982cb19421d047d`** |
+| **Commit measured** | **`f78acd9d0d6073652e20981883b5ed66ac1bf889`** |
 | Base it sits on | `317f21d3544286e6bb8b1db7b2348ec231d6bd92` |
 | Working tree | clean |
 | Taken | 2026-09-03T10:25:04.228Z |
@@ -162,7 +162,7 @@ Measured-source digests:
 - `crates/daw-dsp/benches/quantum.rs`: `sha256:0de57088cce2094f76dd9d3eb567552692bdc0146eddbc8b5e15c7c8d9b6b873`
 - `crates/daw-dsp/benches/wasm/deviceRecipes.js`: `sha256:0a93e3d48f15813c2185377551acbfd59e4d65a53dc142f72e61d72953d13ac1`
 - `crates/daw-dsp/benches/wasm/quantumCostProcessor.js`: `sha256:e40d5159e7bfad103b6b6bd93351632a86f3a7951962308acea8a9f8f1f50713`
-- `public/wasm/daw-dsp/daw_dsp_bg.wasm`: `sha256:3ce373296e6610c23142ebc9bd39ddae9238c024cdf4c365fe20d2949993bc18`
+- `public/wasm/daw-dsp/daw_dsp_bg.wasm`: `sha256:795d88e171d07ac3dfb84330473b68fb81023e20949d491186c40ef62887848e`
 
 ### On the audio thread — these share the one 2.667 ms deadline
 
