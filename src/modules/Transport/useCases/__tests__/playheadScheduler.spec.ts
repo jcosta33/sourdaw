@@ -90,6 +90,9 @@ vi.mock('../../models/TempoMap', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
+    // The loop-wrap take path reads which clips are actively recording; no test
+    // here records, so the ref stays empty.
+    activeRecordingRef: { current: [] },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTakeLane: vi.fn(),

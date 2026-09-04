@@ -13,6 +13,9 @@ export const UNIT_SHARD_EXCLUDED_SPECS = [
     'src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts',
     // Every case assembles a full release candidate: two repository clones and a zip subprocess apiece.
     'scripts/__tests__/releaseProof.spec.ts',
+    // Spawns multiple repository fixtures and subprocesses; isolated from the unit
+    // shards to keep worker process memory bounded (#3459).
+    'scripts/__tests__/agentDeliveryScripts.spec.ts',
 ] as const;
 
 export function unitShardExcludeGlob(spec: string): string {

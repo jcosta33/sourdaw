@@ -45,6 +45,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
     takeLaneStore: { value: { lanes: [] } },
+    // The loop-wrap take path reads which clips are actively recording; no test
+    // here records, so the ref stays empty.
+    activeRecordingRef: { current: [] },
     // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
     // dependency bundle destructures these off this barrel at module scope. A
     // factory that omits them fails the whole file at import, not at a test.
