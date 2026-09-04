@@ -38,11 +38,10 @@
 //! * **First construction.** An untold constructor Plate must keep its retained
 //!   cross-platform shape and match the first explicit Plate selection with an
 //!   empty cache, bit for bit in the same process.
-//! * **The documented exception.** One sequence genuinely does not round-trip
-//!   — the plate latches `shimmer` off inside its `freeze` arm, and a value
-//!   cache cannot re-fire a latch whose trigger has since been overwritten. It
-//!   is pinned as a known non-zero delta so it cannot widen, and so that
-//!   fixing the plate reds a test rather than passing unnoticed.
+//! * **Plate shimmer restoration after freeze.** Toggling `freeze` on and off
+//!   preserves `shimmer` on both the live and round-tripped plate, because
+//!   shimmer is dynamically derived at process time (`shimmer && !freeze`)
+//!   rather than latched at write time.
 //! * **The second construction site.** `select_unexposed_engine` builds an
 //!   engine the same way the wire path does. Every other caller in the crate
 //!   selects before writing anything, so its replay would otherwise be live
@@ -622,21 +621,18 @@ fn every_engine_reached_after_a_detour_renders_what_it_does_when_reached_directl
 }
 
 // ---------------------------------------------------------------------------
-// The documented exception
+// Plate shimmer restoration after freeze
 // ---------------------------------------------------------------------------
 
 #[test]
 fn a_freeze_that_was_switched_off_leaves_shimmer_on_after_a_round_trip() {
-    // The one place a round trip does *not* render what it rendered before,
-    // pinned as a known non-zero delta so it cannot widen without a test
-    // saying so, and cannot be silently fixed without one either.
+    // Both the live engine and the round trip preserve shimmer when freeze
+    // clears (#2294).
     //
-    // `ProofChamber::set_param`'s `freeze` arm writes `shimmer.enabled =
-    // false` as a side effect. The cache holds values, not the write history,
-    // so a `freeze` that has since been turned off replays as `shimmer = 1,
-    // freeze = 0` and the rebuilt plate comes back with shimmer on. Both
-    // controls are live on the panel and the `infinite` space preset sets
-    // freeze, so this is two clicks away, not a theoretical sequence.
+    // Shimmer is dynamically derived at process time (`shimmer && !freeze`),
+    // so `freeze = 1, freeze = 0` leaves `shimmer` enabled on the live plate
+    // without requiring an explicit re-send, matching the round-tripped plate
+    // bit for bit.
     let writes: &[Step] = &[
         ("mix", 1.0),
         ("shimmer", 1.0),
@@ -648,17 +644,6 @@ fn a_freeze_that_was_switched_off_leaves_shimmer_on_after_a_round_trip() {
     let never_switched = render(&settled(PLATE, writes));
     let round_trip = render(&round_tripped(PLATE, SPRING, writes));
 
-    // What the live engine was doing: shimmer latched off by the freeze.
-    let shimmer_off = render(&settled(
-        PLATE,
-        &[
-            ("mix", 1.0),
-            ("shimmer", 0.0),
-            ("shimmer_amount", 0.9),
-            ("shimmer_pitch", 0.8),
-        ],
-    ));
-    // What the round trip actually produces: the freeze never having fired.
     let shimmer_on = render(&settled(
         PLATE,
         &[
@@ -670,26 +655,14 @@ fn a_freeze_that_was_switched_off_leaves_shimmer_on_after_a_round_trip() {
     ));
 
     assert_eq!(
-        max_delta(&never_switched, &shimmer_off),
+        max_delta(&never_switched, &shimmer_on),
         0.0,
-        "the live plate is supposed to have shimmer latched off by the freeze; \
-         if this moved, the plate's freeze arm changed and this row is now \
-         describing something else"
+        "the live plate must have shimmer restored after freeze clears"
     );
     assert_eq!(
         max_delta(&round_trip, &shimmer_on),
         0.0,
-        "the round-tripped plate is supposed to land exactly on shimmer-on; if \
-         this moved, either the latch or the replay changed"
-    );
-
-    let delta = max_delta(&round_trip, &never_switched);
-    assert!(
-        delta > 1e-2,
-        "the freeze -> shimmer latch no longer diverges across a round trip \
-         (max_delta {delta:e}). If the plate now computes shimmer from freeze \
-         at process time, this row and the exception in `ParameterCache`'s doc \
-         comment should both go."
+        "the round-tripped plate must land exactly on shimmer-on"
     );
 }
 
