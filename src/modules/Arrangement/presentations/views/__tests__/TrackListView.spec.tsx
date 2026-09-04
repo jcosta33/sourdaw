@@ -56,7 +56,11 @@ vi.mock('../TrackHeader', () => ({
 }));
 
 vi.mock('../MiniMasterSpectrum', () => ({
-    MiniMasterSpectrum: () => <div data-testid="master-spectrum">Master</div>,
+    MiniMasterSpectrum: () => (
+        <div data-testid="master-spectrum" role="button" tabIndex={0}>
+            Master
+        </div>
+    ),
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
@@ -519,6 +523,73 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(confirmUser).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('claims Delete pressed on the header-band spectrum for a hidden selection (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't2',
+                    name: 'Track 2',
+                    kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't3',
+                    name: 'Master',
+                    kind: 'master',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+            ],
+            // The spectrum is focusable and sits beside the rows, and the
+            // master track never appears in `visibleTracks` — the claim on
+            // the outermost element must still cut the key from window.
+            selectedTrackId: 't3',
+        });
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByTestId('master-spectrum'), { key: 'Delete' });
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('claims Delete pressed on the header-band spectrum and confirms for a visible selection (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByTestId('master-spectrum'), { key: 'Delete' });
+        // Synchronous: the outermost-element claim cuts the bubble path to
+        // window even though the gesture started in the header band, and
+        // the header-band Delete opens the same confirmed track deletion
+        // as a Delete from the rows.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(confirmUser).toHaveBeenCalledTimes(1);
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 

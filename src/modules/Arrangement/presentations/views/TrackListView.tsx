@@ -185,7 +185,18 @@ export const TrackListView = ({
         } else if (event.key === 'Enter' && selectedTrackId) {
             event.preventDefault();
             setWorkspaceMode('clip');
-        } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        }
+    };
+
+    const claimDestructiveKey = (event: KeyboardEvent<HTMLDivElement>) => {
+        // The inline rename input sits inside this subtree too; its
+        // keystrokes must edit text, not delete the track.
+        const target = event.target as HTMLElement;
+        if (isKeyboardEditableTarget(target)) {
+            return;
+        }
+
+        if (event.key === 'Delete' || event.key === 'Backspace') {
             if (selectedTrackId) {
                 // Claim the key for every selected case: this cuts the
                 // bubble path to the window-level shortcut layer whenever
@@ -195,7 +206,9 @@ export const TrackListView = ({
                 // confirmation opens only for a track the list can show,
                 // so a selected-but-hidden track (master, child of a
                 // collapsed folder) is a no-op rather than an unconfirmed
-                // clip deletion.
+                // clip deletion. The handler sits on the outermost
+                // element, so the header band beside the list is covered
+                // as well as the rows.
                 event.preventDefault();
                 event.stopPropagation();
                 const track = visibleTracks.find((time) => time.id === selectedTrackId);
@@ -228,6 +241,7 @@ export const TrackListView = ({
             className="h-full border-r border-border/30 bg-surface-well"
             style={style}
             data-onboarding="track-list"
+            onKeyDown={claimDestructiveKey}
         >
             <DawHeaderBand
                 className="group relative shrink-0 items-end px-2 pb-1 pt-2"
