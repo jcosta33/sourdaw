@@ -1134,7 +1134,8 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
                 costSite: 'worker',
                 warmVerify: { ok: true, detail },
                 lateVerify: { ok: true, detail },
-                stats: { median: 2.125, floor: 1.875, min: 1.8 },
+                stats: { median: 2.125, floor: 1.875, min: 1.8, n: 8 },
+                sampleCount: 8,
                 load: { mean: 1.5 },
                 zeroFraction: 0,
                 stationary: true,
@@ -3234,6 +3235,144 @@ describe('release inventory', () => {
             writeFileSync(jsonPath, JSON.stringify(data));
             expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
                 'generated region does not match JSON rendering'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement whose sampleCount and measureQuanta moved without stats.n (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-quanta-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                options: { measureQuanta: number };
+                rows: Array<{ sampleCount: number }>;
+            };
+            data.options.measureQuanta = 9;
+            data.rows[0]!.sampleCount = 9;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement populations disagree for row grand_boule: stats.n 8, sampleCount 9, options.measureQuanta 9'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement whose stats.n disagrees with its sampleCount (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-stats-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{ stats: { n: number } }>;
+            };
+            data.rows[0]!.stats.n = 7;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'stats.n 7, sampleCount 8, options.measureQuanta 8'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement without an integer measureQuanta (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-integer-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                options: { measureQuanta: number };
+            };
+            data.options.measureQuanta = 8.5;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement options.measureQuanta must be a positive integer'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement whose sampleCount moved without stats.n or measureQuanta (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-samplecount-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{ sampleCount: number }>;
+            };
+            data.rows[0]!.sampleCount = 5;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement populations disagree for row grand_boule: stats.n 8, sampleCount 5, options.measureQuanta 8'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('binds every retained row, not only grand_boule (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-every-row-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{
+                    id: string;
+                    label: string;
+                    costSite: string;
+                    sampleCount: number;
+                    stats: { n: number };
+                }>;
+            };
+            const grandBouleRow = data.rows[0]!;
+            data.rows.push({
+                ...grandBouleRow,
+                id: 'bacteria',
+                label: 'Bacteria (fixture)',
+                costSite: 'worklet',
+                sampleCount: 7,
+            });
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement populations disagree for row bacteria: stats.n 8, sampleCount 7, options.measureQuanta 8'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement of zero quanta (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-zero-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                options: { measureQuanta: number };
+                rows: Array<{ stats: { n: number }; sampleCount: number }>;
+            };
+            data.options.measureQuanta = 0;
+            data.rows[0]!.stats.n = 0;
+            data.rows[0]!.sampleCount = 0;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement options.measureQuanta must be a positive integer'
             );
         } finally {
             removeTemporaryDirectory(root);

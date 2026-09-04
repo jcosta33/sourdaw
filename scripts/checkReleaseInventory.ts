@@ -1321,6 +1321,24 @@ function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
     assertGrandBouleRevisionIsCommit(root, revision);
 }
 
+function assertGrandBouleMeasurementPopulation(data: {
+    options?: { measureQuanta?: number };
+    rows?: Array<{ id?: string; stats?: { n?: number }; sampleCount?: number }>;
+}): void {
+    const measureQuanta = data.options?.measureQuanta;
+    if (typeof measureQuanta !== 'number' || !Number.isInteger(measureQuanta) || measureQuanta < 1) {
+        throw new Error('Grand Boule measurement options.measureQuanta must be a positive integer');
+    }
+    for (const row of data.rows ?? []) {
+        if (row.stats?.n === measureQuanta && row.sampleCount === measureQuanta) {
+            continue;
+        }
+        throw new Error(
+            `Grand Boule measurement populations disagree for row ${row.id}: stats.n ${row.stats?.n}, sampleCount ${row.sampleCount}, options.measureQuanta ${measureQuanta}`
+        );
+    }
+}
+
 export function assertGrandBouleMeasurementAdmission(root: string): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
     const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
@@ -1330,11 +1348,14 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         machine?: { gitSha?: string; workingTree?: string };
         budgetMs?: number;
         referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+        options?: { measureQuanta?: number };
         rows?: Array<{
             id?: string;
             costSite?: string;
             warmVerify?: { ok?: boolean; detail?: string };
             lateVerify?: { ok?: boolean; detail?: string };
+            stats?: { n?: number };
+            sampleCount?: number;
         }>;
     };
     const revision = data.sourceRevision;
@@ -1387,6 +1408,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     ) {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
+    assertGrandBouleMeasurementPopulation(data);
     if (
         typeof data.budgetMs !== 'number' ||
         typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
