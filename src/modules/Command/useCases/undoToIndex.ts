@@ -65,7 +65,10 @@ export async function undoToIndex(targetIndex: number): Promise<void> {
             undoTreeMoveTo(currentEntryId(newPast));
             continue;
         }
-        const outcome = await undo();
+        // The sweep is anchor-targeted: the row it stops at is the row the user
+        // clicked to KEEP, so it never steps over a conflicted head onto the
+        // entry beneath — that would undo the target row itself (#2881).
+        const outcome = await undo({ stepOverConflicts: false });
         if (!outcome.headConsumed) {
             // The head entry is still applied, so this sweep cannot reach the target.
             // Stack length cannot stand in for progress: one undo() also drops any
