@@ -1368,6 +1368,80 @@
           }
         ]
       },
+      "desktop-measure": {
+        "name": "Desktop latency measurement (macOS)",
+        "needs": "decide",
+        "if": "needs.decide.outputs.heavy == 'true'",
+        "runs-on": "macos-latest",
+        "timeout-minutes": 90,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install a virtual audio output device",
+            "run": "set -euo pipefail\nbrew install --cask blackhole-2ch\nbrew install switchaudio-osx\nif pgrep -x coreaudiod > /dev/null; then\n  sudo killall coreaudiod\nfi\nfor _ in $(seq 1 30); do\n  if SwitchAudioSource -a -t output | grep -qx \"BlackHole 2ch\"; then\n    SwitchAudioSource -a -t output\n    exit 0\n  fi\n  sleep 1\ndone\nSwitchAudioSource -a -t output\necho \"BlackHole 2ch never appeared as an output device\" >&2\nexit 1\n"
+          },
+          {
+            "name": "Select the virtual device as the output",
+            "run": "set -euo pipefail\nSwitchAudioSource -t output -s \"BlackHole 2ch\"\nSwitchAudioSource -c -t output\n"
+          },
+          {
+            "name": "Install the harness plugin",
+            "run": "pnpm harness:plugin:install"
+          },
+          {
+            "name": "Build the packaged desktop app",
+            "run": "pnpm desktop:build"
+          },
+          {
+            "name": "Measure the packaged app",
+            "run": "pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json"
+          },
+          {
+            "name": "Upload the measurement record",
+            "if": "always()",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "desktop-latency-${{ github.sha }}",
+              "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
+              "retention-days": 90
+            }
+          }
+        ]
+      },
       "e2e": {
         "name": "End-to-end ${{ matrix.shard }}/12",
         "needs": "decide",
@@ -1752,12 +1826,23 @@
             "run": "set -euo pipefail\n# `--meta githubCommitSha` is what the next run reads back to decide\n# whether production already serves this revision, and what ties a\n# deployment in the dashboard to the commit that was validated.\n# `--archive=tgz` keeps a tree this size under the upload file limit.\npnpm dlx \"$VERCEL_CLI\" deploy --prebuilt --prod --archive=tgz \\\n  --meta githubCommitSha=\"$GITHUB_SHA\" > \"$RUNNER_TEMP/deployment-url.txt\"\ndeployment_url=$(tail -n 1 \"$RUNNER_TEMP/deployment-url.txt\")\ncase \"$deployment_url\" in\n  https://*) ;;\n  *)\n    printf 'the deploy command printed no deployment URL: %s\\n' \"$deployment_url\" >&2\n    exit 1\n    ;;\nesac\nprintf 'url=%s\\n' \"$deployment_url\" >> \"$GITHUB_OUTPUT\"\nprintf '### Web deployed\\n\\n`%s` is live at %s\\n' \"$GITHUB_SHA\" \"$deployment_url\" >> \"$GITHUB_STEP_SUMMARY\"\n"
           },
           {
+            "name": "Resolve the aliases of the deployment",
+            "id": "aliases",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "env": {
+              "VERCEL_TOKEN": "${{ secrets.VERCEL_TOKEN }}",
+              "VERCEL_ORG_ID": "${{ secrets.VERCEL_ORG_ID }}",
+              "DEPLOYMENT_URL": "${{ steps.deployment.outputs.url }}"
+            },
+            "run": "node scripts/resolveVercelDeploymentAliases.ts"
+          },
+          {
             "name": "Assert cross-origin isolation on the deployment",
             "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
             "env": {
-              "DEPLOYMENT_URL": "${{ steps.deployment.outputs.url }}"
+              "ALIASES": "${{ steps.aliases.outputs.aliases }}"
             },
-            "run": "set -euo pipefail\n# SharedArrayBuffer — and therefore the audio engine's shared memory —\n# is unavailable to a document that is not cross-origin isolated, and\n# these two headers are the whole of what makes it so. They are\n# configured in `vercel.json`; this reads them back off the deployment\n# that was actually served.\nheaders=\"$RUNNER_TEMP/deployment-headers.txt\"\ncurl --fail --location --silent --show-error --head \"$DEPLOYMENT_URL\" > \"$headers\"\ncat \"$headers\"\nfor header in 'cross-origin-opener-policy: same-origin' 'cross-origin-embedder-policy: require-corp'; do\n  if ! grep -iq \"$header\" \"$headers\"; then\n    printf 'the deployment is missing %s\\n' \"$header\" >&2\n    exit 1\n  fi\ndone\nprintf 'the deployment is cross-origin isolated\\n'\n"
+            "run": "sh scripts/assert-deployment-isolation.sh"
           }
         ]
       },
@@ -1773,6 +1858,7 @@
           "rust",
           "native-macos",
           "native-windows",
+          "desktop-measure",
           "e2e",
           "browser-ai-webgpu",
           "codeql",

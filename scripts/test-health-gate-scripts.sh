@@ -1448,6 +1448,15 @@ const allowedStepConditions = [
         'Assert cross-origin isolation on the deployment',
         `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
     ],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Resolve the aliases of the deployment',
+        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+    ],
+    // The measurement record is the diagnostic for a failed latency run, so it
+    // uploads even when the measurement itself failed.
+    ['nightly.yml', 'desktop-measure', 'Upload the measurement record', 'always()'],
 ];
 const seenAllowedSteps = new Set();
 for (const [file, parsed] of [

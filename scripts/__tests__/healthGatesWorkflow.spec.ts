@@ -236,6 +236,7 @@ const NIGHTLY_REPORT_NEEDS = [
     'rust',
     'native-macos',
     'native-windows',
+    'desktop-measure',
     'e2e',
     'browser-ai-webgpu',
     'codeql',
@@ -326,6 +327,9 @@ const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     },
     { workflow: 'heavy-gates.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
     { workflow: 'nightly.yml', job: 'unit', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
+    // The measurement record is the diagnostic for a failed latency run, so it
+    // uploads even when the measurement itself failed.
+    { workflow: 'nightly.yml', job: 'desktop-measure', step: 'Upload the measurement record', condition: 'always()' },
     { workflow: 'nightly.yml', job: 'e2e', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
     { workflow: 'nightly.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
     {
@@ -1476,6 +1480,18 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
         }
         if (env.VERCEL_PROJECT_ID !== undefined) {
             throw new Error(`${name} must not pass VERCEL_PROJECT_ID to the CLI`);
+        }
+    }
+    // The link step is the one place the org and project ids belong: `vercel link` reads them from
+    // the environment, and a missing id links the deploy to whatever the token's default resolves to.
+    const linkEnv = recordAt(stepNamed(job, VERCEL_LINK_STEP), 'env');
+    for (const [key, reference] of [
+        ['VERCEL_TOKEN', VERCEL_TOKEN_REFERENCE],
+        ['VERCEL_ORG_ID', VERCEL_ORG_ID_REFERENCE],
+        ['VERCEL_PROJECT_ID', VERCEL_PROJECT_ID_REFERENCE],
+    ] as const) {
+        if (linkEnv[key] !== reference) {
+            throw new Error(`${VERCEL_LINK_STEP} must read ${key} from the environment`);
         }
     }
     const aliasStep = stepNamed(job, DEPLOY_WEB_ALIAS_STEP);

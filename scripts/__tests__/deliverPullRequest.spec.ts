@@ -6114,6 +6114,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head whose required check turned red after an older green attempt, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-red-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6134,6 +6135,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6141,6 +6143,7 @@ describe('pull-request delivery', () => {
     it('reads a BLOCKED head whose required check recovered after an older red attempt as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-green-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6164,6 +6167,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -6171,6 +6175,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head whose required check has a newer attempt still in flight, naming the check whether the newest attempt is pending or failed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-inflight-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6198,6 +6203,7 @@ describe('pull-request delivery', () => {
     it('reads a BLOCKED head whose required check failed between two green attempts as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-retired-mid-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6229,6 +6235,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head whose required check has a failure and a success sharing one start, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-tied-start-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6256,6 +6263,7 @@ describe('pull-request delivery', () => {
     it('reads a BLOCKED head whose required check ended skipped after an older failure as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-skipped-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6287,6 +6295,7 @@ describe('pull-request delivery', () => {
     it('reads a BLOCKED head whose only newer failure belongs to a different check name as green, blaming a review thread or another ruleset rule', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-other-name-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6321,6 +6330,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head whose only green attempt reports no start beside a settled failure, naming the check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-startless-green-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [
@@ -6909,12 +6919,12 @@ describe('pull-request delivery', () => {
      * decision of record, and the head is green by design and merges.
      */
     it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
@@ -6930,12 +6940,12 @@ describe('pull-request delivery', () => {
      * decided afterward, so the cancelled name stays undecided.
      */
     it('refuses an UNSTABLE head whose scope-gated skip started before its cancellation', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
@@ -6948,7 +6958,7 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
@@ -6989,12 +6999,12 @@ describe('pull-request delivery', () => {
      * retire the cancellation beside it.
      */
     it('refuses an UNSTABLE head whose later scope-gated skip carries no start', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: null }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: null }),
                 checkRun(),
             ],
         });
@@ -7007,7 +7017,7 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
@@ -7018,13 +7028,13 @@ describe('pull-request delivery', () => {
      * recent — cannot retire a cancellation it never re-ran.
      */
     it('refuses an UNSTABLE head whose cancellation is skipped beside under another gating name', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
-        expect(gatingCheckNames.has('Production build')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Production build')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
@@ -7037,7 +7047,7 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
