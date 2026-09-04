@@ -342,7 +342,8 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
             disposed = true;
             // The sample pool is deliberately left alone: ids name decoded
             // identities and re-registration replaces, so entries cannot go
-            // stale — and the pool is process-wide, not this backend's.
+            // stale — and the pool is process-wide, bounded by native LRU
+            // byte-budget eviction (#2229).
             wireCommands = [];
         },
     };

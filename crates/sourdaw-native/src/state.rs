@@ -303,7 +303,7 @@ pub struct AppState {
     /// `register_timeline_sample`, and every `schedule-clip` resolves the id
     /// against this pool. Control-side only — the audio thread receives copies
     /// already built into `TimelineClip`s.
-    pub timeline_samples: Arc<Mutex<HashMap<String, TimelineSample>>>,
+    pub timeline_samples: Arc<Mutex<TimelineSamplePool>>,
     /// The control-side registry that resolves the app's string strip, device
     /// and sample ids onto the engine's `usize` node ids, plus the strip facts
     /// (kind, VCA fold, chain occupancy) batch validation needs. See
@@ -336,10 +336,152 @@ pub struct AppState {
 /// so there is nothing for sharing to race against, and the clips a project
 /// makes of one take (loop passes, comp regions, gap fills) cost a pointer each
 /// instead of a copy each.
+#[derive(Clone, Debug)]
 pub struct TimelineSample {
     pub left: Arc<[f32]>,
     pub right: Arc<[f32]>,
     pub sample_rate: f32,
+}
+
+impl TimelineSample {
+    /// Total bytes of decoded planar PCM held in memory for this sample.
+    pub fn byte_len(&self) -> usize {
+        (self.left.len() + self.right.len()) * std::mem::size_of::<f32>()
+    }
+}
+
+/// Default byte budget for the native timeline sample pool: 512 MiB.
+/// At 48 kHz 32-bit float stereo (~375 KiB/sec), this holds ~23 minutes of decoded PCM.
+pub const DEFAULT_TIMELINE_SAMPLE_POOL_BYTES: usize = 512 * 1024 * 1024;
+
+#[derive(Clone, Debug)]
+struct TimelineSampleEntry {
+    sample: TimelineSample,
+    touched: u64,
+    byte_len: usize,
+}
+
+/// A bounded, LRU-evicting pool of decoded timeline PCM material (#2229).
+///
+/// Decoded timeline material is registered once via `register_timeline_sample` and
+/// resolved by `schedule-clip` during graph mapping. To bound native process RSS
+/// across repeated project exports and long sessions, registrations exceeding `max_bytes`
+/// evict the least-recently-registered sample(s).
+#[derive(Clone, Debug)]
+pub struct TimelineSamplePool {
+    samples: HashMap<String, TimelineSampleEntry>,
+    touch_counter: u64,
+    total_bytes: usize,
+    max_bytes: usize,
+}
+
+impl TimelineSamplePool {
+    pub fn new(max_bytes: usize) -> Self {
+        Self {
+            samples: HashMap::new(),
+            touch_counter: 0,
+            total_bytes: 0,
+            max_bytes,
+        }
+    }
+
+    pub fn get(&self, id: &str) -> Option<&TimelineSample> {
+        self.samples.get(id).map(|e| &e.sample)
+    }
+
+    pub fn contains_key(&self, id: &str) -> bool {
+        self.samples.contains_key(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.samples.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.samples.is_empty()
+    }
+
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    pub fn max_bytes(&self) -> usize {
+        self.max_bytes
+    }
+
+    pub fn set_max_bytes(&mut self, max_bytes: usize) {
+        self.max_bytes = max_bytes;
+        while self.total_bytes > self.max_bytes && !self.samples.is_empty() {
+            let Some(oldest) = self
+                .samples
+                .iter()
+                .min_by_key(|(_, e)| e.touched)
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            if let Some(entry) = self.samples.remove(&oldest) {
+                self.total_bytes = self.total_bytes.saturating_sub(entry.byte_len);
+            }
+        }
+    }
+
+    pub fn insert(&mut self, id: String, sample: TimelineSample) {
+        self.touch_counter += 1;
+        let touched = self.touch_counter;
+        let byte_len = sample.byte_len();
+        if let Some(prev) = self.samples.remove(&id) {
+            self.total_bytes = self.total_bytes.saturating_sub(prev.byte_len);
+        }
+        self.samples.insert(
+            id.clone(),
+            TimelineSampleEntry {
+                sample,
+                touched,
+                byte_len,
+            },
+        );
+        self.total_bytes += byte_len;
+        while self.total_bytes > self.max_bytes && self.samples.len() > 1 {
+            let Some(oldest) = self
+                .samples
+                .iter()
+                .filter(|(k, _)| *k != &id)
+                .min_by_key(|(_, e)| e.touched)
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            if let Some(entry) = self.samples.remove(&oldest) {
+                self.total_bytes = self.total_bytes.saturating_sub(entry.byte_len);
+            }
+        }
+    }
+
+    pub fn remove(&mut self, id: &str) -> Option<TimelineSample> {
+        let entry = self.samples.remove(id)?;
+        self.total_bytes = self.total_bytes.saturating_sub(entry.byte_len);
+        Some(entry.sample)
+    }
+
+    pub fn clear(&mut self) {
+        self.samples.clear();
+        self.total_bytes = 0;
+    }
+}
+
+impl Default for TimelineSamplePool {
+    fn default() -> Self {
+        Self::new(DEFAULT_TIMELINE_SAMPLE_POOL_BYTES)
+    }
+}
+
+impl std::ops::Index<&str> for TimelineSamplePool {
+    type Output = TimelineSample;
+
+    fn index(&self, id: &str) -> &Self::Output {
+        self.get(id).expect("no entry found for key")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -423,7 +565,7 @@ impl Default for AppState {
             plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
             bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
-            timeline_samples: Arc::new(Mutex::new(HashMap::new())),
+            timeline_samples: Arc::new(Mutex::new(TimelineSamplePool::default())),
             graph: Arc::new(Mutex::new(crate::commands::graph::GraphRegistry::default())),
             graph_mapping_sessions: Arc::new(Mutex::new(
                 crate::commands::graph::GraphMappingSessions::default(),

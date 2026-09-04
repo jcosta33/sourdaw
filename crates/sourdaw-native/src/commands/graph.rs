@@ -146,7 +146,7 @@
 //!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
 
 use crate::commands::crumbs::{self, CrumbsState};
-use crate::state::{AppState, TimelineSample};
+use crate::state::{AppState, TimelineSample, TimelineSamplePool};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
     BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, TIMELINE_CHAIN_SLOT_BUDGET,
@@ -1460,7 +1460,7 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
-    samples: &HashMap<String, TimelineSample>,
+    samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_plugin_ids: &HashMap<String, usize>,
 ) -> Result<MappedBatch, String> {
@@ -1573,7 +1573,7 @@ const fn route_target_for(output: StripOutput) -> RouteTarget {
 fn map_command(
     command: &GraphCommandPayload,
     registry: &mut GraphRegistry,
-    samples: &HashMap<String, TimelineSample>,
+    samples: &TimelineSamplePool,
     sample_rate: f32,
     engine_plugin_ids: &HashMap<String, usize>,
     budgets: &mut QueueBudgets,
@@ -2238,7 +2238,7 @@ fn map_parameter_write(
 fn map_schedule_clip(
     playback: &ClipPlaybackPayload,
     registry: &mut GraphRegistry,
-    samples: &HashMap<String, TimelineSample>,
+    samples: &TimelineSamplePool,
     sample_rate: f32,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<(), String> {
@@ -2893,7 +2893,7 @@ struct MappingSessionKeyPayload {
 fn replay_prior_commands(
     mut commands: Vec<GraphCommandPayload>,
     registry: &mut GraphRegistry,
-    samples: &HashMap<String, TimelineSample>,
+    samples: &TimelineSamplePool,
     sample_rate: f32,
 ) -> Result<(), String> {
     while !commands.is_empty() {
@@ -3073,7 +3073,7 @@ pub async fn map_graph_batch(
 /// runs without the lock.
 fn map_offline_batch(
     batch: &GraphBatchPayload,
-    samples: &HashMap<String, TimelineSample>,
+    samples: &TimelineSamplePool,
     sample_rate: f32,
 ) -> Result<Vec<GraphCommand>, String> {
     let mut registry = GraphRegistry::default();
@@ -3125,7 +3125,7 @@ fn render_offline_ops(
 #[cfg(test)]
 fn render_offline_batch(
     batch: &GraphBatchPayload,
-    samples: &HashMap<String, TimelineSample>,
+    samples: &TimelineSamplePool,
     frames: usize,
     sample_rate: f32,
 ) -> Result<Vec<f32>, String> {
@@ -3200,14 +3200,14 @@ mod tests {
     fn map_unbound_batch(
         batch: &GraphBatchPayload,
         registry: &mut GraphRegistry,
-        samples: &HashMap<String, TimelineSample>,
+        samples: &TimelineSamplePool,
         sample_rate: f32,
     ) -> Result<MappedBatch, String> {
         map_batch(batch, registry, samples, sample_rate, &HashMap::new())
     }
 
-    fn sample_pool() -> HashMap<String, TimelineSample> {
-        let mut samples = HashMap::new();
+    fn sample_pool() -> TimelineSamplePool {
+        let mut samples = TimelineSamplePool::default();
         samples.insert(
             "source-a".to_string(),
             TimelineSample {
@@ -3811,7 +3811,7 @@ mod tests {
 
     #[test]
     fn material_at_another_rate_is_rate_converted_not_stretched() {
-        let mut samples = HashMap::new();
+        let mut samples = TimelineSamplePool::default();
         samples.insert(
             "half-rate".to_string(),
             TimelineSample {
@@ -3845,7 +3845,7 @@ mod tests {
         // 24 kHz material on a 48 kHz engine converts by 0.5; a user rate of
         // 2.0 on top of that composes by multiplication back to unity — the
         // arithmetic itself is observed here, not just that the field is set.
-        let mut samples = HashMap::new();
+        let mut samples = TimelineSamplePool::default();
         samples.insert(
             "half-rate".to_string(),
             TimelineSample {
@@ -4382,7 +4382,7 @@ mod tests {
         registry: &mut GraphRegistry,
         renderer: &mut OfflineRenderer,
         commands: Value,
-        samples: &HashMap<String, TimelineSample>,
+        samples: &TimelineSamplePool,
     ) -> Result<(), String> {
         registry.release_landed(renderer.graph_progress());
         let mut working = registry.clone();
@@ -5776,6 +5776,225 @@ mod tests {
         assert!(pcm_frame_count((MAX_OFFLINE_RENDER_FRAMES + 1) * 8, 2).is_err());
     }
 
+    #[test]
+    fn timeline_sample_pool_evicts_least_recently_registered_when_over_budget() {
+        let mut pool = TimelineSamplePool::new(128);
+        let make_sample = || TimelineSample {
+            left: vec![0.0; 8].into(),
+            right: vec![0.0; 8].into(),
+            sample_rate: 48_000.0,
+        }; // 16 * 4 = 64 bytes
+
+        assert_eq!(make_sample().byte_len(), 64);
+
+        pool.insert("s1".to_string(), make_sample());
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 64);
+        assert!(pool.contains_key("s1"));
+
+        pool.insert("s2".to_string(), make_sample());
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(pool.contains_key("s1"));
+        assert!(pool.contains_key("s2"));
+
+        pool.insert("s3".to_string(), make_sample());
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(!pool.contains_key("s1"));
+        assert!(pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+
+        // Re-register s2 to refresh touched counter
+        pool.insert("s2".to_string(), make_sample());
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 128);
+
+        pool.insert("s4".to_string(), make_sample());
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(!pool.contains_key("s3"));
+        assert!(pool.contains_key("s2"));
+        assert!(pool.contains_key("s4"));
+
+        assert!(pool.total_bytes() <= pool.max_bytes());
+    }
+
+    #[test]
+    fn register_timeline_sample_respects_pool_budget_and_evicts_oldest_pcm() {
+        let state = AppState::default();
+        state.timeline_samples.lock().unwrap().set_max_bytes(32);
+
+        // 2 frames stereo = 2 * 2 * 4 = 16 bytes per sample
+        let pcm_16_bytes = vec![0u8; 16];
+
+        block_on_test(register_timeline_sample(
+            "s1".to_string(),
+            48_000.0,
+            2,
+            pcm_16_bytes.clone(),
+            &state,
+        ))
+        .expect("s1 registers");
+
+        block_on_test(register_timeline_sample(
+            "s2".to_string(),
+            48_000.0,
+            2,
+            pcm_16_bytes.clone(),
+            &state,
+        ))
+        .expect("s2 registers");
+
+        {
+            let samples = state.timeline_samples.lock().unwrap();
+            assert_eq!(samples.len(), 2);
+            assert_eq!(samples.total_bytes(), 32);
+            assert!(samples.contains_key("s1"));
+            assert!(samples.contains_key("s2"));
+        }
+
+        block_on_test(register_timeline_sample(
+            "s3".to_string(),
+            48_000.0,
+            2,
+            pcm_16_bytes,
+            &state,
+        ))
+        .expect("s3 registers");
+
+        {
+            let samples = state.timeline_samples.lock().unwrap();
+            assert_eq!(samples.len(), 2);
+            assert_eq!(samples.total_bytes(), 32);
+            assert!(!samples.contains_key("s1"), "s1 was evicted as oldest");
+            assert!(samples.contains_key("s2"));
+            assert!(samples.contains_key("s3"));
+            assert!(samples.total_bytes() <= samples.max_bytes());
+        }
+    }
+
+    #[test]
+    fn timeline_sample_pool_re_registration_replaces_and_updates_accounting() {
+        let mut pool = TimelineSamplePool::new(256);
+        let sample_16 = TimelineSample {
+            left: vec![0.0; 2].into(),
+            right: vec![0.0; 2].into(),
+            sample_rate: 48_000.0,
+        }; // 4 * 4 = 16 bytes
+        let sample_64 = TimelineSample {
+            left: vec![0.0; 8].into(),
+            right: vec![0.0; 8].into(),
+            sample_rate: 48_000.0,
+        }; // 16 * 4 = 64 bytes
+
+        assert_eq!(sample_16.byte_len(), 16);
+        assert_eq!(sample_64.byte_len(), 64);
+
+        pool.insert("s1".to_string(), sample_16.clone());
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 16);
+
+        // Re-register s1 with 64 bytes
+        pool.insert("s1".to_string(), sample_64.clone());
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 64);
+
+        // Re-register s1 with 16 bytes
+        pool.insert("s1".to_string(), sample_16);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 16);
+
+        // Remove s1
+        let removed = pool.remove("s1");
+        assert!(removed.is_some());
+        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.total_bytes(), 0);
+    }
+
+    #[test]
+    fn timeline_sample_pool_oversized_sample_retains_newest() {
+        let mut pool = TimelineSamplePool::new(64);
+        let sample_16 = TimelineSample {
+            left: vec![0.0; 2].into(),
+            right: vec![0.0; 2].into(),
+            sample_rate: 48_000.0,
+        }; // 16 bytes
+        let sample_128 = TimelineSample {
+            left: vec![0.0; 16].into(),
+            right: vec![0.0; 16].into(),
+            sample_rate: 48_000.0,
+        }; // 128 bytes (larger than max_bytes = 64)
+
+        // Empty pool: oversized sample is retained
+        pool.insert("oversized_empty".to_string(), sample_128.clone());
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(pool.contains_key("oversized_empty"));
+
+        pool.clear();
+        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.total_bytes(), 0);
+
+        // Multi-entry pool: oversized sample evicts prior entries and is retained
+        pool.insert("s1".to_string(), sample_16.clone());
+        pool.insert("s2".to_string(), sample_16.clone());
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 32);
+
+        pool.insert("oversized_multi".to_string(), sample_128);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(!pool.contains_key("s1"));
+        assert!(!pool.contains_key("s2"));
+        assert!(pool.contains_key("oversized_multi"));
+    }
+
+    #[test]
+    fn timeline_sample_pool_lowering_max_bytes_evicts_oldest_samples() {
+        let mut pool = TimelineSamplePool::new(256);
+        let make_sample = || TimelineSample {
+            left: vec![0.0; 8].into(),
+            right: vec![0.0; 8].into(),
+            sample_rate: 48_000.0,
+        }; // 16 * 4 = 64 bytes
+
+        assert_eq!(make_sample().byte_len(), 64);
+
+        pool.insert("s1".to_string(), make_sample());
+        pool.insert("s2".to_string(), make_sample());
+        pool.insert("s3".to_string(), make_sample());
+
+        assert!(pool.contains_key("s1"));
+        assert!(pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+        assert_eq!(pool.len(), 3);
+        assert_eq!(pool.total_bytes(), 192);
+
+        pool.set_max_bytes(128);
+        assert_eq!(pool.max_bytes(), 128);
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.total_bytes(), 128);
+        assert!(!pool.contains_key("s1"));
+        assert!(pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+
+        pool.set_max_bytes(64);
+        assert_eq!(pool.max_bytes(), 64);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool.total_bytes(), 64);
+        assert!(!pool.contains_key("s1"));
+        assert!(!pool.contains_key("s2"));
+        assert!(pool.contains_key("s3"));
+
+        pool.set_max_bytes(0);
+        assert_eq!(pool.max_bytes(), 0);
+        assert!(pool.is_empty());
+        assert_eq!(pool.len(), 0);
+        assert_eq!(pool.total_bytes(), 0);
+        assert!(!pool.contains_key("s3"));
+    }
+
     /// The wire result is a hand-maintained mirror of `AudioGraphApplyResult`;
     /// pin its spellings the way `engine_diagnostics` pins its own payload.
     #[test]
@@ -5882,7 +6101,7 @@ mod tests {
             },
         );
 
-        let samples = HashMap::new();
+        let samples = TimelineSamplePool::default();
 
         // 1. Every known name from DeviceParam must resolve
         for param_name in ["shift_semitones", "retune_speed_ms", "formant_preserve"] {
