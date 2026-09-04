@@ -1,0 +1,53 @@
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_28abfd94826e36::t_1d4479893a25a4 17,49-51,324-336
+src/modules/Toaster/useCases/stepModifications/__tests__/setStepMicroTiming.spec.ts
+  s_9b530f08172a54::t_81aa42e831225f 1-90
+src/modules/Toaster/useCases/stepModifications/setStepMicroTiming.ts
+  s_28abfd94826e36::t_46a521f832e070 1-40
+src/modules/Toaster/presentations/components/StepSequencer.tsx
+  s_35a22d8c253f39::t_45f3ebc5b5a10d 20,43-50,78,88-90,180-183,316-318,338,356-375
+src/modules/Toaster/presentations/components/__tests__/StepSequencer.spec.tsx
+  s_409be8548f78d4::t_e41dcf4199c2f6 542-599
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_9b530f08172a54::t_131e552b0b6fb4 47,680-682
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a76a790feb8e912ece1e2ea058e1287d855318f6",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_35a22d8c253f39": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7dd3f773214d7984",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_409be8548f78d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a36e2e23bf7b5798f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
