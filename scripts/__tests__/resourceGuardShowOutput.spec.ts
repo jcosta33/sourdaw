@@ -68,4 +68,29 @@ describe('resource guard --show-output', () => {
         expect(logSpy.mock.calls.some(([line]) => typeof line === 'string' && line.startsWith('LINE 1\n'))).toBe(true);
         logSpy.mockRestore();
     });
+
+    it('names the applied RSS budget when a memory kill is reported', () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const exitCode = emitGuardedResult('pnpm', {
+            code: null,
+            signal: 'SIGKILL',
+            reason: 'memory',
+            output: '',
+            omittedBytes: 0,
+            peakRssBytes: 4500 * 1024 ** 2,
+            maxRssBytes: 4 * 1024 ** 3,
+            durationMs: 1000,
+        });
+
+        expect(exitCode).toBe(1);
+        expect(
+            errorSpy.mock.calls.some(
+                ([line]) =>
+                    typeof line === 'string' &&
+                    /peak 4500 MiB exceeded the 4096 MiB RSS budget; rerun with --max-rss-mib/.test(line)
+            )
+        ).toBe(true);
+        errorSpy.mockRestore();
+    });
 });
