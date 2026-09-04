@@ -232,24 +232,18 @@ impl CachedParameter {
 /// invert that pair whenever the earlier-introduced name was rewritten later.
 /// `tests/algorithm_switch_parameter_retention.rs` discriminates the two.
 ///
-/// # The one exception, and it is measured
+/// # Prior latch exception eliminated
 ///
-/// This is a cache of values, not a log of writes, so a latch fired by a value
-/// that was later overwritten is not reproduced. Exactly one such latch exists
-/// in the crate: `ProofChamber::set_param`'s `freeze` arm switches
-/// `shimmer.enabled` off as a side effect, and a `freeze` that has since been
-/// turned off does not re-fire it. A round trip therefore comes back with
-/// shimmer **on** where the engine it replaced had it off — a quarter of full
-/// scale on the default algorithm, and reachable with two clicks.
+/// This is a cache of values, not a log of writes, so any latch fired by a value
+/// that was later overwritten would not be reproduced. Previously,
+/// `ProofChamber::set_param`'s `freeze` arm switched `shimmer.enabled` off as a
+/// side effect, leaving shimmer permanently silenced after `freeze` was turned
+/// off until a round trip or re-send restored it.
 ///
-/// It is not modelled here because the honest fix is in the plate: shimmer
-/// should be a function of the write set (`shimmer && !freeze`, computed at
-/// process time, exactly as `decay`, `input_gain`, `damp` and `mod_depth`
-/// already are) rather than derived state stored at write time. Changing that
-/// moves what a frozen plate renders, which is a separate change with its own
-/// evidence. What this change owes is that the exception cannot widen
-/// silently, so `algorithm_switch_parameter_retention.rs` pins it as a known
-/// non-zero delta rather than leaving it to this comment.
+/// Shimmer is now dynamically derived at process time (`shimmer && !freeze`),
+/// exactly as `decay`, `input_gain`, and `damp` are, eliminating that
+/// write-latch asymmetry. Both the live engine and a round trip now agree with
+/// the cached parameters.
 struct ParameterCache {
     entries: Vec<CachedParameter>,
 }
