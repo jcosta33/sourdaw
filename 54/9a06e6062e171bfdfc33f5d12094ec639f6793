@@ -1,0 +1,27 @@
+scripts/healthGateWorkflowContract.ts
+  s_28abfd94826e36::t_10b39d9de2a2f6 132-138,143
+.github/workflows/validation.yml
+  s_28abfd94826e36::t_572f390852f765 549-550
+  s_28abfd94826e36::t_5df61fc2bb19d8 492-500
+  s_28abfd94826e36::t_1ca4e20f43cdd3 517-519
+  s_28abfd94826e36::t_73eb2be2ac1109 524,526-528,532-535
+  s_28abfd94826e36::t_79c0b44ccb14fa 609-610
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_28abfd94826e36::t_b178edf2553616 793-796,804,823-824
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "549a06e6062e171bfdfc33f5d12094ec639f6793",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
