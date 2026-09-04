@@ -1,0 +1,16 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/carryQueuedStamps.spec.ts
+  h_1228e573df1f42 68,74
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  h_1228e573df1f42 1161,1173,1178,1213,1224-1233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3bfdcfca335532ff55561e730ff76fb50bd6c434",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
