@@ -390,26 +390,54 @@ same account can read its credential files. Snapshot and token-bearing children 
 environment overrides that could redirect them — Node loader and preload settings, and Git, GitHub
 CLI, GitHub Actions, and App configuration — and use the launcher-resolved `git` and `gh`.
 
-Hosted checks run. `.github/workflows/health-gates.yml` is the pull-request workflow that mints the
-stable `Gate` summary; other tooling reads that name, so do not rename it. It answers `pull_request`
-only. Do not subscribe it to `pull_request_review`: GitHub treats a skipped required check as
-success.
+Hosted checks run across four workflow files, and the split between them is a security boundary
+rather than an organising preference. `Gate` is a required status check on `main`, by owner
+decision: it must pass on the pull-request head. The ruleset is non-strict, so the head need not
+carry `main` first — taking `main` is required only on a real conflict or when mergeability
+demands it. GitHub counts a check run whose conclusion is `skipped` as satisfying a required
+check, and prefers the newest run of that name — so any event that can reach the file minting `Gate`
+and legitimately skip it mints a passing `Gate` over a red head. A `pull_request_review` trigger did
+exactly that in production. Therefore:
 
-`.github/workflows/nightly.yml` is the scheduled and dispatched full train and the only production
-web deploy. No job there may be named `Gate`. `vercel.json` turns the Git integration off, so
-reaching `main` deploys nothing by itself.
+- `.github/workflows/health-gates.yml` answers to `pull_request` alone and mints `Gate`. Its `gate`
+  job carries `!cancelled()` and no other predicate, because any predicate that can be false is the
+  hole. Do not add a trigger to this file, and do not rename `gate`.
+- `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, the unit matrix,
+  build, Rust, the natives, the offline smoke set, the diff secret scan, dependency review — called
+  by `health-gates.yml` and `heavy-gates.yml` so there is one definition rather than two that drift.
+- `.github/workflows/heavy-gates.yml` owns the review event and the jobs that cannot fit a push
+  budget: the end-to-end matrix, the Browser AI hardware proof, CodeQL, and the full-history secret
+  scan. Its summary is `HeavyGate` and is deliberately not ruleset-required.
+- `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train, and the
+  nightly failure report. It is the only production web deploy — `vercel.json` turns the Git
+  integration off, so reaching `main` deploys nothing by itself.
 
-GitHub can require workflow job checks, but Sourdaw keeps pull-request-editable workflows out of
-merge authority beyond the live ruleset: that is a Sourdaw trust policy, not a GitHub platform
-restriction.
+No job outside `health-gates.yml` may be named `Gate`.
+
+So `unit` decides the required check, through the validation lane it lives in, on every run that
+touches the web scope. The end-to-end suite does not: no pull-request run executes it, so naming it
+in `Gate` would have listed an always-skipped job and claimed coverage the check never had. It
+decides `HeavyGate` on approving-review runs and gates hard on the nightly train. The ruleset
+requires one approving review, and that review triggers the heavy lane, but no required check makes
+the merge wait for the lane's verdict, so nothing today forces that suite to have passed against a
+head before it lands; its merge enforcement arrives when `deliver`'s required-CI admission
+is armed, which is a separate change. The earlier policy of keeping pull-request-editable workflows
+out of merge authority is superseded — a head that softens its own gate is caught by review of that
+file like any other reviewed code — but note what that leaves: the ruleset is the only CI merge
+authority while `deliver`'s admission stays advisory.
 
 Those checks exist so that nobody runs them on this machine. Never run a repository-wide check
 locally to satisfy a gate the pipeline already runs on every push; Resource Safety governs what
 stays local.
 
 `main` is covered by a ruleset. Read the live one rather than trusting a copy here — it blocks
-deletion and non-fast-forward, forces a squashed pull request, and demands resolved threads, but the
-enforcement that actually holds is repository configuration, not something this file can promise.
+deletion and non-fast-forward, forces a squashed pull request, requires one approving review with
+the last push approved, demands resolved threads, and requires `Gate` on the pull-request head, but
+the enforcement that actually holds is repository configuration, not something this file can
+promise. The ruleset is non-strict: the head need not
+carry `main` before it can merge, so a lane that has fallen behind still delivers without merging
+`origin/main` — unless there is a real conflict or GitHub cannot merge the head, and taking `main`
+then produces a new head, which needs a fresh `Gate` and a fresh review.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it names each package's build script because that name is not derivable from the
@@ -495,14 +523,19 @@ current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, that a test observes what its name claims, and that
-every accepted finding is actually addressed there rather than silenced. Inspect the pipeline's
-result for that head past the summary, because a softened leg can report a caused regression only as
-a warning annotation. CI is advisory, so its result is diagnostic rather than merge authority, but
-an unexplained failure or warning is still attributed to the change, or to a named pre-existing
-defect and filed, or it blocks. The checks are the pipeline's job, not a second local run of the
-same commands. Formatting is the exception worth doing locally, because it rewrites rather than
-reports:
-run it on the changed files and stage what it rewrote.
+every accepted finding is actually addressed there rather than silenced. On the push lane no leg
+is softened any more, so a red suite there reports as a red `Gate` rather than as a warning
+annotation, and `Gate` is required — a failure in that lane now blocks the merge instead of
+merely informing it. The heavy-lane suites — the end-to-end matrix, the Browser AI admission,
+CodeQL, and the secret scan — report into `HeavyGate`, which is deliberately not
+ruleset-required: they inform the merge rather than block it until `deliver`'s required-CI
+admission arms. That raises rather than lowers what the orchestrator owes: a green `Gate` says
+the gates passed, not that the change does
+what it was specified to do, that a test observes what its name claims, or that a finding was
+addressed rather than silenced. Read the diff for those. An unexplained failure is still attributed
+to the change, or to a named pre-existing defect and filed. The checks are the pipeline's job, not a
+second local run of the same commands. Formatting is the exception worth doing locally, because it
+rewrites rather than reports: run it on the changed files and stage what it rewrote.
 
 Unrelated `origin/main` movement does not by itself stale a review. Re-review when the feature head
 changes in a way that touches the reviewed surface, and when you resolve conflicts. Base

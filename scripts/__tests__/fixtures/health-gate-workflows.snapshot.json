@@ -1,0 +1,1897 @@
+{
+  "workflowFileInventory": [
+    "health-gates.yml",
+    "heavy-gates.yml",
+    "nightly.yml",
+    "validation.yml"
+  ],
+  "health-gates.yml": {
+    "name": "Health gates",
+    "on": {
+      "pull_request": null
+    },
+    "permissions": {
+      "contents": "read",
+      "pull-requests": "read"
+    },
+    "concurrency": {
+      "group": "health-gates-${{ github.event.pull_request.number }}",
+      "cancel-in-progress": true
+    },
+    "jobs": {
+      "validation": {
+        "name": "Validation",
+        "uses": "./.github/workflows/validation.yml"
+      },
+      "gate": {
+        "name": "Gate",
+        "if": "${{ !cancelled() }}",
+        "needs": [
+          "validation"
+        ],
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "steps": [
+          {
+            "name": "Require every job to have succeeded or been skipped",
+            "env": {
+              "RESULTS": "${{ toJSON(needs) }}"
+            },
+            "run": "set -euo pipefail\nprintf '%s\\n' \"$RESULTS\"\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[]\n  | select(.value.result != \"success\" and .value.result != \"skipped\")\n  | \"\\(.key): \\(.value.result)\"')\nif [ -n \"$failed\" ]; then\n  printf 'failing jobs:\\n%s\\n' \"$failed\"\n  exit 1\nfi\nprintf 'every job succeeded or was skipped\\n'\n"
+          }
+        ]
+      }
+    }
+  },
+  "heavy-gates.yml": {
+    "name": "Heavy gates",
+    "on": {
+      "pull_request_review": {
+        "types": [
+          "submitted"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read",
+      "pull-requests": "read"
+    },
+    "concurrency": {
+      "group": "heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}",
+      "cancel-in-progress": false
+    },
+    "env": {
+      "NODE_VERSION": "24.19.0"
+    },
+    "jobs": {
+      "validation": {
+        "name": "Validation",
+        "if": "github.event.review.state == 'approved'",
+        "uses": "./.github/workflows/validation.yml"
+      },
+      "e2e": {
+        "name": "End-to-end ${{ matrix.shard }}/12",
+        "needs": "validation",
+        "if": "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 60,
+        "strategy": {
+          "fail-fast": false,
+          "matrix": {
+            "shard": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          }
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install Playwright browsers",
+            "run": "pnpm exec playwright install --with-deps chromium"
+          },
+          {
+            "name": "Run shard",
+            "id": "run_shard",
+            "run": "pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob"
+          },
+          {
+            "name": "Report shard failure",
+            "if": "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}",
+            "env": {
+              "SHARD": "${{ matrix.shard }}"
+            },
+            "run": "printf '::warning title=End-to-end shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### End-to-end shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          },
+          {
+            "name": "Upload blob report",
+            "if": "${{ !cancelled() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "e2e-blob-${{ matrix.shard }}",
+              "path": "blob-report/",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "e2e-report": {
+        "name": "End-to-end report",
+        "needs": "e2e",
+        "if": "${{ !cancelled() && needs.e2e.result != 'skipped' }}",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Download blob reports",
+            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "with": {
+              "pattern": "e2e-blob-*",
+              "path": "all-blob-reports",
+              "merge-multiple": true
+            }
+          },
+          {
+            "name": "Merge into one report",
+            "run": "pnpm exec playwright merge-reports --reporter=html all-blob-reports"
+          },
+          {
+            "name": "Upload report",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "playwright-report",
+              "path": "playwright-report/",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "browser-ai-webgpu": {
+        "name": "Browser AI WebGPU admission",
+        "needs": "validation",
+        "if": "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'",
+        "runs-on": "macos-14",
+        "timeout-minutes": 30,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install Chromium",
+            "run": "pnpm exec playwright install chromium"
+          },
+          {
+            "name": "Run Browser AI WebGPU admission",
+            "run": "pnpm test:e2e:browser-ai-webgpu-admission"
+          }
+        ]
+      },
+      "codeql": {
+        "name": "CodeQL",
+        "needs": "validation",
+        "if": "needs.validation.outputs.heavy == 'true' && github.event.pull_request.head.repo.full_name == github.repository",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "permissions": {
+          "contents": "read",
+          "security-events": "write",
+          "actions": "read"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Initialise CodeQL",
+            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "with": {
+              "languages": "javascript-typescript",
+              "queries": "security-extended"
+            }
+          },
+          {
+            "name": "Analyse",
+            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+          }
+        ]
+      },
+      "secrets": {
+        "name": "Secret scan",
+        "needs": "validation",
+        "if": "needs.validation.outputs.heavy == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 30,
+        "env": {
+          "GITLEAKS_VERSION": "8.30.1",
+          "GITLEAKS_SHA256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted scanner",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.base.sha || github.sha }}",
+              "path": "trusted-scanner",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Checkout scan target",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha || github.sha }}",
+              "path": "scan-target",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Validate secret scanner positive control",
+            "working-directory": "${{ github.workspace }}",
+            "env": {
+              "GITLEAKS_EXPECTED_LEAK_EXIT_CODE": 79
+            },
+            "run": "set -euo pipefail\numask 077\npositive_control_repo=$(mktemp -d \"$RUNNER_TEMP/gitleaks-positive-control.XXXXXX\")\ntrap 'rm -rf \"$positive_control_repo\"' EXIT\n\ngit -C \"$positive_control_repo\" init --initial-branch=main\ngit -C \"$positive_control_repo\" config user.email sourdaw-ci@example.invalid\ngit -C \"$positive_control_repo\" config user.name 'Sourdaw CI'\nsynthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')\nmkdir -p \"$positive_control_repo/public/wasm\"\nprintf 'aws_access_key_id = \"%s\" // gitleaks:allow\\n' \\\n  \"$synthetic_access_key\" > \"$positive_control_repo/public/wasm/fixture.js\"\ncat > \"$positive_control_repo/.gitleaks.toml\" <<'GITLEAKS_CONFIG'\ntitle = \"Untrusted suppression fixture\"\n\n[extend]\nuseDefault = true\n\n[allowlist]\ndescription = \"Would suppress every finding if target-root config were loaded\"\nregexes = ['''.*''']\nGITLEAKS_CONFIG\ngit -C \"$positive_control_repo\" add public/wasm/fixture.js .gitleaks.toml\ngit -C \"$positive_control_repo\" commit -m 'add synthetic secret fixture'\n\nset +e\nGITLEAKS_EXIT_CODE=\"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n  sh \"$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh\" \"$positive_control_repo/.git\"\npositive_control_status=$?\nset -e\n\nif [ \"$positive_control_status\" -ne \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" ]; then\n  printf 'expected Gitleaks positive control to exit %s, got %s\\n' \\\n    \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n    \"$positive_control_status\" >&2\n  exit 1\nfi\n"
+          },
+          {
+            "name": "Scan history for secrets",
+            "working-directory": "${{ github.workspace }}",
+            "run": "sh \"$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh\" \"$GITHUB_WORKSPACE/scan-target/.git\""
+          }
+        ]
+      },
+      "heavy-gate": {
+        "name": "HeavyGate",
+        "if": "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
+        "needs": [
+          "validation",
+          "e2e",
+          "browser-ai-webgpu",
+          "codeql",
+          "secrets"
+        ],
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "steps": [
+          {
+            "name": "Require every job to have succeeded or been skipped",
+            "env": {
+              "RESULTS": "${{ toJSON(needs) }}"
+            },
+            "run": "set -euo pipefail\nprintf '%s\\n' \"$RESULTS\"\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[]\n  | select(.value.result != \"success\" and .value.result != \"skipped\")\n  | \"\\(.key): \\(.value.result)\"')\nif [ -n \"$failed\" ]; then\n  printf 'failing jobs:\\n%s\\n' \"$failed\"\n  exit 1\nfi\nprintf 'every job succeeded or was skipped\\n'\n"
+          }
+        ]
+      }
+    }
+  },
+  "validation.yml": {
+    "name": "Validation",
+    "on": {
+      "workflow_call": {
+        "outputs": {
+          "heavy": {
+            "description": "Whether the caller's event admits the heavy lane.",
+            "value": "${{ jobs.decide.outputs.heavy }}"
+          },
+          "rust": {
+            "description": "Whether the head touches Rust or the collaboration server.",
+            "value": "${{ jobs.decide.outputs.rust }}"
+          },
+          "server": {
+            "description": "Whether the head touches the collaboration server.",
+            "value": "${{ jobs.decide.outputs.server }}"
+          },
+          "e2e": {
+            "description": "Whether the head touches the browser surface.",
+            "value": "${{ jobs.decide.outputs.e2e }}"
+          },
+          "web": {
+            "description": "Whether the head touches the web application.",
+            "value": "${{ jobs.decide.outputs.web }}"
+          },
+          "code": {
+            "description": "Whether the head carries anything but prose.",
+            "value": "${{ jobs.decide.outputs.code }}"
+          }
+        }
+      }
+    },
+    "permissions": {
+      "contents": "read",
+      "pull-requests": "read"
+    },
+    "env": {
+      "NODE_VERSION": "24.19.0"
+    },
+    "jobs": {
+      "decide": {
+        "name": "Decide scope",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "if": "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
+        "outputs": {
+          "heavy": "${{ steps.scope.outputs.heavy }}",
+          "rust": "${{ steps.scope.outputs.rust }}",
+          "server": "${{ steps.scope.outputs.server }}",
+          "e2e": "${{ steps.scope.outputs.e2e }}",
+          "web": "${{ steps.scope.outputs.web }}",
+          "code": "${{ steps.scope.outputs.code }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Filter changed paths",
+            "id": "filter",
+            "uses": "dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d",
+            "with": {
+              "predicate-quantifier": "some-with-excludes",
+              "filters": "rust:\n  - 'crates/**'\n  - 'Cargo.toml'\n  - 'Cargo.lock'\n  - 'rust-toolchain.toml'\n  - 'scripts/health-gates-server.sh'\nserver:\n  - 'server/**'\n  - 'scripts/health-gates-server.sh'\n  - 'package.json'\n  - 'vite.config.ts'\n  - 'scripts/checkVitestCollectionScope.ts'\n  - '.github/workflows/health-gates.yml'\n  - '.github/workflows/nightly.yml'\ne2e:\n  - 'src/**'\n  - 'public/**'\n  - 'tests/e2e/**'\n  - 'playwright.config.ts'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\nweb:\n  - 'src/**'\n  - 'public/**'\n  - 'electron/**'\n  - 'scripts/**'\n  - 'package.json'\n  - 'pnpm-lock.yaml'\n  - 'vite.config.ts'\n  - 'tsconfig*.json'\n# Everything the scopes above do not claim, minus the two places\n# that hold nothing but prose. Repository metadata is machine-read,\n# not documentation: issue templates, the pull-request template and\n# workflow definitions all land here and force the fast lane that\n# polices them. A path nobody has classified lands here too, which\n# is the point — an unknown path costs a full lane rather than\n# silently skipping the checks that would have observed it.\nunclassified:\n  - '**'\n  - '!docs/**'\n  - '!*.md'\n  - '!crates/**'\n  - '!Cargo.toml'\n  - '!Cargo.lock'\n  - '!rust-toolchain.toml'\n  - '!server/**'\n  - '!src/**'\n  - '!public/**'\n  - '!electron/**'\n  - '!scripts/**'\n  - '!tests/e2e/**'\n  - '!package.json'\n  - '!pnpm-lock.yaml'\n  - '!vite.config.ts'\n  - '!playwright.config.ts'\n  - '!tsconfig*.json'\n"
+            }
+          },
+          {
+            "name": "Resolve scope",
+            "id": "scope",
+            "env": {
+              "EVENT": "${{ github.event_name }}",
+              "RUST": "${{ steps.filter.outputs.rust }}",
+              "SERVER": "${{ steps.filter.outputs.server }}",
+              "E2E": "${{ steps.filter.outputs.e2e }}",
+              "WEB": "${{ steps.filter.outputs.web }}",
+              "UNCLASSIFIED": "${{ steps.filter.outputs.unclassified }}"
+            },
+            "run": "set -euo pipefail\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n} >> \"$GITHUB_OUTPUT\"\n"
+          }
+        ]
+      },
+      "static": {
+        "name": "Types and contracts",
+        "needs": "decide",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Artifact freshness",
+            "run": "pnpm wasm:verify"
+          },
+          {
+            "name": "App types",
+            "run": "pnpm typecheck"
+          },
+          {
+            "name": "Test types",
+            "run": "pnpm typecheck:test"
+          },
+          {
+            "name": "Script types",
+            "run": "pnpm typecheck:scripts"
+          },
+          {
+            "name": "End-to-end types",
+            "run": "pnpm typecheck:e2e"
+          },
+          {
+            "name": "Desktop shell types",
+            "run": "pnpm typecheck:electron"
+          },
+          {
+            "name": "Format",
+            "run": "pnpm exec prettier --check \"src/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"electron/**/*.ts\""
+          },
+          {
+            "name": "Command argument schemas",
+            "run": "pnpm test:command-schema"
+          },
+          {
+            "name": "Release inventory",
+            "run": "pnpm test:release-inventory"
+          },
+          {
+            "name": "Test collection scope",
+            "run": "pnpm test:collection-scope"
+          },
+          {
+            "name": "Barrel mock coverage",
+            "run": "pnpm test:barrel-mocks"
+          },
+          {
+            "name": "Device write boundary census",
+            "run": "pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts"
+          },
+          {
+            "name": "Release proof",
+            "run": "pnpm test:run scripts/__tests__/releaseProof.spec.ts"
+          },
+          {
+            "name": "Health gate infrastructure",
+            "run": "pnpm test:health-gates"
+          }
+        ]
+      },
+      "lint": {
+        "name": "Lint",
+        "needs": "decide",
+        "if": "needs.decide.outputs.code == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Lint",
+            "env": {
+              "SOURDAW_LINT_CONCURRENCY": "auto",
+              "SOURDAW_LINT_THREADS": "0"
+            },
+            "run": "pnpm lint:full"
+          }
+        ]
+      },
+      "boundaries": {
+        "name": "Module boundaries",
+        "needs": "decide",
+        "if": "needs.decide.outputs.code == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Validate the dependency graph",
+            "run": "pnpm deps:validate"
+          }
+        ]
+      },
+      "unit": {
+        "name": "Unit suite ${{ matrix.shard }}/4",
+        "needs": "decide",
+        "if": "needs.decide.outputs.web == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "strategy": {
+          "fail-fast": false,
+          "matrix": {
+            "shard": [
+              1,
+              2,
+              3,
+              4
+            ]
+          }
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Run shard",
+            "id": "run_shard",
+            "env": {
+              "VITEST_MAX_WORKERS": 4
+            },
+            "run": "pnpm run test:run --shard=${{ matrix.shard }}/4"
+          },
+          {
+            "name": "Report shard failure",
+            "if": "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}",
+            "env": {
+              "SHARD": "${{ matrix.shard }}"
+            },
+            "run": "printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### Unit suite shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          }
+        ]
+      },
+      "smoke": {
+        "name": "Offline browser smoke",
+        "needs": "decide",
+        "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install Playwright browsers",
+            "run": "pnpm exec playwright install --with-deps chromium"
+          },
+          {
+            "name": "Run offline smoke set",
+            "run": "pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0"
+          }
+        ]
+      },
+      "build": {
+        "name": "Production build",
+        "needs": "decide",
+        "if": "needs.decide.outputs.web == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Build",
+            "run": "pnpm build"
+          }
+        ]
+      },
+      "rust": {
+        "name": "Rust workspace and collaboration server",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "npm",
+              "cache-dependency-path": "server/package-lock.json"
+            }
+          },
+          {
+            "name": "Install ALSA development headers",
+            "run": "sudo apt-get update && sudo apt-get install -y libasound2-dev"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Install server dependencies",
+            "working-directory": "server",
+            "run": "npm ci"
+          },
+          {
+            "name": "Server and Rust workspace health gates",
+            "run": "pnpm health:server:full"
+          }
+        ]
+      },
+      "native-macos": {
+        "name": "Native audio backend (macOS)",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true'",
+        "runs-on": "macos-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Test the native crate",
+            "run": "cargo test --package sourdaw-native"
+          }
+        ]
+      },
+      "native-windows": {
+        "name": "Windows device layer",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true'",
+        "runs-on": "windows-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Compile-verify the device layer",
+            "run": "cargo check --package daw-engine"
+          }
+        ]
+      },
+      "native-parity": {
+        "name": "Native parity (macOS)",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'",
+        "runs-on": "macos-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Build the native addon",
+            "run": "node scripts/buildNativeAddon.ts"
+          },
+          {
+            "name": "Require the built addon the parity specs probe for",
+            "run": "set -euo pipefail\naddon=crates/sourdaw-native/sourdaw-native.node\nif [ ! -f \"$addon\" ]; then\n  printf 'the parity specs probe %s and would skip: the build step left nothing there\\n' \"$addon\" >&2\n  exit 1\nfi\n"
+          },
+          {
+            "name": "Run the addon parity specs",
+            "env": {
+              "VITEST_MAX_WORKERS": 3
+            },
+            "run": "pnpm run test:run src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts"
+          }
+        ]
+      },
+      "dependency-review": {
+        "name": "Dependency review",
+        "needs": "decide",
+        "if": "github.event.pull_request != null",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "steps": [
+          {
+            "name": "Review dependency changes",
+            "uses": "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294",
+            "with": {
+              "fail-on-severity": "high",
+              "base-ref": "${{ github.event.pull_request.base.sha }}",
+              "head-ref": "${{ github.event.pull_request.head.sha }}"
+            }
+          }
+        ]
+      },
+      "pr-secrets": {
+        "name": "PR diff secret scan",
+        "needs": "decide",
+        "if": "github.event.pull_request != null",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "env": {
+          "GITLEAKS_VERSION": "8.30.1",
+          "GITLEAKS_SHA256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+          "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+          "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted scanner",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.base.sha }}",
+              "path": "trusted-scanner",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Checkout scan target",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha }}",
+              "path": "scan-target",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Fetch immutable base SHA",
+            "working-directory": "scan-target",
+            "run": "git fetch --no-tags --depth=1 origin \"$BASE_SHA\""
+          },
+          {
+            "name": "Install trusted Gitleaks",
+            "working-directory": "${{ github.workspace }}",
+            "run": "set -euo pipefail\numask 077\ngitleaks_archive=\"$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\ngitleaks_dir=\"$RUNNER_TEMP/gitleaks-${GITLEAKS_VERSION}\"\ngitleaks_url=\"https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\"\n\ncurl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \\\n  --output \"$gitleaks_archive\" \\\n  \"$gitleaks_url\"\nprintf '%s  %s\\n' \"$GITLEAKS_SHA256\" \"$gitleaks_archive\" | sha256sum --check --status\nmkdir -p \"$gitleaks_dir\"\ntar -xzf \"$gitleaks_archive\" -C \"$gitleaks_dir\" gitleaks\nprintf '%s\\n' \"$gitleaks_dir\" >> \"$GITHUB_PATH\"\n"
+          },
+          {
+            "name": "Validate PR merge diff secret scanner",
+            "working-directory": "${{ github.workspace }}",
+            "env": {
+              "GITLEAKS_EXPECTED_LEAK_EXIT_CODE": 79
+            },
+            "run": "set -euo pipefail\numask 077\npositive_control_repo=$(mktemp -d \"$RUNNER_TEMP/gitleaks-pr-merge-control.XXXXXX\")\ntrap 'rm -rf \"$positive_control_repo\"' EXIT\n\ngit -C \"$positive_control_repo\" init --initial-branch=main\ngit -C \"$positive_control_repo\" config user.email sourdaw-ci@example.invalid\ngit -C \"$positive_control_repo\" config user.name 'Sourdaw CI'\nmkdir -p \"$positive_control_repo/public/wasm\"\nprintf 'base side\\n' > \"$positive_control_repo/public/wasm/fixture.js\"\ngit -C \"$positive_control_repo\" add public/wasm/fixture.js\ngit -C \"$positive_control_repo\" commit -m 'base fixture'\nbase_sha=$(git -C \"$positive_control_repo\" rev-parse HEAD)\ngit -C \"$positive_control_repo\" checkout -b fixture-branch\nprintf 'branch side\\n' > \"$positive_control_repo/public/wasm/fixture.js\"\ngit -C \"$positive_control_repo\" commit -am 'branch fixture'\ngit -C \"$positive_control_repo\" checkout main\nprintf 'main side\\n' > \"$positive_control_repo/public/wasm/fixture.js\"\ngit -C \"$positive_control_repo\" commit -am 'main fixture'\nset +e\ngit -C \"$positive_control_repo\" merge --no-ff fixture-branch\nmerge_status=$?\nset -e\nif [ \"$merge_status\" -eq 0 ]; then\n  printf 'expected merge fixture to require a merge-resolution commit\\n' >&2\n  exit 1\nfi\nsynthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')\nprintf 'aws_access_key_id = \"%s\" // gitleaks:allow\\n' \"$synthetic_access_key\" > \"$positive_control_repo/public/wasm/fixture.js\"\ncat > \"$positive_control_repo/.gitleaks.toml\" <<'GITLEAKS_CONFIG'\ntitle = \"Untrusted suppression fixture\"\n\n[extend]\nuseDefault = true\n\n[allowlist]\ndescription = \"Would suppress every finding if target-root config were loaded\"\nregexes = ['''.*''']\nGITLEAKS_CONFIG\ngit -C \"$positive_control_repo\" add public/wasm/fixture.js .gitleaks.toml\ngit -C \"$positive_control_repo\" commit --no-edit\nhead_sha=$(git -C \"$positive_control_repo\" rev-parse HEAD)\n\nset +e\ngitleaks git \\\n  --config \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml\" \\\n  --gitleaks-ignore-path \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore\" \\\n  --ignore-gitleaks-allow \\\n  --no-banner \\\n  --no-color \\\n  --redact=100 \\\n  --verbose \\\n  --exit-code=\"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n  --log-opts=\"$base_sha..$head_sha -m\" \\\n  \"$positive_control_repo/.git\"\npositive_control_status=$?\nset -e\n\nif [ \"$positive_control_status\" -ne \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" ]; then\n  printf 'expected merge-diff Gitleaks positive control to exit %s, got %s\\n' \\\n    \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n    \"$positive_control_status\" >&2\n  exit 1\nfi\n"
+          },
+          {
+            "name": "Scan pull request diff for secrets",
+            "working-directory": "${{ github.workspace }}",
+            "run": "set -euo pipefail\n\ngitleaks git \\\n  --config \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaks.toml\" \\\n  --gitleaks-ignore-path \"$GITHUB_WORKSPACE/trusted-scanner/.gitleaksignore\" \\\n  --ignore-gitleaks-allow \\\n  --no-banner \\\n  --no-color \\\n  --redact=100 \\\n  --verbose \\\n  --exit-code=1 \\\n  --log-opts=\"$BASE_SHA..$HEAD_SHA -m\" \\\n  \"$GITHUB_WORKSPACE/scan-target/.git\"\n"
+          }
+        ]
+      }
+    }
+  },
+  "nightly.yml": {
+    "name": "Nightly",
+    "on": {
+      "schedule": [
+        {
+          "cron": "0 3 * * *"
+        }
+      ],
+      "workflow_dispatch": null
+    },
+    "permissions": {
+      "contents": "read"
+    },
+    "concurrency": {
+      "group": "nightly-${{ github.run_id }}",
+      "cancel-in-progress": false
+    },
+    "env": {
+      "NODE_VERSION": "24.19.0"
+    },
+    "jobs": {
+      "decide": {
+        "name": "Decide scope",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "outputs": {
+          "heavy": "${{ steps.scope.outputs.heavy }}",
+          "rust": "${{ steps.scope.outputs.rust }}",
+          "server": "${{ steps.scope.outputs.server }}",
+          "e2e": "${{ steps.scope.outputs.e2e }}",
+          "web": "${{ steps.scope.outputs.web }}",
+          "code": "${{ steps.scope.outputs.code }}"
+        },
+        "steps": [
+          {
+            "name": "Resolve scope",
+            "id": "scope",
+            "run": "set -euo pipefail\nprintf 'heavy=true\\nrust=true\\nserver=true\\ne2e=true\\nweb=true\\ncode=true\\n' >> \"$GITHUB_OUTPUT\"\n"
+          }
+        ]
+      },
+      "static": {
+        "name": "Types and contracts",
+        "needs": "decide",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Artifact freshness",
+            "run": "pnpm wasm:verify"
+          },
+          {
+            "name": "App types",
+            "run": "pnpm typecheck"
+          },
+          {
+            "name": "Test types",
+            "run": "pnpm typecheck:test"
+          },
+          {
+            "name": "Script types",
+            "run": "pnpm typecheck:scripts"
+          },
+          {
+            "name": "End-to-end types",
+            "run": "pnpm typecheck:e2e"
+          },
+          {
+            "name": "Desktop shell types",
+            "run": "pnpm typecheck:electron"
+          },
+          {
+            "name": "Format",
+            "run": "pnpm exec prettier --check \"src/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"electron/**/*.ts\""
+          },
+          {
+            "name": "Command argument schemas",
+            "run": "pnpm test:command-schema"
+          },
+          {
+            "name": "Release inventory",
+            "run": "pnpm test:release-inventory"
+          },
+          {
+            "name": "Test collection scope",
+            "run": "pnpm test:collection-scope"
+          },
+          {
+            "name": "Barrel mock coverage",
+            "run": "pnpm test:barrel-mocks"
+          },
+          {
+            "name": "Device write boundary census",
+            "run": "pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts"
+          },
+          {
+            "name": "Release proof",
+            "run": "pnpm test:run scripts/__tests__/releaseProof.spec.ts"
+          },
+          {
+            "name": "Health gate infrastructure",
+            "run": "pnpm test:health-gates"
+          }
+        ]
+      },
+      "lint": {
+        "name": "Lint",
+        "needs": "decide",
+        "if": "needs.decide.outputs.code == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Lint",
+            "env": {
+              "SOURDAW_LINT_CONCURRENCY": "auto",
+              "SOURDAW_LINT_THREADS": "0"
+            },
+            "run": "pnpm lint:full"
+          }
+        ]
+      },
+      "boundaries": {
+        "name": "Module boundaries",
+        "needs": "decide",
+        "if": "needs.decide.outputs.code == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Validate the dependency graph",
+            "run": "pnpm deps:validate"
+          }
+        ]
+      },
+      "unit": {
+        "name": "Unit suite ${{ matrix.shard }}/4",
+        "needs": "decide",
+        "if": "needs.decide.outputs.web == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "strategy": {
+          "fail-fast": false,
+          "matrix": {
+            "shard": [
+              1,
+              2,
+              3,
+              4
+            ]
+          }
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Run shard",
+            "id": "run_shard",
+            "env": {
+              "VITEST_MAX_WORKERS": 4
+            },
+            "run": "pnpm run test:run --shard=${{ matrix.shard }}/4"
+          },
+          {
+            "name": "Report shard failure",
+            "if": "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}",
+            "env": {
+              "SHARD": "${{ matrix.shard }}"
+            },
+            "run": "printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### Unit suite shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          }
+        ]
+      },
+      "build": {
+        "name": "Production build",
+        "needs": "decide",
+        "if": "needs.decide.outputs.web == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Build",
+            "run": "pnpm build"
+          }
+        ]
+      },
+      "rust": {
+        "name": "Rust workspace and collaboration server",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "npm",
+              "cache-dependency-path": "server/package-lock.json"
+            }
+          },
+          {
+            "name": "Install ALSA development headers",
+            "run": "sudo apt-get update && sudo apt-get install -y libasound2-dev"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Install server dependencies",
+            "working-directory": "server",
+            "run": "npm ci"
+          },
+          {
+            "name": "Server and Rust workspace health gates",
+            "run": "pnpm health:server:full"
+          }
+        ]
+      },
+      "native-macos": {
+        "name": "Native audio backend (macOS)",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true'",
+        "runs-on": "macos-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Test the native crate",
+            "run": "cargo test --package sourdaw-native"
+          }
+        ]
+      },
+      "native-windows": {
+        "name": "Windows device layer",
+        "needs": "decide",
+        "if": "needs.decide.outputs.rust == 'true'",
+        "runs-on": "windows-latest",
+        "timeout-minutes": 60,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Compile-verify the device layer",
+            "run": "cargo check --package daw-engine"
+          }
+        ]
+      },
+      "desktop-measure": {
+        "name": "Desktop latency measurement (macOS)",
+        "needs": "decide",
+        "if": "needs.decide.outputs.heavy == 'true'",
+        "runs-on": "macos-latest",
+        "timeout-minutes": 90,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install the pinned Rust toolchain",
+            "run": "rustup show"
+          },
+          {
+            "name": "Cache cargo build",
+            "uses": "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install a virtual audio output device",
+            "run": "set -euo pipefail\nbrew install --cask blackhole-2ch\nbrew install switchaudio-osx\nif pgrep -x coreaudiod > /dev/null; then\n  sudo killall coreaudiod\nfi\nfor _ in $(seq 1 30); do\n  if SwitchAudioSource -a -t output | grep -qx \"BlackHole 2ch\"; then\n    SwitchAudioSource -a -t output\n    exit 0\n  fi\n  sleep 1\ndone\nSwitchAudioSource -a -t output\necho \"BlackHole 2ch never appeared as an output device\" >&2\nexit 1\n"
+          },
+          {
+            "name": "Select the virtual device as the output",
+            "run": "set -euo pipefail\nSwitchAudioSource -t output -s \"BlackHole 2ch\"\nSwitchAudioSource -c -t output\n"
+          },
+          {
+            "name": "Install the harness plugin",
+            "run": "pnpm harness:plugin:install"
+          },
+          {
+            "name": "Build the packaged desktop app",
+            "run": "pnpm desktop:build"
+          },
+          {
+            "name": "Measure the packaged app",
+            "run": "pnpm desktop:measure --json measurements/desktop-latency/nightly-${{ github.sha }}.json"
+          },
+          {
+            "name": "Upload the measurement record",
+            "if": "always()",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "desktop-latency-${{ github.sha }}",
+              "path": "measurements/desktop-latency/nightly-${{ github.sha }}.json",
+              "retention-days": 90
+            }
+          }
+        ]
+      },
+      "e2e": {
+        "name": "End-to-end ${{ matrix.shard }}/12",
+        "needs": "decide",
+        "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 60,
+        "strategy": {
+          "fail-fast": false,
+          "matrix": {
+            "shard": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          }
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install Playwright browsers",
+            "run": "pnpm exec playwright install --with-deps chromium"
+          },
+          {
+            "name": "Run shard",
+            "id": "run_shard",
+            "run": "pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob"
+          },
+          {
+            "name": "Report shard failure",
+            "if": "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}",
+            "env": {
+              "SHARD": "${{ matrix.shard }}"
+            },
+            "run": "printf '::warning title=End-to-end shard failed::Shard %s failed; inspect the Run shard log.\\n' \"$SHARD\"\nprintf '### End-to-end shard %s failed\\n\\n' \"$SHARD\" >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Inspect the `Run shard` step log for raw failure output.\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          },
+          {
+            "name": "Upload blob report",
+            "if": "${{ !cancelled() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "e2e-blob-${{ matrix.shard }}",
+              "path": "blob-report/",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "browser-ai-webgpu": {
+        "name": "Browser AI WebGPU admission",
+        "needs": "decide",
+        "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
+        "runs-on": "macos-14",
+        "timeout-minutes": 30,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Install Chromium",
+            "run": "pnpm exec playwright install chromium"
+          },
+          {
+            "name": "Run Browser AI WebGPU admission",
+            "run": "pnpm test:e2e:browser-ai-webgpu-admission"
+          }
+        ]
+      },
+      "e2e-report": {
+        "name": "End-to-end report",
+        "needs": "e2e",
+        "if": "${{ !cancelled() && needs.e2e.result != 'skipped' }}",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 20,
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Download blob reports",
+            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "with": {
+              "pattern": "e2e-blob-*",
+              "path": "all-blob-reports",
+              "merge-multiple": true
+            }
+          },
+          {
+            "name": "Merge into one report",
+            "run": "pnpm exec playwright merge-reports --reporter=html all-blob-reports"
+          },
+          {
+            "name": "Upload report",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "playwright-report",
+              "path": "playwright-report/",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "codeql": {
+        "name": "CodeQL",
+        "needs": "decide",
+        "if": "needs.decide.outputs.heavy == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "permissions": {
+          "contents": "read",
+          "security-events": "write",
+          "actions": "read"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+          },
+          {
+            "name": "Initialise CodeQL",
+            "uses": "github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "with": {
+              "languages": "javascript-typescript",
+              "queries": "security-extended"
+            }
+          },
+          {
+            "name": "Analyse",
+            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+          }
+        ]
+      },
+      "secrets": {
+        "name": "Secret scan",
+        "needs": "decide",
+        "if": "needs.decide.outputs.heavy == 'true'",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 30,
+        "env": {
+          "GITLEAKS_VERSION": "8.30.1",
+          "GITLEAKS_SHA256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted scanner",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.base.sha || github.sha }}",
+              "path": "trusted-scanner",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Checkout scan target",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha || github.sha }}",
+              "path": "scan-target",
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Validate secret scanner positive control",
+            "working-directory": "${{ github.workspace }}",
+            "env": {
+              "GITLEAKS_EXPECTED_LEAK_EXIT_CODE": 79
+            },
+            "run": "set -euo pipefail\numask 077\npositive_control_repo=$(mktemp -d \"$RUNNER_TEMP/gitleaks-positive-control.XXXXXX\")\ntrap 'rm -rf \"$positive_control_repo\"' EXIT\n\ngit -C \"$positive_control_repo\" init --initial-branch=main\ngit -C \"$positive_control_repo\" config user.email sourdaw-ci@example.invalid\ngit -C \"$positive_control_repo\" config user.name 'Sourdaw CI'\nsynthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')\nmkdir -p \"$positive_control_repo/public/wasm\"\nprintf 'aws_access_key_id = \"%s\" // gitleaks:allow\\n' \\\n  \"$synthetic_access_key\" > \"$positive_control_repo/public/wasm/fixture.js\"\ncat > \"$positive_control_repo/.gitleaks.toml\" <<'GITLEAKS_CONFIG'\ntitle = \"Untrusted suppression fixture\"\n\n[extend]\nuseDefault = true\n\n[allowlist]\ndescription = \"Would suppress every finding if target-root config were loaded\"\nregexes = ['''.*''']\nGITLEAKS_CONFIG\ngit -C \"$positive_control_repo\" add public/wasm/fixture.js .gitleaks.toml\ngit -C \"$positive_control_repo\" commit -m 'add synthetic secret fixture'\n\nset +e\nGITLEAKS_EXIT_CODE=\"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n  sh \"$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh\" \"$positive_control_repo/.git\"\npositive_control_status=$?\nset -e\n\nif [ \"$positive_control_status\" -ne \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" ]; then\n  printf 'expected Gitleaks positive control to exit %s, got %s\\n' \\\n    \"$GITLEAKS_EXPECTED_LEAK_EXIT_CODE\" \\\n    \"$positive_control_status\" >&2\n  exit 1\nfi\n"
+          },
+          {
+            "name": "Scan history for secrets",
+            "working-directory": "${{ github.workspace }}",
+            "run": "sh \"$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh\" \"$GITHUB_WORKSPACE/scan-target/.git\""
+          }
+        ]
+      },
+      "deploy-web": {
+        "name": "Daily web deploy",
+        "needs": [
+          "static",
+          "lint",
+          "boundaries",
+          "unit",
+          "build",
+          "rust",
+          "e2e",
+          "browser-ai-webgpu",
+          "codeql",
+          "secrets"
+        ],
+        "if": "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')",
+        "environment": {
+          "name": "Production",
+          "url": "${{ steps.deployment.outputs.url }}"
+        },
+        "concurrency": {
+          "group": "deploy-web-production",
+          "cancel-in-progress": false
+        },
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 45,
+        "env": {
+          "DEPLOY_CREDENTIAL_PRESENT": "${{ secrets.VERCEL_TOKEN != '' }}",
+          "VERCEL_CLI": "vercel@59.9.1"
+        },
+        "steps": [
+          {
+            "name": "Require a validated revision of main",
+            "env": {
+              "RESULTS": "${{ toJSON(needs) }}",
+              "TRAIN_REF": "${{ github.ref }}"
+            },
+            "run": "set -euo pipefail\nif [ \"$TRAIN_REF\" != \"refs/heads/main\" ]; then\n  printf 'refusing to deploy %s; only main reaches production\\n' \"$TRAIN_REF\"\n  exit 1\nfi\nprintf '%s\\n' \"$RESULTS\"\nunproven=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[]\n  | select(.value.result != \"success\")\n  | \"\\(.key): \\(.value.result)\"')\nif [ -n \"$unproven\" ]; then\n  printf 'refusing to deploy; these legs did not succeed:\\n%s\\n' \"$unproven\"\n  exit 1\nfi\nprintf 'every validation leg succeeded\\n'\n"
+          },
+          {
+            "name": "Report the missing deployment credential",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT != 'true'",
+            "run": "set -euo pipefail\nprintf '::notice title=Web deploy gated off::The Production environment is not armed; nothing was deployed.\\n'\nprintf '### Web deploy gated off\\n\\n' >> \"$GITHUB_STEP_SUMMARY\"\nprintf 'Arming this leg takes four things on the `Production` environment:\\n\\n' >> \"$GITHUB_STEP_SUMMARY\"\nprintf '1. `VERCEL_TOKEN`\\n' >> \"$GITHUB_STEP_SUMMARY\"\nprintf '2. `VERCEL_ORG_ID`\\n' >> \"$GITHUB_STEP_SUMMARY\"\nprintf '3. `VERCEL_PROJECT_ID`\\n' >> \"$GITHUB_STEP_SUMMARY\"\nprintf '4. a deployment branch policy limited to `main`, which is the only thing that keeps a dispatched copy of this workflow from receiving the token\\n' >> \"$GITHUB_STEP_SUMMARY\"\n"
+          },
+          {
+            "name": "Checkout the validated revision",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Resolve the current production revision",
+            "id": "production",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
+            "env": {
+              "VERCEL_TOKEN": "${{ secrets.VERCEL_TOKEN }}",
+              "VERCEL_ORG_ID": "${{ secrets.VERCEL_ORG_ID }}",
+              "VERCEL_PROJECT_ID": "${{ secrets.VERCEL_PROJECT_ID }}",
+              "CANDIDATE_REVISION": "${{ github.sha }}",
+              "GITHUB_TOKEN": "${{ github.token }}"
+            },
+            "run": "node scripts/resolveVercelProductionDeployment.ts"
+          },
+          {
+            "name": "Report why nothing was deployed",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy != 'true'",
+            "env": {
+              "REASON": "${{ steps.production.outputs.reason }}"
+            },
+            "run": "set -euo pipefail\ncase \"$REASON\" in\n  serving)\n    printf '::notice title=Web deploy skipped::Production already serves %s; no deployment was created.\\n' \"$GITHUB_SHA\"\n    printf '### Web deploy skipped\\n\\nProduction already serves `%s`.\\n' \"$GITHUB_SHA\" >> \"$GITHUB_STEP_SUMMARY\"\n    ;;\n  stale)\n    printf '::notice title=Web deploy skipped::Production already serves a newer revision than %s; deploying nothing\\n' \"$GITHUB_SHA\"\n    printf '### Web deploy skipped\\n\\nProduction already serves a newer revision than `%s`; deploying nothing.\\n' \"$GITHUB_SHA\" >> \"$GITHUB_STEP_SUMMARY\"\n    ;;\n  *)\n    printf 'unknown deploy decision reason: %s\\n' \"$REASON\" >&2\n    exit 1\n    ;;\nesac\n"
+          },
+          {
+            "name": "Install dependencies",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Link the Vercel CLI to the production project",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "env": {
+              "VERCEL_TOKEN": "${{ secrets.VERCEL_TOKEN }}",
+              "VERCEL_ORG_ID": "${{ secrets.VERCEL_ORG_ID }}",
+              "VERCEL_PROJECT_ID": "${{ secrets.VERCEL_PROJECT_ID }}"
+            },
+            "run": "node scripts/linkVercelCliProject.ts"
+          },
+          {
+            "name": "Build the validated revision",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "run": "set -euo pipefail\npnpm build\nnode scripts/writeVercelPrebuiltOutput.ts\n"
+          },
+          {
+            "name": "Deploy the prebuilt revision",
+            "id": "deployment",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "env": {
+              "VERCEL_TOKEN": "${{ secrets.VERCEL_TOKEN }}"
+            },
+            "run": "set -euo pipefail\n# `--meta githubCommitSha` is what the next run reads back to decide\n# whether production already serves this revision, and what ties a\n# deployment in the dashboard to the commit that was validated.\n# `--archive=tgz` keeps a tree this size under the upload file limit.\npnpm dlx \"$VERCEL_CLI\" deploy --prebuilt --prod --archive=tgz \\\n  --meta githubCommitSha=\"$GITHUB_SHA\" > \"$RUNNER_TEMP/deployment-url.txt\"\ndeployment_url=$(tail -n 1 \"$RUNNER_TEMP/deployment-url.txt\")\ncase \"$deployment_url\" in\n  https://*) ;;\n  *)\n    printf 'the deploy command printed no deployment URL: %s\\n' \"$deployment_url\" >&2\n    exit 1\n    ;;\nesac\nprintf 'url=%s\\n' \"$deployment_url\" >> \"$GITHUB_OUTPUT\"\nprintf '### Web deployed\\n\\n`%s` is live at %s\\n' \"$GITHUB_SHA\" \"$deployment_url\" >> \"$GITHUB_STEP_SUMMARY\"\n"
+          },
+          {
+            "name": "Resolve the aliases of the deployment",
+            "id": "aliases",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "env": {
+              "VERCEL_TOKEN": "${{ secrets.VERCEL_TOKEN }}",
+              "VERCEL_ORG_ID": "${{ secrets.VERCEL_ORG_ID }}",
+              "DEPLOYMENT_URL": "${{ steps.deployment.outputs.url }}"
+            },
+            "run": "node scripts/resolveVercelDeploymentAliases.ts"
+          },
+          {
+            "name": "Assert cross-origin isolation on the deployment",
+            "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'",
+            "env": {
+              "ALIASES": "${{ steps.aliases.outputs.aliases }}"
+            },
+            "run": "sh scripts/assert-deployment-isolation.sh"
+          }
+        ]
+      },
+      "nightly-report": {
+        "name": "Nightly failure report",
+        "if": "${{ failure() && github.event_name == 'schedule' }}",
+        "needs": [
+          "static",
+          "lint",
+          "boundaries",
+          "unit",
+          "build",
+          "rust",
+          "native-macos",
+          "native-windows",
+          "desktop-measure",
+          "e2e",
+          "browser-ai-webgpu",
+          "codeql",
+          "secrets",
+          "deploy-web"
+        ],
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "permissions": {
+          "contents": "read",
+          "issues": "write"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "persist-credentials": false,
+              "sparse-checkout": ".github",
+              "sparse-checkout-cone-mode": false
+            }
+          },
+          {
+            "name": "Open or update the nightly failure issue",
+            "env": {
+              "GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+              "RUN_URL": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "RESULTS": "${{ toJSON(needs) }}"
+            },
+            "run": "set -euo pipefail\nfailed=$(printf '%s' \"$RESULTS\" | jq -r '\n  to_entries[] | select(.value.result == \"failure\") | .key' | paste -sd ', ' -)\ntitle=\"ci(nightly): health gates red on main\"\nbody=$(printf 'The nightly run against `main` failed.\\n\\nFailing jobs: %s\\n\\n%s\\n' \\\n  \"$failed\" \"$RUN_URL\")\nexisting=$(gh issue list --repo \"$GITHUB_REPOSITORY\" --state open --search \"\\\"$title\\\" in:title\" \\\n  --json number --jq '.[0].number // empty')\nif [ -n \"$existing\" ]; then\n  gh issue comment \"$existing\" --repo \"$GITHUB_REPOSITORY\" --body \"$body\"\nelse\n  gh issue create --repo \"$GITHUB_REPOSITORY\" --title \"$title\" --body \"$body\" --label bug --label status:ready --label priority:P1\nfi\n"
+          }
+        ]
+      }
+    }
+  }
+}

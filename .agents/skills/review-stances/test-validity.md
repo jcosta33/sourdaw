@@ -54,8 +54,8 @@ At PR #3098's first head, production code grew an import from the `#/modules/Aud
 barrel. A sibling spec, `src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts`, mocks
 that barrel with an explicit factory that lists its keys instead of spreading the original, so the
 new key resolved to `undefined` and 14 of that spec's 23 tests failed on the head. The pull
-request's gate stayed green — the unit legs are softened on pull requests — no stance raised it, and
-the author found it by running the spec.
+request's gate stayed green — the unit legs were softened on pull requests at the time — no stance
+raised it, and the author found it by running the spec.
 
 Blind spot: the stance read the diff's own specs and the specs of the files the diff edited. A
 `vi.mock` factory in an unedited file is a contract with a barrel, and a diff that widens what
@@ -66,8 +66,10 @@ Probe that would have caught it: when a diff adds an export to a barrel, or adds
 production code, grep the repository for specs mocking that barrel; for each, decide whether its
 factory spreads the original or lists keys, and whether the spec transitively executes the changed
 production path. A listing factory on an executed path is the finding, named with the missing key
-and the spec that will fail. Never read a green gate as the answer here: the unit legs are softened
-on pull requests, so this failure class reports as a warning annotation rather than a red check.
+and the spec that will fail. The unit legs block a pull request now, so this failure class does
+reach the gate — but only on a head the suite has actually run against, and only for the shard that
+holds the spec. Read the gate as evidence about the head it ran on, never as evidence about a spec
+no run in this pull request executed.
 
 ### 2026-08-30 — a vitest-green spec whose types fail the strict build (escaped both stances via PR #3127, caught only by the pipeline)
 

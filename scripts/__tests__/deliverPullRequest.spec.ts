@@ -42,15 +42,31 @@ const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 
 /**
  * The launcher's own parse, serialized exactly as it reaches the snapshot. Going through it rather
- * than a fixture keeps these cases honest about the whole path a delivery actually takes.
+ * than a fixture keeps these cases honest about the whole path a delivery actually takes. Called
+ * workflows come from the same reader the launcher uses, fed here from `calledSources` — the live
+ * tests pass the real files, and a snippet that calls a workflow nobody carried reads back as
+ * unreadable, exactly as a missing file at the pinned commit would.
  */
-async function gatingNamesFor(workflowSource: string): Promise<ReadonlySet<string>> {
-    return gateRequiredCheckNames(JSON.stringify(await summarizeGateWorkflow(workflowSource)));
+async function gatingNamesFor(
+    workflowSource: string,
+    calledSources: Record<string, string> = {}
+): Promise<ReadonlySet<string>> {
+    return gateRequiredCheckNames(
+        JSON.stringify(
+            await summarizeGateWorkflow(workflowSource, (usesPath) => {
+                const source = calledSources[usesPath];
+                if (source === undefined) {
+                    throw new Error(`no called-workflow fixture for ${usesPath}`);
+                }
+                return source;
+            })
+        )
+    );
 }
 
-async function refusalFor(workflowSource: string): Promise<string> {
+async function refusalFor(workflowSource: string, calledSources: Record<string, string> = {}): Promise<string> {
     try {
-        await gatingNamesFor(workflowSource);
+        await gatingNamesFor(workflowSource, calledSources);
     } catch (error) {
         return String(error);
     }
@@ -72,10 +88,114 @@ function parserCheckName(workflowSource: string, jobId: string): string {
 function parserGateNeeds(workflowSource: string): string[] {
     const workflow = parse(workflowSource) as { jobs?: Record<string, { needs?: unknown } | null> };
     const needs = workflow.jobs?.gate?.needs;
+    // The gate accepts a single job id or a list of them; the parser reads both the same way.
+    if (typeof needs === 'string' && needs !== '') {
+        return [needs];
+    }
     if (!Array.isArray(needs)) {
         throw new TypeError(`${WORKFLOW_PATH} declares no gate needs list`);
     }
     return needs as string[];
+}
+
+/**
+ * The full gating set the `yaml` package derives from the same files, independently of the gate:
+ * a direct job contributes its own check name, and a job calling a reusable workflow contributes
+ * one `<caller name> / <inner name>` per inner job, with `matrix.<dimension>` references in an
+ * inner name substituted from the matrix values the called file declares — the same reading GitHub
+ * applies when it reports `Validation / Unit suite 1/4` beside `Validation / Unit suite 2/4`.
+ */
+function parserGatingCheckNames(workflowSource: string, calledSources: Record<string, string>): string[] {
+    const workflow = parse(workflowSource) as {
+        jobs?: Record<string, { uses?: unknown; strategy?: unknown } | null>;
+    };
+    const names: string[] = [];
+    for (const jobId of parserGateNeeds(workflowSource)) {
+        const job = workflow.jobs?.[jobId];
+        if (job === undefined || job === null) {
+            throw new TypeError(`${WORKFLOW_PATH} defines no ${jobId} job`);
+        }
+        if (typeof job.uses !== 'string') {
+            names.push(parserCheckName(workflowSource, jobId));
+            continue;
+        }
+        const calledSource = calledSources[job.uses];
+        if (calledSource === undefined) {
+            throw new TypeError(`no called-workflow fixture for ${job.uses}`);
+        }
+        const called = parse(calledSource) as {
+            jobs?: Record<string, { name?: unknown; strategy?: unknown } | null>;
+        };
+        const callerName = parserCheckName(workflowSource, jobId);
+        for (const [innerId, inner] of Object.entries(called.jobs ?? {})) {
+            const declared = inner?.name;
+            const template = typeof declared === 'string' && declared !== '' ? declared : innerId;
+            names.push(
+                ...parserMatrixNames(template, inner?.strategy).map((innerName) => `${callerName} / ${innerName}`)
+            );
+        }
+    }
+    return [...new Set(names)];
+}
+
+/**
+ * The matrix reading, re-derived here from the parsed strategy rather than
+ * from the gate's code. It keeps the gate's literal-substitution semantics —
+ * the replacement is a function, so a `$` pattern in a matrix value cannot
+ * collapse — while sharing none of the gate's implementation.
+ */
+function parserMatrixNames(template: string, strategy: unknown): string[] {
+    if (!template.includes('${{')) {
+        return [template];
+    }
+    const matrix =
+        strategy !== null && typeof strategy === 'object' && !Array.isArray(strategy)
+            ? (strategy as Record<string, unknown>).matrix
+            : undefined;
+    if (matrix === null || typeof matrix !== 'object' || Array.isArray(matrix)) {
+        throw new TypeError(`no matrix declared for ${template}`);
+    }
+    let resolved = [template];
+    for (const [dimension, values] of Object.entries(matrix as Record<string, unknown>)) {
+        if (!Array.isArray(values)) {
+            continue;
+        }
+        const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
+        resolved = resolved.flatMap((name) => values.map((value) => name.replace(reference, () => String(value))));
+    }
+    return resolved;
+}
+
+function parserSkipAliases(workflowSource: string, calledSources: Record<string, string>): Map<string, string> {
+    const workflow = parse(workflowSource) as {
+        jobs?: Record<string, { uses?: unknown } | null>;
+    };
+    const aliases = new Map<string, string>();
+    for (const jobId of parserGateNeeds(workflowSource)) {
+        const job = workflow.jobs?.[jobId];
+        if (job === undefined || job === null || typeof job.uses !== 'string') {
+            continue;
+        }
+        const calledSource = calledSources[job.uses];
+        if (calledSource === undefined) {
+            throw new TypeError(`no called-workflow fixture for ${job.uses}`);
+        }
+        const called = parse(calledSource) as {
+            jobs?: Record<string, { name?: unknown; strategy?: unknown } | null>;
+        };
+        const callerName = parserCheckName(workflowSource, jobId);
+        for (const inner of Object.values(called.jobs ?? {})) {
+            const declared = inner?.name;
+            const template = typeof declared === 'string' && declared !== '' ? declared : undefined;
+            if (template === undefined || !template.includes('${{')) {
+                continue;
+            }
+            for (const resolved of parserMatrixNames(template, inner?.strategy)) {
+                aliases.set(`${callerName} / ${resolved}`, `${callerName} / ${template}`);
+            }
+        }
+    }
+    return aliases;
 }
 
 function relationshipBody(relationship: string): string {
@@ -421,29 +541,50 @@ function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
  */
 const PUSH_RUN_START = '2026-08-29T10:00:00Z';
 const REVIEW_RUN_START = '2026-08-29T10:05:00Z';
+const LATER_RUN_START = '2026-08-29T10:10:00Z';
 
 const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
 
 /**
- * Derived from the live workflow with the `yaml` package rather than copied out of it. A pinned list
- * says what the names were on the day it was written: this repository gated on twelve jobs while the
- * copy here still named eleven, and the missing one was invisible precisely because nothing compared
- * the two. Deriving it means promoting a job into the gate updates these fixtures with the workflow.
+ * The workflow the gate's one need calls, read from the same relative `uses` path the launcher
+ * reads at the pinned commit. Keyed by that literal path because that is how the summary carries it.
+ */
+const LIVE_CALLED_SOURCES: Record<string, string> = {
+    './.github/workflows/validation.yml': readFileSync(
+        join(import.meta.dirname, '../../.github/workflows/validation.yml'),
+        'utf8'
+    ),
+};
+
+/**
+ * Derived from the live workflows with the `yaml` package rather than copied out of them. A pinned
+ * list says what the names were on the day it was written: this repository gated on twelve jobs
+ * while the copy here still named eleven, and the missing one was invisible precisely because
+ * nothing compared the two. Deriving it means promoting a job into the gate — or moving the legs
+ * behind the validation lane, where GitHub reports them as `Validation / <name>` — updates these
+ * fixtures with the workflows.
  */
 const gatingCheckNames: ReadonlySet<string> = new Set(
-    parserGateNeeds(LIVE_WORKFLOW_SOURCE).map((jobId) => parserCheckName(LIVE_WORKFLOW_SOURCE, jobId))
+    parserGatingCheckNames(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES)
 );
+
+const gatingSkipAliases: ReadonlyMap<string, string> = parserSkipAliases(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
 
 /**
  * A tolerated cancelled-check shape: every cancelled name succeeded again on the same commit,
- * beside a job the workflow skipped outright and never cancelled.
+ * beside a job the workflow skipped outright and never cancelled. The names carry the validation
+ * lane's `Validation / ` prefix because that is what GitHub reports for the called workflow's jobs.
  */
 function supersededRunCheckRuns(): HeadCheckRun[] {
     return [
-        checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
         checkRun({ name: 'Gate', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
-        checkRun({ name: 'Lint', startedAt: REVIEW_RUN_START }),
+        checkRun({
+            name: 'Validation / Native audio backend (macOS)',
+            conclusion: 'SKIPPED',
+            startedAt: PUSH_RUN_START,
+        }),
+        checkRun({ name: 'Validation / Lint', startedAt: REVIEW_RUN_START }),
         checkRun({ startedAt: REVIEW_RUN_START }),
     ];
 }
@@ -539,6 +680,7 @@ type FakeInput = {
     headCheckRuns?: HeadCheckRun[] | Error;
     headCheckRunReads?: Array<HeadCheckRun[] | Error>;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
+    gateRequiredSkipAliases?: ReadonlyMap<string, string> | Error;
     requiredStatusCheckContexts?: string[] | Error;
     deletesMergedBranches?: boolean;
     failAddReceiptOnce?: boolean;
@@ -708,6 +850,13 @@ function fakePort(input: FakeInput = {}) {
                 throw required;
             }
             return required;
+        },
+        gateRequiredSkipAliases: () => {
+            const aliases = input.gateRequiredSkipAliases ?? gatingSkipAliases;
+            if (aliases instanceof Error) {
+                throw aliases;
+            }
+            return aliases;
         },
         requiredStatusCheckContexts: () => {
             calls.push('required-status-check-contexts');
@@ -5918,12 +6067,12 @@ describe('pull-request delivery', () => {
         {
             ciState: 'skipped',
             mergeStateStatus: 'CLEAN',
-            headCheckRuns: [checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' })],
+            headCheckRuns: [checkRun({ name: 'Validation / Native audio backend (macOS)', conclusion: 'SKIPPED' })],
         },
         {
             ciState: 'cancelled',
             mergeStateStatus: 'CLEAN',
-            headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
+            headCheckRuns: [checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED' }), checkRun()],
         },
         { ciState: 'unstable', mergeStateStatus: 'CLEAN', headCheckRuns: supersededRunCheckRuns() },
         {
@@ -6004,6 +6153,257 @@ describe('pull-request delivery', () => {
         }
     });
 
+    it('refuses a BLOCKED head whose required check turned red after an older green attempt, naming the check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-red-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('reads a BLOCKED head whose required check recovered after an older red attempt as green, blaming a review thread or another ruleset rule', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-newest-green-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ startedAt: REVIEW_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head whose required check has a newer attempt still in flight, naming the check whether the newest attempt is pending or failed', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-inflight-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ status: 'IN_PROGRESS', conclusion: null, startedAt: REVIEW_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('reads a BLOCKED head whose required check failed between two green attempts as green, blaming a review thread or another ruleset rule', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-retired-mid-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+                checkRun({ startedAt: LATER_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head whose required check has a failure and a success sharing one start, naming the check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-tied-start-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ startedAt: PUSH_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('reads a BLOCKED head whose required check ended skipped after an older failure as green, blaming a review thread or another ruleset rule', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-skipped-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+                checkRun({ conclusion: 'SKIPPED', startedAt: LATER_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('reads a BLOCKED head whose only newer failure belongs to a different check name as green, blaming a review thread or another ruleset rule', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-other-name-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    // An attempt GitHub reports no start for supersedes nothing: the green
+    // attempt cannot be proven newer than the settled failure beside it, so
+    // the context stays unsatisfied and the refusal names the check rather
+    // than reading the head as satisfied.
+    it('refuses a BLOCKED head whose only green attempt reports no start beside a settled failure, naming the check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-startless-green-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ startedAt: null }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
     it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
@@ -6041,12 +6441,12 @@ describe('pull-request delivery', () => {
         {
             ciState: 'skipped',
             mergeStateStatus: 'CLEAN',
-            headCheckRuns: [checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' })],
+            headCheckRuns: [checkRun({ name: 'Validation / Native audio backend (macOS)', conclusion: 'SKIPPED' })],
         },
         {
             ciState: 'cancelled',
             mergeStateStatus: 'CLEAN',
-            headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
+            headCheckRuns: [checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED' }), checkRun()],
         },
         { ciState: 'unstable', mergeStateStatus: 'CLEAN', headCheckRuns: supersededRunCheckRuns() },
         {
@@ -6076,42 +6476,42 @@ describe('pull-request delivery', () => {
         {
             headCheckRuns: [
                 checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
             ],
         },
         {
             headCheckRuns: [
                 checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
             ],
         },
         {
             headCheckRuns: [
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
                 checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
             ],
         },
         {
             headCheckRuns: [
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
                 checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
             ],
         },
         {
             headCheckRuns: [
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
                 checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
             ],
         },
         {
             headCheckRuns: [
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
                 checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
             ],
         },
@@ -6133,14 +6533,14 @@ describe('pull-request delivery', () => {
     it.each([
         {
             headCheckRuns: [
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
             ],
         },
         {
             headCheckRuns: [
-                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
-                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Validation / Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Validation / Lint', status: 'IN_PROGRESS', conclusion: null }),
             ],
         },
     ] satisfies Array<{ headCheckRuns: HeadCheckRun[] }>)(
@@ -6345,7 +6745,10 @@ describe('pull-request delivery', () => {
         (conclusion) => {
             const { port, calls } = fakePort({
                 primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
-                headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'Unit suite 1/4', conclusion })],
+                headCheckRuns: [
+                    ...supersededRunCheckRuns(),
+                    checkRun({ name: 'Validation / Unit suite 1/4', conclusion }),
+                ],
             });
 
             let thrown: unknown;
@@ -6356,7 +6759,7 @@ describe('pull-request delivery', () => {
             }
 
             expect(String(thrown)).toBe(
-                `Error: PR #42 merge state is UNSTABLE and check Unit suite 1/4 concluded ${conclusion}`
+                `Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 1/4 concluded ${conclusion}`
             );
             expect(calls).not.toContain('merge:42:head');
         }
@@ -6374,8 +6777,8 @@ describe('pull-request delivery', () => {
             primary: [pullRequest(unstable), pullRequest(unstable)],
             headCheckRuns: [
                 ...supersededRunCheckRuns(),
-                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Unit suite 2/4', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', startedAt: REVIEW_RUN_START }),
             ],
         });
 
@@ -6393,8 +6796,8 @@ describe('pull-request delivery', () => {
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
                 ...supersededRunCheckRuns(),
-                checkRun({ name: 'Unit suite 2/4', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
             ],
         });
 
@@ -6405,7 +6808,9 @@ describe('pull-request delivery', () => {
             thrown = error;
         }
 
-        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 2/4 concluded FAILURE'
+        );
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -6414,7 +6819,7 @@ describe('pull-request delivery', () => {
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
                 ...supersededRunCheckRuns(),
-                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
             ],
         });
 
@@ -6425,7 +6830,9 @@ describe('pull-request delivery', () => {
             thrown = error;
         }
 
-        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 2/4 concluded FAILURE'
+        );
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -6438,9 +6845,9 @@ describe('pull-request delivery', () => {
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
                 ...supersededRunCheckRuns(),
-                checkRun({ name: 'Unit suite 2/4', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', startedAt: PUSH_RUN_START }),
                 checkRun({
-                    name: 'Unit suite 2/4',
+                    name: 'Validation / Unit suite 2/4',
                     status: 'IN_PROGRESS',
                     conclusion: null,
                     startedAt: REVIEW_RUN_START,
@@ -6456,7 +6863,7 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 is still IN_PROGRESS'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 2/4 is still IN_PROGRESS'
         );
         expect(calls).not.toContain('merge:42:head');
     });
@@ -6485,8 +6892,8 @@ describe('pull-request delivery', () => {
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
                 ...supersededRunCheckRuns(),
-                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Unit suite 2/4', ...later }),
+                checkRun({ name: 'Validation / Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Unit suite 2/4', ...later }),
             ],
         });
 
@@ -6497,7 +6904,9 @@ describe('pull-request delivery', () => {
             thrown = error;
         }
 
-        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 2/4 concluded FAILURE'
+        );
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -6531,9 +6940,9 @@ describe('pull-request delivery', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED' }),
                 checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
-                checkRun({ name: 'Lint' }),
+                checkRun({ name: 'Validation / Lint' }),
             ],
         });
 
@@ -6559,12 +6968,12 @@ describe('pull-request delivery', () => {
      * decision of record, and the head is green by design and merges.
      */
     it('merges an UNSTABLE head whose cancelled scope-gated leg was skipped by a later run', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
@@ -6580,12 +6989,12 @@ describe('pull-request delivery', () => {
      * decided afterward, so the cancelled name stays undecided.
      */
     it('refuses an UNSTABLE head whose scope-gated skip started before its cancellation', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
@@ -6598,7 +7007,38 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * The live shape of `Validation / Dependency review` — the dependency scan reporting through the
+     * validation lane — when a cancelled attempt is followed only by later skips. `Gate` passes on
+     * `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not one either.
+     * `Gate` needs that leg through the lane, which is why `deliver` refused PR #2795's head when
+     * the scan still reported under its own name.
+     */
+    it('refuses an UNSTABLE head whose cancelled validation-lane leg never succeeded', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Validation / Dependency review', conclusion: 'CANCELLED' }),
+                checkRun({ name: 'Validation / Dependency review', conclusion: 'SKIPPED' }),
+                checkRun({ name: 'Validation / Dependency review', conclusion: 'SKIPPED' }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Dependency review was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
@@ -6608,12 +7048,12 @@ describe('pull-request delivery', () => {
      * retire the cancellation beside it.
      */
     it('refuses an UNSTABLE head whose later scope-gated skip carries no start', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Lint', conclusion: 'SKIPPED', startedAt: null }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'SKIPPED', startedAt: null }),
                 checkRun(),
             ],
         });
@@ -6626,7 +7066,7 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
@@ -6637,13 +7077,13 @@ describe('pull-request delivery', () => {
      * recent — cannot retire a cancellation it never re-ran.
      */
     it('refuses an UNSTABLE head whose cancellation is skipped beside under another gating name', () => {
-        expect(gatingCheckNames.has('Lint')).toBe(true);
-        expect(gatingCheckNames.has('Production build')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Lint')).toBe(true);
+        expect(gatingCheckNames.has('Validation / Production build')).toBe(true);
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
             headCheckRuns: [
-                checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
-                checkRun({ name: 'Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
+                checkRun({ name: 'Validation / Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Validation / Production build', conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START }),
                 checkRun(),
             ],
         });
@@ -6656,7 +7096,69 @@ describe('pull-request delivery', () => {
         }
 
         expect(String(thrown)).toBe(
-            'Error: PR #42 merge state is UNSTABLE and check Lint was cancelled and never succeeded on head'
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Lint was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A scope-skipped matrix job reports one check run under the declared name with its
+     * `${{{matrix.shard}}}` expression still in it, not under the per-combination names running
+     * shards report under — observed live on this repository's own heads. That raw template name is
+     * the only shape a later skip of a cancelled shard can carry, so it retires the cancellation
+     * through the alias, never as a satisfying success.
+     */
+    it('merges an UNSTABLE head whose cancelled unit shard was retired by the raw template skip name', () => {
+        expect(gatingCheckNames.has('Validation / Unit suite 3/4')).toBe(true);
+        expect(gatingSkipAliases.get('Validation / Unit suite 3/4')).toBe(
+            'Validation / Unit suite ${{ matrix.shard }}/4'
+        );
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Validation / Unit suite 3/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun({
+                    name: 'Validation / Unit suite ${{ matrix.shard }}/4',
+                    conclusion: 'SKIPPED',
+                    startedAt: REVIEW_RUN_START,
+                }),
+                checkRun(),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The alias carries recency rules with it: a raw-template skip that started at or before the
+     * cancellation proves nothing about the workflow's later decision, so the cancelled shard stays
+     * undecided.
+     */
+    it('refuses an UNSTABLE head whose raw template skip is not newer than the cancelled shard', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                checkRun({ name: 'Validation / Unit suite 3/4', conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START }),
+                checkRun({
+                    name: 'Validation / Unit suite ${{ matrix.shard }}/4',
+                    conclusion: 'SKIPPED',
+                    startedAt: PUSH_RUN_START,
+                }),
+                checkRun(),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Validation / Unit suite 3/4 was cancelled and never succeeded on head'
         );
         expect(calls).not.toContain('merge:42:head');
     });
@@ -7349,17 +7851,241 @@ describe('gating check names', () => {
     });
 
     /**
-     * A reusable workflow reports one check per inner job, named `<job name> / <inner job name>`.
-     * The single name derived here matches none of them, so promoting such a job into the gate would
-     * add an entry that can never fire — the same failure as a matrix name, from a different cause.
+     * A reusable workflow reports one check per inner job, named `<caller name> / <inner name>`.
+     * The gate derives exactly those names through the called file the launcher carried — which is
+     * how the validation lane's legs stay in the gating set — and refuses every shape in which they
+     * are not derivable, because a name that matches nothing tolerates every real cancellation.
      */
-    it('refuses a gated job that calls a reusable workflow', async () => {
-        const release = ['  release:', '    name: Release', '    uses: ./.github/workflows/release.yml'].join('\n');
+    const releaseCall = ['  release:', '    name: Release', '    uses: ./.github/workflows/release.yml'].join('\n');
+    const releaseWorkflow = [
+        'name: Release train',
+        'jobs:',
+        '  build:',
+        '    name: Build',
+        '  publish:',
+        '    name: Publish',
+    ].join('\n');
 
-        expect(await refusalFor(workflow(release, gateNeeding('release')))).toBe(
-            `Error: the release job in ${WORKFLOW_PATH} calls a reusable workflow, ` +
-                'whose checks GitHub reports as one name per inner job rather than the one name this gate derives'
-        );
+    it('derives one check per inner job through a gated reusable call', async () => {
+        const names = await gatingNamesFor(workflow(releaseCall, gateNeeding('release')), {
+            './.github/workflows/release.yml': releaseWorkflow,
+        });
+
+        expect([...names].sort()).toEqual(['Release / Build', 'Release / Publish']);
+        expect([
+            ...parserGatingCheckNames(workflow(releaseCall, gateNeeding('release')), {
+                './.github/workflows/release.yml': releaseWorkflow,
+            }),
+        ]).toEqual([...names]);
+    });
+
+    /**
+     * Inside a called workflow the matrix values are declared in the same file, so the same exact
+     * expansion the gate applies to a direct job's matrix produces the called lane's per-shard
+     * names here.
+     */
+    it('expands a called workflow matrix into the names GitHub reports per shard', async () => {
+        const matrixCalled = [
+            'name: Validation',
+            'jobs:',
+            '  unit:',
+            '    name: Unit suite ${{ matrix.shard }}/4',
+            '    strategy:',
+            '      matrix:',
+            '        shard: [1, 2, 3, 4]',
+        ].join('\n');
+
+        const names = await gatingNamesFor(workflow(releaseCall, gateNeeding('release')), {
+            './.github/workflows/release.yml': matrixCalled,
+        });
+
+        expect([...names].sort()).toEqual([
+            'Release / Unit suite 1/4',
+            'Release / Unit suite 2/4',
+            'Release / Unit suite 3/4',
+            'Release / Unit suite 4/4',
+        ]);
+    });
+
+    /**
+     * `String.replace` reads `$` patterns out of a replacement string, so a matrix value carrying
+     * one must be substituted with a replacement function: GitHub mints `Unit a$$b` literally, and
+     * a derivation that collapses it to `Unit a$b` names a check that never exists.
+     */
+    it('substitutes a dollar-carrying matrix value literally', async () => {
+        const dollarCalled = [
+            'name: Validation',
+            'jobs:',
+            '  unit:',
+            '    name: Unit ${{ matrix.shard }}',
+            '    strategy:',
+            '      matrix:',
+            '        shard: [a$$b]',
+        ].join('\n');
+
+        const names = await gatingNamesFor(workflow(releaseCall, gateNeeding('release')), {
+            './.github/workflows/release.yml': dollarCalled,
+        });
+
+        expect([...names]).toEqual(['Release / Unit a$$b']);
+    });
+
+    /**
+     * An include entry naming a shard the axes never declared is a job of its own inside the called
+     * workflow too, so the gate owes it a name — the same exact expansion a direct job's matrix gets.
+     */
+    it('expands a called workflow matrix include into the added shard name', async () => {
+        const includedCalled = [
+            'name: Validation',
+            'jobs:',
+            '  unit:',
+            '    name: Unit suite ${{ matrix.shard }}/4',
+            '    strategy:',
+            '      matrix:',
+            '        shard: [1, 2]',
+            '        include:',
+            '          - shard: 5',
+        ].join('\n');
+
+        const names = await gatingNamesFor(workflow(releaseCall, gateNeeding('release')), {
+            './.github/workflows/release.yml': includedCalled,
+        });
+
+        expect([...names].sort()).toEqual([
+            'Release / Unit suite 1/4',
+            'Release / Unit suite 2/4',
+            'Release / Unit suite 5/4',
+        ]);
+    });
+
+    it.each<{ label: string; call: string; called: Record<string, string>; message: string }>([
+        {
+            label: 'a reusable call the launcher did not carry',
+            call: ['  release:', '    name: Release', '    uses: octo/flows/.github/workflows/release.yml@main'].join(
+                '\n'
+            ),
+            called: {},
+            message:
+                `Error: the release job in ${WORKFLOW_PATH} calls octo/flows/.github/workflows/release.yml@main, ` +
+                'which the launcher did not carry, so no check can be proven to gate the merge',
+        },
+        {
+            label: 'a caller whose check name carries an expression',
+            call: [
+                '  release:',
+                '    name: Release ${{ github.event_name }}',
+                '    uses: ./.github/workflows/release.yml',
+            ].join('\n'),
+            called: { './.github/workflows/release.yml': releaseWorkflow },
+            message:
+                `Error: the release job in ${WORKFLOW_PATH} names its check Release \${{ github.event_name }}, ` +
+                'which GitHub substitutes before reporting it',
+        },
+        {
+            label: 'a called workflow the pinned commit does not carry',
+            call: releaseCall,
+            called: {},
+            message:
+                `Error: cannot read ./.github/workflows/release.yml to determine which checks gate the merge: ` +
+                'it cannot be read at the pinned commit: no called-workflow fixture for ./.github/workflows/release.yml',
+        },
+        {
+            label: 'a called workflow that declares no jobs',
+            call: releaseCall,
+            called: { './.github/workflows/release.yml': 'name: Empty\non:\n  workflow_call:\n' },
+            message:
+                `Error: cannot read ./.github/workflows/release.yml to determine which checks gate the merge: ` +
+                'it declares no jobs mapping',
+        },
+        {
+            label: 'a called workflow that is not valid YAML',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': ['name: Broken', 'jobs:', '  build:', '   - "unterminated'].join(
+                    '\n'
+                ),
+            },
+            message:
+                `Error: cannot read ./.github/workflows/release.yml to determine which checks gate the merge: ` +
+                'it is not valid YAML: Missing closing "quote at line 4, column 19:\n\n   - "unterminated\n                  ^\n',
+        },
+        {
+            label: 'a called workflow whose jobs mapping is empty',
+            call: releaseCall,
+            called: { './.github/workflows/release.yml': 'name: Empty\njobs: {}\n' },
+            message:
+                `Error: the release job in ${WORKFLOW_PATH} calls ./.github/workflows/release.yml, ` +
+                'which declares no jobs, so no check can be proven to gate the merge',
+        },
+        {
+            label: 'a nested reusable call inside the called workflow',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': [
+                    'name: Nested',
+                    'jobs:',
+                    '  inner:',
+                    '    uses: ./.github/workflows/inner.yml',
+                ].join('\n'),
+            },
+            message:
+                'Error: the inner job in ./.github/workflows/release.yml calls a nested reusable workflow, ' +
+                'whose check names this gate does not derive',
+        },
+        {
+            label: 'a non-matrix expression in an inner check name',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': [
+                    'name: Eventful',
+                    'jobs:',
+                    '  build:',
+                    '    name: Build ${{ github.event_name }}',
+                ].join('\n'),
+            },
+            message:
+                'Error: the build job in ./.github/workflows/release.yml names its check Build ${{ github.event_name }}, ' +
+                'which GitHub substitutes per matrix job before reporting it',
+        },
+        {
+            label: 'a matrix reference mixed with another expression',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': [
+                    'name: Mixed',
+                    'jobs:',
+                    '  unit:',
+                    '    name: Unit suite ${{ matrix.shard }}/4 (${{ github.event_name }})',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1, 2]',
+                ].join('\n'),
+            },
+            message:
+                'Error: the unit job in ./.github/workflows/release.yml names its check ' +
+                'Unit suite ${{ matrix.shard }}/4 (${{ github.event_name }}), ' +
+                'which GitHub substitutes per matrix job before reporting it',
+        },
+        {
+            label: 'an expression-valued matrix entry',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': [
+                    'name: Valued',
+                    'jobs:',
+                    '  unit:',
+                    '    name: Unit suite ${{ matrix.shard }}/4',
+                    '    strategy:',
+                    '      matrix:',
+                    "        shard: [1, '${{ matrix.shard }}']",
+                ].join('\n'),
+            },
+            message:
+                'Error: the unit job in ./.github/workflows/release.yml declares matrix shard as something other than ' +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+    ])('refuses $label', async ({ call, called, message }) => {
+        expect(await refusalFor(workflow(call, gateNeeding('release')), called)).toBe(message);
     });
 
     it.each([
@@ -7718,27 +8444,30 @@ describe('gating check names', () => {
     });
 
     /**
-     * The set this repository's own workflow produces, compared against the `yaml` package reading
-     * the same file. A hand-copied expectation here would only restate whatever the gate derived;
-     * comparing with an independent parse is what makes a divergence fail.
+     * The set this repository's own workflows produce, compared against the `yaml` package reading
+     * the same files. A hand-copied expectation here would only restate whatever the gate derived;
+     * comparing with an independent parse is what makes a divergence fail. The gate's one need is the
+     * validation lane, so both sides resolve through it to the `Validation / <name>` checks GitHub
+     * reports for the called workflow's jobs.
      */
     it('derives the same gating set from the live workflow as the yaml package does', async () => {
-        const expected = parserGateNeeds(LIVE_WORKFLOW_SOURCE).map((jobId) =>
-            parserCheckName(LIVE_WORKFLOW_SOURCE, jobId)
-        );
+        const expected = parserGatingCheckNames(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
 
-        expect([...(await gatingNamesFor(LIVE_WORKFLOW_SOURCE))].sort()).toEqual([...expected].sort());
+        expect([...(await gatingNamesFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES))].sort()).toEqual(
+            [...expected].sort()
+        );
         expect(expected.length).toBeGreaterThan(0);
     });
 
     /**
-     * The rollup on PR #2795 carried exactly two names cancelled with no success beside them:
-     * `Dependency review`, which `Gate` needs, and `Nightly failure report`, which it does not.
+     * The rollup on PR #2795 carried exactly two names cancelled with no success beside them: the
+     * dependency scan, which `Gate` needs — now reporting through the lane as
+     * `Validation / Dependency review` — and `Nightly failure report`, which it does not.
      */
     it('gates on the dependency scan and not on the nightly report in this repository', async () => {
-        const names = await gatingNamesFor(LIVE_WORKFLOW_SOURCE);
+        const names = await gatingNamesFor(LIVE_WORKFLOW_SOURCE, LIVE_CALLED_SOURCES);
 
-        expect(names.has('Dependency review')).toBe(true);
+        expect(names.has('Validation / Dependency review')).toBe(true);
         expect(names.has('Nightly failure report')).toBe(false);
     });
 });
