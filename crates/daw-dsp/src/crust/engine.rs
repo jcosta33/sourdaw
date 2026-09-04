@@ -175,7 +175,7 @@ pub struct CrustEngine {
     splitter: MultibandSplitter,
     band_limiters: Vec<TruePeakLimiter>,
     safety: TruePeakLimiter,
-    sidechain: SidechainHighpass,
+    sidechain: [SidechainHighpass; MAX_BANDS],
     ditherer: Ditherer,
     dry: DryDelay,
     band_scratch: [(f32, f32); MAX_BANDS],
@@ -231,7 +231,7 @@ impl CrustEngine {
                 .map(|_| TruePeakLimiter::new(sample_rate))
                 .collect(),
             safety: TruePeakLimiter::new(sample_rate),
-            sidechain: SidechainHighpass::new(rate),
+            sidechain: std::array::from_fn(|_| SidechainHighpass::new(rate)),
             ditherer: Ditherer::new(24),
             dry: DryDelay::new(),
             band_scratch: [(0.0, 0.0); MAX_BANDS],
@@ -426,10 +426,17 @@ impl CrustEngine {
                 self.splitter
                     .set_crossovers(self.crossover_low, self.crossover_high);
             }
-            "sc_hpf_enabled" => self.sidechain.enabled = value > 0.5,
-            "sc_hpf_freq" => self
-                .sidechain
-                .set_frequency(value, f64::from(self.sample_rate)),
+            "sc_hpf_enabled" => {
+                for sc in &mut self.sidechain {
+                    sc.enabled = value > 0.5;
+                }
+            }
+            "sc_hpf_freq" => {
+                let rate = f64::from(self.sample_rate);
+                for sc in &mut self.sidechain {
+                    sc.set_frequency(value, rate);
+                }
+            }
             "stereo_mode" => self.stereo_mode = StereoMode::from_index(value.max(0.0) as u32),
             "dither" => {
                 self.dither_index = value.max(0.0) as u32;
@@ -458,7 +465,9 @@ impl CrustEngine {
             limiter.reset();
         }
         self.safety.reset();
-        self.sidechain.reset();
+        for sc in &mut self.sidechain {
+            sc.reset();
+        }
         self.dry.reset();
         self.output_true_peak_left.reset();
         self.output_true_peak_right.reset();
@@ -497,11 +506,6 @@ impl CrustEngine {
         } else {
             1.0
         };
-        // A shared sidechain filter fed five different band signals would be
-        // one filter with five interleaved histories. The control belongs to
-        // the wideband detector; in multiband modes the split already gives the
-        // low band its own gain stage, which is what the filter was for.
-        let sidechain_active = bands == 1;
 
         let mut input_peak = 0.0_f32;
         let mut output_peak = 0.0_f32;
@@ -560,13 +564,13 @@ impl CrustEngine {
 
             let mut summed_left = 0.0_f32;
             let mut summed_right = 0.0_f32;
+            // Each band has its own sidechain filter instance so filtering
+            // applies cleanly in both wideband and multiband modes without
+            // interleaving detector histories.
             for band in 0..bands {
                 let (band_left, band_right) = self.band_scratch[band];
-                let (detector_left, detector_right) = if sidechain_active {
-                    self.sidechain.process(band_left, band_right)
-                } else {
-                    (band_left, band_right)
-                };
+                let (detector_left, detector_right) =
+                    self.sidechain[band].process(band_left, band_right);
                 let (limited_left, limited_right) = self.band_limiters[band]
                     .process_sample_detected(band_left, band_right, detector_left, detector_right);
                 summed_left += limited_left;
@@ -1264,6 +1268,53 @@ mod tests {
         assert!(
             peak_difference(&enabled_driven, &disabled_driven) > 0.01,
             "enabling the saturation stage changed nothing, so the enable selects nothing"
+        );
+    }
+
+    /// Sidechain HPF must move the detector and alter the limiter output
+    /// across Wide, 3-band, and 5-band modes when low-frequency content
+    /// exceeds the ceiling.
+    #[test]
+    fn sidechain_highpass_moves_the_render_in_wide_3band_and_5band_modes() {
+        let frames = 48_000;
+        let signal: Vec<f32> = (0..frames)
+            .map(|n| (2.0 * std::f32::consts::PI * 50.0 * n as f32 / SAMPLE_RATE).sin())
+            .collect();
+
+        for (mode, label) in [(0.0_f32, "wide"), (1.0_f32, "3-band"), (2.0_f32, "5-band")] {
+            let mut engine_off = CrustEngine::new(SAMPLE_RATE);
+            engine_off.set_param("multi_band", mode);
+            engine_off.set_param("gain", 6.0);
+            engine_off.set_param("ceiling", -1.0);
+            engine_off.set_param("sc_hpf_freq", 200.0);
+            engine_off.set_param("sc_hpf_enabled", 0.0);
+            let (out_off, _) = render(&mut engine_off, &signal, &signal);
+
+            let mut engine_on = CrustEngine::new(SAMPLE_RATE);
+            engine_on.set_param("multi_band", mode);
+            engine_on.set_param("gain", 6.0);
+            engine_on.set_param("ceiling", -1.0);
+            engine_on.set_param("sc_hpf_freq", 200.0);
+            engine_on.set_param("sc_hpf_enabled", 1.0);
+            let (out_on, _) = render(&mut engine_on, &signal, &signal);
+
+            let diff = peak_difference(&out_off, &out_on);
+            assert!(
+                diff > 0.01,
+                "SC HPF did not move the render in {label} mode (diff: {diff})"
+            );
+        }
+    }
+
+    /// When SC HPF is disabled, changing the cutoff frequency must have no effect.
+    #[test]
+    fn sidechain_highpass_frequency_is_inert_when_disabled() {
+        let freq_20 = render_with(&[("sc_hpf_enabled", 0.0), ("sc_hpf_freq", 20.0)]);
+        let freq_200 = render_with(&[("sc_hpf_enabled", 0.0), ("sc_hpf_freq", 200.0)]);
+        assert_eq!(
+            peak_difference(&freq_20, &freq_200),
+            0.0,
+            "changing sc_hpf_freq while disabled moved the render"
         );
     }
 }

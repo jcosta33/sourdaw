@@ -138,17 +138,13 @@ over it.
 |---|---|---|---|
 | **Wide · 3band · 5band** | those three | **Wide** | Wideband, three-band, or five-band limiting. |
 | **STEREO · MS** | those two | **STEREO** | Ordinary stereo, or mid-side. |
-| **SC HPF** switch | On / Off | Off | High-pass on the detector so low end drives the limiter less. **Wide** only. |
-| **HPF** | 20 to 200 Hz | 60 Hz | Detector cutoff. Shown only while **SC HPF** is on. **Wide** only. |
+| **SC HPF** switch | On / Off | Off | High-pass on the detector so low end drives the limiter less. |
+| **HPF** | 20 to 200 Hz | 60 Hz | Detector cutoff. Shown only while **SC HPF** is on. |
 | **Dithering** | Off · TPDF 16-bit · TPDF 24-bit · POW-R 1 · POW-R 2 · POW-R 3 | Off | Dither before the true-peak safety stage. |
 | **16-bit · 24-bit · 32-bit** | those three | **24-bit** | Output word length for dither. Shown only while dither is not Off. |
 
 **3band** and **5band** split at 80 Hz and 2 kHz. There is no on-screen control for those
 frequencies.
-
-> [!WARNING]
-> **Not yet active** on **3band** and **5band**. **SC HPF** and **HPF** stay on screen and remember
-> their values, but the limiter ignores them whenever the split is not **Wide**.
 
 ## Footer
 
