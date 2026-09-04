@@ -113,7 +113,7 @@ export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mut
 export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
 export const ADAPTED_MIT_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
 
-const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+export const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
     'pnpm-lock.yaml': ['javascript-dependencies'],
     'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
     'Cargo.lock': ['rust-dependencies'],
@@ -335,7 +335,7 @@ function sortedUnique(values: string[]): string[] {
     return [...new Set(values)].sort();
 }
 
-function fileSha256(path: string): string {
+export function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
@@ -355,7 +355,7 @@ function isWindowsPathLikeDigestLabel(value: string): boolean {
     return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
 }
 
-function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+export function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
     const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
     const sha256 = match?.[1];
     const path = match?.[2];
