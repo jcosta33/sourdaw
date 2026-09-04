@@ -63,7 +63,7 @@ describe('DawDialogSection', () => {
 
         expect(section).toHaveClass(
             'border-orange-900/30',
-            'bg-stone-950/50',
+            'bg-surface-base/50',
             'shadow-[inset_0_1px_0_rgba(251,146,60,0.05)]'
         );
         expect(header).toHaveClass('border-orange-900/25');

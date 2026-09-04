@@ -63,18 +63,18 @@ export const MissingMediaPanel = (): ReactElement | null => {
                     align="start"
                     sideOffset={6}
                     aria-label="Missing media"
-                    className="w-80 rounded-md border border-white/10 bg-neutral-900 p-2 shadow-lg"
+                    className="w-80 rounded-md border border-border-hairline bg-surface-raised p-2 shadow-lg"
                 >
-                    <p className="px-2 py-1 text-xs text-neutral-400">
+                    <p className="px-2 py-1 text-xs text-muted-foreground">
                         The project opened without this audio. Playback is silent where it is referenced.
                     </p>
-                    {referenceNote ? <p className="px-2 py-1 text-xs text-neutral-400">{referenceNote}</p> : null}
+                    {referenceNote ? <p className="px-2 py-1 text-xs text-muted-foreground">{referenceNote}</p> : null}
                     <ul className="max-h-64 overflow-y-auto">
                         {items.map((item) => (
                             <li className="px-2 py-1.5" key={rowKey(item)}>
                                 <p className="text-sm">{item.label}</p>
-                                <p className="text-xs text-neutral-400">{item.trackName}</p>
-                                <p className="text-xs text-neutral-500">{describeRepair(item)}</p>
+                                <p className="text-xs text-muted-foreground">{item.trackName}</p>
+                                <p className="text-xs text-muted-foreground/80">{describeRepair(item)}</p>
                             </li>
                         ))}
                     </ul>

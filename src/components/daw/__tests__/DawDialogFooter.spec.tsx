@@ -54,7 +54,7 @@ describe('DawDialogFooter', () => {
 
         expect(screen.getByTestId('dialog-footer')).toHaveClass(
             'border-orange-900/30',
-            'bg-stone-950/55',
+            'bg-surface-base/55',
             'shadow-[inset_0_1px_0_rgba(251,146,60,0.06)]'
         );
     });
