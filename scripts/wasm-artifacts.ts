@@ -25,6 +25,8 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { workspaceDependencyNames, workspaceManifestFingerprintInput } from './workspaceManifestFingerprint.ts';
+
 /** Absolute path to the repository root (this file lives in `<root>/scripts`). */
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -425,14 +427,18 @@ function lockClosureFingerprint(crateName: string): string {
 /**
  * Hash every input that determines the compiled cdylib for `crateDir`: the crate
  * and its transitive workspace path-dependency closure (each dep's `src/**` +
- * `Cargo.toml`), the workspace-root `Cargo.toml` (`[profile.*]` affects emitted
- * bytes), each crate's optional build script, and the Cargo.lock entries in the
- * resolved dependency closure (the registry + path deps it actually builds
- * against — not the whole lock).
+ * `Cargo.toml`), each crate's optional build script, the Cargo.lock entries in
+ * the resolved dependency closure (the registry + path deps it actually builds
+ * against — not the whole lock), and the workspace-root `Cargo.toml`. The root
+ * manifest contributes only its profile tables, its workspace package table,
+ * and the workspace dependency entries the closure resolves, from a canonical
+ * rendering (`workspaceManifestFingerprintInput`) — so `[workspace].members`,
+ * comments, and unrelated entries there do not move this hash.
  * `tests/`/`benches/` are excluded — they never reach the cdylib.
  */
 function hashCrateClosure(crateDir: string): string {
     const files: string[] = [];
+    const usedWorkspaceDependencies = new Set<string>();
     for (const dir of pathDepClosure(crateDir)) {
         collectRustSources(absolute(join(dir, 'src')), files);
         files.push(absolute(join(dir, 'Cargo.toml')));
@@ -440,8 +446,10 @@ function hashCrateClosure(crateDir: string): string {
         if (existsSync(buildScript)) {
             files.push(buildScript);
         }
+        for (const name of workspaceDependencyNames(readFileSync(absolute(join(dir, 'Cargo.toml')), 'utf8'))) {
+            usedWorkspaceDependencies.add(name);
+        }
     }
-    files.push(absolute('Cargo.toml'));
     files.sort();
 
     const digest = createHash('sha256');
@@ -451,6 +459,18 @@ function hashCrateClosure(crateDir: string): string {
         digest.update(createHash('sha256').update(readFileSync(fileAbs)).digest('hex'));
         digest.update('\n');
     }
+    digest.update('workspace manifest\0');
+    digest.update(
+        createHash('sha256')
+            .update(
+                workspaceManifestFingerprintInput(
+                    readFileSync(absolute('Cargo.toml'), 'utf8'),
+                    usedWorkspaceDependencies
+                )
+            )
+            .digest('hex')
+    );
+    digest.update('\n');
     digest.update('Cargo.lock closure\0');
     digest.update(lockClosureFingerprint(readCrateName(crateDir)));
     digest.update('\n');
@@ -787,6 +807,8 @@ export const wasmArtifacts = {
     hashFile,
     hashCrateClosure,
     pathDepClosure,
+    workspaceManifestFingerprintInput,
+    workspaceDependencyNames,
     extractSchemaHash,
     wasmBindgenLockVersion,
     rustToolchainChannel,

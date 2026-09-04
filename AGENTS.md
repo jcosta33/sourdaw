@@ -416,10 +416,13 @@ is the list, and it names each package's build script because that name is not d
 crate — guess it and you run a script that does not exist. A non-test edit anywhere in such a
 package's path-dependency closure, a comment included, changes its hash: rebuild that package,
 rewrite the manifest, stage the artifacts, and verify after staging rather than after building.
-Rebuilding the wrong package is worse than rebuilding nothing, because `wasm:manifest` preserves the
-recorded hash of every package the run has no evidence it rebuilt — the manifest agrees and the
-artifact is stale; `pnpm wasm:all` covers all of them when in doubt. A rebase can merge cleanly and
-still leave wasm stale, so `pnpm wasm:verify` is the only proof of freshness.
+The workspace-root `Cargo.toml` is the one exception: it contributes only its profile tables, its
+workspace package table, and the workspace dependency entries the closure resolves, rendered
+canonically, so a new member, a comment, or an unrelated workspace dependency there does not move
+the hash. Rebuilding the wrong package is worse than rebuilding nothing, because `wasm:manifest`
+preserves the recorded hash of every package the run has no evidence it rebuilt — the manifest
+agrees and the artifact is stale; `pnpm wasm:all` covers all of them when in doubt. A rebase can
+merge cleanly and still leave wasm stale, so `pnpm wasm:verify` is the only proof of freshness.
 
 `lane:publish` pushes without `--force`, and refuses any lane with uncommitted changes: commit the
 work yourself with a conventional subject first. An issue number resolves its lane by branch prefix;
