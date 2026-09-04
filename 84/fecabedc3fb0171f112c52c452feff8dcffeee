@@ -1,0 +1,97 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_9b530f08172a54::t_1402bd39bfc8ce 38
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_a32a538d112d23 1652-1657
+  s_9b530f08172a54::t_fbc96485c0b61e 1506,1515,1519,1528
+  s_9b530f08172a54::t_55ec97864b0c22 146-183,185
+  s_9b530f08172a54::t_5611c2ee00af69 184
+  s_9b530f08172a54::t_ef4953ae589005 1569-1575
+  s_9b530f08172a54::t_363bcfa99b3cf3 1640-1651,1658-1662
+  s_9b530f08172a54::t_0a963ac216cae9 1464-1472
+src/modules/AudioEngine/useCases/livePlayback/readNativeEngineMasterPeak.ts
+  s_9b530f08172a54::t_5ff1d76186f073 1-31
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_7d7e3f0d915c78 230
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_9b7a3d94bb1c51 620
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_fa83a63594f436 554-567
+  s_9b530f08172a54::t_5a9254ee952ffa 149
+  s_9b530f08172a54::t_4981cc8b7b1e42 1184,1192
+  s_9b530f08172a54::t_e2154e3806ea37 210,219
+  s_9b530f08172a54::t_d4a2c2e32566c7 1239,1252
+  s_9b530f08172a54::t_ffb87b2e0cd264 1275-1276
+  s_9b530f08172a54::t_5d28ef3ae8806e 2328,2512,2594
+  s_9b530f08172a54::t_7eebe7cdeb2e02 2611
+  s_9b530f08172a54::t_d0af17e13e276d 1209
+  s_9b530f08172a54::t_81aba30fde4137 2341,2525
+  s_9b530f08172a54::t_fbd1d957ebf5ef 26-29
+  s_9b530f08172a54::t_43d65fd71a4209 277
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  s_9b530f08172a54::t_9e60024046f681 44-56,70
+crates/daw-engine/src/offline.rs
+  s_9b530f08172a54::t_f46864981c6ea7 18-19
+  s_9b530f08172a54::t_c0dd2195ef1a12 68,77
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_9b530f08172a54::t_d92a62bf6d6148 26
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_9b530f08172a54::t_46a38dcf1d50c7 460,469,474-489
+  s_9b530f08172a54::t_e801a28d04ee54 509
+  s_9b530f08172a54::t_d10ef8f3c4a95a 31,35-39
+  s_9b530f08172a54::t_3099f6da08f0bb 336-344,346
+  s_9b530f08172a54::t_0f0be26aeaaa21 129-136,149-153,159,172
+  s_9b530f08172a54::t_704637789fdc4e 345
+  s_9b530f08172a54::t_35e7eaa0d0394a 490-491
+src/modules/AudioEngine/useCases/engineAccess/__tests__/getMasterPeakLevel.spec.ts
+  s_9b530f08172a54::t_b1d1a26d906fcd 1,4-16,19-63
+  s_9b530f08172a54::t_4ab5ea24e69fc8 3
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_9b530f08172a54::t_ee66d404aa4816 64
+  s_9b530f08172a54::t_f785f354df370d 27
+src/modules/AudioEngine/useCases/engineAccess/getMasterPeakLevel.ts
+  s_9b530f08172a54::t_ad8d4851571f94 21-25
+  s_9b530f08172a54::t_ed4a01bc47f46e 2,4-18,20
+scripts/measureDesktopLatency.ts
+  s_9b530f08172a54::t_ab60f26ca47c1d 200-201
+  s_9b530f08172a54::t_9bf43cc93eee5c 62-71,75-76
+  s_9b530f08172a54::t_b31b06377301d7 206
+  s_9b530f08172a54::t_b7ccb23a82d037 8-13
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readNativeEngineMasterPeak.spec.ts
+  s_9b530f08172a54::t_f4ffee1ca65aaa 1-67
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_67abd83b75553c 2362-2367
+  s_9b530f08172a54::t_c2793ed406625f 2259,2261-2265,2267,2272-2274
+  s_9b530f08172a54::t_dfa21141134f7b 2484-2562
+  s_9b530f08172a54::t_553712679adc66 711-712
+  s_9b530f08172a54::t_766a60582e8518 264
+  s_9b530f08172a54::t_3629dbd63bc8db 288
+  s_9b530f08172a54::t_7e83edb1cd23ec 1843-1844
+  s_9b530f08172a54::t_f317ad168e6465 729-734,738-748
+  s_9b530f08172a54::t_07807d6e36273e 216,224
+  s_9b530f08172a54::t_eb51b72aba4e7e 981
+  s_9b530f08172a54::t_369f89bb3c81e0 948
+  s_9b530f08172a54::t_63abe9dd55dab5 1927
+  s_9b530f08172a54::t_02dc6457c936ca 2292-2294
+  s_9b530f08172a54::t_dabce6135f6ba6 667-671
+  s_9b530f08172a54::t_aa511ec7ee6a8b 2289-2291,2295,2302,2313,2322
+  s_9b530f08172a54::t_c4525edb3196ec 1936
+  s_9b530f08172a54::t_8086d36a1b703b 2336
+  s_9b530f08172a54::t_ea2ccb05c3c9cf 20-22
+  s_9b530f08172a54::t_21f2674d805057 749-750
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "84fecabedc3fb0171f112c52c452feff8dcffeee",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
