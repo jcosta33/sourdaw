@@ -9,7 +9,7 @@ import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { detectTempo, detectKey, describeDetectedKey } from '#/modules/AudioAnalysis/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -64,22 +64,22 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     // Normalize/Reverse, so semantic undo/history and collaboration semantics
     // stay centralized.
     const deleteSelected = () => {
-        if (multiSelected) {
-            for (const id of selectedIds) {
-                void executeAppAction({ type: 'removeClip', payload: { clipId: id } });
-            }
-        } else {
-            void executeAppAction({ type: 'removeClip', payload: { clipId } });
+        const ids = multiSelected ? selectedIds : [clipId];
+        // One gesture is one undo step: every per-clip dispatch shares a
+        // groupId, and undo pops a whole groupId unit at once.
+        const groupId = `clip-menu-delete-${crypto.randomUUID()}`;
+        const groupLabel = `Delete ${ids.length} clip${ids.length === 1 ? '' : 's'}`;
+        for (const id of ids) {
+            void executeUserAppAction({ type: 'removeClip', payload: { clipId: id } }, { groupId, groupLabel });
         }
     };
 
     const duplicateSelected = () => {
-        if (multiSelected) {
-            for (const id of selectedIds) {
-                void executeAppAction({ type: 'duplicateClip', payload: { clipId: id } });
-            }
-        } else {
-            void executeAppAction({ type: 'duplicateClip', payload: { clipId } });
+        const ids = multiSelected ? selectedIds : [clipId];
+        const groupId = `clip-menu-duplicate-${crypto.randomUUID()}`;
+        const groupLabel = `Duplicate ${ids.length} clip${ids.length === 1 ? '' : 's'}`;
+        for (const id of ids) {
+            void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: id } }, { groupId, groupLabel });
         }
     };
 
@@ -359,7 +359,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         shortcut="⌘X"
                         onClick={act(() => {
                             selectClip(clipId);
-                            void executeAppAction({ type: 'cutClip' });
+                            void executeUserAppAction({ type: 'cutClip' });
                         })}
                     >
                         Cut

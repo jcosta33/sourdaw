@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
@@ -167,6 +167,7 @@ vi.mock('../../../useCases/clipEditing/reverseClip', () => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     clearUndoHistory: vi.fn(),
@@ -425,8 +426,21 @@ describe('ClipContextMenu', () => {
         });
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip1' } });
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip2' } });
+        expect(executeUserAppAction).toHaveBeenCalledTimes(2);
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'removeClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+        );
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'removeClip', payload: { clipId: 'clip2' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+        );
+        // One gesture is one undo unit: every dispatch carries the same groupId.
+        const [first, second] = vi.mocked(executeUserAppAction).mock.calls;
+        expect(second?.[1]?.groupId).toBe(first?.[1]?.groupId);
+        expect(first?.[1]?.groupId).toEqual(expect.any(String));
         expect(removeClip).not.toHaveBeenCalled();
     });
 
@@ -437,8 +451,21 @@ describe('ClipContextMenu', () => {
         });
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Duplicate/ }));
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip1' } });
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip2' } });
+        expect(executeUserAppAction).toHaveBeenCalledTimes(2);
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'duplicateClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 2 clips' }
+        );
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'duplicateClip', payload: { clipId: 'clip2' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 2 clips' }
+        );
+        // One gesture is one undo unit: every dispatch carries the same groupId.
+        const [first, second] = vi.mocked(executeUserAppAction).mock.calls;
+        expect(second?.[1]?.groupId).toBe(first?.[1]?.groupId);
+        expect(first?.[1]?.groupId).toEqual(expect.any(String));
         expect(duplicateClip).not.toHaveBeenCalled();
     });
 
@@ -567,9 +594,12 @@ describe('ClipContextMenu', () => {
     it('deletes only the targeted clip when a single clip is selected', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
-        // Single selection → the else branch dispatches just the one clip.
-        expect(executeAppAction).toHaveBeenCalledTimes(1);
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip1' } });
+        // Single selection → one grouped dispatch for just the one clip.
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'removeClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 1 clip' }
+        );
         expect(removeClip).not.toHaveBeenCalled();
     });
 
@@ -578,12 +608,15 @@ describe('ClipContextMenu', () => {
         // "Duplicate to Next Bar" also renders in single-select, so target the
         // main Duplicate button by its exact accessible name.
         fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
-        expect(executeAppAction).toHaveBeenCalledTimes(1);
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'duplicateClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 1 clip' }
+        );
         expect(duplicateClip).not.toHaveBeenCalled();
     });
 
-    it('routes Cut through the undoable command path, not the bare use case', () => {
+    it('routes Cut through the user-dispatch path, not the bare use case', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Cut' }));
@@ -591,7 +624,8 @@ describe('ClipContextMenu', () => {
         // The payload-less cutClip handler resolves the context clip from the
         // selection, so the menu must select it first.
         expect(clipSelectionStore.value?.selectedClipId).toBe('clip1');
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'cutClip' });
+        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'cutClip' });
         expect(cutSelectedClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
     });
