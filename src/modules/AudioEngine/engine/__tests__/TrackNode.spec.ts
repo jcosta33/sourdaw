@@ -7,18 +7,21 @@ import { createMockAudioContext } from '../../../../helpers/__tests__/audioConte
 import { createDeviceReadinessDiagnostics } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
-// The external-plugin path loads its native bridge asynchronously. Mock the
-// bridge factory so the spec can capture the param ids/values that actually
-// reach the native engine and control when the load resolves.
-const bridgeSetParam = vi.fn<(paramId: number, value: number) => void>();
-let resolveBridge: ((result: unknown) => void) | undefined;
-vi.mock('../NativePluginBridgeNode', () => ({
-    createNativePluginBridgeNode: vi.fn(
-        () =>
-            new Promise((resolve) => {
-                resolveBridge = resolve;
-            })
-    ),
+// An external-plugin device is a synchronous Web Audio pass-through whose only
+// traffic is control IPC (#3564). Mock that IPC so the spec can read the param
+// ids and values that actually reach the native instance.
+const setPluginParameter = vi.hoisted(() => vi.fn<(input: unknown) => Promise<void>>(() => Promise.resolve()));
+const setPluginBypass = vi.hoisted(() => vi.fn<(input: unknown) => Promise<void>>(() => Promise.resolve()));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    setPluginParameter,
+    setPluginBypass,
+    // The wasm device registry and the Faust device resolver read the barrel's
+    // Faust half at module scope; no device under test is a Faust module, so it
+    // answers "not one of mine" and its builders are never reached.
+    isFaustModule: () => false,
+    getFaustModuleLatencyMs: () => 0,
+    compileFaustDSP: () => Promise.reject(new Error('unexpected Faust compile')),
+    createFaustNode: () => Promise.reject(new Error('unexpected Faust node')),
 }));
 
 describe('TrackNode', () => {
@@ -45,7 +48,8 @@ describe('TrackNode', () => {
             readinessDiagnostics: createDeviceReadinessDiagnostics(),
         };
         vi.clearAllMocks();
-        resolveBridge = undefined;
+        setPluginParameter.mockResolvedValue(undefined);
+        setPluginBypass.mockResolvedValue(undefined);
     });
 
     it('should create and wire up nodes correctly on initialization', () => {
@@ -83,12 +87,20 @@ describe('TrackNode', () => {
             expect(track.strip.nativeCarried).toBe(true);
             expect(track.strip.carrierGate.gain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.005);
             expect(track.strip.preFaderSendGate.gain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.005);
+            // `setTargetAtTime` is exponential and never actually arrives, so a
+            // gate driven by it alone leaks a decaying tail of a track the
+            // native engine is already sounding — audible against it, and
+            // audible forever. The landing event is what ends the ramp.
+            expect(track.strip.carrierGate.gain.setValueAtTime).toHaveBeenCalledWith(0, ctx.currentTime + 0.05);
+            expect(track.strip.preFaderSendGate.gain.setValueAtTime).toHaveBeenCalledWith(0, ctx.currentTime + 0.05);
 
             track.setNativeCarried(false);
 
             expect(track.strip.nativeCarried).toBe(false);
             expect(track.strip.carrierGate.gain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.005);
             expect(track.strip.preFaderSendGate.gain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.005);
+            expect(track.strip.carrierGate.gain.setValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.05);
+            expect(track.strip.preFaderSendGate.gain.setValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.05);
         });
 
         it('leaves the mute and solo gates alone, so carrying cannot clear either', () => {
@@ -565,49 +577,38 @@ describe('TrackNode', () => {
         });
     });
 
-    // Regression: live reload (ensureTrackStrips) adds the external-plugin device
-    // then immediately replays saved Track.devices[*].parameterValues via
-    // updateParam — but the bridge loads asynchronously, so those values land on
-    // the loading placeholder. They must be flushed to the native bridge once it
-    // resolves, the way the offline NativeDspDeviceStrategy replays them. Before
-    // the fix the buffered params were dropped, leaving the live engine at
-    // defaults while offline render reflected saved knobs.
-    it('replays params buffered before the native plugin bridge loads', async () => {
+    // Live reload (ensureTrackStrips) adds the external-plugin device and then
+    // immediately replays saved Track.devices[*].parameterValues via updateParam.
+    // The device is a synchronous pass-through, so there is no loading window for
+    // those writes to fall into: each one reaches the instance as it is made.
+    it('sends saved params to the hosted instance as they are written, with no loading window', () => {
         const track = new TrackNode('track-1', deps);
 
-        // Live reload order: addDevice, then updateParam from saved values —
-        // while the async bridge load is still pending.
         track.addDevice('dev-1', 'external-plugin', 'inst-1');
         track.updateParam('dev-1', '3', 0.75);
         track.updateParam('dev-1', '7', -2);
 
-        expect(resolveBridge).toBeDefined();
-        // Nothing should have reached the native bridge yet — it isn't loaded.
-        expect(bridgeSetParam).not.toHaveBeenCalled();
+        expect(setPluginParameter).toHaveBeenCalledWith({ instanceId: 'inst-1', paramId: 3, value: 0.75 });
+        expect(setPluginParameter).toHaveBeenCalledWith({ instanceId: 'inst-1', paramId: 7, value: -2 });
+        expect(setPluginParameter).toHaveBeenCalledTimes(2);
+    });
 
-        // Resolve the bridge load and let the .then swap-in run.
-        const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
-        const destroy = vi.fn(() => {
-            bridgeNode.disconnect();
-            bridgeNode.port.close();
-        });
-        resolveBridge!({
-            workletNode: bridgeNode,
-            setParam: bridgeSetParam,
-            setBypass: vi.fn(),
-            destroy,
-        });
-        await Promise.all([...deps.pendingDevicePromises]);
+    it('passes audio through the external-plugin device untouched, because the engine sounds the plugin', () => {
+        // Nothing leaves this process and comes back any more. A device that
+        // still inserted a bridge node here would delay the strip by a round
+        // trip the mix is no longer paying for.
+        const track = new TrackNode('track-1', deps);
 
-        // The buffered params reach the native bridge with the external-plugin
-        // name->id translation (parseInt) applied.
-        expect(bridgeSetParam).toHaveBeenCalledWith(3, 0.75);
-        expect(bridgeSetParam).toHaveBeenCalledWith(7, -2);
-        expect(bridgeSetParam).toHaveBeenCalledTimes(2);
-        track.removeDevice('dev-1');
-        expect(destroy).toHaveBeenCalledTimes(1);
-        expect(bridgeNode.disconnect).toHaveBeenCalled();
-        expect(bridgeNode.port.close).toHaveBeenCalledTimes(1);
+        track.addDevice('dev-1', 'external-plugin', 'inst-1');
+
+        const dn = track.strip.deviceNodes.find((device) => device.deviceId === 'dev-1');
+        // One node, and the same node at both ends of the slot. A relay would
+        // put an AudioWorkletNode here instead — which carries a message port,
+        // and whose construction is what registers the async device load.
+        expect(dn?.nodes).toHaveLength(1);
+        expect(dn?.inputNode).toBe(dn?.outputNode);
+        expect(dn?.outputNode).not.toHaveProperty('port');
+        expect(deps.pendingDevicePromises.size).toBe(0);
     });
 
     // Branch coverage: addMidiFx native-bridge notification, disposed-state
@@ -845,67 +846,56 @@ describe('TrackNode', () => {
         });
     });
 
-    // External-plugin bridge: externalInstanceId fallback (?? deviceId) and the
-    // name->id translation, which addresses a numeric id exactly and refuses
-    // every other spelling rather than flooring it to parameter 0.
-    describe('external-plugin bridge param translation', () => {
-        it('falls back to deviceId when no externalInstanceId is provided', async () => {
-            const track = new TrackNode('t', deps);
-            track.addDevice('dev-fallback', 'external-plugin'); // no instance id
-
-            expect(resolveBridge).toBeDefined();
-            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
-            resolveBridge!({
-                workletNode: bridgeNode,
-                setParam: bridgeSetParam,
-                setBypass: vi.fn(),
-                destroy: vi.fn(() => {
-                    bridgeNode.disconnect();
-                    bridgeNode.port.close();
-                }),
-            });
-            await Promise.all([...deps.pendingDevicePromises]);
-            // Bridge load resolved cleanly.
-            expect(track.strip.deviceNodes.some((d) => d.deviceId === 'dev-fallback')).toBe(true);
-        });
-
-        async function resolveExternalPluginDevice(deviceId: string): Promise<{
-            setParam: (name: string, value: number) => void;
-        }> {
+    // Hosted external plugin: the name->id translation, which addresses a
+    // numeric id exactly and refuses every other spelling rather than flooring
+    // it to parameter 0, and the instance-less device that must reach no IPC.
+    describe('external-plugin hosted param translation', () => {
+        function hostedController(deviceId: string): { setParam: (name: string, value: number) => void } {
             const track = new TrackNode('t', deps);
             track.addDevice(deviceId, 'external-plugin', `inst-${deviceId}`);
 
-            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
-            resolveBridge!({
-                workletNode: bridgeNode,
-                setParam: bridgeSetParam,
-                setBypass: vi.fn(),
-                destroy: vi.fn(),
-            });
-            await Promise.all([...deps.pendingDevicePromises]);
-
             const dn = track.strip.deviceNodes.find((device) => device.deviceId === deviceId);
             if (!dn?.controller) {
-                throw new Error(`expected a resolved bridge controller for ${deviceId}`);
+                throw new Error(`expected a hosted plugin controller for ${deviceId}`);
             }
             return dn.controller;
         }
 
-        it('addresses a numeric param name as exactly that native parameter id', async () => {
-            const controller = await resolveExternalPluginDevice('dev-numeric');
+        it('sends nothing at all for a device that names no instance', () => {
+            // A device id is not an instance id, and addressing the IPC with one
+            // would write a parameter on whatever instance happened to answer to
+            // that name.
+            const track = new TrackNode('t', deps);
+            track.addDevice('dev-fallback', 'external-plugin');
+
+            const dn = track.strip.deviceNodes.find((device) => device.deviceId === 'dev-fallback');
+            expect(dn).toBeDefined();
+            dn!.controller!.setParam('3', 0.5);
+            dn!.controller!.setBypass?.(true);
+
+            expect(setPluginParameter).not.toHaveBeenCalled();
+            expect(setPluginBypass).not.toHaveBeenCalled();
+        });
+
+        it('addresses a numeric param name as exactly that native parameter id', () => {
+            const controller = hostedController('dev-numeric');
 
             controller.setParam('7', 0.25);
-            expect(bridgeSetParam).toHaveBeenCalledWith(7, 0.25);
+            expect(setPluginParameter).toHaveBeenCalledWith({
+                instanceId: 'inst-dev-numeric',
+                paramId: 7,
+                value: 0.25,
+            });
 
             // Not an index into the parameter list: id 0 is only reached by the
             // name '0'.
             controller.setParam('0', 0.5);
-            expect(bridgeSetParam).toHaveBeenCalledWith(0, 0.5);
-            expect(bridgeSetParam).toHaveBeenCalledTimes(2);
+            expect(setPluginParameter).toHaveBeenCalledWith({ instanceId: 'inst-dev-numeric', paramId: 0, value: 0.5 });
+            expect(setPluginParameter).toHaveBeenCalledTimes(2);
         });
 
-        it('refuses a param name that is not a parameter id instead of writing parameter 0', async () => {
-            const controller = await resolveExternalPluginDevice('dev-name');
+        it('refuses a param name that is not a parameter id instead of writing parameter 0', () => {
+            const controller = hostedController('dev-name');
 
             // Every one of these answered `0` under `parseInt(name, 10) || 0`:
             // the non-numeric ones through the `|| 0`, and the numeric-prefixed
@@ -915,11 +905,11 @@ describe('TrackNode', () => {
                 controller.setParam(refused, 0.9);
             }
 
-            expect(bridgeSetParam).not.toHaveBeenCalled();
+            expect(setPluginParameter).not.toHaveBeenCalled();
         });
 
-        it('reports each refused param name once, however many times it is written', async () => {
-            const controller = await resolveExternalPluginDevice('dev-repeat');
+        it('reports each refused param name once, however many times it is written', () => {
+            const controller = hostedController('dev-repeat');
             const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
 
             // A refused write arrives from the scheduler's tick grid, so a
@@ -937,7 +927,7 @@ describe('TrackNode', () => {
 
             expect(warn).toHaveBeenCalledTimes(2);
             expect(warn.mock.calls[1]![0]).toContain('another-bad-name');
-            expect(bridgeSetParam).not.toHaveBeenCalled();
+            expect(setPluginParameter).not.toHaveBeenCalled();
 
             warn.mockRestore();
         });
@@ -966,83 +956,6 @@ describe('TrackNode', () => {
 
             // Dispose must not touch a meter (it is null) and must not throw.
             expect(() => track.dispose()).not.toThrow();
-        });
-    });
-
-    // Pending-load rejection: a native-plugin bridge that resolves AFTER the
-    // track is disposed (or its device removed) must not swap in its node —
-    // completePendingDeviceLoad rejects and destroys the late-arriving node.
-    describe('pending device-load rejection paths', () => {
-        beforeEach(() => {
-            (global as { AudioWorkletNode?: unknown }).AudioWorkletNode = class {
-                port = { postMessage: vi.fn(), close: vi.fn() };
-                connect = vi.fn();
-                disconnect = vi.fn();
-            };
-        });
-
-        it('destroys a bridge node that resolves after the track is disposed', async () => {
-            const track = new TrackNode('t', deps);
-            track.addDevice('dev-late', 'external-plugin', 'inst-late');
-
-            // Dispose before the bridge resolves.
-            track.dispose();
-
-            const bridgeDestroy = vi.fn();
-            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
-            resolveBridge!({
-                workletNode: bridgeNode,
-                setParam: vi.fn(),
-                setBypass: vi.fn(),
-                destroy: bridgeDestroy,
-            });
-            await Promise.all([...deps.pendingDevicePromises]);
-
-            // Rejected because the track is disposed → the late node is destroyed.
-            expect(bridgeDestroy).toHaveBeenCalledTimes(1);
-        });
-
-        it('destroys a bridge node that resolves after its device was removed', async () => {
-            const track = new TrackNode('t', deps);
-            track.addDevice('dev-rm', 'external-plugin', 'inst-rm');
-
-            // Remove the device (invalidates the pending load) before resolve.
-            track.removeDevice('dev-rm');
-
-            const bridgeDestroy = vi.fn();
-            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
-            resolveBridge!({
-                workletNode: bridgeNode,
-                setParam: vi.fn(),
-                setBypass: vi.fn(),
-                destroy: bridgeDestroy,
-            });
-            await Promise.all([...deps.pendingDevicePromises]);
-
-            // index === -1 (device no longer on the strip) → rejected + destroyed.
-            expect(bridgeDestroy).toHaveBeenCalledTimes(1);
-        });
-
-        it('buffered param writes after the load resolved are dropped (placeholder guard)', async () => {
-            const track = new TrackNode('t', deps);
-            track.addDevice('dev-done', 'external-plugin', 'inst-done');
-
-            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
-            resolveBridge!({
-                workletNode: bridgeNode,
-                setParam: bridgeSetParam,
-                setBypass: vi.fn(),
-                destroy: vi.fn(),
-            });
-            await Promise.all([...deps.pendingDevicePromises]);
-            bridgeSetParam.mockClear();
-
-            // After resolve, the placeholder controller is replaced; calling the
-            // resolved controller forwards normally. The placeholder's setParam
-            // guard (resolved === true) drops any stale buffered write that
-            // somehow still targets the placeholder.
-            track.updateParam('dev-done', '5', 0.4);
-            expect(bridgeSetParam).toHaveBeenCalledWith(5, 0.4);
         });
     });
 });

@@ -611,6 +611,9 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
         attachedInstanceIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
+        // No fixture track monitors live input, so the carrier law leaves every
+        // one of them to be judged on its chain and its routing alone.
+        inputMonitoredTrackIds: new Set(),
         programme: projectLiveGraphProgramme({
             stripTracks,
             sampleRate: SAMPLE_RATE,

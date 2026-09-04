@@ -73,6 +73,22 @@ export type NativeLiveGraphSession = {
      * at a seam the engine never closes.
      */
     loopEnabled: boolean;
+    /**
+     * The decline notice this session last put in front of the musician, or
+     * `null` when it has shown none.
+     *
+     * A desktop engine that cannot start fails the same way on every play, and
+     * a musician who pressed play four times does not need to be told four
+     * times. Held rather than derived because the text is the whole identity of
+     * the notice: a *different* reason is news and is shown again.
+     */
+    lastDeclineNotice: string | null;
+    /**
+     * The silent-plugin notice this session last showed, under the same rule and
+     * for the same reason: the list changes only when the project or the
+     * engine's attach state does.
+     */
+    lastSilentPluginNotice: string | null;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
@@ -80,13 +96,16 @@ export type NativeLiveGraphSession = {
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
     audibleCarrier: false,
-    // Shadowed until a session says otherwise: the safe state is the silent
-    // one, so a reader that runs before any session started cannot conclude
-    // the native engine is audible.
+    // Shadowed until a session says otherwise. This is the initial state, not
+    // the default a session starts in — the safe reading before any session has
+    // spoken is the silent one, so a reader that runs first cannot conclude the
+    // native engine is audible.
     monitorShadowed: true,
     rolling: false,
     loopRegion: null,
     loopEnabled: false,
+    lastDeclineNotice: null,
+    lastSilentPluginNotice: null,
     pending: Promise.resolve(),
 };
 

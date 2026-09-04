@@ -55,7 +55,11 @@ function projectLiveProgrammeBatch(sampleRate: number): ReturnType<typeof projec
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         attachedInstanceIds: new Set(),
+        inputMonitoredTrackIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
+        // Shadowed, so the batch carries the whole programme whatever the
+        // carrier law says: this pass registers material and must not miss the
+        // clips of a strip Web Audio happens to be carrying today.
         monitor: 'shadowed',
         programme: readLiveGraphProgramme({ stripTracks, sampleRate }),
     });
