@@ -123,6 +123,11 @@ jobs:
       - name: Release proof
         run: pnpm test:run scripts/__tests__/releaseProof.spec.ts
 
+      # Spawns multiple repository fixtures and subprocesses; isolated from the unit
+      # shards to keep worker process memory bounded (#3459).
+      - name: Agent delivery scripts
+        run: pnpm test:run scripts/__tests__/agentDeliveryScripts.spec.ts
+
       - name: Health gate infrastructure
         run: pnpm test:health-gates
 
