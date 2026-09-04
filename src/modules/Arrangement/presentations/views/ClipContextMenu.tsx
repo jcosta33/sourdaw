@@ -9,7 +9,7 @@ import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { detectTempo, detectKey, describeDetectedKey } from '#/modules/AudioAnalysis/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -17,11 +17,8 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { CLIP_COLOR_OPTIONS } from '../../models/ColorPalette';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
-import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
-import { removeClip } from '../../useCases/clip/removeClip';
 import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
-import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { lockClip } from '../../useCases/clipEditing/lockClip';
 import { muteClip } from '../../useCases/clipEditing/muteClip';
@@ -63,23 +60,23 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         onClose();
     };
 
+    // Cut, Delete, and Duplicate ride the registered action boundary, like
+    // Normalize/Reverse, so semantic undo/history and collaboration semantics
+    // stay centralized.
     const deleteSelected = () => {
-        if (multiSelected) {
-            for (const id of selectedIds) {
-                removeClip(id);
-            }
-        } else {
-            removeClip(clipId);
+        // Per-clip dispatch through the registered action boundary gives each
+        // clip a complete undo entry; one-gesture-one-step grouping for these
+        // singleton-batch actions is tracked in issue #3622.
+        const ids = multiSelected ? selectedIds : [clipId];
+        for (const id of ids) {
+            void executeUserAppAction({ type: 'removeClip', payload: { clipId: id } });
         }
     };
 
     const duplicateSelected = () => {
-        if (multiSelected) {
-            for (const id of selectedIds) {
-                duplicateClip(id);
-            }
-        } else {
-            duplicateClip(clipId);
+        const ids = multiSelected ? selectedIds : [clipId];
+        for (const id of ids) {
+            void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: id } });
         }
     };
 
@@ -359,7 +356,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         shortcut="⌘X"
                         onClick={act(() => {
                             selectClip(clipId);
-                            cutSelectedClip();
+                            void executeUserAppAction({ type: 'cutClip' });
                         })}
                     >
                         Cut
