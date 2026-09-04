@@ -1,0 +1,36 @@
+scripts/__tests__/resourceGuard.spec.ts
+  s_ac03a4ebaa3f6e::t_cba160df1fa681 16
+  s_ac03a4ebaa3f6e::t_c34a3e0f0f0d2c 799-870
+AGENTS.md
+  s_ac03a4ebaa3f6e::t_2a8f39d9b7f494 174-177
+docs/06-testing.md
+  s_ac03a4ebaa3f6e::t_fd1c21978ca930 700-702
+  s_ac03a4ebaa3f6e::t_b21c10690a88c0 703-705
+scripts/__tests__/resourceGuardShowOutput.spec.ts
+  s_ac03a4ebaa3f6e::t_9bdcc1545fe2f3 71-95
+scripts/resourceGuard.ts
+  s_ac03a4ebaa3f6e::t_8d64c81d4dae9d 1171
+  s_ac03a4ebaa3f6e::t_ce6f5d61fb1587 91,95-115
+  s_ac03a4ebaa3f6e::t_282e19cdbc6e2e 1202-1207
+  s_ac03a4ebaa3f6e::t_4a9ef503101f7c 920-922
+  s_ac03a4ebaa3f6e::t_dcfdc1b224f55d 62
+  s_ac03a4ebaa3f6e::t_490bfe758e302f 982,997
+  s_ac03a4ebaa3f6e::t_c0b08874fba2a5 14
+  s_ac03a4ebaa3f6e::t_7f690f1307fbdf 92-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "339182800625341e1a566e8f069477f1400b9f39",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
