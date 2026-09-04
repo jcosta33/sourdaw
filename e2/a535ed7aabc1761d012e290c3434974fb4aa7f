@@ -1,0 +1,26 @@
+scripts/checkReleaseInventory.ts
+  s_28abfd94826e36::t_438a21fce515f5 1607-1615,1630-1631
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_28abfd94826e36::t_01babbe7ebf1a5 891
+  s_28abfd94826e36::t_546c0f6ff42668 991-992
+  s_28abfd94826e36::t_5fb619662a534c 2729-2801
+release/open-source-inventory.json
+  s_28abfd94826e36::t_d145541e234217 1196
+  s_28abfd94826e36::t_1fa9e3f4e8d699 1198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e2a535ed7aabc1761d012e290c3434974fb4aa7f",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
