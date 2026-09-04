@@ -1111,21 +1111,23 @@ describe('the live automation writer', () => {
         const engine = engineQueueBackend();
         mocks.apply.mockImplementation((batch) => engine.apply(batch));
 
-        // Populate a dense curve that will fill part of the queue
-        mocks.curve = [{ target: FADER, writes: curvedLane(20) }];
+        // When writer arms with step writes (5 step writes admitted in batch 1, queue has 5 stamps in engine)
+        const initialWrites = [step(0.01, 0.1), step(0.02, 0.2), step(0.03, 0.3), step(0.04, 0.4), step(0.05, 0.5)];
+        const nextWrites = [step(0.06, 0.6), step(0.07, 0.7), step(0.08, 0.8), step(0.09, 0.9), step(0.095, 0.95)];
+        mocks.curve = [{ target: FADER, writes: initialWrites }];
 
         // Arm at 0
         arm(0);
         await flush();
 
-        // Pump 1 tick: admits first batch
-        await pump(0, 0, engineBatches);
         const firstBatchWrites = writeBatches();
-        expect(firstBatchWrites.length).toBeGreaterThan(0);
+        expect(firstBatchWrites).toHaveLength(1);
+        expect(firstBatchWrites[0]).toHaveLength(5);
         const queuedBefore = nativeLiveAutomationWriter.pass?.targets[0]?.queued.length ?? 0;
-        expect(queuedBefore).toBeGreaterThan(0);
+        expect(queuedBefore).toBe(5);
 
-        // Simulate a loop region change mid-pass without a seek
+        // Re-arm mid-pass with another 5 step writes
+        mocks.curve = [{ target: FADER, writes: nextWrites }];
         const pass = nativeLiveAutomationWriter.pass!;
         nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 0, endSeconds: 2 };
         nativeLiveGraphSession.loopEnabled = true;
@@ -1136,18 +1138,97 @@ describe('the live automation writer', () => {
             positionSeconds: 0.01,
             provenAfterBatch: engineBatches,
         });
+        await flush();
 
-        // Verify the new pass retained the queued stamps from previous pass
+        // With carryover intact, writer respects remaining headroom (ceiling 7 - 5 = 2) and does NOT over-admit
+        expect(writeBatches()).toHaveLength(2);
+        expect(writesOf(1)).toHaveLength(2);
         const queuedAfter = nativeLiveAutomationWriter.pass?.targets[0]?.queued.length ?? 0;
-        expect(queuedAfter).toBe(queuedBefore);
-
-        // Pump subsequent ticks with playhead advancing slowly: no refusal should occur
-        for (let tick = 1; tick <= 10; tick++) {
-            engineEchoSeconds = tick * 0.005;
-            await pump(engineEchoSeconds, 0, engineBatches);
-        }
+        expect(queuedAfter).toBe(7);
 
         const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
         expect(refusals).toEqual([]);
+    });
+
+    it('prunes queued stamps at or after seekFrame when re-arming with seek: true after a locate', async () => {
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+
+        const writes = [
+            step(0, 0.1),
+            step(0.02, 0.2),
+            step(0.04, 0.3),
+            step(0.06, 0.4),
+            step(0.08, 0.5),
+            step(0.18, 0.6),
+        ];
+        mocks.curve = [{ target: FADER, writes }];
+
+        arm(0);
+        await flush();
+
+        const passBefore = nativeLiveAutomationWriter.pass!;
+        const queuedBefore = passBefore.targets[0]?.queued ?? [];
+        expect(queuedBefore).toHaveLength(5);
+        expect(queuedBefore.map((stamp) => stamp.startFrame)).toEqual([
+            0,
+            Math.round(0.02 * SAMPLE_RATE),
+            Math.round(0.04 * SAMPLE_RATE),
+            Math.round(0.06 * SAMPLE_RATE),
+            Math.round(0.08 * SAMPLE_RATE),
+        ]);
+
+        // Simulate locate to 0.05s
+        const seekPosition = 0.05;
+        const seekFrame = Math.round(seekPosition * SAMPLE_RATE);
+        armNativeLiveAutomationWriter({
+            stripTracks: passBefore.stripTracks,
+            sampleRate: passBefore.sampleRate,
+            programmeEndSeconds: passBefore.programmeEndSeconds,
+            positionSeconds: seekPosition,
+            provenAfterBatch: engineBatches,
+            seek: true,
+        });
+
+        // Verify that in the new pass, stamps strictly before 0.05s are retained in queued, while stamps at or after 0.05s are pruned
+        const queuedAfter = nativeLiveAutomationWriter.pass?.targets[0]?.queued ?? [];
+        expect(queuedAfter.map((stamp) => stamp.startFrame)).toEqual([
+            0,
+            Math.round(0.02 * SAMPLE_RATE),
+            Math.round(0.04 * SAMPLE_RATE),
+        ]);
+        expect(queuedAfter.every((stamp) => stamp.startFrame < seekFrame)).toBe(true);
+    });
+
+    it('passes seek: true when repositioning so queued stamps at or after locate position are pruned', async () => {
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+
+        const writes = [
+            step(0, 0.1),
+            step(0.02, 0.2),
+            step(0.04, 0.3),
+            step(0.06, 0.4),
+            step(0.08, 0.5),
+            step(0.18, 0.6),
+        ];
+        mocks.curve = [{ target: FADER, writes }];
+
+        arm(0);
+        await flush();
+
+        const passBefore = nativeLiveAutomationWriter.pass!;
+        expect(passBefore.targets[0]?.queued).toHaveLength(5);
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 0.05 });
+
+        const queuedAfter = nativeLiveAutomationWriter.pass?.targets[0]?.queued ?? [];
+        const seekFrame = Math.round(0.05 * SAMPLE_RATE);
+        expect(queuedAfter.map((stamp) => stamp.startFrame)).toEqual([
+            0,
+            Math.round(0.02 * SAMPLE_RATE),
+            Math.round(0.04 * SAMPLE_RATE),
+        ]);
+        expect(queuedAfter.every((stamp) => stamp.startFrame < seekFrame)).toBe(true);
     });
 });
