@@ -1,0 +1,18 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_1228e573df1f42 779,2445,2505,2977
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_1228e573df1f42 169-200,571-572,683,854-860,7104-7165
+scripts/deliverPullRequest.ts
+  h_1228e573df1f42 91,496-500,560-566,568-573,575,617-621,630,691-710,804-806,808-813,822,836,841-844,853-858,915,1007,1095-1098,1237-1247,3612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b162586f7dc70b22c73c97cdebba955de8e73f0f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
