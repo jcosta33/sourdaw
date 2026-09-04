@@ -1,0 +1,29 @@
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_28abfd94826e36::t_d081fe57cd8354 1287-1288,1290-1302,1305,1310,1320-1323,1349,1353-1354,1357-1358
+  s_28abfd94826e36::t_a01270dcca2cca 1666-1675
+  s_28abfd94826e36::t_655bf13e79c8bc 1467
+  s_28abfd94826e36::t_eb2cdfb0389157 1423-1424,1432
+  s_28abfd94826e36::t_128460dd41bb42 1425-1429,1433-1434,1437
+  s_28abfd94826e36::t_5ef25a1b91ad03 1689-1695,1699
+  s_28abfd94826e36::t_6eef02048f2ed1 1454,1464-1465,1477
+  s_28abfd94826e36::t_249961da057245 1601,1700,1706,1710-1711,1731-1737,1740,1743
+  s_28abfd94826e36::t_1fdd6eed344dfe 1314-1317,1319
+  s_28abfd94826e36::t_b3efd4e222bbdb 1455-1463
+  s_28abfd94826e36::t_534604f716592d 1324-1348,1350-1352,1355-1356,1359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6e8d41af8016635308f30d48103a215016d2e930",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
