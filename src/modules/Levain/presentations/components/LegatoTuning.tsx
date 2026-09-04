@@ -148,7 +148,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         size="lg"
                         tone="amber"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Slow</span>
+                    <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Slow</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.slowThresholdMs}ms</span>
                 </Stack>
 
@@ -163,7 +163,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         size="lg"
                         tone="amber"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Fast</span>
+                    <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Fast</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">{config.fastThresholdMs}ms</span>
                 </Stack>
 
@@ -178,7 +178,7 @@ export const LegatoTuning = ({ config, onChange }: LegatoTuningProps): ReactElem
                         size="md"
                         tone="amber"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Porto Vel</span>
+                    <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Porto Vel</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         {config.portamentoVelocityThreshold}
                     </span>

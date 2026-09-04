@@ -198,7 +198,7 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
             <div
                 aria-label="Extract groove from MIDI clip"
                 aria-disabled={saving}
-                className="rounded border border-dashed border-border/40 px-2 py-1 text-center text-[7px] text-muted-foreground"
+                className="rounded border border-dashed border-border/40 px-2 py-1 text-center text-nano text-muted-foreground"
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
             >

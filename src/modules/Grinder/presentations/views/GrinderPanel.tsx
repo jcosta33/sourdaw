@@ -5,6 +5,7 @@ import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
@@ -423,8 +424,8 @@ function GrinderKnob({
                 size="sm"
                 aria-label={label}
             />
-            <span className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">{label}</span>
-            <span className="font-mono text-[10px] text-white/55">{formatValue(value, unit)}</span>
+            <span className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">{label}</span>
+            <span className="font-mono text-dense text-white/55">{formatValue(value, unit)}</span>
         </Stack>
     );
 }
@@ -432,7 +433,7 @@ function GrinderKnob({
 function StatusMeter({ label, value, accent }: { label: string; value: number; accent: string }): ReactElement {
     return (
         <Stack gap={1.5} className="grinder-window min-w-[68px] px-2.5 py-2">
-            <div className="text-[9px] uppercase tracking-[0.24em] text-white/48">{label}</div>
+            <div className="text-caption uppercase tracking-[0.24em] text-white/48">{label}</div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/6">
                 <div
                     className="h-full rounded-full transition-all duration-[40ms]"
@@ -483,7 +484,7 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
         <Stack gap={3} className="grinder-window h-full p-3">
             <Row align="start" justify="between">
                 <div>
-                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
+                    <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                         Amp Stage
                     </div>
                     <div className="mt-1 text-lg font-semibold text-white/90">
@@ -568,7 +569,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
             <Stack gap={3} className="grinder-window p-3">
                 <Row align="start" justify="between">
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-peach)]">
+                        <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-peach)]">
                             Drive Surface
                         </div>
                         <div className="mt-1 text-lg font-semibold text-white/90">
@@ -604,7 +605,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
                 <div>
-                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
+                    <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                         Sustain
                     </div>
                     <div className="mt-1 text-lg font-semibold text-white/90">Gate and squeeze</div>
@@ -640,7 +641,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
             <Stack gap={3} className="grinder-window p-3">
                 <Row align="start" justify="between">
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
+                        <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                             Cab stage
                         </div>
                         <div className="mt-1 text-lg font-semibold text-white/90">Speaker field</div>
@@ -665,7 +666,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         className="absolute size-5 -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/18 shadow-[0_0_24px_rgba(111,177,198,0.25)]"
                         style={{ left: `${patch.mic1.positionX * 100}%`, top: `${patch.mic1.positionY * 100}%` }}
                     >
-                        <span className="text-[10px] font-semibold text-[var(--color-accent-cyan)]">1</span>
+                        <span className="text-dense font-semibold text-[var(--color-accent-cyan)]">1</span>
                     </Row>
                     {patch.mic2.enabled ? (
                         <Row
@@ -674,7 +675,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             style={{ left: `${patch.mic2.positionX * 100}%`, top: `${patch.mic2.positionY * 100}%` }}
                             onMouseDown={(event) => event.stopPropagation()}
                         >
-                            <span className="text-[10px] font-semibold text-[var(--color-accent-peach)]">2</span>
+                            <span className="text-dense font-semibold text-[var(--color-accent-peach)]">2</span>
                         </Row>
                     ) : null}
                 </Row>
@@ -685,7 +686,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 </Grid>
                 <Row align="stretch" gap={2}>
                     <Stack gap={1}>
-                        <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">Mic 1</span>
+                        <span className="text-caption uppercase text-white/30 tracking-wider font-semibold">Mic 1</span>
                         <Row align="stretch" gap={2}>
                             <RotaryKnob
                                 value={patch.mic1.positionX}
@@ -718,7 +719,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                     </Stack>
                     {patch.mic2.enabled ? (
                         <Stack gap={1}>
-                            <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">
+                            <span className="text-caption uppercase text-white/30 tracking-wider font-semibold">
                                 Mic 2
                             </span>
                             <Row align="stretch" gap={2}>
@@ -755,11 +756,9 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 </Row>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
-                    Cab notes
-                </div>
+                <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">Cab notes</div>
                 <div className="rounded-[20px] border border-white/8 bg-black/30 p-3">
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Readout</div>
+                    <div className="text-dense uppercase tracking-[0.2em] text-white/45">Readout</div>
                     <Stack gap={1.5} className="mt-2 font-mono text-[12px] text-white/70">
                         <div>voice {get_cab_voice_label(patch.cabIrId)}</div>
                         <div>mode {get_cab_mode_label(patch.cabType)}</div>
@@ -784,7 +783,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
             <Stack gap={3} className="grinder-window p-3">
                 <Row align="start" justify="between">
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-lavender)]">
+                        <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-lavender)]">
                             Capture engine
                         </div>
                         <div className="mt-1 text-lg font-semibold text-white/90">{modelName}</div>
@@ -796,7 +795,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                     <DawPluginLed tone="amber">{statusLabel}</DawPluginLed>
                 </Row>
                 <div className="rounded-[20px] border border-white/8 bg-black/35 p-4">
-                    <Row justify="between" className="text-[10px] uppercase tracking-[0.24em] text-white/46">
+                    <Row justify="between" className="text-dense uppercase tracking-[0.24em] text-white/46">
                         <span>Blend</span>
                         <span>{Math.round(patch.neuralMix * 100)}%</span>
                     </Row>
@@ -824,24 +823,24 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                 </div>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
+                <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                     Signal path
                 </div>
                 <div className="grid gap-2">
                     <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Mode</div>
+                        <div className="text-dense uppercase tracking-[0.2em] text-white/45">Mode</div>
                         <div className="mt-1 text-sm font-medium text-white/88">
                             {get_engine_mode_label(patch.engineMode)}
                         </div>
                     </div>
                     <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Placement</div>
+                        <div className="text-dense uppercase tracking-[0.2em] text-white/45">Placement</div>
                         <div className="mt-1 text-sm font-medium text-white/88">
                             {get_neural_placement_label(patch.neuralPlacement)}
                         </div>
                     </div>
                     <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Status</div>
+                        <div className="text-dense uppercase tracking-[0.2em] text-white/45">Status</div>
                         <div className="mt-1 text-xs leading-5 text-white/60">{get_neural_path_status(patch)}</div>
                     </div>
                     <div className="rounded-[16px] border border-dashed border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/6 px-3 py-2.5 text-xs leading-5 text-white/62">
@@ -891,7 +890,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
         <div className="grid h-full grid-cols-[0.92fr_1.08fr] gap-3">
             <Stack gap={3} className="grinder-window p-3">
                 <div>
-                    <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-orange)]">
+                    <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-orange)]">
                         Diagnostics
                     </div>
                     <div className="mt-1 text-lg font-semibold text-white/90">Feel check</div>
@@ -923,7 +922,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 </div>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
+                <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                     What lives here
                 </div>
                 <Grid cols={2} gap={3}>
@@ -965,21 +964,19 @@ function BrowserRail({
     return (
         <Stack as="aside" gap={3} shrink={false} className="grinder-faceplate h-full w-[296px] overflow-y-auto p-3">
             <div>
-                <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--color-accent-amber)]">Grinder</div>
+                <div className="text-dense uppercase tracking-[0.3em] text-[var(--color-accent-amber)]">Grinder</div>
                 <div className="mt-1 text-[22px] font-semibold tracking-[0.03em] text-white/92">Presets</div>
             </div>
             <Stack grow gap={2.5} className="grinder-window p-3">
-                <Row as="label" gap={2} className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2">
-                    <Search className="size-4 text-white/40" />
-                    <input
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        className="w-full bg-transparent text-sm text-white/84 outline-none placeholder:text-white/28"
-                        placeholder="Search presets"
-                        aria-label="Search Grinder presets"
-                    />
-                </Row>
-                <Row justify="between" className="text-[10px] uppercase tracking-[0.22em] text-white/34">
+                <DawSearchInput
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Search presets"
+                    aria-label="Search Grinder presets"
+                    variant="ghost"
+                    className="rounded-[18px] border border-white/6 bg-black/20 px-3 py-2"
+                />
+                <Row justify="between" className="text-dense uppercase tracking-[0.22em] text-white/34">
                     <span>{category}</span>
                     <span>{filteredPresets.length} shown</span>
                 </Row>
@@ -998,7 +995,7 @@ function BrowserRail({
                 </Row>
                 {patch.snapshots.length > 0 ? (
                     <div className="rounded-[18px] border border-white/8 bg-black/20 p-3">
-                        <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">
+                        <div className="text-dense uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">
                             Snapshots
                         </div>
                         <Row align="stretch" wrap gap={2} className="mt-2">
@@ -1034,11 +1031,11 @@ function BrowserRail({
                             >
                                 <Row justify="between" gap={3} className="w-full">
                                     <span className="text-[13px] font-medium text-white/88">{preset.name}</span>
-                                    <span className="text-[9px] uppercase tracking-[0.2em] text-white/36">
+                                    <span className="text-caption uppercase tracking-[0.2em] text-white/36">
                                         {preset.category}
                                     </span>
                                 </Row>
-                                <span className="text-[11px] text-white/45">
+                                <span className="text-compact text-white/45">
                                     {preset.patch.ampModel === 'clean-twin'
                                         ? 'Clean platform'
                                         : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
@@ -1054,9 +1051,7 @@ function BrowserRail({
                 </Stack>
             </Stack>
             <Stack gap={2} className="grinder-window max-h-[24vh] overflow-y-auto p-3">
-                <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">
-                    Amp lineup
-                </div>
+                <div className="text-dense uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">Amp lineup</div>
                 <div className="grid gap-2">
                     {AMP_MODELS.map((amp) => (
                         <Button
@@ -1073,7 +1068,7 @@ function BrowserRail({
                                 <span className="text-[13px] font-medium text-white/90">{amp.label}</span>
                                 <span className="h-2 w-2 rounded-full" style={{ background: amp.accent }} />
                             </Row>
-                            <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-white/34">
+                            <div className="mt-1 text-dense uppercase tracking-[0.22em] text-white/34">
                                 {amp.family} · {amp.tubes}
                             </div>
                             <div className="mt-2 text-xs text-white/46">{amp.voicing}</div>
@@ -1117,7 +1112,7 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
             <div className="grinder-window flex flex-col gap-3 p-3 md:col-span-2 xl:col-span-4">
                 <Row justify="between" gap={3}>
                     <div>
-                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
+                        <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
                             Chain order
                         </div>
                         <div className="mt-1 text-sm text-white/56">
@@ -1200,7 +1195,7 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                 return (
                     <Stack gap={3} className="grinder-window p-3" key={control.type}>
                         <Row as="label" justify="between" gap={3}>
-                            <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                            <span className="text-compact uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                                 {control.label}
                             </span>
                             <DawPluginToggle
@@ -1242,10 +1237,10 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                                         defaultValue={param.defaultValue}
                                         size="sm"
                                     />
-                                    <span className="text-[10px] uppercase tracking-[0.22em] text-white/56">
+                                    <span className="text-dense uppercase tracking-[0.22em] text-white/56">
                                         {param.label}
                                     </span>
-                                    <span className="font-mono text-[10px] text-white/40">
+                                    <span className="font-mono text-dense text-white/40">
                                         {formatValue(pedal.params[param.key] ?? param.defaultValue, param.unit)}
                                     </span>
                                 </Stack>
@@ -1409,7 +1404,7 @@ function ControlDeck({
                     defaultValue={5}
                 />
                 <Stack gap={3} className="grinder-window min-w-[220px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                         Voice switches
                     </div>
                     <Row align="stretch" gap={2}>
@@ -1449,7 +1444,7 @@ function ControlDeck({
                                 tone="peach"
                                 size="sm"
                                 shape="soft"
-                                className="justify-start py-2 text-left text-[11px]"
+                                className="justify-start py-2 text-left text-compact"
                                 onClick={() => replacePatch({ ...patch, powerTubeType: tube })}
                             >
                                 {tube}
@@ -1462,7 +1457,7 @@ function ControlDeck({
                                 tone="cyan"
                                 size="sm"
                                 shape="soft"
-                                className="justify-start py-2 text-left text-[11px]"
+                                className="justify-start py-2 text-left text-compact"
                                 onClick={() => replacePatch({ ...patch, rectifierType: rectifier })}
                             >
                                 {rectifier}
@@ -1543,7 +1538,7 @@ function ControlDeck({
                     defaultValue={0.1}
                 />
                 <Stack gap={3} className="grinder-window min-w-[210px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Cab toggles
                     </div>
                     <Row align="stretch" gap={2}>
@@ -1566,7 +1561,7 @@ function ControlDeck({
                     </Row>
                 </Stack>
                 <Stack gap={3} className="grinder-window min-w-[280px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Cab voice
                     </div>
                     <div className="grid gap-2">
@@ -1577,7 +1572,7 @@ function ControlDeck({
                                 tone="cyan"
                                 size="sm"
                                 shape="soft"
-                                className="justify-start py-2 text-left text-[11px]"
+                                className="justify-start py-2 text-left text-compact"
                                 onClick={() => replacePatch({ ...patch, cabIrId: cabinet.id })}
                             >
                                 {cabinet.label}
@@ -1586,7 +1581,7 @@ function ControlDeck({
                     </div>
                 </Stack>
                 <Stack gap={3} className="grinder-window min-w-[260px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                         Cab mode
                     </div>
                     <div className="grid gap-2">
@@ -1597,7 +1592,7 @@ function ControlDeck({
                                 tone="amber"
                                 size="sm"
                                 shape="soft"
-                                className="justify-start py-2 text-left text-[11px]"
+                                className="justify-start py-2 text-left text-compact"
                                 onClick={() => replacePatch({ ...patch, cabType: mode.id })}
                             >
                                 {mode.label}
@@ -1606,7 +1601,7 @@ function ControlDeck({
                     </div>
                 </Stack>
                 <Stack gap={3} className="grinder-window min-w-[280px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-peach)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-peach)]">
                         Routing preset
                     </div>
                     <div className="grid gap-2">
@@ -1617,7 +1612,7 @@ function ControlDeck({
                                 tone="peach"
                                 size="sm"
                                 shape="soft"
-                                className="justify-start py-2 text-left text-[11px]"
+                                className="justify-start py-2 text-left text-compact"
                                 onClick={() => replacePatch({ ...patch, routingMode: preset.id })}
                             >
                                 {preset.label}
@@ -1633,7 +1628,7 @@ function ControlDeck({
         return (
             <Row align="stretch" wrap gap={3}>
                 <Stack gap={3} className="grinder-window min-w-[280px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-lavender)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-lavender)]">
                         Engine Mode
                     </div>
                     <Grid cols={3} gap={2}>
@@ -1683,7 +1678,7 @@ function ControlDeck({
                     defaultValue={1}
                 />
                 <Stack gap={3} className="grinder-window min-w-[220px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Capture Role
                     </div>
                     <div className="grid gap-2">
@@ -1717,7 +1712,7 @@ function ControlDeck({
                     </div>
                 </Stack>
                 <Stack grow gap={3} className="grinder-window min-w-[320px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                         Factory Voices
                     </div>
                     <div className="grid gap-2">
@@ -1749,7 +1744,7 @@ function ControlDeck({
                                 >
                                     <Row justify="between">
                                         <span className="text-sm font-medium text-white/88">{model.name}</span>
-                                        <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">
+                                        <span className="text-dense uppercase tracking-[0.18em] text-white/34">
                                             {model.family}
                                         </span>
                                     </Row>
@@ -1761,14 +1756,14 @@ function ControlDeck({
                 </Stack>
                 <Stack grow gap={3} className="grinder-window min-w-[320px] px-3 py-3">
                     <Row justify="between" gap={3}>
-                        <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                        <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                             Imported captures
                         </div>
                         <Button
                             variant="bare"
                             size="bare"
                             type="button"
-                            className="rounded-[14px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-3 py-1 text-[11px] font-medium text-[var(--color-accent-cyan)]"
+                            className="rounded-[14px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-3 py-1 text-compact font-medium text-[var(--color-accent-cyan)]"
                             onClick={() => void importNeuralModels()}
                             disabled={is_importing_models}
                         >
@@ -1810,7 +1805,7 @@ function ControlDeck({
         return (
             <Row align="stretch" wrap gap={3}>
                 <Stack gap={3} className="grinder-window min-w-[220px] px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Gate</div>
+                    <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Gate</div>
                     <DawPluginToggle
                         pressed={patch.gateEnabled}
                         tone="cyan"
@@ -1934,16 +1929,14 @@ function ControlDeck({
     return (
         <Row align="stretch" wrap gap={3}>
             <Stack gap={2} className="grinder-window min-w-[250px] px-3 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                     Current preset
                 </div>
                 <div className="text-xl font-semibold text-white/90">{patch.name}</div>
                 <div className="text-sm text-white/46">{engineModeText}</div>
             </Stack>
             <Stack gap={2} className="grinder-window min-w-[200px] px-3 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
-                    Quick read
-                </div>
+                <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Quick read</div>
                 <QuickTelemetryReadout deviceId={deviceId} />
             </Stack>
         </Row>
@@ -1979,7 +1972,7 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
     return (
         <div className="grid h-full grid-cols-[1.02fr_0.98fr] gap-3">
             <Stack gap={3} className="grinder-window p-3">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
+                <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                     Current preset
                 </div>
                 <div className="text-[26px] font-semibold text-white/92">{patch.name}</div>
@@ -2011,9 +2004,7 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                 </Grid>
             </Stack>
             <Stack gap={3} className="grinder-window p-3">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
-                    Loaded rig
-                </div>
+                <div className="text-dense uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">Loaded rig</div>
                 <div className="text-lg font-semibold text-white/90">{activeAmp?.label ?? 'Custom amp'}</div>
                 <Stack gap={2.5} className="text-[13px] text-white/56">
                     <div>Engine: {heroEngineText}.</div>
@@ -2117,7 +2108,7 @@ export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         <HeroStage deviceId={deviceId} patch={patch} />
                     </div>
                     <div className="shrink-0 rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.032),rgba(255,255,255,0.012))] p-3 shadow-[var(--shadow-elevation-raised)]">
-                        <div className="mb-2 text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
+                        <div className="mb-2 text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                             Control deck
                         </div>
                         <ControlDeck deviceId={deviceId} patch={patch} replacePatch={replacePatch} />

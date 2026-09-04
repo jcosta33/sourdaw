@@ -125,7 +125,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         <Stack gap={2.5} className="crust-faceplate h-full min-h-[440px] p-2.5 text-foreground">
             <Row as="header" wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
                 <Stack gap={1}>
-                    <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">
+                    <div className="text-micro uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">
                         Loudness desk
                     </div>
                     <div className="text-[13px] font-semibold text-foreground">Crust</div>
@@ -150,13 +150,13 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="crust-window flex min-w-[164px] items-center gap-2 px-3 py-2 text-[11px]"
+                        className="crust-window flex min-w-[164px] items-center gap-2 px-3 py-2 text-compact"
                         onClick={() => setPresetMenuOpen((open) => !open)}
                         aria-haspopup="listbox"
                         aria-expanded={presetMenuOpen}
                     >
                         <div className="min-w-0 flex-1 text-left">
-                            <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
+                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">
                                 Preset
                             </div>
                             <div className="truncate text-foreground">{patch.name}</div>
@@ -169,7 +169,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             role="listbox"
                             aria-label="Crust presets"
                         >
-                            <DawMenuSectionLabel className="px-2 py-1 text-[8px] tracking-[0.24em]">
+                            <DawMenuSectionLabel className="px-2 py-1 text-micro tracking-[0.24em]">
                                 Factory
                             </DawMenuSectionLabel>
                             {CRUST_PRESETS.map((preset) => (
@@ -196,19 +196,19 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="crust-window flex min-w-[196px] items-center gap-2 px-3 py-2 text-[11px]"
+                        className="crust-window flex min-w-[196px] items-center gap-2 px-3 py-2 text-compact"
                         onClick={() => setStreamingMenuOpen((open) => !open)}
                         aria-haspopup="listbox"
                         aria-expanded={streamingMenuOpen}
                     >
                         <div className="min-w-0 flex-1 text-left">
-                            <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">
+                            <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">
                                 Target
                             </div>
                             <div className="truncate text-foreground">{streamingLabel}</div>
                         </div>
                         <div className="text-right">
-                            <div className="font-mono text-[10px] text-[var(--color-accent-copper)]">
+                            <div className="font-mono text-dense text-[var(--color-accent-copper)]">
                                 {lufsTarget !== null ? `${lufsTarget} LUFS` : 'Custom'}
                             </div>
                         </div>
@@ -225,7 +225,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                     {groupIndex > 0 ? (
                                         <DawMenuSeparator className="mx-1 my-1 border-border/50" />
                                     ) : null}
-                                    <DawMenuSectionLabel className="px-2 py-1 text-[8px] tracking-[0.24em]">
+                                    <DawMenuSectionLabel className="px-2 py-1 text-micro tracking-[0.24em]">
                                         {group}
                                     </DawMenuSectionLabel>
                                     {presets.map((preset) => (
@@ -258,8 +258,8 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         {normalizationLoss > 0.25 ? `Watch ${normalizationLoss.toFixed(1)} dB` : 'On target'}
                     </DawPluginLed>
                     <div className="text-right">
-                        <div className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</div>
-                        <div className="font-mono text-[11px] text-foreground">{patch.ceiling.toFixed(1)} dBTP</div>
+                        <div className="text-micro uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</div>
+                        <div className="font-mono text-compact text-foreground">{patch.ceiling.toFixed(1)} dBTP</div>
                     </div>
                 </Row>
             </Row>
@@ -294,21 +294,21 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             title="Mission control"
                             titleClassName="text-muted-foreground/70"
                             actions={
-                                <Row gap={2} className="text-[9px] text-muted-foreground">
+                                <Row gap={2} className="text-caption text-muted-foreground">
                                     <Stack gap={0.5}>
                                         <DawReadoutRow
                                             label="ST"
                                             value={`${lufsShortTerm.toFixed(1)} LUFS`}
                                             className="gap-1.5"
-                                            labelClassName="text-[8px] text-muted-foreground/55"
-                                            valueClassName="text-[8px] text-muted-foreground"
+                                            labelClassName="text-micro text-muted-foreground/55"
+                                            valueClassName="text-micro text-muted-foreground"
                                         />
                                         <DawReadoutRow
                                             label="TP"
                                             value={`${truepeakMax.toFixed(1)} dB`}
                                             className="gap-1.5"
-                                            labelClassName="text-[8px] text-muted-foreground/55"
-                                            valueClassName="text-[8px] text-muted-foreground"
+                                            labelClassName="text-micro text-muted-foreground/55"
+                                            valueClassName="text-micro text-muted-foreground"
                                         />
                                     </Stack>
                                 </Row>
@@ -365,7 +365,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                 <div> it mapped to a second `contentinfo` landmark alongside the app
                 status bar, which is invalid and makes landmark navigation ambiguous. */}
             <Row wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
-                <Row as="label" gap={2} className="text-[10px] text-muted-foreground">
+                <Row as="label" gap={2} className="text-dense text-muted-foreground">
                     <span className="uppercase tracking-[0.22em] text-muted-foreground/55">Ceiling</span>
                     <DawCompactInput
                         type="number"

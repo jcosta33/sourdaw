@@ -771,7 +771,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
                     </Row>
                     <div
-                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                        className="h-2 w-full overflow-hidden rounded-full border border-border-hairline bg-surface-well shadow-inner"
                         role="progressbar"
                         aria-valuenow={Math.round(progress)}
                         aria-valuemin={0}
@@ -801,7 +801,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             );
         }
         return (
-            <Stack justify="center" className="h-full text-center text-[10px] uppercase tracking-widest text-stone-500">
+            <Stack
+                justify="center"
+                className="h-full text-center text-dense uppercase tracking-widest text-muted-foreground"
+            >
                 {isNativeProjectRuntimeAvailable() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
             </Stack>
         );
@@ -841,7 +844,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     size="sm"
                     onClick={onClose}
                     data-testid="export-cancel"
-                    className="text-stone-400 hover:text-stone-200"
+                    className="text-muted-foreground hover:text-foreground"
                 >
                     Cancel
                 </Button>
@@ -869,7 +872,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }}
         >
             <DialogContent
-                className="max-h-[calc(100vh-2rem)] w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-stone-950 p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
+                className="max-h-[calc(100vh-2rem)] w-[480px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl border border-orange-900/40 bg-surface-base p-0 shadow-[0_0_40px_rgba(234,88,12,0.1)]"
                 showCloseButton={!exporting}
             >
                 <DialogHeader
@@ -995,11 +998,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         }
                                     }}
                                     aria-label="Tail seconds"
-                                    className="h-auto w-20 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1 text-xs text-stone-200 disabled:opacity-40"
+                                    className="h-auto w-20 rounded-md border border-border-hairline bg-surface-well px-2 py-1 text-xs text-foreground disabled:opacity-40"
                                 />
-                                <span className="text-[10px] text-stone-500">seconds</span>
+                                <span className="text-dense text-muted-foreground">seconds</span>
                             </Row>
-                            <Row as="label" gap={1.5} className="text-[11px] text-stone-400">
+                            <Row as="label" gap={1.5} className="text-compact text-muted-foreground">
                                 <DawCompactCheckbox
                                     type="checkbox"
                                     checked={autoTail}
@@ -1031,7 +1034,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 onChange={(e) => setRenderTargetTrackId(e.target.value)}
                                 disabled={exporting}
                                 aria-label="Target track"
-                                className="w-full rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1.5 text-xs text-stone-200"
+                                className="w-full rounded-md border border-border-hairline bg-surface-well px-2 py-1.5 text-xs text-foreground"
                             >
                                 <option value="new">New audio track</option>
                                 {audioTracks.map((t) => (
@@ -1059,7 +1062,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                                     active
                                                         ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
-                                                        : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
+                                                        : 'border-border-hairline bg-surface-panel hover:border-border hover:bg-surface-raised'
                                                 }`}
                                                 onClick={() => toggleFormat(freq.value)}
                                                 aria-pressed={active}
@@ -1068,12 +1071,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 disabled={exporting}
                                             >
                                                 <div
-                                                    className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
+                                                    className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-muted-foreground'}`}
                                                 >
                                                     {freq.label}
                                                 </div>
                                                 <div
-                                                    className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
+                                                    className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-muted-foreground/60'}`}
                                                 >
                                                     {freq.desc}
                                                 </div>
@@ -1089,10 +1092,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 detail="Choose sample rate, bit depth, and compression quality."
                                 bodyClassName={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}
                             >
-                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
                                     <DawEyebrowLabel
                                         size="sm"
-                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                        className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
                                         Sample Rate
                                     </DawEyebrowLabel>
@@ -1104,8 +1107,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     sampleRate === sr
-                                                        ? 'bg-stone-800 text-stone-200'
-                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateSampleRate(sr)}
                                                 disabled={exporting}
@@ -1116,10 +1119,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     </Row>
                                 </div>
 
-                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
                                     <DawEyebrowLabel
                                         size="sm"
-                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                        className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
                                         Bit Depth
                                     </DawEyebrowLabel>
@@ -1131,8 +1134,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     effectiveBitDepth === bd
-                                                        ? 'bg-stone-800 text-stone-200'
-                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateBitDepth(bd)}
                                                 disabled={exporting}
@@ -1143,10 +1146,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                     </Row>
                                 </div>
 
-                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
                                     <DawEyebrowLabel
                                         size="sm"
-                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                        className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
                                         Loudness
                                     </DawEyebrowLabel>
@@ -1163,8 +1166,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     normalization === option.value
-                                                        ? 'bg-stone-800 text-stone-200'
-                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateNormalization(option.value)}
                                                 disabled={exporting}
@@ -1173,16 +1176,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
-                                    <p className="mt-1.5 text-[10px] text-stone-600">
+                                    <p className="mt-1.5 text-dense text-muted-foreground/70">
                                         Measures programme loudness and inter-sample peaks, then applies one gain to
                                         reach the target without exceeding {R128_CEILING_DB_TP} dBTP.
                                     </p>
                                 </div>
 
-                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
                                     <DawEyebrowLabel
                                         size="sm"
-                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                        className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
                                         Dither
                                     </DawEyebrowLabel>
@@ -1200,8 +1203,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
                                                     dither === option.value
-                                                        ? 'bg-stone-800 text-stone-200'
-                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                        ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                        : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                 }`}
                                                 onClick={() => updateDither(option.value)}
                                                 disabled={exporting}
@@ -1210,17 +1213,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
-                                    <p className="mt-1.5 text-[10px] text-stone-600">
+                                    <p className="mt-1.5 text-dense text-muted-foreground/70">
                                         Repeatable re-exports the same project to identical bytes. Off skips dither
                                         entirely for a bit-exact bounce.
                                     </p>
                                 </div>
 
                                 {formats.has('mp3') ? (
-                                    <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                    <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
                                         <DawEyebrowLabel
                                             size="sm"
-                                            className="mb-2 block font-bold tracking-widest text-stone-600"
+                                            className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                         >
                                             MP3 Quality
                                         </DawEyebrowLabel>
@@ -1232,8 +1235,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                                     size="sm"
                                                     className={`h-6 rounded-md px-2 text-[10px] ${
                                                         mp3BitRate === br
-                                                            ? 'bg-stone-800 text-stone-200'
-                                                            : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                            ? 'bg-surface-raised text-foreground font-medium shadow-sm'
+                                                            : 'text-muted-foreground hover:bg-surface-panel hover:text-foreground'
                                                     }`}
                                                     onClick={() => updateMp3BitRate(br)}
                                                     disabled={exporting}
@@ -1277,10 +1280,10 @@ const RangeRadio = ({ label, value, activeValue, disabled, onChange }: RangeRadi
     const active = activeValue === value;
     return (
         <label
-            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-all ${
+            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-compact transition-all ${
                 active
                     ? 'border-orange-500/30 bg-orange-950/40 text-orange-200'
-                    : 'border-stone-800 bg-stone-900/40 text-stone-400 hover:border-stone-700 hover:text-stone-200'
+                    : 'border-border-hairline bg-surface-raised text-muted-foreground hover:border-border hover:text-foreground'
             } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
         >
             <input

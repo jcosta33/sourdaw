@@ -83,7 +83,7 @@ export const MicBlendSlider = ({
                                 size="sm"
                                 tone="amber"
                             />
-                            <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
+                            <span className="text-nano text-muted-foreground/60 uppercase tracking-wider leading-tight text-center">
                                 {mic.name}
                             </span>
                         </Stack>

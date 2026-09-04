@@ -38,7 +38,7 @@ export const BandStrip = ({ index, band, isActive, onSelect, onParamChange }: Ba
     >
         {/* Band header */}
         <Row justify="between">
-            <span className={`text-[8px] font-bold ${isActive ? 'text-rose-400' : 'text-muted-foreground/60'}`}>
+            <span className={`text-micro font-bold ${isActive ? 'text-rose-400' : 'text-muted-foreground/60'}`}>
                 Band {index + 1}
             </span>
             <Row align="stretch" gap={0.5}>

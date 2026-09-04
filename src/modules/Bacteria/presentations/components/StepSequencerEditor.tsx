@@ -167,7 +167,7 @@ export const StepSequencerEditor = ({
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
-            <span className="absolute top-1 left-1 text-[7px] text-muted-foreground/30 font-mono">
+            <span className="absolute top-1 left-1 text-nano text-muted-foreground/30 font-mono">
                 Step Sequencer ({numSteps} steps)
             </span>
         </div>

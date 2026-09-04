@@ -67,7 +67,7 @@ export const PerNoteEditor = ({
                     tone="inset"
                     value={selectedKey}
                     onChange={(e) => setSelectedKey(Number(e.currentTarget.value))}
-                    className="flex-1 text-[9px]"
+                    className="flex-1 text-caption"
                 >
                     {NOTE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -81,7 +81,7 @@ export const PerNoteEditor = ({
                     type="button"
                     disabled={!hasOverrides}
                     onClick={() => onReset(selectedKey)}
-                    className="rounded px-2 py-0.5 text-[8px] uppercase tracking-[0.16em] text-neutral-300/70 transition-colors hover:bg-neutral-400/10 hover:text-neutral-200 disabled:pointer-events-none disabled:opacity-30"
+                    className="rounded px-2 py-0.5 text-micro uppercase tracking-[0.16em] text-neutral-300/70 transition-colors hover:bg-neutral-400/10 hover:text-neutral-200 disabled:pointer-events-none disabled:opacity-30"
                 >
                     Reset
                 </Button>
@@ -105,11 +105,11 @@ export const PerNoteEditor = ({
                                 size="sm"
                             />
                             <div className="text-center">
-                                <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">
                                     {descriptor.label}
                                 </div>
                                 <div
-                                    className={`font-mono text-[9px] ${
+                                    className={`font-mono text-caption ${
                                         isDefault ? 'text-foreground/85' : 'text-neutral-200/90'
                                     }`}
                                 >

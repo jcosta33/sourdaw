@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
-import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
+import { Activity, Flame, Radio, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
@@ -12,6 +12,7 @@ import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
@@ -283,9 +284,9 @@ const LensBar = ({
     accentColor: string;
 }): ReactElement => (
     <Stack gap={1}>
-        <Row justify="between" gap={2} className="text-[9px] text-muted-foreground">
+        <Row justify="between" gap={2} className="text-caption text-muted-foreground">
             <span>{label}</span>
-            <span className="font-mono text-[8px] text-foreground/80">{Math.round(value * 100)}%</span>
+            <span className="font-mono text-micro text-foreground/80">{Math.round(value * 100)}%</span>
         </Row>
         <div className="h-1.5 rounded-full bg-white/6">
             <div
@@ -410,8 +411,8 @@ const Knob = ({
             title={gate.explanation ?? undefined}
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
-            <div className="font-mono text-[9px] text-foreground/85">{formatValue(value, unit)}</div>
+            <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
+            <div className="font-mono text-caption text-foreground/85">{formatValue(value, unit)}</div>
         </div>
     </Stack>
 );
@@ -595,7 +596,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         }
         const role = topology === currentPatch.topology ? 'Primary' : 'Stage two';
         return (
-            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
+            <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                 {`${role} — ${TOPOLOGY_META[topology].label}`}
             </div>
         );
@@ -607,7 +608,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 <DawPluginRail className="gluten-window p-3" scrollable={false}>
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={1}>
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
+                            <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Presets
                             </div>
                             <div className="text-[15px] font-semibold text-foreground">Gluten</div>
@@ -615,16 +616,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         <DawPluginLed tone="lavender">{filteredPresets.length} ready</DawPluginLed>
                     </Row>
 
-                    <Row as="label" gap={2} className="gluten-window px-3 py-2">
-                        <Search className="size-3.5 text-muted-foreground/55" />
-                        <input
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Find a squeeze"
-                            className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
-                            aria-label="Search Gluten presets"
-                        />
-                    </Row>
+                    <DawSearchInput
+                        value={search}
+                        onChange={setSearch}
+                        placeholder="Find a squeeze"
+                        aria-label="Search Gluten presets"
+                        variant="ghost"
+                        className="gluten-window px-3 py-2"
+                    />
 
                     <Row wrap gap={1.5}>
                         {CATEGORIES.map((entry) => {
@@ -664,7 +663,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 grow
                                 align="center"
                                 justify="center"
-                                className="gluten-window px-4 py-6 text-center text-[11px] leading-5 text-muted-foreground"
+                                className="gluten-window px-4 py-6 text-center text-compact leading-5 text-muted-foreground"
                             >
                                 No preset matches that search yet. Try another category or a looser word.
                             </Stack>
@@ -675,7 +674,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 <Stack gap={3} className="min-h-0 min-w-0 overflow-y-auto pr-1">
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={2}>
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
+                            <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Dynamics cockpit
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{patch.name}</div>
@@ -737,10 +736,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 <Icon className="size-3.5" />
                                             </div>
                                             <Stack>
-                                                <div className="text-[10px] font-semibold text-foreground">
+                                                <div className="text-dense font-semibold text-foreground">
                                                     {meta.label}
                                                 </div>
-                                                <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/42">
+                                                <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/42">
                                                     {meta.detail}
                                                 </div>
                                             </Stack>
@@ -755,7 +754,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     <Stack gap={3} className="gluten-window min-h-0 shrink-0 p-3">
                         <Row align="start" justify="between" gap={3}>
                             <Stack gap={1}>
-                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
+                                <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                     Quick moves
                                 </div>
                                 <div className="text-[13px] font-semibold text-foreground">
@@ -1173,7 +1172,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         );
                                     })}
                                 </Row>
-                                <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">OS</div>
+                                <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">OS</div>
                             </Stack>
                         </Grid>
                         <Stack gap={2}>
@@ -1365,7 +1364,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         );
                                     })}
                                 </Row>
-                                <p className="text-[10px] leading-4 text-muted-foreground">
+                                <p className="text-dense leading-4 text-muted-foreground">
                                     Limit leans harder on the cell. Compress lets it breathe.
                                 </p>
                             </Stack>
@@ -1389,7 +1388,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         );
                                     })}
                                 </Row>
-                                <p className="text-[10px] leading-4 text-muted-foreground">
+                                <p className="text-dense leading-4 text-muted-foreground">
                                     Fixed release times: 50, 100, 400, 800 and 1500 ms. Low positions let the level
                                     spring back between hits; high positions hold the reduction through the tail.
                                 </p>
