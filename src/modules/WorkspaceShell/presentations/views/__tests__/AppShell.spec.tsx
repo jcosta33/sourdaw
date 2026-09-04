@@ -13,6 +13,7 @@ import {
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
+import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 import { defaultOnboardingState, onboardingStore } from '#/modules/Onboarding/stores';
 import {
@@ -328,6 +329,7 @@ let onboardingState: typeof defaultOnboardingState;
 let trackStoreState: TrackStoreState;
 let selectedClipIdState: string | null;
 let workspaceState: WorkspaceState;
+let agentProjectRepairState: AgentProjectRepairState | null;
 
 describe('AppShell', () => {
     beforeEach(() => {
@@ -347,6 +349,7 @@ describe('AppShell', () => {
         onboardingState = defaultOnboardingState;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         selectedClipIdState = null;
+        agentProjectRepairState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === trackStore) {
@@ -369,6 +372,9 @@ describe('AppShell', () => {
             }
             if (store === onboardingStore) {
                 return onboardingState;
+            }
+            if (store === agentProjectRepairStateStore) {
+                return agentProjectRepairState;
             }
             return defaultValue;
         });
@@ -1094,5 +1100,33 @@ describe('AppShell', () => {
                 expect(panelContainer).not.toHaveClass(deprecatedBorderColor);
             }
         );
+    });
+
+    describe('project mutation refusal', () => {
+        it('explains a repair-required project without covering the workspace', () => {
+            agentProjectRepairState = {
+                audioGraphValid: false,
+                detectedRevision: 'revision-1',
+                inspectionAvailable: true,
+                projectInvariantsValid: false,
+                rawProjectRetained: true,
+                repairCandidates: [],
+                status: 'repair-required',
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('project-mutation-refused-banner')).toBeInTheDocument();
+            // The banner is not a dialog: the shell stays reachable, so the
+            // skip-link survives and the shell root never goes `inert`.
+            expect(screen.getByTestId('app-shell')).not.toHaveAttribute('inert');
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+        });
+
+        it('shows no banner while the project accepts mutations', () => {
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('project-mutation-refused-banner')).not.toBeInTheDocument();
+        });
     });
 });

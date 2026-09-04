@@ -30,7 +30,7 @@ import { materializeCommandHandlerArguments } from './materializeCommandHandlerA
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
-type ExecuteAppActionOptions = ExecuteOptions & {
+export type ExecuteAppActionOptions = ExecuteOptions & {
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
 };

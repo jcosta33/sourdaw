@@ -83,6 +83,23 @@ function arrangement(id: string, tracks: Record<string, unknown>): Record<string
 }
 
 /**
+ * A snapshot as builds before #3533 wrote one: `takeSnapshot` copied the live
+ * track store wholesale, so the transient `ghostClips` field rode into the
+ * document, and a lane can still carry the retired `virginTerritory` flag. The
+ * store rebuilds both away on hydrate, and unless that discard is declared the
+ * detector reads the rebuild as unrecoverable loss and refuses every edit and
+ * every save the document will ever see.
+ */
+function arrangementWithDiscardedKeys(id: string, tracks: Record<string, unknown>): Record<string, unknown> {
+    return {
+        ...arrangement(id, { ...tracks, ghostClips: [] }),
+        automation: {
+            lanes: [{ id: 'lane-gain', trackId: 'track-a', parameterId: 'gain', points: [], virginTerritory: true }],
+        },
+    };
+}
+
+/**
  * The wire encoding `grooveTemplateAutomergeStorage` writes: entity maps keyed
  * by id, each carrying a tombstone flag beside its value, under a schema
  * version. Nothing in the store's own shape looks like this — that is the whole
@@ -169,6 +186,20 @@ describe('agent project repair inspection', () => {
             arrangements: {
                 activeArrangementId: 'arrangement-1',
                 arrangements: [arrangement('arrangement-1', tracks), arrangement('arrangement-2', tracks)],
+            },
+            grooveTemplates: encodedGrooveTemplates(),
+        });
+
+        expect(inspectCurrentAgentProjectRepairState()).toBeNull();
+    });
+
+    it('does not require repair for a snapshot carrying keys the arrangement store discards on purpose', () => {
+        const tracks = tracksSlot([masterBus(), track('track-a')]);
+        seedRootDocument({
+            tracks,
+            arrangements: {
+                activeArrangementId: 'arrangement-1',
+                arrangements: [arrangementWithDiscardedKeys('arrangement-1', tracks)],
             },
             grooveTemplates: encodedGrooveTemplates(),
         });

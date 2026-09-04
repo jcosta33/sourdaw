@@ -15,7 +15,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
     - **Tuning & Scales**: `importSclFile`, `setProjectKeyRoot`, `setProjectScaleName`.
     - **Media & Files**: `pickFiles`, `verifyAudioBufferReferences`, `exportProjectFile`, `pickAndImportProjectFile`.
     - **Interchange Contracts**: `buildProjectData`, `applyImportedProjectData`, `runProjectLoadTransaction`, `isNativeProjectRuntimeAvailable`.
-    - **Semantic Queries & Briefs**: `doesProductionBriefAllowActionBatch`, `productionBriefActionBatchAdmission`, `acceptCreativeIntent`, `querySemanticProject`, `getProjectProtocolContracts`, `getAgentProjectModelContract`, `getDurableProjectOwnerId`.
+    - **Semantic Queries & Briefs**: `doesProductionBriefAllowActionBatch`, `productionBriefActionBatchAdmission`, `getProjectScopedBriefLock`, `acceptCreativeIntent`, `querySemanticProject`, `getProjectProtocolContracts`, `getAgentProjectModelContract`, `getDurableProjectOwnerId`.
     - **Recent Projects**: `getRecentProjects`, `loadRecentProject`.
     - **Handlers**: `getProjectHandlers`.
 - `presentations/views`: `ArrangementSelector`, `MissingMediaPanel`, `RecentProjectsMenu`.
@@ -36,6 +36,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 - **Dirty Tracking Lifecycle**: Any mutation affecting project state must invoke `markDirty` to ensure unsaved work prompts on unload or autosave.
 - **Runtime Detection**: Always check `isNativeProjectRuntimeAvailable` / `isNativeFileSystemAvailable` before issuing native desktop filesystem commands.
 - **Scala Tuning Validation**: `.scl` parsing enforces valid pitch ratios/cents and line formats, rejecting corrupted tuning files.
+- **One Protected-Scope Source**: `collectProtectedScopes` is the only place that decides which brief entries protect anything, and `isProjectWideScope` the only place that decides what "the whole project" means. Batch admission and `getProjectScopedBriefLock` both read them, so a surface that explains a refusal can never name a lock the guard does not enforce.
 
 ## Verification
 
