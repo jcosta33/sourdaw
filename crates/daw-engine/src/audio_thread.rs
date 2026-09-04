@@ -1425,8 +1425,9 @@ mod tests {
     use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
     use std::rc::Rc;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc;
+    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1719,12 +1720,16 @@ mod tests {
         assert_eq!(error, "audio device unavailable");
     }
 
+    /// The flag proves the timeout returned before the stall released; the bound is only a ceiling.
     #[test]
     fn stalled_stream_startup_times_out_without_stranding_the_owner_resource() {
         let (release_tx, release_rx) = mpsc::channel();
         let (dropped_tx, dropped_rx) = mpsc::channel();
+        let released = Arc::new(AtomicBool::new(false));
+        let release_flag = Arc::clone(&released);
         let release_thread = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(400));
+            thread::sleep(Duration::from_secs(2));
+            release_flag.store(true, Ordering::SeqCst);
             release_tx
                 .send(())
                 .expect("owner thread should still be waiting");
@@ -1754,7 +1759,14 @@ mod tests {
         };
 
         assert_eq!(error, "Timed out waiting for audio stream startup");
-        assert!(startup_duration < Duration::from_millis(250));
+        assert!(
+            !released.load(Ordering::SeqCst),
+            "the 100 ms startup timeout must return before the stall releases"
+        );
+        assert!(
+            startup_duration < Duration::from_secs(1),
+            "the 100 ms startup timeout must not wait the stall out"
+        );
         release_thread.join().expect("release thread should finish");
         let (created_on, dropped_on) = dropped_rx
             .recv_timeout(Duration::from_secs(1))
@@ -1762,6 +1774,7 @@ mod tests {
         assert_eq!(dropped_on, created_on);
     }
 
+    /// The flag proves the timeout returned before the stall released; the bound is only a ceiling.
     #[test]
     fn stalled_stream_teardown_cannot_block_handle_drop_indefinitely() {
         let (release_tx, release_rx) = mpsc::channel();
@@ -1774,8 +1787,11 @@ mod tests {
             })
         })
         .expect("owner thread should start");
+        let released = Arc::new(AtomicBool::new(false));
+        let release_flag = Arc::clone(&released);
         let release_thread = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(400));
+            thread::sleep(Duration::from_secs(2));
+            release_flag.store(true, Ordering::SeqCst);
             release_tx
                 .send(())
                 .expect("owner thread should still be waiting");
@@ -1785,7 +1801,14 @@ mod tests {
         drop(handle);
         let drop_duration = started_at.elapsed();
 
-        assert!(drop_duration < Duration::from_millis(250));
+        assert!(
+            !released.load(Ordering::SeqCst),
+            "the 100 ms shutdown timeout must return before the stall releases"
+        );
+        assert!(
+            drop_duration < Duration::from_secs(1),
+            "the 100 ms shutdown timeout must not wait the stall out"
+        );
         release_thread.join().expect("release thread should finish");
         dropped_rx
             .recv_timeout(Duration::from_secs(1))
