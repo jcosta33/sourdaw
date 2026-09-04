@@ -182,24 +182,25 @@ and returns an answer the pipeline was going to give anyway.
 
 ## Checks
 
-| Need                  | Command                                      |
-| --------------------- | -------------------------------------------- |
-| Focused tests         | `pnpm test:run <file-or-narrow-directory>`   |
-| Focused E2E           | `pnpm test:e2e <spec>`                       |
-| Focused lint          | `pnpm lint <changed-files>`                  |
-| Focused format        | `pnpm format <changed-files>`                |
-| App types             | `pnpm typecheck`                             |
-| Test types            | `pnpm typecheck:test`                        |
-| Script types          | `pnpm typecheck:scripts`                     |
-| E2E types             | `pnpm typecheck:e2e`                         |
-| Focused Rust tests    | `pnpm cargo:test --package <crate> <filter>` |
-| Focused Rust format   | `pnpm cargo:fmt --package <crate>`           |
-| Module boundaries     | `pnpm deps:validate`                         |
-| Barrel mocks          | `pnpm test:barrel-mocks`                     |
-| Rebuild one wasm pkg  | that package's own `wasm:*` script           |
-| Rebuild every wasm    | `pnpm wasm:all`                              |
-| Rewrite wasm manifest | `pnpm wasm:manifest`                         |
-| Prove wasm freshness  | `pnpm wasm:verify`                           |
+| Need                      | Command                                      |
+| ------------------------- | -------------------------------------------- |
+| Focused tests             | `pnpm test:run <file-or-narrow-directory>`   |
+| Focused E2E               | `pnpm test:e2e <spec>`                       |
+| Focused lint              | `pnpm lint <changed-files>`                  |
+| Focused format            | `pnpm format <changed-files>`                |
+| App types                 | `pnpm typecheck`                             |
+| Test types                | `pnpm typecheck:test`                        |
+| Script types              | `pnpm typecheck:scripts`                     |
+| E2E types                 | `pnpm typecheck:e2e`                         |
+| Focused Rust tests        | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format       | `pnpm cargo:fmt --package <crate>`           |
+| Module boundaries         | `pnpm deps:validate`                         |
+| Barrel mocks              | `pnpm test:barrel-mocks`                     |
+| Rebuild one wasm pkg      | that package's own `wasm:*` script           |
+| Rebuild every wasm        | `pnpm wasm:all`                              |
+| Rewrite wasm manifest     | `pnpm wasm:manifest`                         |
+| Prove wasm freshness      | `pnpm wasm:verify`                           |
+| Restamp a dependency bump | `pnpm release:restamp`                       |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
