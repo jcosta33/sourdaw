@@ -2586,14 +2586,21 @@ function retargetAllRemainingDependents(
     headRefName: string,
     baseRefName: string,
     deliveringNumber: number,
-    port: DeliveryPort
+    port: DeliveryPort,
+    alreadyRetargeted: Iterable<number> = []
 ): void {
+    const retargeted = new Set<number>(alreadyRetargeted);
     while (true) {
-        const remaining = port.dependents(headRefName).filter((candidate) => candidate.number !== deliveringNumber);
+        const remaining = port
+            .dependents(headRefName)
+            .filter((candidate) => candidate.number !== deliveringNumber && !retargeted.has(candidate.number));
         if (remaining.length === 0) {
             break;
         }
         retargetDependents(remaining, baseRefName, port);
+        for (const candidate of remaining) {
+            retargeted.add(candidate.number);
+        }
     }
 }
 
@@ -2661,7 +2668,13 @@ function deliverPullRequestWithCiAdmission(
         }
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
-        retargetAllRemainingDependents(initial.headRefName, initial.baseRefName, number, port);
+        retargetAllRemainingDependents(
+            initial.headRefName,
+            initial.baseRefName,
+            number,
+            port,
+            remaining.map((dependent) => dependent.number)
+        );
         completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
         persistTerminalDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
@@ -2712,7 +2725,13 @@ function deliverPullRequestWithCiAdmission(
             validateDependent(port.pullRequest(dependent.number), dependent);
         }
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-        retargetAllRemainingDependents(finalSnapshot.headRefName, finalSnapshot.baseRefName, number, port);
+        retargetAllRemainingDependents(
+            finalSnapshot.headRefName,
+            finalSnapshot.baseRefName,
+            number,
+            port,
+            finalDependents.map((dependent) => dependent.number)
+        );
         completeIssueAfterMerge(number, recoveredPayload.closingIssue, tracker);
         persistTerminalDeliveryReceiptAuthority(number, recoveredReceipt, preparedPostMergeValidation, port);
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
@@ -2803,7 +2822,13 @@ function deliverPullRequestWithCiAdmission(
         port
     );
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-    retargetAllRemainingDependents(finalSnapshot.headRefName, finalSnapshot.baseRefName, number, port);
+    retargetAllRemainingDependents(
+        finalSnapshot.headRefName,
+        finalSnapshot.baseRefName,
+        number,
+        port,
+        finalDependents.map((dependent) => dependent.number)
+    );
     completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
     persistTerminalDeliveryReceiptAuthority(
         number,

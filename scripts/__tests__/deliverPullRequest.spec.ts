@@ -1330,6 +1330,29 @@ describe('pull-request delivery', () => {
         expect(persistedReceiptAuthority()?.phase).toBe('terminal');
     });
 
+    it('does not repeatedly retarget already-retargeted dependents when dependents port returns cached PRs', () => {
+        const child = stacked({ number: 43 });
+        const closes = relationshipBody('Closes #2372');
+        let callCount = 0;
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes })],
+            dependents: [child],
+        });
+        port.dependents = () => {
+            callCount += 1;
+            if (callCount > 10) {
+                throw new Error('infinite loop in retargetAllRemainingDependents');
+            }
+            return [child];
+        };
+
+        deliverPullRequest(42, port, tracker);
+
+        const retargetCalls = calls.filter((c) => c === 'retarget:43:main');
+        expect(retargetCalls).toHaveLength(1);
+        expect(persistedReceiptAuthority()?.phase).toBe('terminal');
+    });
+
     it('refuses to merge when automatic branch deletion is enabled and a late dependent was opened immediately before squash merge', () => {
         const child = stacked({ number: 43 });
         const closes = relationshipBody('Closes #2372');
