@@ -1188,7 +1188,7 @@ function writeShallowGrandBouleMeasurementFixture(
     try {
         clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
         afterDirectoriesCreated?.({ clone, remote });
-        rmSync(clone, { recursive: true, force: true });
+        removeTemporaryDirectory(clone);
         execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'init', '--bare', '--quiet', remote]);
         execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
         execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
@@ -1210,9 +1210,9 @@ function writeShallowGrandBouleMeasurementFixture(
         return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
     } catch (error) {
         if (clone !== undefined) {
-            rmSync(clone, { recursive: true, force: true });
+            removeTemporaryDirectory(clone);
         }
-        rmSync(remote, { recursive: true, force: true });
+        removeTemporaryDirectory(remote);
         throw error;
     }
 }
@@ -1252,6 +1252,11 @@ function snapshot(): RepositorySnapshot {
     };
 }
 
+// A child git process can still hold the directory on macOS, so rmSync throws ENOTEMPTY; retry absorbs that race.
+function removeTemporaryDirectory(path: string): void {
+    rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 describe('release inventory', () => {
     it('includes the complete Grand Boule Rust module in the wasm32 crate graph', () => {
         expect(() => assertGrandBouleRustWasmBoundary(repositoryRoot)).not.toThrow();
@@ -1269,7 +1274,7 @@ describe('release inventory', () => {
                 'Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1337,7 +1342,7 @@ describe('release inventory', () => {
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('Rust constructor');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1359,7 +1364,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1376,7 +1381,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1407,7 +1412,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1432,7 +1437,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1448,7 +1453,7 @@ describe('release inventory', () => {
                     `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
                 );
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -1464,7 +1469,7 @@ describe('release inventory', () => {
                     `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
                 );
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -1505,7 +1510,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, path), contents);
             expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(`${label} has unexpected artifact ${path}`);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1533,7 +1538,7 @@ describe('release inventory', () => {
                 'WASM manifest package proof-chamber has unexpected artifact public/wasm/hostile.js'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1632,7 +1637,7 @@ describe('release inventory', () => {
                 )
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1696,7 +1701,7 @@ describe('release inventory', () => {
                 ])
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1763,7 +1768,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1801,7 +1806,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1825,7 +1830,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1855,7 +1860,7 @@ describe('release inventory', () => {
             );
             expect(byteReads).toBe(0);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1883,7 +1888,7 @@ describe('release inventory', () => {
             );
             expect(textReads).toBe(0);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1921,7 +1926,7 @@ describe('release inventory', () => {
                 cause: { message: 'unexpected early EOF while reading repository file descriptor' },
             });
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1953,7 +1958,7 @@ describe('release inventory', () => {
             ).toThrow('repository aggregate byte limit exceeded');
             expect(readDescriptors.size).toBe(1);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1969,7 +1974,7 @@ describe('release inventory', () => {
 
             expect(() => readReleaseInventory(root)).toThrow('release inventory exceeds the per-file byte limit');
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2006,7 +2011,7 @@ describe('release inventory', () => {
             expect(changed.fileDigests[path]).toBe('missing');
             expect(reads).toBe(0);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2053,7 +2058,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2087,7 +2092,7 @@ describe('release inventory', () => {
             expect(changed.externalReferences).not.toContain(insideReference);
             expect(changed.externalReferences).toEqual([]);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2125,7 +2130,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2161,7 +2166,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2191,7 +2196,7 @@ describe('release inventory', () => {
             expect(changed.externalReferences).toEqual([]);
             expect(linked).toBe(true);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2231,7 +2236,7 @@ describe('release inventory', () => {
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -2258,7 +2263,7 @@ describe('release inventory', () => {
             expect(opens).toBe(0);
             expect(changed.fileDigests[requiredPath]).toBeUndefined();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2291,7 +2296,7 @@ describe('release inventory', () => {
             expect(reads).toBe(0);
             expect(changed.fileDigests[path]).toBe('missing');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2333,7 +2338,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2374,7 +2379,7 @@ describe('release inventory', () => {
 
             expect(changed.fileDigests[path]).toBe(sha256('dlpack license'));
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2472,7 +2477,7 @@ describe('release inventory', () => {
                         : 'DDSP models release inventory digests does not match provenance'
                 );
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -2495,7 +2500,7 @@ describe('release inventory', () => {
 
                 expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -2521,7 +2526,7 @@ describe('release inventory', () => {
                 'DDSP models release inventory digests does not match provenance'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2546,7 +2551,7 @@ describe('release inventory', () => {
                 'ADR 0035 does not admit the current DDSP artifact manifest'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2585,7 +2590,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'public/legal/TensorFlow.js-NOTICE.txt'), 'changed');
             expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2683,7 +2688,7 @@ describe('release inventory', () => {
                 writeFileSync(absolute, original);
             }
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2722,7 +2727,7 @@ describe('release inventory', () => {
             ]);
             writeFileSync(composePath, originalCompose);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2746,7 +2751,7 @@ describe('release inventory', () => {
             ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
             expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2769,7 +2774,7 @@ describe('release inventory', () => {
             ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
             expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2795,7 +2800,7 @@ describe('release inventory', () => {
                 'grand-boule-project-state'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2814,7 +2819,7 @@ describe('release inventory', () => {
         try {
             expect(() => grandBouleReleaseInventoryContract(canonicalRoot)).not.toThrow();
         } finally {
-            rmSync(canonicalBase, { recursive: true, force: true });
+            removeTemporaryDirectory(canonicalBase);
         }
 
         const unmergedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unmerged-'));
@@ -2840,7 +2845,7 @@ describe('release inventory', () => {
                 `Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`
             );
         } finally {
-            rmSync(unmergedBase, { recursive: true, force: true });
+            removeTemporaryDirectory(unmergedBase);
         }
         const checkoutBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-checkout-'));
         const checkoutRoot = join(checkoutBase, 'repository');
@@ -2853,7 +2858,7 @@ describe('release inventory', () => {
                 'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
             );
         } finally {
-            rmSync(checkoutBase, { recursive: true, force: true });
+            removeTemporaryDirectory(checkoutBase);
         }
 
         const mutations = [
@@ -2921,7 +2926,7 @@ describe('release inventory', () => {
                 );
                 expect(() => grandBouleReleaseInventoryContract(root)).toThrow(mutation.error);
             } finally {
-                rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+                removeTemporaryDirectory(base);
             }
         }
 
@@ -2938,7 +2943,7 @@ describe('release inventory', () => {
                 `Grand Boule release source is unsafe: ${unexpected}`
             );
         } finally {
-            rmSync(unexpectedBase, { recursive: true, force: true });
+            removeTemporaryDirectory(unexpectedBase);
         }
     });
 
@@ -2984,7 +2989,7 @@ describe('release inventory', () => {
             expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
             expect(successfulReplacementOpens).toBe(0);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
     it('rejects every tracked Rust file without an admission basis', () => {
@@ -2996,7 +3001,7 @@ describe('release inventory', () => {
             execFileSync('git', ['add', 'crates/daw-dsp/src/grand_boule/unsupported.rs'], { cwd: root });
             expect(() => assertGrandBouleRustSourceAdmission(root)).toThrow('unsupported attribution gap');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3042,7 +3047,7 @@ describe('release inventory', () => {
                 'recorded digest does not match source revision'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3076,12 +3081,12 @@ describe('release inventory', () => {
             );
         } finally {
             if (clone !== undefined) {
-                rmSync(clone, { recursive: true, force: true });
+                removeTemporaryDirectory(clone);
             }
             if (remote !== undefined) {
-                rmSync(remote, { recursive: true, force: true });
+                removeTemporaryDirectory(remote);
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3116,7 +3121,7 @@ describe('release inventory', () => {
                 `Grand Boule measurement source revision ${treeRevision} cannot provide ${measuredSourcePath}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3176,7 +3181,7 @@ describe('release inventory', () => {
                 `Grand Boule measurement source revision ${tagRevision} cannot provide ${measuredSourcePath}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3199,7 +3204,7 @@ describe('release inventory', () => {
             expect(existsSync(clone)).toBe(false);
             expect(existsSync(remote)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3231,11 +3236,12 @@ describe('release inventory', () => {
                 'generated region does not match JSON rendering'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
-    it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', () => {
+    // Rebuilds the Grand Boule fixture repository several times; ~4.5 s on an idle machine.
+    it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', { timeout: 20_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-assertion-'));
         writeGrandBouleReleaseFixture(root);
 
@@ -3361,7 +3367,7 @@ describe('release inventory', () => {
             expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
                 `Grand Boule release source is unsafe: ${unsafeSource}`
             );
-            rmSync(join(root, unsafeSource), { recursive: true, force: true });
+            removeTemporaryDirectory(join(root, unsafeSource));
 
             writeGrandBouleReleaseFixture(root);
             const preserved = grandBouleReleaseInventoryContract(root);
@@ -3376,7 +3382,7 @@ describe('release inventory', () => {
                 'Grand Boule release source is missing: src/modules/AudioEngine/worklets/grandBouleProcessor.ts'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3394,7 +3400,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'build/icons/nested/icon.png'), 'changed');
             expect(ownerVisualAssetReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3409,7 +3415,7 @@ describe('release inventory', () => {
                 'owner visual asset public/icon.png pixels do not match the shipped rendition'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3428,7 +3434,7 @@ describe('release inventory', () => {
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3442,7 +3448,7 @@ describe('release inventory', () => {
                 'owner visual asset public/icon.png PNG IDAT CRC is invalid'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3478,7 +3484,7 @@ describe('release inventory', () => {
                 `owner visual asset public/icon.png ${failure}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3495,7 +3501,7 @@ describe('release inventory', () => {
                 `owner visual asset public/icon.png ${failure}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3511,7 +3517,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.icns is missing frame ${missingFrame}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3527,7 +3533,7 @@ describe('release inventory', () => {
                     : `owner visual asset build/icons/icon.icns ${malformedFrame} is not a PNG`;
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(failure);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3541,7 +3547,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.icns has an invalid container header'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3555,7 +3561,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.icns is missing frame ${highBitFrame}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3569,7 +3575,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.icns ${highBitFrame} frame is not ARGB`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3583,7 +3589,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.icns ${seamFrame} frame contains #0c0a00 seam pixels`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3597,7 +3603,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.icns ${wrongPixelsFrame} pixels do not match the shipped rendition`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3611,7 +3617,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.icns ${wrongFrame} frame must be ${ownerIcnsFrameSizes[wrongFrame]}x${ownerIcnsFrameSizes[wrongFrame]} RGBA`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3628,7 +3634,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.ico frame sizes must be 16,24,32,48,64,256'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3642,7 +3648,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.ico has overlapping frame payloads'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3656,7 +3662,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.ico 24x24 is not a PNG'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3670,7 +3676,7 @@ describe('release inventory', () => {
                 `owner visual asset build/icons/icon.ico ${wrongPixelsSize}px frame pixels do not match the shipped rendition`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3684,7 +3690,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3698,7 +3704,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.icns ic07 is not a PNG'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3712,7 +3718,7 @@ describe('release inventory', () => {
                 'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3730,7 +3736,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, TRADEMARK_NOTICE_PATH), 'changed');
             expect(trademarkReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3749,7 +3755,7 @@ describe('release inventory', () => {
             writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'changed');
             expect(audioWorkletReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3810,7 +3816,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'changed public notice');
             expect(adaptedMitSourceReleaseInventoryContract(root).digests[8]).not.toBe(before.digests[8]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3847,7 +3853,7 @@ describe('release inventory', () => {
                 expect.stringMatching(/^sha256:[0-9a-f]{64}:public\/wasm\/manifest\.json$/),
             ]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3893,7 +3899,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'release/open-source-inventory.json'), '{"surface":]');
             expect(() => readReleaseInventory(root)).toThrow('invalid JSON');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -4102,7 +4108,7 @@ describe('release inventory', () => {
             expect(result.fileDigests['notes.txt']).toMatch(/^[0-9a-f]{64}$/);
             expect(result.markPaths).toEqual({ Hammond: ['src/peer.ts'], Neve: [] });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -4122,7 +4128,7 @@ describe('release inventory', () => {
             expect(result.externalReferences).toEqual([]);
             expect(result.markPaths).toEqual({ Roland: [] });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -4140,7 +4146,7 @@ describe('release inventory', () => {
             expect(result.releaseFiles).toEqual(['src/current.ts']);
             expect(result.externalReferences).toEqual([]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -4178,7 +4184,7 @@ describe('release inventory', () => {
             ]);
             expect(result.markPaths).toEqual({ Roland: ['index.html', 'public/runtime.js'] });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
