@@ -620,6 +620,14 @@ impl CrumbsVoice {
         if !self.active {
             return StealPriority::None;
         }
+        // The fade check precedes note and choke matching on purpose: a fading
+        // voice would otherwise still report `SameNote` or `ChokeGroup` — its
+        // top tiers — and a just-choked voice would be handed straight back to
+        // the note that choked it. Displacement preserves its fade, so it is
+        // stealable, only ever at this bottom tier, below every live voice.
+        if self.stealing {
+            return StealPriority::Fading;
+        }
         if self.note == target_note {
             return StealPriority::SameNote;
         }
@@ -658,14 +666,16 @@ impl CrumbsVoice {
     /// Whether this voice is already running its de-click fade, from a choke or
     /// an earlier steal.
     ///
-    /// Steal selection has to skip these. `choke_voices_in_group` deliberately
-    /// leaves the allocator slot alone and starts only the fade, because
-    /// releasing it would let the next `allocate` hand the same slot back and
-    /// jump-cut the waveform. That protection held only while the pool had a
-    /// free slot elsewhere: once saturated, `find_steal_target`'s oldest and
-    /// quietest fallbacks — which run outside the priority check and skip only
-    /// *inactive* voices — picked a just-choked voice anyway, so the choke pass
-    /// and the steal pass undid each other.
+    /// The flag drives two things. In `render_sample` it is what fades the
+    /// voice out — and keeps it rendering past envelope completion, so the
+    /// de-click always runs to silence. In steal selection it puts the voice
+    /// at `StealPriority::Fading`, the bottom tier: the fade itself needs no
+    /// protection from the scan, because displacement moves it into a tail
+    /// unbroken (`move_voice_to_steal_tail` swaps the struct without resetting
+    /// `steal_fade`); what the bottom tier protects is the *choice* — a live
+    /// candidate is always spent first, so a just-choked voice is never handed
+    /// straight back to the note that choked it while anything else is on
+    /// offer.
     pub fn is_stealing(&self) -> bool {
         self.stealing
     }
