@@ -1,0 +1,19 @@
+src/modules/Crust/presentations/components/CrustGainStrip.tsx
+  s_9b530f08172a54::t_c80b8bf8c8ed66 128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "16d869f0cc73ec7ffb0984bc12c1bbdc00cc0214",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
