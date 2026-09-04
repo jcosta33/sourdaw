@@ -557,6 +557,7 @@ pub struct ProofChamber {
     mod_depth: f32,
     diffusion: f32,
     freeze: bool,
+    shimmer: bool,
     gravity: f32,        // -1 to +1: negative = reverse swell, positive = normal
     saturation_type: u8, // 0=tanh, 1=chebyshev, 2=hard clip
     saturation_enabled: bool,
@@ -746,6 +747,7 @@ impl ProofChamber {
             mod_depth: 0.3,
             diffusion: 0.75,
             freeze: false,
+            shimmer: false,
             gravity: 0.5,
             saturation_type: 0,
             saturation_enabled: false,
@@ -884,6 +886,7 @@ impl ProofChamber {
         self.mod_depth = 0.3;
         self.diffusion = 0.75;
         self.freeze = false;
+        self.shimmer = false;
         self.gravity = 0.5;
         self.saturation_type = 0;
         self.saturation_enabled = false;
@@ -983,15 +986,9 @@ impl ProofChamber {
             }
             "freeze" => {
                 self.freeze = value > 0.5;
-                if self.freeze {
-                    // disable shimmer during freeze
-                    self.shimmer_left.enabled = false;
-                    self.shimmer_right.enabled = false;
-                }
             }
             "shimmer" => {
-                self.shimmer_left.enabled = value > 0.5;
-                self.shimmer_right.enabled = value > 0.5;
+                self.shimmer = value > 0.5;
             }
             "shimmer_amount" => {
                 self.shimmer_left.amount = value.clamp(0.0, 1.0);
@@ -1041,6 +1038,9 @@ impl ProofChamber {
         let input_gain = if self.freeze { 0.0 } else { 1.0 };
         let alpha = self.smooth_coeff;
         let damp = if self.freeze { 0.0 } else { self.damping };
+        let shimmer_enabled = self.shimmer && !self.freeze;
+        self.shimmer_left.enabled = shimmer_enabled;
+        self.shimmer_right.enabled = shimmer_enabled;
 
         // Update damping coefficients
         self.left_damp.coeff = damp;

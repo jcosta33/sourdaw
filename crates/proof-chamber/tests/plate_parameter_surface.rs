@@ -632,3 +632,181 @@ fn the_plate_advertises_every_parameter_it_now_answers_to() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Shimmer / Freeze interaction (#2294)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn freeze_clearing_restores_shimmer_without_resending_shimmer() {
+    // #2294: Enabling shimmer, then toggling freeze on and off, must not leave
+    // shimmer permanently silenced. Shimmer state is dynamically derived at process
+    // time (shimmer && !freeze), so when freeze returns to 0, shimmer resumes
+    // sounding in the tail without requiring an explicit "shimmer" = 1 re-send.
+    let shimmer_on = render(&[
+        ("shimmer", 1.0),
+        ("shimmer_amount", 0.9),
+        ("shimmer_pitch", 0.8),
+    ]);
+    let freeze_cycled = render(&[
+        ("shimmer", 1.0),
+        ("shimmer_amount", 0.9),
+        ("shimmer_pitch", 0.8),
+        ("freeze", 1.0),
+        ("freeze", 0.0),
+    ]);
+    let shimmer_off = render(&[
+        ("shimmer", 0.0),
+        ("shimmer_amount", 0.9),
+        ("shimmer_pitch", 0.8),
+    ]);
+
+    assert_eq!(
+        max_delta(&freeze_cycled, &shimmer_on),
+        0.0,
+        "clearing freeze must restore shimmer to bit-identity with shimmer-on"
+    );
+    let delta_against_off = max_delta(&freeze_cycled, &shimmer_off);
+    assert!(
+        delta_against_off > 1e-3,
+        "shimmer must be sounding after freeze clears; peak difference against shimmer-off: {delta_against_off:e}"
+    );
+}
+
+#[test]
+fn streaming_freeze_cycle_restores_shimmer_tail_without_resending_shimmer() {
+    // Dynamically toggling freeze on and off during streaming must resume
+    // the shimmer tail once freeze clears, matching an explicit shimmer re-send
+    // bit for bit and audibly diverging from shimmer being left off.
+    let mut instance_resumed = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_resumed.set_param("algorithm", PLATE);
+    instance_resumed.set_param("mix", 1.0);
+    instance_resumed.set_param("shimmer", 1.0);
+    instance_resumed.set_param("shimmer_amount", 0.9);
+    instance_resumed.set_param("shimmer_pitch", 0.8);
+
+    let mut instance_explicit_shimmer = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_explicit_shimmer.set_param("algorithm", PLATE);
+    instance_explicit_shimmer.set_param("mix", 1.0);
+    instance_explicit_shimmer.set_param("shimmer", 1.0);
+    instance_explicit_shimmer.set_param("shimmer_amount", 0.9);
+    instance_explicit_shimmer.set_param("shimmer_pitch", 0.8);
+
+    let mut instance_shimmer_off = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_shimmer_off.set_param("algorithm", PLATE);
+    instance_shimmer_off.set_param("mix", 1.0);
+    instance_shimmer_off.set_param("shimmer", 1.0);
+    instance_shimmer_off.set_param("shimmer_amount", 0.9);
+    instance_shimmer_off.set_param("shimmer_pitch", 0.8);
+
+    let mut output_resumed = Vec::with_capacity(RENDER_FRAMES);
+    let mut output_explicit = Vec::with_capacity(RENDER_FRAMES);
+    let mut output_off = Vec::with_capacity(RENDER_FRAMES);
+
+    let mut index = 0;
+    while index < RENDER_FRAMES {
+        if index == 16_000 {
+            instance_resumed.set_param("freeze", 1.0);
+            instance_explicit_shimmer.set_param("freeze", 1.0);
+            instance_shimmer_off.set_param("freeze", 1.0);
+        } else if index == 32_000 {
+            instance_resumed.set_param("freeze", 0.0);
+            instance_explicit_shimmer.set_param("freeze", 0.0);
+            instance_explicit_shimmer.set_param("shimmer", 1.0);
+            instance_shimmer_off.set_param("freeze", 0.0);
+            instance_shimmer_off.set_param("shimmer", 0.0);
+        }
+
+        let left: Vec<f32> = (0..BLOCK).map(|i| stimulus(index + i)).collect();
+        let right = left.clone();
+
+        let ptr_a = instance_resumed.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            output_resumed.push(unsafe { *ptr_a.add(i) });
+        }
+
+        let ptr_b = instance_explicit_shimmer.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            output_explicit.push(unsafe { *ptr_b.add(i) });
+        }
+
+        let ptr_c = instance_shimmer_off.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            output_off.push(unsafe { *ptr_c.add(i) });
+        }
+
+        index += BLOCK;
+    }
+
+    assert_eq!(
+        max_delta(&output_resumed, &output_explicit),
+        0.0,
+        "clearing freeze during streaming must restore shimmer bit-for-bit without re-sending shimmer"
+    );
+    let delta = max_delta(&output_resumed, &output_off);
+    assert!(
+        delta > 1e-3,
+        "shimmer tail must be sounding after freeze clears; delta against shimmer-off: {delta:e}"
+    );
+}
+
+#[test]
+fn freeze_disables_shimmer_while_frozen() {
+    // Shimmer must be suppressed while freeze is active (shimmer && !freeze)
+    // so recirculating audio does not pitch-shift runaway in the lossless freeze loop.
+    let mut instance_shimmer = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_shimmer.set_param("algorithm", PLATE);
+    instance_shimmer.set_param("mix", 1.0);
+    // Render initial stimulus with shimmer off so internal tank state is identical
+    instance_shimmer.set_param("shimmer", 0.0);
+    instance_shimmer.set_param("shimmer_amount", 0.9);
+    instance_shimmer.set_param("shimmer_pitch", 0.8);
+
+    let mut instance_no_shimmer = ProofChamberInstance::new(SAMPLE_RATE);
+    instance_no_shimmer.set_param("algorithm", PLATE);
+    instance_no_shimmer.set_param("mix", 1.0);
+    instance_no_shimmer.set_param("shimmer", 0.0);
+    instance_no_shimmer.set_param("shimmer_amount", 0.9);
+    instance_no_shimmer.set_param("shimmer_pitch", 0.8);
+
+    let mut out_shimmer = Vec::with_capacity(32_000);
+    let mut out_no_shimmer = Vec::with_capacity(32_000);
+
+    let mut index = 0;
+    while index < 32_000 {
+        if index == 16_000 {
+            // Engage freeze on both. On one, enable shimmer.
+            instance_shimmer.set_param("freeze", 1.0);
+            instance_shimmer.set_param("shimmer", 1.0);
+
+            instance_no_shimmer.set_param("freeze", 1.0);
+            instance_no_shimmer.set_param("shimmer", 0.0);
+        }
+
+        let left: Vec<f32> = (0..BLOCK).map(|i| stimulus(index + i)).collect();
+        let right = left.clone();
+
+        let ptr_a = instance_shimmer.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            out_shimmer.push(unsafe { *ptr_a.add(i) });
+        }
+
+        let ptr_b = instance_no_shimmer.process(&left, &right, BLOCK as u32);
+        for i in 0..BLOCK {
+            out_no_shimmer.push(unsafe { *ptr_b.add(i) });
+        }
+
+        index += BLOCK;
+    }
+
+    // During frames 16k..32k, both instances are frozen. Because freeze disables shimmer,
+    // enabling shimmer while frozen must not affect the output buffer.
+    assert_eq!(
+        max_delta(
+            &out_shimmer[16_000..32_000],
+            &out_no_shimmer[16_000..32_000]
+        ),
+        0.0,
+        "shimmer must be suppressed while freeze is active"
+    );
+}
