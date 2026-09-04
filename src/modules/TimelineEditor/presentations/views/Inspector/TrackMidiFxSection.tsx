@@ -4,6 +4,7 @@ import { Power, Trash2, Settings2 } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { MixerStripValue } from '#/components/daw/MixerStripValue';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -12,7 +13,6 @@ import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 
 type TrackMidiFxSectionProps = {
     track: Track;

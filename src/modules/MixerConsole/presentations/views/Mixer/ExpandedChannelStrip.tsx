@@ -7,6 +7,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Fader } from '#/components/daw/Fader';
 import { LatchButton } from '#/components/daw/LatchButton';
+import { MixerStripValue } from '#/components/daw/MixerStripValue';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
@@ -17,7 +18,6 @@ import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track } from '../../../models/TrackViewTypes';
-import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 import { useChannelStripActions } from '../../hooks/useChannelStripActions';
 
 import { DeviceChainSection } from './DeviceChainSection';
