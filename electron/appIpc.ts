@@ -34,6 +34,7 @@ import {
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
 
+import type { NativeHost } from './native.js';
 import type { ScanSupervisor } from './scan.js';
 import type {
     FileFilter,
@@ -103,6 +104,42 @@ export type RegisterDialogChannelsInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
     readonly dialogs: NativeDialogs;
+    /**
+     * Resolved lazily: the host is built after these channels are registered,
+     * and a shell whose addon failed to load never builds one at all.
+     */
+    readonly native: () => NativeHost | undefined;
+};
+
+/**
+ * Grant the native file commands access to a path the user just picked
+ * (jcosta33/sourdaw#3313).
+ *
+ * This is the whole of how a path outside Sourdaw's own storage becomes
+ * reachable. A directory pick is granted recursively and writably, because
+ * that is what choosing an export folder or a sample library means; a save
+ * target is granted writable and alone, so answering one save dialog does not
+ * open the folder it sits in; an opened file is granted read-only, because
+ * being shown a file is not permission to overwrite it.
+ *
+ * A shell with no addon grants nothing and says nothing: there are no native
+ * file commands to reach in that shell either, so the pick is no less usable
+ * for it. A grant that fails while the addon *is* present is raised to the
+ * caller — returning a path whose first write would be refused is the silent
+ * failure this replaces.
+ */
+const grantPickedPaths = async (
+    native: () => NativeHost | undefined,
+    paths: readonly string[],
+    { mode, recursive }: { readonly mode: 'read' | 'readwrite'; readonly recursive: boolean }
+): Promise<void> => {
+    const host = native();
+    if (host === undefined) {
+        return;
+    }
+    for (const path of paths) {
+        await host.grantPath(path, mode, recursive);
+    }
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -132,6 +169,44 @@ const optionalFilters = (value: unknown): FileFilter[] | undefined => {
     return filters.length > 0 ? filters : undefined;
 };
 
+/** The extension swap the mixdown writer performs, mirrored exactly. */
+const SAVE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
+
+/**
+ * The most formats one save may be granted for.
+ *
+ * Each grant rewrites and fsyncs the grant file, and the registry drops the
+ * whole document once it holds more grants than a person could have picked, so
+ * an unbounded filter list is a way to erase every grant the user ever made.
+ * No real export offers anything near this many container formats.
+ */
+const MAX_SAVE_EXTENSIONS = 16;
+
+const distinctSaveExtensions = (filters: readonly FileFilter[] | undefined): string[] => [
+    ...new Set(filters?.flatMap((filter) => filter.extensions).filter((extension) => /^[a-z0-9]+$/i.test(extension))),
+];
+
+/**
+ * Every path this save could be written to, given the formats the dialog
+ * offered (jcosta33/sourdaw#3313).
+ *
+ * A save dialog answers with one filename, but an export that renders several
+ * formats at once writes one file per offered extension by swapping the
+ * extension of that pick. Granting the pick alone therefore lets the first
+ * format through and refuses the rest, which reads as a mixdown that half
+ * exported. The siblings are granted individually rather than by widening the
+ * pick to its folder: the user chose a name, not a directory.
+ *
+ * A pick carrying no extension is left as it is, because that is what the
+ * writer's own swap does with it.
+ */
+const saveTargets = (pickedPath: string, extensions: readonly string[]): string[] => [
+    ...new Set([
+        pickedPath,
+        ...extensions.map((extension) => pickedPath.replace(SAVE_EXTENSION_PATTERN, `.${extension}`)),
+    ]),
+];
+
 const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
     value === 'warning' || value === 'error' ? value : 'info';
 
@@ -145,24 +220,36 @@ const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
  * successful pick of an object — which, for the save dialog, means writing a
  * render to a path that is not a path.
  */
-export const registerDialogChannels = ({ ipcMain, isTrustedFrameUrl, dialogs }: RegisterDialogChannelsInput): void => {
+export const registerDialogChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    dialogs,
+    native,
+}: RegisterDialogChannelsInput): void => {
     ipcMain.handle(
         DIALOG_OPEN_CHANNEL,
         withTrustedSender('dialog.open', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
             const multiple = request.multiple === true;
+            const directory = request.directory === true;
             const result = await dialogs.showOpenDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
                 filters: optionalFilters(request.filters),
                 properties: [
-                    request.directory === true ? 'openDirectory' : 'openFile',
+                    directory ? 'openDirectory' : 'openFile',
                     ...(multiple ? (['multiSelections'] as const) : []),
                 ],
             });
             if (result.canceled || result.filePaths.length === 0) {
                 return null;
             }
+            // Granted before the paths are answered, never after: the renderer
+            // may call a file command the moment it has them.
+            await grantPickedPaths(native, result.filePaths, {
+                mode: directory ? 'readwrite' : 'read',
+                recursive: directory,
+            });
             return multiple ? result.filePaths : result.filePaths[0];
         })
     );
@@ -171,12 +258,24 @@ export const registerDialogChannels = ({ ipcMain, isTrustedFrameUrl, dialogs }: 
         DIALOG_SAVE_CHANNEL,
         withTrustedSender('dialog.save', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
+            const filters = optionalFilters(request.filters);
+            const extensions = distinctSaveExtensions(filters);
+            if (extensions.length > MAX_SAVE_EXTENSIONS) {
+                throw new TypeError(`dialog.save expects at most ${MAX_SAVE_EXTENSIONS} distinct filter extensions`);
+            }
             const result = await dialogs.showSaveDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
-                filters: optionalFilters(request.filters),
+                filters,
             });
-            return result.canceled || result.filePath === '' ? null : result.filePath;
+            if (result.canceled || result.filePath === '') {
+                return null;
+            }
+            await grantPickedPaths(native, saveTargets(result.filePath, extensions), {
+                mode: 'readwrite',
+                recursive: false,
+            });
+            return result.filePath;
         })
     );
 

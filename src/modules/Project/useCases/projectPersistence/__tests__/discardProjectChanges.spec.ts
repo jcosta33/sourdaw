@@ -35,7 +35,10 @@ vi.mock('../newProject', () => create);
 vi.mock('../captureProjectTransitionAuthority', () => ({
     captureProjectTransitionAuthority: () => ({ isCurrent: () => transitionAuthority.current }),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => crdt);
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject: crdt.compactProject,
+    captureProjectRevision: crdt.captureProjectRevision,
+}));
 vi.mock('#/utils/Notification/notifyUser', () => notifications);
 
 describe('discardProjectChanges', () => {

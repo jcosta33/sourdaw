@@ -62,8 +62,8 @@ const NON_ENGINE_KEYS: readonly string[] = ['space'];
  */
 const HANDLED_ABOVE_THE_ENGINE: Readonly<Record<string, string>> = {
     algorithm:
-        'Consumed by `ProofChamberInstance::set_param` itself, which rebuilds `self.engine` and returns before ' +
-        'forwarding. No individual engine sees it.',
+        'Consumed by `ProofChamberInstance::set_param` itself, which selects and resets one of the preallocated ' +
+        'engines and returns before forwarding. No individual engine sees it.',
     vintage:
         'Consumed by `ProofChamberInstance::set_param` and applied by `VintageProcessor` after whichever engine ' +
         'rendered, so it is a post-engine stage rather than a plate parameter.',

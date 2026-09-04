@@ -124,6 +124,26 @@ type AutomergeStorageOptions<TData> = {
      */
     ownsCrdtEncoding?: (raw: unknown) => boolean;
     /**
+     * The raw slot value with the content this store discards on purpose
+     * removed. `findAutomergeStorageRawProjectionLosses` compares the
+     * projection against that pre-image rather than the document itself.
+     * Defaults to identity.
+     *
+     * The detector's contract — anything the projection cannot return is loss —
+     * has to stay exactly that strict, because an undeclared dropped key is how
+     * a real projection defect announces itself. A store nevertheless drops some
+     * keys by contract: transient view state an older build persisted by
+     * mistake, a field retired from the model. There the projection is right and
+     * the document is stale, but the detector cannot tell that from a defect,
+     * and a document carrying such a key is held in repair-required forever —
+     * which refuses every action and every save, including the save that would
+     * have rewritten the document without it.
+     *
+     * A hook removes only what its sanitizer removes by contract, and only from
+     * the raw side: applying it to the projection would hide real loss instead.
+     */
+    discardsRaw?: (raw: unknown) => unknown;
+    /**
      * Identity overrides for collections whose rows carry no `id`, keyed by the
      * field name holding the collection. Without an entry a collection of
      * id-less rows is written as one opaque value.
@@ -256,6 +276,7 @@ type AutomergeStorageMutationProvenance = {
 let activeAutomergeStorageMutationProvenance: AutomergeStorageMutationProvenance | undefined;
 let activeAutomergeStoragePreview: AutomergeStoragePreviewContext | null = null;
 type InboundSanitizerEntry = {
+    discardsRaw: (raw: unknown) => unknown;
     ownsCrdtEncoding: (raw: unknown) => boolean;
     sanitize: (value: unknown) => unknown;
 };
@@ -297,6 +318,18 @@ function getInboundSanitizerKey(docId: string, key: string): string {
     return `${docId}\u0000${key}`;
 }
 
+/**
+ * Whether `projected` still contains everything the raw slot held.
+ *
+ * Array containment is order-insensitive: inbound sanitizers legitimately
+ * normalize row order (the automation sanitizer sorts each lane's points by
+ * beat on entry, since `AutomationPoint` carries no id and the CRDT
+ * reconciler whole-array-replaces such rows), and order is not content — the
+ * detector's contract is content loss, not positional drift. Every raw item
+ * must still be contained by a DISTINCT projected item, so a raw duplicate
+ * with no second projected counterpart is a loss; extras in `projected` never
+ * are.
+ */
 function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean {
     if (Object.is(raw, projected)) {
         return true;
@@ -305,7 +338,7 @@ function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean 
         return (
             Array.isArray(projected) &&
             projected.length >= raw.length &&
-            raw.every((item, index) => projectionPreservesRawValue(item, projected[index]))
+            projectionContainsDistinctItems(raw, projected)
         );
     }
     if (typeof raw !== 'object' || raw === null || typeof projected !== 'object' || projected === null) {
@@ -318,6 +351,142 @@ function projectionPreservesRawValue(raw: unknown, projected: unknown): boolean 
     );
 }
 
+/**
+ * Deterministic identity for the exact-content pre-pass: a recursively
+ * key-sorted serialization, so equal content lands in one bucket regardless
+ * of key order. Cost is linear in the value's size.
+ */
+function canonicalProjectionKey(value: unknown): string {
+    if (typeof value !== 'object' || value === null) {
+        return JSON.stringify(value) ?? 'undefined';
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalProjectionKey).join(',')}]`;
+    }
+    const record = value as Readonly<Record<string, unknown>>;
+    return `{${Object.keys(record)
+        .toSorted()
+        .map((key) => `${JSON.stringify(key)}:${canonicalProjectionKey(record[key])}`)
+        .join(',')}}`;
+}
+
+/**
+ * Containment of every raw item in a DISTINCT projected item, decided exactly.
+ *
+ * The check recurs synchronously on every document-origin projection (sync,
+ * load, merge, branch switch), and sanitized output is quarantined rather
+ * than written back, so the raw slot never converges to projected order —
+ * the cost is paid again on every projection. Two passes shape it:
+ *
+ * The exact pre-pass claims without probing: projected items are bucketed by
+ * canonical key and each raw item consumes one bucketed twin. Serialization
+ * is linear in serialized content, so a slot whose rows the sanitizer
+ * rebuilds into canonical twins of the raw rows pays a small multiple of one
+ * positional walk, however many rows it holds — automation points, trim
+ * points, ghost points routinely hold thousands. Only the containment
+ * predicate decides the contract, so a claimed twin is one the predicate
+ * confirms; serialization alone can collide (NaN and null both serialize as
+ * `null`). A confirmed twin is deep-equal content, and containment is
+ * transitive, so claiming it never turns a matchable remainder unmatchable.
+ *
+ * The ambiguous residue — raw items with no twin left — runs a complete
+ * matching against the unclaimed projected items. Greedy first-fit is not
+ * enough there: a narrow raw item can waste the only projected item wide
+ * enough for a later one even though a distinct assignment exists. The
+ * matching's cost rides on residue size times pool size times probe cost,
+ * and each probe is linear in row size. Dropping or adding a key preserves
+ * containment but changes the canonical key, so a row-rebuilding sanitizer
+ * sends every deviant row to the residue — and a document whose row shapes
+ * drifted across builds can send all of them, degrading the pass toward the
+ * product of both array lengths. Canonical sort-and-compare of whole arrays
+ * would also be too strict: per-item containment tolerates keys `projected`
+ * gained.
+ */
+function projectionContainsDistinctItems(raw: readonly unknown[], projected: readonly unknown[]): boolean {
+    const unclaimedTwinsByKey = new Map<string, unknown[]>();
+    for (const item of projected) {
+        const key = canonicalProjectionKey(item);
+        const twins = unclaimedTwinsByKey.get(key);
+        if (twins) {
+            twins.push(item);
+        } else {
+            unclaimedTwinsByKey.set(key, [item]);
+        }
+    }
+    const ambiguousRaw: unknown[] = [];
+    for (const item of raw) {
+        const twins = unclaimedTwinsByKey.get(canonicalProjectionKey(item));
+        // Bucket occupancy, not the popped value, decides whether a twin
+        // exists: `undefined` is a representable value and must be claimable.
+        if (twins !== undefined && twins.length > 0) {
+            const twin = twins.pop();
+            if (projectionPreservesRawValue(item, twin)) {
+                continue;
+            }
+            twins.push(twin);
+        }
+        ambiguousRaw.push(item);
+    }
+    if (ambiguousRaw.length === 0) {
+        return true;
+    }
+    return projectionMatchesAmbiguousItems(ambiguousRaw, [...unclaimedTwinsByKey.values()].flat());
+}
+
+/**
+ * Identity sentinel for a projected slot no raw item has claimed. `undefined`
+ * cannot serve: it is a representable value in `unknown[]`, and a matched raw
+ * row of `undefined` would read the slot as free again.
+ */
+const unclaimedProjectedSlot = Symbol('unclaimedProjectedSlot');
+
+/**
+ * Complete bipartite matching over the containment relation between the
+ * ambiguous raw items and the projected items the exact pre-pass left
+ * unclaimed, via Kuhn's augmenting paths: every ambiguous raw item is
+ * matched to a distinct unclaimed projected item that recursively contains
+ * it, or the set is reported unmatchable.
+ */
+function projectionMatchesAmbiguousItems(
+    ambiguousRaw: readonly unknown[],
+    unclaimedProjected: readonly unknown[]
+): boolean {
+    const matchedRawByProjected: unknown[] = Array.from(
+        { length: unclaimedProjected.length },
+        () => unclaimedProjectedSlot
+    );
+    const tryMatch = (item: unknown, visited: Uint8Array): boolean => {
+        for (let candidateIndex = 0; candidateIndex < unclaimedProjected.length; candidateIndex += 1) {
+            if (visited[candidateIndex] === 1) {
+                continue;
+            }
+            if (!projectionPreservesRawValue(item, unclaimedProjected[candidateIndex])) {
+                continue;
+            }
+            // Only a candidate the probe accepted is visited: a rejected
+            // candidate is no edge for this item, and marking it would block
+            // a free candidate an outer item still has an edge to.
+            visited[candidateIndex] = 1;
+            const owner = matchedRawByProjected[candidateIndex];
+            if (owner === unclaimedProjectedSlot || tryMatch(owner, visited)) {
+                matchedRawByProjected[candidateIndex] = item;
+                return true;
+            }
+        }
+        return false;
+    };
+    return ambiguousRaw.every((item) => tryMatch(item, new Uint8Array(unclaimedProjected.length)));
+}
+
+/**
+ * Slots of `document` whose raw content the owning store's projection cannot
+ * return, sorted — the evidence `inspectCurrentAgentProjectRepairState` arms
+ * repair-required on.
+ *
+ * Content a store discards by contract is not loss: the slot's `discardsRaw`
+ * hook removes it from the raw side first, and everything else the projection
+ * drops still reports.
+ */
 export function findAutomergeStorageRawProjectionLosses(input: {
     docId: string;
     document: Readonly<Record<string, unknown>>;
@@ -331,7 +500,7 @@ export function findAutomergeStorageRawProjectionLosses(input: {
             continue;
         }
         try {
-            if (!projectionPreservesRawValue(rawValue, entry.sanitize(rawValue))) {
+            if (!projectionPreservesRawValue(entry.discardsRaw(rawValue), entry.sanitize(rawValue))) {
                 losses.push(slot);
             }
         } catch {
@@ -791,6 +960,11 @@ export function flushAutomergeStorageWrites(snapshotTransaction?: object): void 
     );
 }
 
+/** Exists so a test helper can prove a write it made added a pending write, not just that one already exists. */
+export function countPendingAutomergeStorageWrites(): number {
+    return pendingAutomergeStorageWrites.size;
+}
+
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
     automergeStoragePort = port;
 }
@@ -871,6 +1045,7 @@ export const createAutomergeStorage = <TData>(
     const resolveCrdtConflicts = options?.resolveCrdtConflicts;
     const mutateCrdt = options?.mutateCrdt;
     const ownsCrdtEncoding = options?.ownsCrdtEncoding;
+    const discardsRaw = options?.discardsRaw;
     const crdtEntityIdentity = options?.crdtEntityIdentity;
     const rebasePending = options?.rebasePending;
     type AdapterPendingWrite = {
@@ -1268,6 +1443,7 @@ export const createAutomergeStorage = <TData>(
 
         registerInboundSanitizer(sanitize): void {
             inboundSanitizersBySlot.set(getInboundSanitizerKey(docId, key), {
+                discardsRaw: discardsRaw ?? ((raw) => raw),
                 ownsCrdtEncoding: ownsCrdtEncoding ?? (() => false),
                 sanitize: (value) => sanitize(fromCrdt ? fromCrdt(value as TData) : value),
             });

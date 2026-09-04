@@ -50,6 +50,7 @@ export type GrinderNodeResult = {
     setParam: (name: string, value: number, sampleFrame?: number) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
+    reset: () => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
     onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
@@ -145,6 +146,7 @@ export async function createGrinderNode(
     let meterRafId: number | null = null;
     let latencyCallback: ((latency: number) => void) | null = null;
     let lastReportedLatency: number | null = null;
+    let destroyed = false;
     const reportLatencyChange = (latency: number): void => {
         if (latency === lastReportedLatency) {
             return;
@@ -330,6 +332,12 @@ export async function createGrinderNode(
                 Object.freeze({ value: state ? 1 : 0, targetFrame: null, deadlineFrame: null })
             );
         },
+        reset() {
+            if (destroyed) {
+                return;
+            }
+            node.port.postMessage({ type: 'reset' });
+        },
         onMeterData(cb: (data: GrinderMeterData) => void) {
             if (meterRafId !== null) {
                 cancelAnimationFrame(meterRafId);
@@ -364,6 +372,10 @@ export async function createGrinderNode(
             }
         },
         destroy() {
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
             if (meterRafId !== null) {
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;

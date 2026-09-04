@@ -6,7 +6,7 @@ import {
 } from '../../repositories/deviceStrategy/nativeDspDeviceFactories';
 import { NativeDspDeviceStrategy } from '../../repositories/deviceStrategy/NativeDspDeviceStrategy';
 import { schedulePendingSuspends } from '../../useCases/offlineRender/schedulePendingSuspends';
-import { type PendingWorkletEvent } from '../../useCases/offlineRender/types';
+import { type PendingExpressionWorkletEvent, type PendingNoteWorkletEvent } from '../../useCases/offlineRender/types';
 
 // End-to-end timing proof for Grand Boule's offline note path, wired out of
 // production parts only: the real factory table -> the real
@@ -46,6 +46,15 @@ type Dispatch = { note: number; velocity: number; channel: number; block: number
 const dispatches: Dispatch[] = [];
 type ParamDispatch = { name: string; value: number; block: number };
 const paramDispatches: ParamDispatch[] = [];
+type ExpressionDispatch = {
+    note: number;
+    channel: number;
+    bendSemitones: number;
+    pressure: number;
+    slide: number;
+    block: number;
+};
+const expressionDispatches: ExpressionDispatch[] = [];
 const engineEvents: string[] = [];
 
 const wasmStub = vi.hoisted(() => {
@@ -61,7 +70,10 @@ class GrandBouleInstanceMock {
     note_on(_note: number, _velocity: number): void {}
     note_off(_note: number): void {}
     note_off_on_channel(_note: number, _channel: number): void {}
-    note_expression(): void {}
+    note_expression(note: number, channel: number, bendSemitones: number, pressure: number, slide: number): void {
+        expressionDispatches.push({ note, channel, bendSemitones, pressure, slide, block: currentBlock() });
+        engineEvents.push(`expr:${String(note)}`);
+    }
     set_param(name: string, value: number): void {
         paramDispatches.push({ name, value, block: currentBlock() });
         engineEvents.push(`param:${name}:${String(value)}`);
@@ -203,7 +215,7 @@ async function buildGrandBouleStrategy(): Promise<NativeDspDeviceStrategy> {
     return new NativeDspDeviceStrategy(node);
 }
 
-function noteOnEvent(time: number, pitch: number, controls: PendingWorkletEvent['instrumentControls']) {
+function noteOnEvent(time: number, pitch: number, controls: PendingNoteWorkletEvent['instrumentControls']) {
     return {
         time,
         type: 'on',
@@ -212,7 +224,42 @@ function noteOnEvent(time: number, pitch: number, controls: PendingWorkletEvent[
         instrumentControls: controls,
         isToaster: false,
         toasterPadIndex: -1,
-    } satisfies PendingWorkletEvent;
+    } satisfies PendingNoteWorkletEvent;
+}
+
+/**
+ * The expression dispatcher the offline scheduler reads off the strategy.
+ *
+ * Resolved rather than stubbed: Grand Boule's DSP node only carries
+ * `noteExpression` because the factory table spreads the engine node, and
+ * `NativeDspNode` does not declare it. If that detection stops working the
+ * strategy exposes nothing and this throws, which is the failure a bounce
+ * suffers silently.
+ */
+function expressionDispatcherOf(
+    strategy: NativeDspDeviceStrategy
+): NonNullable<NativeDspDeviceStrategy['noteExpression']> {
+    const dispatch = strategy.noteExpression;
+    if (!dispatch) {
+        throw new Error('the offline Grand Boule strategy exposes no per-note expression surface');
+    }
+    return dispatch;
+}
+
+function expressionEvent(
+    time: number,
+    pitch: number,
+    strategy: NativeDspDeviceStrategy,
+    values: { bendSemitones: number; pressure: number; slide: number }
+) {
+    return {
+        time,
+        type: 'expression',
+        pitch,
+        channel: 0,
+        dispatch: expressionDispatcherOf(strategy),
+        ...values,
+    } satisfies PendingExpressionWorkletEvent;
 }
 
 describe('offline Grand Boule scheduling reaches the engine at the scheduled frame', () => {
@@ -229,6 +276,7 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
     beforeEach(() => {
         dispatches.length = 0;
         paramDispatches.length = 0;
+        expressionDispatches.length = 0;
         engineEvents.length = 0;
         harnessFrame = 0;
         liveProcessor = null;
@@ -281,6 +329,37 @@ describe('offline Grand Boule scheduling reaches the engine at the scheduled fra
         // number here is truncated into a real member channel and the voice
         // becomes unreachable to channel-addressed release and expression.
         expect(dispatches).toEqual([{ note: 60, velocity: 90, channel: 0, block: 1 }]);
+    });
+
+    it('bends a note in the render block that carries the note itself, after the voice exists', async () => {
+        const strategy = await buildGrandBouleStrategy();
+        const offlineCtx = { sampleRate: OFFLINE_SAMPLE_RATE } as unknown as OfflineAudioContext;
+
+        // Expression is handed in ahead of its own note-on, which is the order a
+        // caller has no reason to guarantee. Sorting must put it behind the
+        // note-on at the shared frame, or the engine is asked to bend a voice it
+        // has not created and drops the message.
+        schedulePendingSuspends(
+            offlineCtx,
+            [
+                expressionEvent(0.2, 60, strategy, { bendSemitones: 2, pressure: 0.5, slide: -0.25 }),
+                noteOnEvent(0.2, 60, strategy),
+            ],
+            4
+        );
+
+        expect(expressionDispatches).toEqual([]);
+
+        for (let block = 0; block < 4; block++) {
+            renderBlock();
+        }
+
+        // Frame 200 is interior to block 1 (128..255), so both messages must
+        // reach the engine in that block and in this order.
+        expect({ engineEvents, expressionDispatches }).toEqual({
+            engineEvents: ['note:60', 'expr:60'],
+            expressionDispatches: [{ note: 60, channel: 0, bendSemitones: 2, pressure: 0.5, slide: -0.25, block: 1 }],
+        });
     });
 
     it('applies lid automation across the offline render blocks', async () => {

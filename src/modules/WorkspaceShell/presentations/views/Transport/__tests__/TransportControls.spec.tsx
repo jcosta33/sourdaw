@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -36,6 +36,10 @@ vi.mock('#/modules/Transport/useCases', () => ({
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
+};
+
+const openTransportSettings = (): void => {
+    fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
 };
 
 describe('TransportControls', () => {
@@ -179,6 +183,45 @@ describe('TransportControls', () => {
     });
 
     describe('overdub button (conditional on showOverdub)', () => {
+        it('routes every compact settings action through its owning use case', () => {
+            renderWithTooltip(
+                <TransportControls
+                    {...defaultProps}
+                    compact
+                    showOverdub={true}
+                    metronomeEnabled
+                    countInEnabled
+                    countInBars={2}
+                />
+            );
+            expect(screen.queryByTestId('transport-metronome')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('transport-punch')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('transport-countin')).not.toBeInTheDocument();
+            openTransportSettings();
+            const settings = within(screen.getByRole('dialog', { name: 'Transport settings' }));
+
+            fireEvent.click(settings.getByRole('button', { name: 'Overdub' }));
+            fireEvent.click(settings.getByRole('button', { name: 'Metronome' }));
+            fireEvent.click(settings.getByRole('button', { name: 'Punch in/out' }));
+            fireEvent.click(settings.getByRole('button', { name: 'Count-in' }));
+            const volume = settings.getByLabelText('Metronome volume: 80%');
+            expect(volume).toBeInTheDocument();
+            fireEvent.keyDown(volume, { key: 'ArrowRight' });
+            const countInBars = settings.getByRole('button', { name: 'Count-in bars: 2. Click to cycle.' });
+            expect(countInBars).toBeInTheDocument();
+            fireEvent.click(countInBars);
+
+            expect(mocks.toggleOverdub).toHaveBeenCalledTimes(1);
+            expect(mocks.toggleMetronome).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+                type: 'setPunchEnabled',
+                payload: { enabled: true },
+            });
+            expect(mocks.toggleCountIn).toHaveBeenCalledTimes(1);
+            expect(mocks.setMetronomeVolume).toHaveBeenCalled();
+            expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
+        });
+
         it('does not render the overdub button when showOverdub is false', () => {
             renderWithTooltip(<TransportControls {...defaultProps} showOverdub={false} />);
             expect(screen.queryByLabelText('Overdub')).not.toBeInTheDocument();

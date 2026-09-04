@@ -11,9 +11,11 @@ import { useTimelineInteractions } from '../useTimelineInteractions';
 
 /**
  * Gesture-cancellation specs (Escape / window blur / visibility change /
- * pointer leaving the canvas). Real stores and real clip use cases; only
- * geometry and side-effect sinks are mocked. The Escape key path itself
- * (cancel before marquee / clip selection / transport stop) is covered in
+ * pointer leaving the canvas). Real Arrangement stores and real
+ * cancelActiveTimelineGesture; geometry (hit testing, snapping, render
+ * model), useTimelineFileDrop, removeClipSatelliteData, and other
+ * side-effect sinks are mocked. The Escape key path itself (cancel before
+ * marquee / clip selection / transport stop) is covered in
  * `handleKeydown.spec.ts`.
  */
 
@@ -68,8 +70,7 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Collaboration/useCases', () => ({
     broadcastPresence: mocks.broadcastPresence,
 }));
 vi.mock('#/modules/Collaboration/stores', () => ({
@@ -87,12 +88,10 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
         },
     },
 }));
-vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Transport/useCases', () => ({
     toggleLoop: mocks.toggleLoop,
     getTransportState: mocks.getTransportState,
     setLoopRegion: mocks.setLoopRegion,
@@ -104,12 +103,10 @@ vi.mock('#/modules/Preferences/stores', () => ({
         },
     },
 }));
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
-vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
     duplicateClipAutomation: mocks.duplicateClipAutomation,
 }));
@@ -121,6 +118,18 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     removeMidiClipData: mocks.removeMidiClipData,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+
+vi.mock('../useTimelineFileDrop', () => ({
+    useTimelineFileDrop: () => ({
+        handleFileDrop: vi.fn(),
+        isDragOver: false,
+        setIsDragOver: vi.fn(),
+        isImporting: false,
+    }),
+}));
+vi.mock('../../../useCases/clip/removeClipSatelliteData', () => ({
+    removeClipSatelliteData: vi.fn(),
+}));
 
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: mocks.hitTestClip }));
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({

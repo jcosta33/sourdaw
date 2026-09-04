@@ -16,6 +16,9 @@ export default defineConfig({
     // the refused side, so a spec left out of this list has no runner that
     // executes its admitted assertions.
     testMatch: ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'],
+    // Warm this config's own isolated server before the admission specs start
+    // observing their first-paint bounds. See ./firstPaintWarmup.ts.
+    globalSetup: './firstPaintWarmup.ts',
     timeout: 60_000,
     fullyParallel: false,
     forbidOnly: true,

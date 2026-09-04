@@ -6,6 +6,7 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
@@ -22,41 +23,10 @@ export const ArrangementSelector = (): ReactElement | null => {
     const [open, setOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
-    const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     // §212.1 — Typed default instead of non-null assertion on live value.
     const state = useStore(arrangementStore, defaultArrangementStoreState);
-
-    useEffect(() => {
-        if (!open) {
-            setEditingId(null);
-            return undefined;
-        }
-
-        const handleClickOutside = (event: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-                setOpen(false);
-            }
-        };
-
-        const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                if (editingId) {
-                    setEditingId(null);
-                } else {
-                    setOpen(false);
-                }
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape);
-        };
-    }, [open, editingId]);
 
     useEffect(() => {
         if (editingId && inputRef.current) {
@@ -94,33 +64,49 @@ export const ArrangementSelector = (): ReactElement | null => {
     };
 
     return (
-        <div className="relative" ref={menuRef}>
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="daw-readout-well flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
-                        aria-label="Arrangement selector"
-                        aria-expanded={open}
-                        aria-haspopup="menu"
-                        onClick={() => setOpen((prev) => !prev)}
-                    >
-                        <ListTree className="size-3 text-muted-foreground/60" />
-                        <span className="max-w-[120px] truncate text-foreground/70">
-                            {currentArrangement?.name ?? 'Arrangement'}
-                        </span>
-                        <ChevronDown className="size-2.5 text-muted-foreground/40" />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>Arrangement View Snapshots</TooltipContent>
-            </Tooltip>
-            {open ? (
-                <div
-                    className="daw-floating-surface absolute top-full left-0 mt-1 z-50 w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
+        <div className="relative">
+            <Popover
+                open={open}
+                onOpenChange={(nextOpen) => {
+                    setOpen(nextOpen);
+                    if (!nextOpen) {
+                        setEditingId(null);
+                    }
+                }}
+            >
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="daw-readout-well flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-2 text-[11px] font-medium transition-colors hover:bg-white/[0.04]"
+                                aria-label="Arrangement selector"
+                            >
+                                <ListTree className="size-3 text-muted-foreground/60" />
+                                <span className="max-w-[120px] truncate text-foreground/70">
+                                    {currentArrangement?.name ?? 'Arrangement'}
+                                </span>
+                                <ChevronDown className="size-2.5 text-muted-foreground/40" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Arrangement View Snapshots</TooltipContent>
+                </Tooltip>
+                <PopoverContent
+                    align="start"
+                    sideOffset={4}
                     role="menu"
                     aria-label="Arrangement menu"
+                    className="daw-floating-surface w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
+                    onEscapeKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (editingId) {
+                            event.preventDefault();
+                            setEditingId(null);
+                        }
+                    }}
                 >
                     <DawMenuSectionLabel className="flex items-center justify-between px-3 py-1.5">
                         <span>Arrangements</span>
@@ -235,8 +221,8 @@ export const ArrangementSelector = (): ReactElement | null => {
                         <Copy className="size-3 text-muted-foreground shrink-0" />
                         <span>Duplicate Current</span>
                     </Button>
-                </div>
-            ) : null}
+                </PopoverContent>
+            </Popover>
         </div>
     );
 };

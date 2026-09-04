@@ -1,3 +1,5 @@
+import { BROWSER_APPLICATION_FRAME_NAME } from './resolveAppComposition';
+
 const DISPLAY_SCALE_MESSAGE_TYPE = 'sourdaw:browser-display-scale';
 const DISPLAY_SCALE_HOST_CAPABILITY_KEY = '__sourdawBrowserDisplayScaleHost';
 const MIN_DISPLAY_SCALE = 0.5;
@@ -66,6 +68,7 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     root.style.width = '100%';
 
     const frame = document.createElement('iframe');
+    frame.name = BROWSER_APPLICATION_FRAME_NAME;
     frame.title = 'Sourdaw';
     frame.style.border = '0';
     frame.style.display = 'block';
@@ -73,7 +76,9 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     frame.style.position = 'absolute';
     frame.style.top = '0';
     frame.style.transformOrigin = 'top left';
-    sizeViewport(frame, 1);
+
+    let lastAppliedScale = 1;
+    sizeViewport(frame, lastAppliedScale);
 
     const focusApplication = (): void => {
         frame.contentWindow?.focus();
@@ -84,7 +89,7 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     const startupCapability: BrowserDisplayScaleHostCapability = {
         resetForChildStartup: (source): void => {
             if (source === frame.contentWindow) {
-                sizeViewport(frame, 1);
+                sizeViewport(frame, lastAppliedScale);
             }
         },
     };
@@ -98,6 +103,7 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
         if (scale === null) {
             return;
         }
+        lastAppliedScale = scale;
         sizeViewport(frame, scale);
     };
     const handlePageShow = (event: PageTransitionEvent): void => {

@@ -98,9 +98,7 @@ describe('pull-request contract', () => {
         expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
         expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
         expect(() => issueRelationshipFromBody(`${prefix}None.`, 2164)).toThrow(/exactly one relationship/);
-        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toThrow(
-            /exactly one relationship/
-        );
+        expect(issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toBe('closes');
         expect(() => issueRelationshipFromBody(`${prefix}None.\nCloses #2164`, 2164)).toThrow(
             /exactly one relationship/
         );
@@ -116,6 +114,25 @@ describe('pull-request contract', () => {
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
         expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
             /exactly one relationship/
+        );
+    });
+
+    it('tolerates extra Related lines for other issues once exactly one line names the lane issue', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(issueRelationshipFromBody(`${prefix}Closes #2857\nRelated #2854\nRelated #2856`, 2857)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Related #2857\nRelated #2854`, 2857)).toBe('relates');
+        expect(issueRelationshipFromBody(`${prefix}Related #2854\nCloses #2857`, 2857)).toBe('closes');
+        expect(() => issueRelationshipFromBody(`${prefix}Related #2854\nRelated #2856`, 2857)).toThrow(
+            /exactly one relationship to #2857/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2857\nRelated #2857`, 2857)).toThrow(
+            /exactly one relationship to #2857/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2857\nNone.`, 2857)).toThrow(
+            /exactly one relationship to #2857/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2854\nRelated #2857`, 2857)).toThrow(
+            /unexpected issue-closing references/
         );
     });
 
@@ -163,7 +180,21 @@ describe('pull-request contract', () => {
         };
         const receipt = composeDeliveryReceipt(payload);
 
-        expect(parseDeliveryReceipt(receipt)).toEqual(payload);
+        expect(receipt).toMatchInlineSnapshot(`
+          "Delivery receipt for PR #2495.
+
+          - Head: \`3fc61d12acb110faba1a15e251268a1a7d09be9d\`
+          - Pull request body SHA-256: \`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\`
+          - Closing issue: #2406
+
+          <!-- sourdaw-delivery-receipt:v2
+          pull-request: 2495
+          head: 3fc61d12acb110faba1a15e251268a1a7d09be9d
+          body-sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          closing-issue: 2406
+          -->"
+        `);
+        expect(parseDeliveryReceipt(receipt)).toEqual({ ...payload, schemaVersion: 2 });
         expect(parseDeliveryReceipt('ordinary PR comment')).toBeUndefined();
         expect(() =>
             parseDeliveryReceipt(receipt.replace('closing-issue: 2406', 'closing-issue: 90071992547409930'))
@@ -171,6 +202,176 @@ describe('pull-request contract', () => {
         expect(() => parseDeliveryReceipt(receipt.replace('body-sha256:', 'body-digest:'))).toThrow(
             /invalid delivery receipt/
         );
+    });
+
+    it.each([
+        [
+            'unsupported hidden v3 receipt',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '',
+                '<!-- sourdaw-delivery-receipt:v3',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                '-->',
+            ].join('\n'),
+        ],
+        [
+            'misplaced legacy v1 marker after visible text',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '',
+                '<!-- sourdaw-delivery-receipt:v1',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                '-->',
+            ].join('\n'),
+        ],
+        ['reserved namespace in ordinary text', 'ordinary note about sourdaw-delivery-receipt:v9 receipts'],
+    ])('fails closed on reserved delivery receipt markers: %s', (_label, malformedReceipt) => {
+        expect(() => parseDeliveryReceipt(malformedReceipt)).toThrow(/unsupported delivery receipt/);
+    });
+
+    it.each(['unstable', 'skipped'] as const)(
+        'round-trips an advisory delivery receipt that records a %s aggregate CI state',
+        (observedCiState) => {
+            const payload = {
+                pullRequest: 2495,
+                head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                bodySha256: 'a'.repeat(64),
+                closingIssue: 2406,
+                ciAdmissionMode: 'advisory' as const,
+                observedCiState,
+            };
+            const receipt = composeDeliveryReceipt(payload);
+
+            expect(receipt).toContain('- CI admission: advisory');
+            expect(receipt).toContain(`- Observed CI state: ${observedCiState}`);
+            expect(receipt).toContain(`observed-ci-state: ${observedCiState}`);
+            expect(parseDeliveryReceipt(receipt)).toEqual({ ...payload, schemaVersion: 2 });
+        }
+    );
+
+    it('keeps parsing legacy v1 delivery receipts byte-for-byte', () => {
+        const legacy = [
+            '<!-- sourdaw-delivery-receipt:v1',
+            'pull-request: 2495',
+            'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            `body-sha256: ${'a'.repeat(64)}`,
+            'closing-issue: 2406',
+            '-->',
+        ].join('\n');
+
+        expect(parseDeliveryReceipt(legacy)).toEqual({
+            schemaVersion: 1,
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+        });
+    });
+
+    it('rejects a v2 receipt whose visible lines drift from the hidden envelope', () => {
+        const payload = {
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+        };
+        const drifted = composeDeliveryReceipt(payload).replace('- Closing issue: #2406', '- Closing issue: #2407');
+
+        expect(drifted).toContain('closing-issue: 2406');
+        expect(() => parseDeliveryReceipt(drifted)).toThrow(/non-canonical delivery receipt/);
+    });
+
+    it('rejects a legacy v1 receipt whose numbers survive the pattern but not safe-integer validation', () => {
+        const legacy = [
+            '<!-- sourdaw-delivery-receipt:v1',
+            'pull-request: 9007199254740993',
+            'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            `body-sha256: ${'a'.repeat(64)}`,
+            'closing-issue: 2406',
+            '-->',
+        ].join('\n');
+
+        expect(() => parseDeliveryReceipt(legacy)).toThrow(/safe positive integer/);
+    });
+
+    it.each([
+        [
+            'advisory mode without observed state',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '- CI admission: advisory',
+                '',
+                '<!-- sourdaw-delivery-receipt:v2',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                'ci-admission-mode: advisory',
+                '-->',
+            ].join('\n'),
+            /advisory mode requires an observed CI state/,
+        ],
+        [
+            'required mode with observed state',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '- CI admission: required',
+                '',
+                '<!-- sourdaw-delivery-receipt:v2',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                'ci-admission-mode: required',
+                'observed-ci-state: failed',
+                '-->',
+            ].join('\n'),
+            /required mode cannot carry an advisory CI state/,
+        ],
+        [
+            'observed state without mode',
+            [
+                'Delivery receipt for PR #2495.',
+                '',
+                '- Head: `3fc61d12acb110faba1a15e251268a1a7d09be9d`',
+                `- Pull request body SHA-256: \`${'a'.repeat(64)}\``,
+                '- Closing issue: #2406',
+                '',
+                '<!-- sourdaw-delivery-receipt:v2',
+                'pull-request: 2495',
+                'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+                `body-sha256: ${'a'.repeat(64)}`,
+                'closing-issue: 2406',
+                'observed-ci-state: failed',
+                '-->',
+            ].join('\n'),
+            /invalid delivery receipt|observed CI state requires an admission mode/,
+        ],
+    ])('rejects malformed raw v2 delivery receipts: %s', (_label, malformedReceipt, expectedError) => {
+        expect(() => parseDeliveryReceipt(malformedReceipt)).toThrow(expectedError);
     });
 
     it('rejects hidden GitHub closing references', () => {
@@ -194,6 +395,14 @@ describe('pull-request contract', () => {
                 TEST_INSTRUCTIONS
             )
         ).not.toThrow();
+    });
+
+    it('refuses closing keywords in the summary naming the offending phrase and rule', () => {
+        expect(() => composePublishBody(2164, TITLE, 'Addresses defect (closes #2174)', TEST_INSTRUCTIONS)).toThrow(
+            'pull-request body contains unexpected issue-closing references ("closes #2174"). ' +
+                'GitHub closing keywords (close, fix, resolve #<issue>) in pull-request descriptions auto-close issues on merge; ' +
+                'remove the keyword from prose or rephrase.'
+        );
     });
 
     it('composes a nonempty Related tickets section when no issue is given', () => {

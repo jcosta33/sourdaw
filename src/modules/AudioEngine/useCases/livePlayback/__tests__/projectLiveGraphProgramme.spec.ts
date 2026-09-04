@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import {
     type OfflinePpqEndpointProjector,
@@ -218,10 +219,11 @@ describe('projectLiveGraphProgramme', () => {
         ]);
     });
 
-    it('excludes a stretched clip per clip, leaving its unstretched neighbour playing', () => {
-        // `schedule-clip` refuses any non-unity rate whole-batch
-        // (`stretched-clip-unsupported`), so one stretched clip must not cost
-        // the session the strip it sits on, let alone every other strip.
+    it('admits a stretched clip with its projected playbackRate, alongside its unstretched neighbour', () => {
+        // The native mapper composes `playbackRate` into `ClipPlayback.playback_rate`
+        // (varispeed, not stretch, #3068), so a stretched clip is no longer an
+        // exclusion — it schedules with the rate `projectOfflineAudioClipPlaybacks`
+        // projects for it.
         const programme = projectProgramme({
             stripTracks: [
                 createTrack({
@@ -250,11 +252,10 @@ describe('projectLiveGraphProgramme', () => {
         });
 
         const playbacks = programme.playbacksByStripId.get('audio-1');
-        expect(playbacks).toHaveLength(1);
-        expect(playbacks?.[0]?.startTime).toBe(4 * SECONDS_PER_BEAT);
-        expect(programme.exclusions).toEqual([
-            { stripId: 'audio-1', subjectId: 'stretched', reason: expect.stringContaining('cannot stretch') },
-        ]);
+        expect(playbacks).toHaveLength(2);
+        expect(playbacks?.[0]).toMatchObject({ startTime: 0, playbackRate: 1.5 });
+        expect(playbacks?.[1]).toMatchObject({ startTime: 4 * SECONDS_PER_BEAT, playbackRate: 1 });
+        expect(programme.exclusions).toEqual([]);
     });
 
     it('names a clip whose material is not decoded, because the pool would refuse it', () => {
@@ -450,8 +451,13 @@ describe('projectLiveGraphProgramme — fades the engine can take', () => {
     it('pulls a slipped clip’s fade-in up to the first frame anyone hears', () => {
         // A negative `audioOffsetBeats` puts the clip's head before the start
         // of its material, so the sound begins a silent span later than the
-        // clip does. The mapper refuses a fade-in that reaches full before the
-        // clip starts, and the fade is over before the sound begins anyway.
+        // clip does, and the clip's 0.5-beat fade-in is entirely inside that
+        // silent pre-roll — it requests a non-positive duration once measured
+        // from the playback's own start. The shared fade law
+        // (`clampClipFadeInDurationSeconds`) floors that to the anti-click
+        // micro-fade rather than dropping it, so the ramp collapses to the
+        // first audible frame plus `MICRO_FADE_SECONDS`, not vanishing — the
+        // same floor the Web Audio legs and the engine's own resolve apply.
         const programme = projectProgramme({
             stripTracks: [
                 createTrack({
@@ -475,7 +481,7 @@ describe('projectLiveGraphProgramme — fades the engine can take', () => {
         const playback = programme.playbacksByStripId.get('audio-1')?.[0];
         // One beat of pre-roll at 120 BPM: the sound starts half a second late.
         expect(playback?.startTime).toBe(2 * SECONDS_PER_BEAT + SECONDS_PER_BEAT);
-        expect(playback?.fade.fadeIn).toEqual({ reachesFullAt: playback?.startTime });
+        expect(playback?.fade.fadeIn?.reachesFullAt).toBeCloseTo((playback?.startTime ?? 0) + MICRO_FADE_SECONDS, 10);
     });
 
     it('pulls a truncated clip’s fade-out back to the last frame anyone hears', () => {

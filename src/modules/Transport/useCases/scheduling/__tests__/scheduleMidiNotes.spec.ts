@@ -1344,6 +1344,74 @@ describe('scheduleMidiNotes', () => {
             expect(vi.mocked(noteOn).mock.calls[0]![3]).toBe(3);
         });
 
+        it('clamps loaded out-of-range expression to the offline MPE ranges', async () => {
+            fermenterStripWithNoteCapture();
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'device-1', type: 'fermenter' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        {
+                            id: 'n0',
+                            pitch: 64,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 100,
+                            pressure: 200,
+                            slide: -10,
+                            pitchBend: 9000,
+                            pitchBendRangeSemitones: 200,
+                        },
+                    ],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(applyNoteExpression).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                note: 64,
+                channel: 0,
+                expression: { pressure: 127, slide: 0, pitchBend: 8191 },
+                sampleFrame: expect.any(Number),
+                bendRangeSemitones: 127,
+            });
+        });
+
+        it('passes the same clamped expression to the built-in synth', async () => {
+            const track = midiTrack({ clips: [midiClip()] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        {
+                            id: 'n0',
+                            pitch: 64,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 100,
+                            pressure: 200,
+                            slide: -10,
+                            pitchBend: 9000,
+                            pitchBendRangeSemitones: 200,
+                        },
+                    ],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]![7]).toEqual({
+                pressure: 127,
+                slide: 0,
+                pitchBend: 8191,
+                pitchBendRangeSemitones: 127,
+            });
+        });
+
         it('forwards an unexpressive note as three neutral dimensions, never a stale value', async () => {
             fermenterStripWithNoteCapture();
             const track = midiTrack({

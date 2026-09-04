@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -134,8 +135,8 @@ test.describe('Piano-roll — zoom', () => {
     test('Zoom slider exposes a numeric value', async ({ page }) => {
         const zoom = page.getByRole('slider', { name: /Piano roll zoom/i });
         await expect(zoom).toBeVisible();
-        const value = await zoom.getAttribute('aria-valuenow');
-        expect(value).not.toBeNull();
-        expect(Number(value)).toBeGreaterThanOrEqual(0);
+        // PianoRoll.tsx defaults `zoom` to 1 (`useState(1)`), rendered by
+        // PianoRollToolbar.tsx as `zoom * 100`.
+        await expect(zoom).toHaveAttribute('aria-valuenow', '100');
     });
 });

@@ -10,6 +10,7 @@ export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
+export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
@@ -29,7 +30,16 @@ export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdenti
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
+export { getExecutableAppActionIntentCatalog } from './getExecutableAppActionIntentCatalog';
+export {
+    MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
+    getExecutableAppActionIntentCatalogUnicodeLength,
+} from './getExecutableAppActionIntentCatalogUnicodeLength';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
+export { getMidiTransformToolSchemas } from './getMidiTransformToolSchemas';
+export { getMidiTransformContract } from './getMidiTransformContract';
+export { expandMidiTransform } from './expandMidiTransform';
+export { getExecutableAppActionProviderSchema } from './getExecutableAppActionProviderSchema';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
@@ -50,6 +60,7 @@ export { createUndoEntry } from './createUndoEntry';
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
+export { executeUserAppAction } from './executeUserAppAction';
 export { executeAppActionBatch } from './executeAppActionBatch';
 export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelope';
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
@@ -87,6 +98,10 @@ export { clearActionHistory } from './clearActionHistory';
 export { resetActionReplayAuthority } from './resetActionReplayAuthority';
 export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
+export { reconcileSessionUndoForProject } from './reconcileSessionUndoForProject';
+export { stampSessionUndoWitness } from './stampSessionUndoWitness';
+export { captureUndoHistory } from './captureUndoHistory';
+export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import { audioEngine, stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
@@ -18,12 +18,21 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    audioEngine: {
+        setTransportInfo: vi.fn(),
+    },
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
@@ -49,7 +58,32 @@ describe('stopPlayback', () => {
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(stopActiveRecording).mockClear();
         vi.mocked(stopNativeLiveGraphSession).mockClear();
+        vi.mocked(audioEngine.setTransportInfo).mockClear();
         playheadPositionRef.current = 0;
+    });
+
+    it('publishes isPlaying: false and resting position to audioEngine.setTransportInfo on stop', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            tempo: 120,
+            loopStart: 4,
+            loopEnd: 8,
+            isLooping: true,
+            playheadPosition: 6,
+        });
+
+        await stopPlayback();
+
+        expect(audioEngine.setTransportInfo).toHaveBeenCalledWith(
+            4, // resting position at loopStart
+            2, // 4 beats at 120 BPM = 2 seconds
+            120,
+            false,
+            4,
+            8,
+            true
+        );
     });
 
     it('tells the native engine playback stopped, at the beat the playhead came to rest on', () => {

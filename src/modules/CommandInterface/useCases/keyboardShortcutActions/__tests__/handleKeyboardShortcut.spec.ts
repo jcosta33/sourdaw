@@ -16,6 +16,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     setLoopRegion: vi.fn(),
     stopAllSlots: vi.fn(),
     triggerPad: vi.fn(),
+    panicAllNotes: vi.fn(),
 }));
 
 vi.mock('../trackShortcuts/clearSolos', () => ({ clearSolos: vi.fn() }));
@@ -72,6 +73,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
     setMarqueeSelection: vi.fn(),
+    cancelActiveTimelineGesture: vi.fn(() => false),
+    executeUndoableDuplicateTimeRange: vi.fn(),
+    executeUndoableInsertTime: vi.fn(),
+    getAllTracks: vi.fn(() => []),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -80,6 +85,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     undo: vi.fn(),
     pushUndoEntry: vi.fn(),
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('../../../stores/shortcutStore', () => ({

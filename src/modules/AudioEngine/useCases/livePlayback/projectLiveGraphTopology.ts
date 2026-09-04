@@ -42,11 +42,10 @@
  * `contributesAudio` asks whether anything a strip produces can reach the
  * output ({@link AudioGraphCreateTrackStripCommand}), and the native mapper
  * reads it as permission to *refuse*: `map_device` fails the whole batch when
- * the flag is true and any device on the strip has no native body, and
- * `no_native_body` accepts exactly one type today — knead — and no externally
- * hosted plugin (`crates/sourdaw-native/src/commands/graph.rs`). A refusal is
- * whole-batch, so one WASM device anywhere in the project would cost the
- * session every strip it has.
+ * the flag is true and any device on the strip has no native body
+ * (`crates/sourdaw-native/src/commands/graph.rs`). A refusal is whole-batch, so
+ * one WASM device anywhere in the project would cost the session every strip it
+ * has.
  *
  * The derivation is therefore per strip and has two terms, both necessary:
  *
@@ -54,11 +53,23 @@
  *      refuses a bus by name, so a bus is always false — the same answer
  *      `renderOfflineWithNativeEngine` gives it.
  *   2. **Its whole chain is native-representable.** A track carrying a WASM
- *      built-in or an external plugin keeps `false` and still schedules its
- *      clips. What that costs is the chain, which `map_device` then omits and
- *      the strip report says is absent — and it costs nothing audible, because
- *      a shadowed session is where those clips play. Widening the native
- *      registry is #3124's work, not a producer's.
+ *      built-in keeps `false` and still schedules its clips. What that costs is
+ *      the chain, which `map_device` then omits and the strip report says is
+ *      absent — and it costs nothing audible, because a shadowed session is
+ *      where those clips play. Widening the native registry is #3124's work,
+ *      not a producer's.
+ *
+ * An externally hosted plugin is the one device whose native body is not a
+ * property of the project at all. `map_device` splices in the engine-owned
+ * instance the native side already holds, so such a device has a native body
+ * exactly when the engine reports the instance attached — which is why
+ * {@link LiveGraphTopologyInput.attachedInstanceIds} is an input rather than a
+ * rule. The producer therefore reads attach state as of the batch it builds,
+ * and the first batch to attach an instance is by construction mapped before
+ * the engine holds it: `apply_graph_commands` captures its plugin lookup ahead
+ * of the fence and attaches dormant instances behind it. Binding that instance
+ * takes a further batch, which is the caller's business
+ * (`startNativeLiveGraphSession`), never a second reading here.
  *
  * A frozen track is the one place the chain is dropped rather than judged: its
  * bake already contains the processing (see `projectLiveGraphProgramme`), so
@@ -110,6 +121,15 @@ export type LiveGraphTopologyInput = Readonly<{
     soloGatedTrackIds: ReadonlySet<string>;
     /** A track's VCA group master as a plain multiplier; absent means `1`. */
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
+    /**
+     * The external plugin instances the native engine currently owns.
+     *
+     * The only thing that gives an `external-plugin` device a native body: the
+     * mapper splices in an engine-owned instance and has nothing to splice for
+     * one the engine has not taken. See the header for why this is state read
+     * per batch rather than a property of the device.
+     */
+    attachedInstanceIds: ReadonlySet<string>;
     transport: LiveGraphTransportState;
     /** Whether this session's engine may reach the speakers at all. */
     monitor: LiveGraphMonitorMode;
@@ -118,15 +138,21 @@ export type LiveGraphTopologyInput = Readonly<{
 }>;
 
 /**
- * The one device type `daw-engine` builds a body for, matched the way
+ * The one built-in device type `daw-engine` builds a body for, matched the way
  * `no_native_body` matches it. Stated here because the producer's whole job is
  * to emit a batch the engine takes: a second, looser reading of what is
  * representable is how `contributesAudio` starts refusing sessions.
  */
 const NATIVE_DEVICE_TYPE = 'knead';
 
-function hasNativeBody(device: AudioGraphDeviceChain[number]): boolean {
-    if (device.externalPluginId !== undefined || device.externalInstanceId !== undefined) {
+function hasNativeBody(device: AudioGraphDeviceChain[number], attachedInstanceIds: ReadonlySet<string>): boolean {
+    const externalInstanceId = device.externalInstanceId;
+    if (externalInstanceId !== undefined) {
+        return attachedInstanceIds.has(externalInstanceId);
+    }
+    // An external plugin the host has not resolved to an instance names nothing
+    // the engine could be holding, so no attach state can answer for it.
+    if (device.externalPluginId !== undefined) {
         return false;
     }
     return device.type.toLowerCase() === NATIVE_DEVICE_TYPE;
@@ -152,8 +178,9 @@ function createStripCommand(input: {
     track: Track;
     state: AudioGraphStripState;
     programme: LiveGraphProgramme;
+    attachedInstanceIds: ReadonlySet<string>;
 }): AudioGraphCommand {
-    const { track, state, programme } = input;
+    const { track, state, programme, attachedInstanceIds } = input;
     // A bake replaces the chain rather than feeding it — see the header.
     const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id) ? [] : track.devices;
     const plays = (programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
@@ -163,7 +190,7 @@ function createStripCommand(input: {
         name: track.name,
         state,
         devices,
-        contributesAudio: plays && devices.every(hasNativeBody),
+        contributesAudio: plays && devices.every((device) => hasNativeBody(device, attachedInstanceIds)),
         honorMuted: true,
     } as const;
     return track.kind === 'bus'
@@ -176,15 +203,11 @@ function createStripCommand(input: {
  *
  * Two kinds are dropped rather than sent, because the mapper refuses the *whole*
  * batch over either one and a declined batch is a play button that starts no
- * engine at all.
- *
- * A send naming no built bus carries no audio path in the project either, so
- * dropping it is the same answer the export path gives. A send *from* a bus does
- * carry one — bus into bus is ordinary practice, a reverb feeding a parallel
- * compressor — but the native send tap sits on track strips only, so the engine
- * refuses a bus-source send by name. What that path costs until the tap exists
- * is its own audio, and growing one is engine fidelity work, never a producer
- * emitting a command the engine refuses.
+ * engine at all. See `admittedSendBusIds.ts` for which two — that module
+ * states the same admission as a standalone predicate for
+ * `projectLiveAutomationWrites.ts`'s own admission of send-level automation
+ * targets, so a send this function drops carries no `add-send` command and a
+ * lane automating it must not receive writes either.
  */
 function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphCommand[] {
     const { track, busStripIds } = input;
@@ -212,7 +235,11 @@ function routingCommands(input: {
         {
             kind: 'set-track-output',
             trackId: track.id,
-            target: resolveOutputTarget({ outputId: track.outputId, busStripIds, trackStripIds }),
+            target: resolveOutputTarget({
+                outputId: track.outputId,
+                busStripIds,
+                trackStripIds,
+            }),
         },
         ...sendCommands({ track, busStripIds }),
     ];
@@ -240,7 +267,15 @@ function routingCommands(input: {
  * block holding this session's material without also holding its monitor mode.
  */
 export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonly AudioGraphCommand[] {
-    const { stripTracks, soloGatedTrackIds, vcaMultiplierByTrackId, transport, monitor, programme } = input;
+    const {
+        stripTracks,
+        soloGatedTrackIds,
+        vcaMultiplierByTrackId,
+        attachedInstanceIds,
+        transport,
+        monitor,
+        programme,
+    } = input;
 
     const busStripIds = new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackStripIds = new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
@@ -250,6 +285,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
             track,
             state: stripState({ track, soloGatedTrackIds, vcaMultiplierByTrackId }),
             programme,
+            attachedInstanceIds,
         })
     );
     const routes = stripTracks.flatMap((track) => routingCommands({ track, busStripIds, trackStripIds }));

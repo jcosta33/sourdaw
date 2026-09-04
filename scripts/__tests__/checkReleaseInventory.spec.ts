@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    copyFileSync,
     closeSync,
     constants,
     existsSync,
@@ -18,10 +19,15 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+    GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES,
+    GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+    grandBouleMeasurementSourcePaths,
+} from '../../crates/daw-dsp/benches/wasm/measurementCensus.mjs';
 import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import {
     adaptedMitSourceReleaseInventoryContract,
@@ -41,9 +47,11 @@ import {
     assertDdspModelsReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
+    assertOwnerVisualAssetIntegrity,
     assertProjectLicenseDistributionReleaseInventory,
     assertGrandBouleRustSourceAdmission,
     assertGrandBouleRustWasmBoundary,
+    assertWholeEngineQuantumCapability,
     audioWorkletReleaseInventoryContract,
     checkReleaseInventory,
     DDSP_ADMISSION_DECISION_PATH,
@@ -55,6 +63,7 @@ import {
     distributedWasmArtifactCensus,
     GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS,
     GRAND_BOULE_RELEASE_REGISTRY,
+    GRAND_BOULE_RUST_SOURCE_ADMISSION,
     grandBouleReleaseInventoryContract,
     loadRepositorySnapshot,
     OWNER_VISUAL_ASSET_PATHS,
@@ -67,6 +76,7 @@ import {
     type RepositorySnapshotFileReader,
     type ReleaseInventory,
     type RepositorySnapshot,
+    validateDdspReleaseInventorySurfaces,
     validateReleaseInventory,
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
@@ -74,7 +84,11 @@ import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
-const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repositoryRoot = join(import.meta.dirname, '..', '..');
+const repositoryOwnerCanonical = readFileSync(join(repositoryRoot, 'public/icon.png'));
+const repositoryOwnerAuthority = readFileSync(join(repositoryRoot, 'public/icon-transparent.png'));
+const repositoryOwnerIcns = readFileSync(join(repositoryRoot, 'build/icons/icon.icns'));
+const repositoryOwnerIco = readFileSync(join(repositoryRoot, 'build/icons/icon.ico'));
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
 const repositoryDawDspArtifacts = new Set(wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp')?.artifacts ?? []);
 const ddspTfjsApplicationRuntimePathSet = new Set<string>(DDSP_TFJS_APPLICATION_RUNTIME_PATHS);
@@ -112,6 +126,544 @@ const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+type Rgba = readonly [red: number, green: number, blue: number, alpha: number];
+
+const ownerIconBackground: Rgba = [12, 10, 9, 255];
+const ownerIcnsFrames = ['ic04', 'ic05', 'ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
+const ownerPngIcnsFrames = ['ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
+const ownerIcoFrames = [16, 24, 32, 48, 64, 256] as const;
+const ownerPngFileByteLimit = 2 * 1024 * 1024;
+const ownerPngIdatByteLimit = 1024 * 1024;
+
+function pngCrc32(value: Buffer): number {
+    let crc = 0xffffffff;
+    for (const byte of value) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+function rawPngChunk(type: Buffer, data: Buffer): Buffer {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(pngCrc32(Buffer.concat([type, data])));
+    return Buffer.concat([length, type, data, crc]);
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+    return rawPngChunk(Buffer.from(type, 'ascii'), data);
+}
+
+function rgbaPng(width: number, height: number, pixel: (x: number, y: number) => Rgba): Buffer {
+    const rows = Buffer.alloc((width * 4 + 1) * height);
+    for (let y = 0; y < height; y += 1) {
+        const row = y * (width * 4 + 1);
+        for (let x = 0; x < width; x += 1) {
+            const offset = row + 1 + x * 4;
+            const color = pixel(x, y);
+            rows[offset] = color[0];
+            rows[offset + 1] = color[1];
+            rows[offset + 2] = color[2];
+            rows[offset + 3] = color[3];
+        }
+    }
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 6;
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        pngChunk('IHDR', header),
+        pngChunk('IDAT', deflateSync(rows)),
+        pngChunk('IEND', Buffer.alloc(0)),
+    ]);
+}
+
+function pngPaeth(left: number, above: number, upperLeft: number): number {
+    const prediction = left + above - upperLeft;
+    const leftDistance = Math.abs(prediction - left);
+    const aboveDistance = Math.abs(prediction - above);
+    const upperLeftDistance = Math.abs(prediction - upperLeft);
+    if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) {
+        return left;
+    }
+    return aboveDistance <= upperLeftDistance ? above : upperLeft;
+}
+
+function decodePngFixture(png: Buffer): { height: number; pixels: Buffer; width: number } {
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    const idat: Buffer[] = [];
+    let offset = 8;
+    while (offset < png.length) {
+        const length = png.readUInt32BE(offset);
+        if (png.toString('ascii', offset + 4, offset + 8) === 'IDAT') {
+            idat.push(png.subarray(offset + 8, offset + 8 + length));
+        }
+        offset += 12 + length;
+    }
+    const filtered = inflateSync(Buffer.concat(idat));
+    const stride = width * 4;
+    if (filtered.length !== (stride + 1) * height) {
+        throw new Error('PNG fixture pixel data has the wrong length');
+    }
+    const pixels = Buffer.alloc(stride * height);
+    for (let y = 0; y < height; y += 1) {
+        const inputRow = y * (stride + 1);
+        const outputRow = y * stride;
+        const filter = filtered[inputRow];
+        if (filter === undefined) {
+            throw new Error('PNG fixture pixel data is truncated');
+        }
+        for (let x = 0; x < stride; x += 1) {
+            const value = filtered[inputRow + 1 + x];
+            if (value === undefined) {
+                throw new Error('PNG fixture pixel data is truncated');
+            }
+            const left = x >= 4 ? pixels[outputRow + x - 4]! : 0;
+            const above = y > 0 ? pixels[outputRow - stride + x]! : 0;
+            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4]! : 0;
+            let predictor = 0;
+            if (filter === 1) {
+                predictor = left;
+            } else if (filter === 2) {
+                predictor = above;
+            } else if (filter === 3) {
+                predictor = Math.floor((left + above) / 2);
+            } else if (filter === 4) {
+                predictor = pngPaeth(left, above, upperLeft);
+            }
+            pixels[outputRow + x] = (value + predictor) & 0xff;
+        }
+    }
+    return { height, pixels, width };
+}
+
+function mutatePngPixel(png: Buffer, x: number, y: number, color: Rgba): Buffer {
+    const decoded = decodePngFixture(png);
+    if (x < 0 || x >= decoded.width || y < 0 || y >= decoded.height) {
+        throw new Error('PNG fixture pixel coordinate is out of bounds');
+    }
+    const offset = (y * decoded.width + x) * 4;
+    for (let channel = 0; channel < 4; channel += 1) {
+        decoded.pixels[offset + channel] = color[channel]!;
+    }
+    return rgbaPng(decoded.width, decoded.height, (pixelX, pixelY) => {
+        const pixelOffset = (pixelY * decoded.width + pixelX) * 4;
+        return [
+            decoded.pixels[pixelOffset]!,
+            decoded.pixels[pixelOffset + 1]!,
+            decoded.pixels[pixelOffset + 2]!,
+            decoded.pixels[pixelOffset + 3]!,
+        ];
+    });
+}
+
+function packRepeatedByte(value: number, count: number): Buffer {
+    const chunks: number[] = [];
+    let remaining = count;
+    while (remaining > 0) {
+        const length = Math.min(remaining, 130);
+        if (length >= 3) {
+            chunks.push(length + 0x7d, value);
+        } else {
+            chunks.push(length - 1, ...Array.from({ length }, () => value));
+        }
+        remaining -= length;
+    }
+    return Buffer.from(chunks);
+}
+
+function argbFixture(size: number, backgroundBlue = ownerIconBackground[2]): Buffer {
+    const pixels = size * size;
+    return Buffer.concat([
+        Buffer.from('ARGB', 'ascii'),
+        packRepeatedByte(255, pixels),
+        packRepeatedByte(ownerIconBackground[0], pixels),
+        packRepeatedByte(ownerIconBackground[1], pixels),
+        packRepeatedByte(backgroundBlue, pixels),
+        Buffer.from([0]),
+    ]);
+}
+
+const ownerIcnsFrameSizes: Readonly<Record<string, number>> = {
+    ic04: 16,
+    ic05: 32,
+    ic07: 128,
+    ic08: 256,
+    ic09: 512,
+    ic10: 1024,
+    ic11: 32,
+    ic12: 64,
+    ic13: 256,
+    ic14: 512,
+};
+
+type IcnsFixtureChunk = { payload: Buffer; type: string };
+
+function readIcnsFixtureChunks(container: Buffer): readonly IcnsFixtureChunk[] {
+    const chunks: IcnsFixtureChunk[] = [];
+    let offset = 8;
+    while (offset < container.length) {
+        const type = container.toString('ascii', offset, offset + 4);
+        const length = container.readUInt32BE(offset + 4);
+        chunks.push({ payload: container.subarray(offset + 8, offset + length), type });
+        offset += length;
+    }
+    return chunks;
+}
+
+const repositoryIcnsChunks = readIcnsFixtureChunks(repositoryOwnerIcns);
+
+function icnsFixturePayload(
+    frame: string,
+    payload: Buffer,
+    options: {
+        highBitArgbFrame?: string;
+        malformedFrame?: string;
+        seamFrame?: string;
+        wrongDimensionFrame?: string;
+        wrongPixelsFrame?: string;
+    }
+): Buffer | undefined {
+    if (options.malformedFrame === frame) {
+        return Buffer.from([0]);
+    }
+    if (options.wrongDimensionFrame === frame) {
+        return rgbaPng(1, 1, () => ownerIconBackground);
+    }
+    if (options.seamFrame === frame) {
+        const size = ownerIcnsFrameSizes[frame];
+        return size === undefined ? undefined : argbFixture(size, 0);
+    }
+    if (options.wrongPixelsFrame === frame) {
+        const size = ownerIcnsFrameSizes[frame];
+        if (size === undefined) {
+            return undefined;
+        }
+        if (frame === 'ic04' || frame === 'ic05') {
+            return argbFixture(size);
+        }
+        return rgbaPng(size, size, () => ownerIconBackground);
+    }
+    if (options.highBitArgbFrame === frame) {
+        const changed = Buffer.from(payload);
+        changed[0] = changed[0]! | 0x80;
+        return changed;
+    }
+    return payload;
+}
+
+function icnsFixture(
+    frames: readonly string[] = ownerIcnsFrames,
+    options: {
+        highBitArgbFrame?: string;
+        highBitFrame?: string;
+        highBitMagic?: boolean;
+        malformedFrame?: string;
+        seamFrame?: string;
+        wrongDimensionFrame?: string;
+        wrongPixelsFrame?: string;
+    } = {}
+): Buffer {
+    const includedFrames = new Set(frames);
+    const chunks = repositoryIcnsChunks.flatMap(({ payload: originalPayload, type }) => {
+        if (type !== 'info' && !includedFrames.has(type)) {
+            return [];
+        }
+        const payload = type === 'info' ? originalPayload : icnsFixturePayload(type, originalPayload, options);
+        if (payload === undefined) {
+            throw new Error(`missing ICNS fixture payload: ${type}`);
+        }
+        const header = Buffer.alloc(8);
+        header.write(type, 0, 'ascii');
+        header.writeUInt32BE(8 + payload.length, 4);
+        return [Buffer.concat([header, payload])];
+    });
+    const header = Buffer.alloc(8);
+    header.write('icns', 0, 'ascii');
+    header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0), 4);
+    const container = Buffer.concat([header, ...chunks]);
+    if (options.highBitMagic) {
+        container[0] = container[0]! | 0x80;
+    }
+    if (options.highBitFrame !== undefined) {
+        let offset = 8;
+        while (offset < container.length) {
+            const length = container.readUInt32BE(offset + 4);
+            if (container.toString('ascii', offset, offset + 4) === options.highBitFrame) {
+                container[offset] = container[offset]! | 0x80;
+                break;
+            }
+            offset += length;
+        }
+    }
+    return container;
+}
+
+type IcoFixtureFrame = { payload: Buffer; size: number };
+
+function readIcoFixtureFrames(container: Buffer): readonly IcoFixtureFrame[] {
+    const count = container.readUInt16LE(4);
+    const frames: IcoFixtureFrame[] = [];
+    for (let index = 0; index < count; index += 1) {
+        const offset = 6 + index * 16;
+        if (offset + 16 > container.length) {
+            throw new Error('ICO fixture frame directory is truncated');
+        }
+        const sizeByte = container[offset];
+        if (sizeByte === undefined) {
+            throw new Error('ICO fixture frame directory is truncated');
+        }
+        const size = sizeByte === 0 ? 256 : sizeByte;
+        const length = container.readUInt32LE(offset + 8);
+        const payloadOffset = container.readUInt32LE(offset + 12);
+        if (payloadOffset > container.length || length > container.length - payloadOffset) {
+            throw new Error('ICO fixture frame payload is truncated');
+        }
+        frames.push({ payload: container.subarray(payloadOffset, payloadOffset + length), size });
+    }
+    return frames;
+}
+
+const repositoryIcoFrames = readIcoFixtureFrames(repositoryOwnerIco);
+
+function icoFixturePayload(
+    size: number,
+    payload: Buffer | undefined,
+    options: { malformedSize?: number; wrongDimensionSize?: number; wrongPixelsSize?: number }
+): Buffer | undefined {
+    if (options.malformedSize === size) {
+        return Buffer.from([0]);
+    }
+    if (options.wrongDimensionSize === size) {
+        return rgbaPng(1, 1, () => ownerIconBackground);
+    }
+    if (options.wrongPixelsSize === size) {
+        return rgbaPng(size, size, () => ownerIconBackground);
+    }
+    return payload;
+}
+
+function icoFixture(
+    frames: readonly number[] = ownerIcoFrames,
+    options: {
+        malformedSize?: number;
+        overlap?: boolean;
+        wrongDimensionSize?: number;
+        wrongPixelsSize?: number;
+    } = {}
+): Buffer {
+    const header = Buffer.alloc(6);
+    header.writeUInt16LE(1, 2);
+    header.writeUInt16LE(frames.length, 4);
+    const payloadOffset = 6 + frames.length * 16;
+    const payloads = frames.map((size) => {
+        const source = repositoryIcoFrames.find((frame) => frame.size === size)?.payload;
+        const payload = icoFixturePayload(size, source, options);
+        if (payload === undefined) {
+            return rgbaPng(size, size, () => ownerIconBackground);
+        }
+        return payload;
+    });
+    let nextPayloadOffset = payloadOffset;
+    const entries = frames.map((size, index) => {
+        const payload = payloads[index];
+        if (payload === undefined) {
+            throw new Error(`missing ICO fixture payload: ${size}`);
+        }
+        const entry = Buffer.alloc(16);
+        entry[0] = size === 256 ? 0 : size;
+        entry[1] = size === 256 ? 0 : size;
+        entry.writeUInt16LE(1, 4);
+        entry.writeUInt16LE(32, 6);
+        entry.writeUInt32LE(payload.length, 8);
+        entry.writeUInt32LE(options.overlap && index === 1 ? payloadOffset : nextPayloadOffset, 12);
+        nextPayloadOffset += payload.length;
+        return entry;
+    });
+    return Buffer.concat([header, ...entries, ...payloads]);
+}
+
+function flipPngChunkCrc(png: Buffer, chunkType: string): Buffer {
+    const changed = Buffer.from(png);
+    let offset = 8;
+    while (offset < changed.length) {
+        const length = changed.readUInt32BE(offset);
+        const type = changed.toString('ascii', offset + 4, offset + 8);
+        if (type === chunkType) {
+            const crcOffset = offset + 8 + length;
+            if (crcOffset >= changed.length) {
+                throw new Error(`PNG fixture ${chunkType} chunk is truncated`);
+            }
+            const crcByte = changed[crcOffset];
+            if (crcByte === undefined) {
+                throw new Error(`PNG fixture ${chunkType} chunk is truncated`);
+            }
+            changed[crcOffset] = crcByte ^ 0xff;
+            return changed;
+        }
+        offset += 12 + length;
+    }
+    throw new Error(`missing PNG fixture chunk: ${chunkType}`);
+}
+
+type PngFixtureChunk = { data: Buffer; type: Buffer };
+
+function readPngFixtureChunks(png: Buffer): readonly PngFixtureChunk[] {
+    const chunks: PngFixtureChunk[] = [];
+    let offset = 8;
+    while (offset < png.length) {
+        const length = png.readUInt32BE(offset);
+        chunks.push({
+            data: png.subarray(offset + 8, offset + 8 + length),
+            type: png.subarray(offset + 4, offset + 8),
+        });
+        offset += 12 + length;
+    }
+    return chunks;
+}
+
+function pngFixture(chunks: readonly PngFixtureChunk[]): Buffer {
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        ...chunks.map(({ data, type }) => rawPngChunk(type, data)),
+    ]);
+}
+
+function pngChunkName(chunk: PngFixtureChunk): string {
+    return chunk.type.toString('ascii');
+}
+
+function pngWithIdatBeforeHeader(png: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    const headerIndex = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IHDR');
+    const imageDataIndex = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IDAT');
+    const header = chunks[headerIndex];
+    const imageData = chunks[imageDataIndex];
+    if (header === undefined || imageData === undefined) {
+        throw new Error('PNG fixture lacks IHDR or IDAT');
+    }
+    chunks[headerIndex] = imageData;
+    chunks[imageDataIndex] = header;
+    return pngFixture(chunks);
+}
+
+function pngWithInterleavedIdat(png: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    const firstImageData = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IDAT');
+    const secondImageData = chunks.findIndex(
+        (chunk, index) => index > firstImageData && pngChunkName(chunk) === 'IDAT'
+    );
+    if (firstImageData < 0 || secondImageData < 0) {
+        throw new Error('PNG fixture needs two IDAT chunks');
+    }
+    chunks.splice(secondImageData, 0, { data: Buffer.from('separator'), type: Buffer.from('tEXt', 'ascii') });
+    return pngFixture(chunks);
+}
+
+function pngWithChunkAfterHeader(png: Buffer, type: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    const headerIndex = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IHDR');
+    if (headerIndex < 0) {
+        throw new Error('PNG fixture lacks IHDR');
+    }
+    chunks.splice(headerIndex + 1, 0, { data: Buffer.alloc(0), type });
+    return pngFixture(chunks);
+}
+
+function pngWithTrailingCompressedBytes(png: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    let finalImageData = -1;
+    for (let index = 0; index < chunks.length; index += 1) {
+        const candidate = chunks[index];
+        if (candidate !== undefined && pngChunkName(candidate) === 'IDAT') {
+            finalImageData = index;
+        }
+    }
+    const chunk = chunks[finalImageData];
+    if (chunk === undefined) {
+        throw new Error('PNG fixture lacks IDAT');
+    }
+    chunks[finalImageData] = { data: Buffer.concat([chunk.data, Buffer.from([1, 2, 3])]), type: chunk.type };
+    return pngFixture(chunks);
+}
+
+function oversizedIdatPng(): Buffer {
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(1, 0);
+    header.writeUInt32BE(1, 4);
+    header[8] = 8;
+    header[9] = 6;
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        pngChunk('IHDR', header),
+        pngChunk('IDAT', Buffer.alloc(ownerPngIdatByteLimit + 1)),
+        pngChunk('IEND', Buffer.alloc(0)),
+    ]);
+}
+
+function writeOwnerVisualAssetFixture(
+    root: string,
+    options: {
+        authority?: Buffer;
+        canonical?: Buffer;
+        icnsFrames?: readonly string[];
+        icoFrames?: readonly number[];
+        highBitIcnsArgbFrame?: string;
+        highBitIcnsFrame?: string;
+        highBitIcnsMagic?: boolean;
+        malformedIcnsFrame?: string;
+        malformedIcoSize?: number;
+        overlappingIcoPayloads?: boolean;
+        seamIcnsFrame?: string;
+        wrongDimensionIcnsFrame?: string;
+        wrongDimensionIcoSize?: number;
+        wrongPixelsIcnsFrame?: string;
+        wrongPixelsIcoSize?: number;
+    } = {}
+): void {
+    mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
+    mkdirSync(join(root, 'build/icons/nested'), { recursive: true });
+    const canonical = options.canonical ?? repositoryOwnerCanonical;
+    const authority = options.authority ?? repositoryOwnerAuthority;
+
+    writeFileSync(join(root, 'public/icon.png'), canonical);
+    writeFileSync(join(root, 'sourdaw.png'), canonical);
+    writeFileSync(join(root, 'public/icon-transparent.png'), authority);
+    copyFileSync(join(repositoryRoot, 'public/favicon.ico'), join(root, 'public/favicon.ico'));
+    copyFileSync(join(repositoryRoot, 'public/icon-192.png'), join(root, 'public/icon-192.png'));
+    writeFileSync(join(root, 'public/logo-parts/p00.png'), 'part');
+    writeFileSync(join(root, 'build/icons/icon.png'), canonical);
+    writeFileSync(
+        join(root, 'build/icons/icon.icns'),
+        icnsFixture(options.icnsFrames, {
+            highBitArgbFrame: options.highBitIcnsArgbFrame,
+            highBitFrame: options.highBitIcnsFrame,
+            highBitMagic: options.highBitIcnsMagic,
+            malformedFrame: options.malformedIcnsFrame,
+            seamFrame: options.seamIcnsFrame,
+            wrongDimensionFrame: options.wrongDimensionIcnsFrame,
+            wrongPixelsFrame: options.wrongPixelsIcnsFrame,
+        })
+    );
+    writeFileSync(
+        join(root, 'build/icons/icon.ico'),
+        icoFixture(options.icoFrames, {
+            malformedSize: options.malformedIcoSize,
+            overlap: options.overlappingIcoPayloads,
+            wrongDimensionSize: options.wrongDimensionIcoSize,
+            wrongPixelsSize: options.wrongPixelsIcoSize,
+        })
+    );
+    writeFileSync(join(root, 'build/icons/nested/icon.png'), canonical);
 }
 
 function expectedApacheTvmRawSource(path: string): string {
@@ -342,8 +894,8 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
     }
 }`,
         ],
-        ['src/modules/GrandBoule/AGENTS.md', 'fixture provider policy'],
         ['src/modules/GrandBoule/models/GrandBouleConfig.ts', 'export type GrandBouleConfig = {};'],
+        ['src/modules/GrandBoule/useCases/__tests__/fixture.spec.ts', "it('covers the fixture', () => {});"],
         [
             'src/modules/GrandBoule/models/GrandBouleMorphState.ts',
             `export const voicings = [
@@ -384,6 +936,9 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['src/modules/AudioEngine/models/AudioEngineState.ts', 'export const state = 1;'],
         ['src/modules/AudioEngine/repositories/createWebAudioEngine.ts', 'export const engine = 1;'],
         ['src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts', 'export const schedule = 1;'],
+        ['src/app/composeGrandBoule.ts', 'export const composeGrandBoule = 1;'],
+        // Tracked so the boundary-exclusion test mutates real committed bytes
+        // instead of creating the file from nothing — see #3089 repair notes.
         ['src/app/bootstrap.ts', 'export const bootstrap = 1;'],
         ['src/app/getProductionCommandHandlerMaps.ts', 'export const handlers = 1;'],
         ['src/utils/handlerContract.ts', 'export type Action = unknown;'],
@@ -398,6 +953,11 @@ fn polarization_decay_hz(note_frequency_hz: f32) -> PolarizationDecay {
         ['crates/daw-dsp/benches/wasm/deviceRecipes.js', 'export const grandBoule = 1;'],
         ['crates/daw-dsp/benches/wasm/quantumCostProcessor.js', 'export const processor = 1;'],
         ['crates/daw-dsp/benches/wasm/run.mjs', 'export const runner = 1;'],
+        ['crates/daw-dsp/benches/wasm/measurementCensus.mjs', 'export const census = 1;'],
+        [
+            'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
+            'export function grandBouleMeasurementSourcePaths(): string[];',
+        ],
         ['crates/daw-dsp/benches/wasm/renderTable.mjs', 'export const renderer = 1;'],
         ['crates/daw-dsp/benches/wasm/renderTable.d.mts', 'export function renderGeneratedRegion(): string;'],
         ['crates/daw-dsp/benches/quantum-cost-table.json', '{}'],
@@ -436,10 +996,12 @@ const INDEPENDENT_GRAND_BOULE_PROJECT_STATE_PATHS = [
     'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
     'src/modules/Arrangement/useCases/index.ts',
     'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-    'src/app/bootstrap.ts',
+    'src/app/composeGrandBoule.ts',
     'src/app/getProductionCommandHandlerMaps.ts',
     'src/utils/handlerContract.ts',
     ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+    ':(exclude,glob)src/modules/GrandBoule/**/__tests__/**',
+    ':(exclude)src/modules/GrandBoule/AGENTS.md',
 ];
 
 function readIndependentTrackedEntry(absolutePath: string): Buffer {
@@ -490,18 +1052,41 @@ function findDigestByLabel(digests: readonly string[], label: string): string {
     return digest;
 }
 
+function digestLabelFromEntry(entry: string): string {
+    return entry.slice(entry.lastIndexOf(':') + 1);
+}
+
+function thrownMessage(assertion: () => void): string {
+    try {
+        assertion();
+    } catch (error) {
+        return (error as Error).message;
+    }
+    throw new Error('expected assertion to throw');
+}
+
+function initializeIsolatedGitFixture(root: string): void {
+    execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'init', '--quiet'], { cwd: root });
+    execFileSync(
+        'git',
+        ['-c', 'trace2.eventTarget=/dev/null', 'config', '--local', 'trace2.eventTarget', '/dev/null'],
+        { cwd: root }
+    );
+}
+
 function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
-    const sourcePaths = [
-        'crates/daw-dsp/benches/quantum.rs',
-        'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-        'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-        'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-    ];
-    for (const path of sourcePaths) {
+    for (const path of [
+        ...GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+        'crates/daw-dsp/src/grand_boule/engine.rs',
+        'crates/daw-dsp/src/primitives/denormal.rs',
+        'crates/daw-dsp/src/primitives/time_stretch/stretch.rs',
+        // Outside the census: a crumbs change must not invalidate the piano's record (ADR 0038).
+        'crates/daw-dsp/src/crumbs/voice.rs',
+    ]) {
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), `measured source ${path}`);
     }
-    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    initializeIsolatedGitFixture(root);
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync(
         'git',
@@ -512,7 +1097,7 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
     );
     const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
     const sourceDigests = Object.fromEntries(
-        sourcePaths.map((path) => [
+        grandBouleMeasurementSourcePaths(root).map((path) => [
             path,
             createHash('sha256')
                 .update(readFileSync(join(root, path)))
@@ -562,7 +1147,8 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
                 costSite: 'worker',
                 warmVerify: { ok: true, detail },
                 lateVerify: { ok: true, detail },
-                stats: { median: 2.125, floor: 1.875, min: 1.8 },
+                stats: { median: 2.125, floor: 1.875, min: 1.8, n: 8 },
+                sampleCount: 8,
                 load: { mean: 1.5 },
                 zeroFraction: 0,
                 stationary: true,
@@ -616,18 +1202,31 @@ function writeShallowGrandBouleMeasurementFixture(
     try {
         clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
         afterDirectoriesCreated?.({ clone, remote });
-        rmSync(clone, { recursive: true, force: true });
-        execFileSync('git', ['init', '--bare', '--quiet', remote]);
+        removeTemporaryDirectory(clone);
+        execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'init', '--bare', '--quiet', remote]);
         execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
         execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
-        execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
-        execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
+        execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'symbolic-ref', 'HEAD', 'refs/heads/main'], {
+            cwd: remote,
+        });
+        execFileSync(
+            'git',
+            ['-c', 'trace2.eventTarget=/dev/null', 'clone', '--depth', '1', `file://${remote}`, clone],
+            {
+                stdio: 'ignore',
+            }
+        );
+        execFileSync(
+            'git',
+            ['-c', 'trace2.eventTarget=/dev/null', 'config', '--local', 'trace2.eventTarget', '/dev/null'],
+            { cwd: clone }
+        );
         return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
     } catch (error) {
         if (clone !== undefined) {
-            rmSync(clone, { recursive: true, force: true });
+            removeTemporaryDirectory(clone);
         }
-        rmSync(remote, { recursive: true, force: true });
+        removeTemporaryDirectory(remote);
         throw error;
     }
 }
@@ -667,6 +1266,11 @@ function snapshot(): RepositorySnapshot {
     };
 }
 
+// A child git process can still hold the directory on macOS, so rmSync throws ENOTEMPTY; retry absorbs that race.
+function removeTemporaryDirectory(path: string): void {
+    rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 describe('release inventory', () => {
     it('includes the complete Grand Boule Rust module in the wasm32 crate graph', () => {
         expect(() => assertGrandBouleRustWasmBoundary(repositoryRoot)).not.toThrow();
@@ -684,7 +1288,7 @@ describe('release inventory', () => {
                 'Grand Boule must be included in the wasm32 crate graph at crates/daw-dsp/src/lib.rs'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -752,7 +1356,7 @@ describe('release inventory', () => {
             );
             expect(() => assertGrandBouleDesignAroundSource(root)).toThrow('Rust constructor');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -774,7 +1378,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -791,7 +1395,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -822,7 +1426,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -847,7 +1451,7 @@ describe('release inventory', () => {
                 `Grand Boule constructor must be exposed exactly by distributed daw-dsp WASM surface ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -863,7 +1467,7 @@ describe('release inventory', () => {
                     `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
                 );
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -879,7 +1483,7 @@ describe('release inventory', () => {
                     `Grand Boule constructor export must be exposed by distributed daw-dsp WASM binary ${path}`
                 );
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -920,7 +1524,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, path), contents);
             expect(() => assertGrandBouleReleasedInWasm(root)).toThrow(`${label} has unexpected artifact ${path}`);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -948,12 +1552,22 @@ describe('release inventory', () => {
                 'WASM manifest package proof-chamber has unexpected artifact public/wasm/hostile.js'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 20_000 }, () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
+        const validatedSurfaceIds: string[] = [];
+        validateDdspReleaseInventorySurfaces(
+            repositoryRoot,
+            readReleaseInventory(repositoryRoot),
+            (surfaceId, validate) => {
+                validate();
+                validatedSurfaceIds.push(surfaceId);
+            }
+        );
+
+        expect(validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
     it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {
@@ -1037,7 +1651,7 @@ describe('release inventory', () => {
                 )
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1101,7 +1715,7 @@ describe('release inventory', () => {
                 ])
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1168,7 +1782,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1206,7 +1820,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${symlinkPath}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1230,7 +1844,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1260,7 +1874,7 @@ describe('release inventory', () => {
             );
             expect(byteReads).toBe(0);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1288,7 +1902,7 @@ describe('release inventory', () => {
             );
             expect(textReads).toBe(0);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1326,7 +1940,7 @@ describe('release inventory', () => {
                 cause: { message: 'unexpected early EOF while reading repository file descriptor' },
             });
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1358,7 +1972,7 @@ describe('release inventory', () => {
             ).toThrow('repository aggregate byte limit exceeded');
             expect(readDescriptors.size).toBe(1);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1374,7 +1988,7 @@ describe('release inventory', () => {
 
             expect(() => readReleaseInventory(root)).toThrow('release inventory exceeds the per-file byte limit');
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1411,7 +2025,7 @@ describe('release inventory', () => {
             expect(changed.fileDigests[path]).toBe('missing');
             expect(reads).toBe(0);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1458,7 +2072,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1492,7 +2106,7 @@ describe('release inventory', () => {
             expect(changed.externalReferences).not.toContain(insideReference);
             expect(changed.externalReferences).toEqual([]);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1530,7 +2144,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1566,7 +2180,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1596,7 +2210,7 @@ describe('release inventory', () => {
             expect(changed.externalReferences).toEqual([]);
             expect(linked).toBe(true);
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1636,7 +2250,7 @@ describe('release inventory', () => {
             expect(changed.fileDigests[unsafePath]).toBeUndefined();
             expect(changed.fileDigests[untrackedPath]).toBeUndefined();
         } finally {
-            rmSync(base, { recursive: true, force: true });
+            removeTemporaryDirectory(base);
         }
     });
 
@@ -1663,7 +2277,7 @@ describe('release inventory', () => {
             expect(opens).toBe(0);
             expect(changed.fileDigests[requiredPath]).toBeUndefined();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1696,7 +2310,7 @@ describe('release inventory', () => {
             expect(reads).toBe(0);
             expect(changed.fileDigests[path]).toBe('missing');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1738,7 +2352,7 @@ describe('release inventory', () => {
                 `runtime: path-addressed digest target is missing or untracked: ${path}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1779,7 +2393,7 @@ describe('release inventory', () => {
 
             expect(changed.fileDigests[path]).toBe(sha256('dlpack license'));
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1805,8 +2419,18 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toEqual([]);
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 20_000 }, () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    it('composes the admitted DDSP model contract into live release inventory validation', () => {
+        const validatedSurfaceIds: string[] = [];
+        validateDdspReleaseInventorySurfaces(
+            repositoryRoot,
+            readReleaseInventory(repositoryRoot),
+            (surfaceId, validate) => {
+                validate();
+                validatedSurfaceIds.push(surfaceId);
+            }
+        );
+
+        expect(validatedSurfaceIds).toContain('ddsp-models');
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
@@ -1867,7 +2491,7 @@ describe('release inventory', () => {
                         : 'DDSP models release inventory digests does not match provenance'
                 );
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -1890,7 +2514,7 @@ describe('release inventory', () => {
 
                 expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -1916,7 +2540,7 @@ describe('release inventory', () => {
                 'DDSP models release inventory digests does not match provenance'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1941,7 +2565,7 @@ describe('release inventory', () => {
                 'ADR 0035 does not admit the current DDSP artifact manifest'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1980,7 +2604,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'public/legal/TensorFlow.js-NOTICE.txt'), 'changed');
             expect(ddspTfjsRuntimeReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2046,11 +2670,14 @@ describe('release inventory', () => {
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/prepareOfflineDeviceSetup.ts',
                 'crates/daw-dsp/benches/quantum.rs',
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -2077,7 +2704,119 @@ describe('release inventory', () => {
                 writeFileSync(absolute, original);
             }
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    // #3089: bootstrap.ts is the composition root nearly every feature lane
+    // edits; it used to sit inside this boundary's tracked set, so an
+    // unrelated bootstrap.ts edit moved the Grand Boule digest. Deleting the
+    // `src/app/composeGrandBoule.ts` entries from GRAND_BOULE_RELEASE_REGISTRY's
+    // `grand-boule-project-state` boundary (checkReleaseInventory.ts) turns
+    // this red: bootstrap.ts would move the digest again, and composeGrandBoule.ts would not.
+    it('moves the project-state digest only for composeGrandBoule.ts, not for bootstrap.ts (#3089)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-compose-boundary-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const baseline = grandBouleReleaseInventoryContract(root).digests;
+
+            const bootstrapPath = join(root, 'src/app/bootstrap.ts');
+            const originalBootstrap = readFileSync(bootstrapPath, 'utf8');
+            writeFileSync(bootstrapPath, `${originalBootstrap}\n// mutated`);
+            execFileSync('git', ['add', '.'], { cwd: root });
+            expect(grandBouleReleaseInventoryContract(root).digests).toEqual(baseline);
+            writeFileSync(bootstrapPath, originalBootstrap);
+
+            const composePath = join(root, 'src/app/composeGrandBoule.ts');
+            const originalCompose = readFileSync(composePath, 'utf8');
+            writeFileSync(composePath, `${originalCompose}\n// mutated`);
+            const afterComposeEdit = grandBouleReleaseInventoryContract(root).digests;
+            expect(afterComposeEdit).not.toEqual(baseline);
+            const changedIndexes = afterComposeEdit.flatMap((digest, index) =>
+                digest === baseline[index] ? [] : [index]
+            );
+            expect(changedIndexes).toEqual([
+                GRAND_BOULE_RELEASE_REGISTRY.boundaries.findIndex(
+                    ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
+                ),
+            ]);
+            writeFileSync(composePath, originalCompose);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    // #2931: a module spec is not part of what the Grand Boule surface
+    // distributes, so editing one must leave the released provenance alone.
+    // Deleting the `:(exclude,glob)src/modules/GrandBoule/**/__tests__/**`
+    // pathspec from GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state`
+    // boundary (checkReleaseInventory.ts) turns this red.
+    it('holds the project-state digest byte-identical when a tracked Grand Boule spec changes (#2931)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-spec-exclusion-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const released = grandBouleReleaseInventoryContract(root);
+            const specPath = join(root, 'src/modules/GrandBoule/useCases/__tests__/fixture.spec.ts');
+            const originalSpec = readFileSync(specPath, 'utf8');
+            writeFileSync(specPath, `${originalSpec}\nit('covers one more case', () => {});`);
+
+            expect(
+                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
+            ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
+            expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    // #2931: the module AGENTS.md is agent guidance, not a distributed artifact.
+    // Deleting the `:(exclude)src/modules/GrandBoule/AGENTS.md` pathspec from
+    // GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state` boundary
+    // (checkReleaseInventory.ts) turns this red.
+    it('holds the project-state digest byte-identical when the Grand Boule module AGENTS.md changes (#2931)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-agents-exclusion-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const released = grandBouleReleaseInventoryContract(root);
+            const agentsPath = join(root, 'src/modules/GrandBoule/AGENTS.md');
+            const originalAgents = readFileSync(agentsPath, 'utf8');
+            writeFileSync(agentsPath, `${originalAgents}\nAdditional module guidance.`);
+
+            expect(
+                findDigestByLabel(grandBouleReleaseInventoryContract(root).digests, 'grand-boule-project-state')
+            ).toBe(findDigestByLabel(released.digests, 'grand-boule-project-state'));
+            expect(() => assertGrandBouleReleaseInventory(root, released)).not.toThrow();
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    // #2931: narrowing the boundary must not stop it binding the sources the
+    // surface does distribute. Widening the exclusions past specs and the module
+    // AGENTS.md in GRAND_BOULE_RELEASE_REGISTRY's `grand-boule-project-state`
+    // boundary (checkReleaseInventory.ts) turns this red.
+    it('moves the project-state digest and refuses when a distributed Grand Boule source changes (#2931)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-distributed-source-'));
+        writeGrandBouleReleaseFixture(root);
+
+        try {
+            const released = grandBouleReleaseInventoryContract(root);
+            const sourcePath = join(root, 'src/modules/GrandBoule/models/GrandBouleConfig.ts');
+            const originalSource = readFileSync(sourcePath, 'utf8');
+            writeFileSync(sourcePath, `${originalSource}\nexport type GrandBouleAddition = {};`);
+
+            const changedLabels = grandBouleReleaseInventoryContract(root).digests.flatMap((digest, index) =>
+                digest === released.digests[index] ? [] : [digestLabelFromEntry(digest)]
+            );
+            expect(changedLabels).toEqual(['grand-boule-project-state']);
+            expect(thrownMessage(() => assertGrandBouleReleaseInventory(root, released))).toContain(
+                'grand-boule-project-state'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2096,7 +2835,7 @@ describe('release inventory', () => {
         try {
             expect(() => grandBouleReleaseInventoryContract(canonicalRoot)).not.toThrow();
         } finally {
-            rmSync(canonicalBase, { recursive: true, force: true });
+            removeTemporaryDirectory(canonicalBase);
         }
 
         const unmergedBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-unmerged-'));
@@ -2122,7 +2861,7 @@ describe('release inventory', () => {
                 `Grand Boule provider-policy symlink index must contain exactly one stage-0 entry: ${path}`
             );
         } finally {
-            rmSync(unmergedBase, { recursive: true, force: true });
+            removeTemporaryDirectory(unmergedBase);
         }
         const checkoutBase = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-policy-symlinks-checkout-'));
         const checkoutRoot = join(checkoutBase, 'repository');
@@ -2135,7 +2874,7 @@ describe('release inventory', () => {
                 'Grand Boule provider-policy symlink checkout target is not AGENTS.md'
             );
         } finally {
-            rmSync(checkoutBase, { recursive: true, force: true });
+            removeTemporaryDirectory(checkoutBase);
         }
 
         const mutations = [
@@ -2203,7 +2942,7 @@ describe('release inventory', () => {
                 );
                 expect(() => grandBouleReleaseInventoryContract(root)).toThrow(mutation.error);
             } finally {
-                rmSync(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+                removeTemporaryDirectory(base);
             }
         }
 
@@ -2220,7 +2959,7 @@ describe('release inventory', () => {
                 `Grand Boule release source is unsafe: ${unexpected}`
             );
         } finally {
-            rmSync(unexpectedBase, { recursive: true, force: true });
+            removeTemporaryDirectory(unexpectedBase);
         }
     });
 
@@ -2266,7 +3005,7 @@ describe('release inventory', () => {
             expect(attemptedFlags[0]! & constants.O_NOFOLLOW).not.toBe(0);
             expect(successfulReplacementOpens).toBe(0);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
     it('rejects every tracked Rust file without an admission basis', () => {
@@ -2278,7 +3017,7 @@ describe('release inventory', () => {
             execFileSync('git', ['add', 'crates/daw-dsp/src/grand_boule/unsupported.rs'], { cwd: root });
             expect(() => assertGrandBouleRustSourceAdmission(root)).toThrow('unsupported attribution gap');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2324,7 +3063,133 @@ describe('release inventory', () => {
                 'recorded digest does not match source revision'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('scopes the measurement census to the compile-time closure', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-census-scope-'));
+        try {
+            writeGrandBouleMeasurementFixture(root);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const crumbsPath = join(root, 'crates/daw-dsp/src/crumbs/voice.rs');
+            writeFileSync(crumbsPath, `${readFileSync(crumbsPath, 'utf8')}\ncrumbs-only mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const grandBoulePath = join(root, 'crates/daw-dsp/src/grand_boule/engine.rs');
+            const grandBouleSource = readFileSync(grandBoulePath, 'utf8');
+            writeFileSync(grandBoulePath, `${grandBouleSource}\nclosure mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source digest drifted for crates/daw-dsp/src/grand_boule/engine.rs'
+            );
+            writeFileSync(grandBoulePath, grandBouleSource);
+
+            const primitivesPath = join(root, 'crates/daw-dsp/src/primitives/time_stretch/stretch.rs');
+            writeFileSync(primitivesPath, `${readFileSync(primitivesPath, 'utf8')}\nclosure mutation`);
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source digest drifted for crates/daw-dsp/src/primitives/time_stretch/stretch.rs'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a retained table whose digest census disagrees with the closure census', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-census-mismatch-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const original = readFileSync(jsonPath, 'utf8');
+
+            const incomplete = JSON.parse(original) as { sourceDigests: Record<string, string> };
+            delete incomplete.sourceDigests['rust-toolchain.toml'];
+            writeFileSync(jsonPath, JSON.stringify(incomplete));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source-digest census disagrees with the compile-time closure census (#3005)'
+            );
+
+            const decoy = JSON.parse(original) as { sourceDigests: Record<string, string> };
+            decoy.sourceDigests['public/wasm/daw-dsp/daw_dsp_bg.wasm'] = '0'.repeat(64);
+            writeFileSync(jsonPath, JSON.stringify(decoy));
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'source-digest census disagrees with the compile-time closure census (#3005)'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('derives the live census from the registry-admitted grand_boule sources and the primitives tree', () => {
+        expect(GRAND_BOULE_MEASUREMENT_SOURCE_FILES).toEqual([
+            'crates/daw-dsp/benches/quantum.rs',
+            'crates/daw-dsp/benches/wasm/deviceRecipes.js',
+            'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
+            'crates/daw-dsp/src/lib.rs',
+            'crates/daw-dsp/Cargo.toml',
+            'rust-toolchain.toml',
+            'scripts/wasmToolchainPins.ts',
+        ]);
+        expect(GRAND_BOULE_MEASUREMENT_SOURCE_DIRECTORIES).toEqual([
+            'crates/daw-dsp/src/grand_boule',
+            'crates/daw-dsp/src/primitives',
+        ]);
+
+        const census = grandBouleMeasurementSourcePaths(repositoryRoot);
+        const grandBoulePrefix = 'crates/daw-dsp/src/grand_boule/';
+        const grandBouleFiles = census
+            .filter((path) => path.startsWith(grandBoulePrefix))
+            .map((path) => path.slice(grandBoulePrefix.length));
+        expect(grandBouleFiles).toEqual([...Object.keys(GRAND_BOULE_RUST_SOURCE_ADMISSION)].sort());
+        expect(census).toContain('crates/daw-dsp/src/primitives/time_stretch/mod.rs');
+        expect(census).not.toContain('public/wasm/daw-dsp/daw_dsp_bg.wasm');
+        expect(census.some((path) => path.startsWith('crates/daw-dsp/src/crumbs/'))).toBe(false);
+    });
+
+    it('pins the census definition module in the release-proof boundary', () => {
+        const releaseProof = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+            ({ digestLabel }) => digestLabel === 'grand-boule-release-proof'
+        );
+        // The census lived inline in scripts/checkReleaseInventory.ts, which the boundary already
+        // pins; as a standalone module it must stay in the tracked set, or the release inventory
+        // validates against a recording made before the census definition changed.
+        for (const modulePath of [
+            'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+            'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
+        ]) {
+            expect(releaseProof?.paths).toContain(modulePath);
+            expect(releaseProof?.gitPathspecs).toContain(modulePath);
+        }
+    });
+
+    it('gates the whole-engine reference project budget apart from the Grand Boule admission', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-whole-engine-budget-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            expect(() => assertWholeEngineQuantumCapability(root)).not.toThrow();
+
+            const original = readFileSync(jsonPath, 'utf8');
+            const overBudget = JSON.parse(original) as {
+                budgetMs: number;
+                referenceProject: { audioWorstQuantumUpperMs: number };
+            };
+            overBudget.referenceProject.audioWorstQuantumUpperMs = overBudget.budgetMs;
+            writeFileSync(jsonPath, JSON.stringify(overBudget));
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            writeFileSync(markdownPath, renderGeneratedRegion(overBudget));
+            expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                'Whole-engine measured reference project exceeds its render budget'
+            );
+            // The descope (ADR 0038): the same over-budget table no longer fails the Grand Boule admission.
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+
+            const missing = JSON.parse(original) as { referenceProject?: unknown };
+            delete missing.referenceProject;
+            writeFileSync(jsonPath, JSON.stringify(missing));
+            expect(() => assertWholeEngineQuantumCapability(root)).toThrow(
+                'Whole-engine measured reference project exceeds its render budget'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2358,12 +3223,12 @@ describe('release inventory', () => {
             );
         } finally {
             if (clone !== undefined) {
-                rmSync(clone, { recursive: true, force: true });
+                removeTemporaryDirectory(clone);
             }
             if (remote !== undefined) {
-                rmSync(remote, { recursive: true, force: true });
+                removeTemporaryDirectory(remote);
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2398,7 +3263,7 @@ describe('release inventory', () => {
                 `Grand Boule measurement source revision ${treeRevision} cannot provide ${measuredSourcePath}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2458,7 +3323,7 @@ describe('release inventory', () => {
                 `Grand Boule measurement source revision ${tagRevision} cannot provide ${measuredSourcePath}`
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2481,7 +3346,7 @@ describe('release inventory', () => {
             expect(existsSync(clone)).toBe(false);
             expect(existsSync(remote)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2513,11 +3378,150 @@ describe('release inventory', () => {
                 'generated region does not match JSON rendering'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
-    it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', () => {
+    it('rejects a measurement whose sampleCount and measureQuanta moved without stats.n (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-quanta-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                options: { measureQuanta: number };
+                rows: Array<{ sampleCount: number }>;
+            };
+            data.options.measureQuanta = 9;
+            data.rows[0]!.sampleCount = 9;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement populations disagree for row grand_boule: stats.n 8, sampleCount 9, options.measureQuanta 9'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement whose stats.n disagrees with its sampleCount (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-stats-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{ stats: { n: number } }>;
+            };
+            data.rows[0]!.stats.n = 7;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'stats.n 7, sampleCount 8, options.measureQuanta 8'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement without an integer measureQuanta (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-integer-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                options: { measureQuanta: number };
+            };
+            data.options.measureQuanta = 8.5;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement options.measureQuanta must be a positive integer'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement whose sampleCount moved without stats.n or measureQuanta (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-samplecount-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{ sampleCount: number }>;
+            };
+            data.rows[0]!.sampleCount = 5;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement populations disagree for row grand_boule: stats.n 8, sampleCount 5, options.measureQuanta 8'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('binds every retained row, not only grand_boule (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-every-row-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                rows: Array<{
+                    id: string;
+                    label: string;
+                    costSite: string;
+                    sampleCount: number;
+                    stats: { n: number };
+                }>;
+            };
+            const grandBouleRow = data.rows[0]!;
+            data.rows.push({
+                ...grandBouleRow,
+                id: 'bacteria',
+                label: 'Bacteria (fixture)',
+                costSite: 'worklet',
+                sampleCount: 7,
+            });
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement populations disagree for row bacteria: stats.n 8, sampleCount 7, options.measureQuanta 8'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a measurement of zero quanta (#3012)', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-measurement-population-zero-'));
+        try {
+            const { jsonPath } = writeGrandBouleMeasurementFixture(root);
+            const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
+            const data = JSON.parse(readFileSync(jsonPath, 'utf8')) as {
+                options: { measureQuanta: number };
+                rows: Array<{ stats: { n: number }; sampleCount: number }>;
+            };
+            data.options.measureQuanta = 0;
+            data.rows[0]!.stats.n = 0;
+            data.rows[0]!.sampleCount = 0;
+            writeFileSync(jsonPath, JSON.stringify(data));
+            writeFileSync(markdownPath, renderGeneratedRegion(data));
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
+                'Grand Boule measurement options.measureQuanta must be a positive integer'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    // Rebuilds the Grand Boule fixture repository four times; ~3.1 s on an idle machine.
+    it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', { timeout: 20_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-assertion-'));
         writeGrandBouleReleaseFixture(root);
 
@@ -2535,6 +3539,91 @@ describe('release inventory', () => {
                     digests: ['tree-sha256:stale:crates/daw-dsp/src/grand_boule'],
                 })
             ).toThrow('Grand Boule release inventory digests does not match provenance');
+
+            // A single stale label names exactly that boundary, its recorded and
+            // current entries, its tracked-set pathspecs, and the remedy — not a
+            // bare "digests does not match" with no boundary to fix. Deleting the
+            // per-label formatting in `formatDigestsMismatch` (checkReleaseInventory.ts)
+            // turns this red.
+            const realProjectStateEntry = findDigestByLabel(current.digests, 'grand-boule-project-state');
+            const staleProjectStateEntry = `tracked-set-sha256:${'0'.repeat(64)}:grand-boule-project-state`;
+            const projectStateBoundary = GRAND_BOULE_RELEASE_REGISTRY.boundaries.find(
+                ({ digestLabel }) => digestLabel === 'grand-boule-project-state'
+            );
+            if (projectStateBoundary === undefined) {
+                throw new Error('grand-boule-project-state boundary is missing from the registry');
+            }
+            const staleSingleLabelDigests = current.digests.map((entry) =>
+                entry === realProjectStateEntry ? staleProjectStateEntry : entry
+            );
+            const staleSingleLabelMessage = thrownMessage(() => {
+                assertGrandBouleReleaseInventory(root, { ...current, digests: staleSingleLabelDigests });
+            });
+            expect(staleSingleLabelMessage).toContain(
+                `grand-boule-project-state: recorded ${staleProjectStateEntry} but the tree now yields ${realProjectStateEntry}`
+            );
+            expect(staleSingleLabelMessage).toContain(`tracked set: ${projectStateBoundary.gitPathspecs.join(', ')}`);
+            expect(staleSingleLabelMessage).toContain(
+                'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
+                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+            );
+            // Every unaffected label stays out of the message — only the one that
+            // actually differs is reported.
+            for (const boundary of GRAND_BOULE_RELEASE_REGISTRY.boundaries) {
+                if (boundary.digestLabel === 'grand-boule-project-state') {
+                    continue;
+                }
+                expect(staleSingleLabelMessage).not.toContain(`${boundary.digestLabel}: recorded`);
+            }
+
+            // Folding recorded entries into a Map by label is lossy: a duplicated
+            // label keeps only its last write, so the per-label loop finds nothing
+            // to report even though assertSurfaceContract already knows the arrays
+            // differ (9 entries instead of 8). Deleting the duplicate-label branch
+            // in `describeUnlabeledDigestsDifference` turns this red.
+            const duplicateLabelDigests = current.digests.flatMap((entry) =>
+                entry === realProjectStateEntry ? [staleProjectStateEntry, realProjectStateEntry] : [entry]
+            );
+            const duplicateLabelLines = thrownMessage(() =>
+                assertGrandBouleReleaseInventory(root, { ...current, digests: duplicateLabelDigests })
+            ).split('\n');
+            expect(duplicateLabelLines[0]).toBe('Grand Boule release inventory digests does not match provenance');
+            expect(duplicateLabelLines.at(-1)).toBe(
+                'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
+                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+            );
+            expect(duplicateLabelLines.slice(1, -1)).toContain(
+                '  grand-boule-project-state: recorded 2 entries where one is expected'
+            );
+
+            // Reordering two entries with no content change also produces zero
+            // per-label diffs (the Map lookup is order-independent), so the
+            // fallback must name the labels involved rather than staying silent.
+            // Deleting the order-differs branch in `describeUnlabeledDigestsDifference`
+            // turns this red.
+            const swappedDigests = [current.digests[1]!, current.digests[0]!, ...current.digests.slice(2)];
+            const swappedOrderLines = thrownMessage(() =>
+                assertGrandBouleReleaseInventory(root, { ...current, digests: swappedDigests })
+            ).split('\n');
+            expect(swappedOrderLines[0]).toBe('Grand Boule release inventory digests does not match provenance');
+            expect(swappedOrderLines.at(-1)).toBe(
+                'Replace the recorded entries above in release/open-source-inventory.json (surface "Grand Boule") ' +
+                    "if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes."
+            );
+            expect(swappedOrderLines.slice(1, -1)).toContain(
+                `  recorded order differs from the tree; recorded: [${swappedDigests
+                    .map(digestLabelFromEntry)
+                    .join(', ')}] current: [${current.digests.map(digestLabelFromEntry).join(', ')}]`
+            );
+
+            // A non-string recorded entry (malformed JSON) must be reported by
+            // index rather than reaching digestEntryLabel, which assumes a string.
+            const numericEntryDigests = current.digests.map((entry, index) =>
+                index === 0 ? (123 as unknown as string) : entry
+            );
+            expect(() => assertGrandBouleReleaseInventory(root, { ...current, digests: numericEntryDigests })).toThrow(
+                '0: recorded entry is not a string'
+            );
 
             for (const [field, value] of [
                 ['retention', 'defer-behind-admission'],
@@ -2558,7 +3647,7 @@ describe('release inventory', () => {
             expect(() => grandBouleReleaseInventoryContract(root)).toThrow(
                 `Grand Boule release source is unsafe: ${unsafeSource}`
             );
-            rmSync(join(root, unsafeSource), { recursive: true, force: true });
+            removeTemporaryDirectory(join(root, unsafeSource));
 
             writeGrandBouleReleaseFixture(root);
             const preserved = grandBouleReleaseInventoryContract(root);
@@ -2573,28 +3662,15 @@ describe('release inventory', () => {
                 'Grand Boule release source is missing: src/modules/AudioEngine/worklets/grandBouleProcessor.ts'
             );
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
     it('binds owner-created visual assets and every derived rendition', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-'));
-        mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
-        mkdirSync(join(root, 'build/icons/nested'), { recursive: true });
-        for (const path of [
-            'public/favicon.ico',
-            'public/icon-192.png',
-            'public/icon-transparent.png',
-            'public/icon.png',
-            'sourdaw.png',
-            'public/logo-parts/p00.png',
-            'build/icons/icon.png',
-            'build/icons/nested/icon.png',
-        ]) {
-            writeFileSync(join(root, path), path);
-        }
 
         try {
+            writeOwnerVisualAssetFixture(root);
             const before = ownerVisualAssetReleaseInventoryContract(root);
             expect(before.kind).toBe('owner-created-asset');
             expect(before.paths).toEqual(OWNER_VISUAL_ASSET_PATHS);
@@ -2604,7 +3680,325 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'build/icons/nested/icon.png'), 'changed');
             expect(ownerVisualAssetReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a canonical owner icon with mutated pixels', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-background-'));
+
+        try {
+            const canonical = mutatePngPixel(repositoryOwnerCanonical, 0, 0, [5, 4, 3, 255]);
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
+                'owner visual asset public/icon.png pixels do not match the shipped rendition'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each([
+        ['wrong geometry', rgbaPng(1, 1, () => [0, 0, 0, 0]), 'public/icon.png must be 480x480 RGBA'],
+        [
+            'mutated pixels',
+            mutatePngPixel(repositoryOwnerCanonical, 235, 25, [255, 0, 0, 255]),
+            'public/icon.png pixels do not match the shipped rendition',
+        ],
+    ] as const)('rejects canonical owner icon %s', (_label, canonical, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-canonical-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a PNG with a corrupt IDAT CRC', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-png-crc-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical: flipPngChunkCrc(repositoryOwnerCanonical, 'IDAT') });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset public/icon.png PNG IDAT CRC is invalid'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each([
+        ['IDAT before IHDR', pngWithIdatBeforeHeader(repositoryOwnerCanonical), 'PNG IHDR must be first'],
+        [
+            'interleaved IDAT chunks',
+            pngWithInterleavedIdat(repositoryOwnerCanonical),
+            'PNG IDAT chunks must be consecutive',
+        ],
+        [
+            'an unknown critical chunk',
+            pngWithChunkAfterHeader(repositoryOwnerCanonical, Buffer.from('ABCD', 'ascii')),
+            'PNG has unknown critical chunk ABCD',
+        ],
+        [
+            'invalid chunk-type bytes',
+            pngWithChunkAfterHeader(repositoryOwnerCanonical, Buffer.from([0x49, 0x44, 0, 0x54])),
+            'PNG chunk type is invalid',
+        ],
+        [
+            'trailing compressed bytes',
+            pngWithTrailingCompressedBytes(repositoryOwnerCanonical),
+            'PNG IDAT contains trailing compressed bytes',
+        ],
+    ] as const)('rejects canonical PNG grammar with %s', (_label, canonical, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-png-grammar-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset public/icon.png ${failure}`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each([
+        [Buffer.alloc(ownerPngFileByteLimit + 1), `exceeds ${ownerPngFileByteLimit}-byte limit`],
+        [oversizedIdatPng(), `PNG IDAT exceeds ${ownerPngIdatByteLimit}-byte limit`],
+    ] as const)('bounds canonical PNG resources before decoding %#', (canonical, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-png-bound-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset public/icon.png ${failure}`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(ownerIcnsFrames)('rejects an ICNS missing required %s frame', (missingFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, {
+                icnsFrames: ownerIcnsFrames.filter((frame) => frame !== missingFrame),
+            });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns is missing frame ${missingFrame}`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(ownerIcnsFrames)('rejects malformed payload data in required ICNS %s frame', (malformedFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-payload-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { malformedIcnsFrame: malformedFrame });
+
+            const failure =
+                malformedFrame === 'ic04' || malformedFrame === 'ic05'
+                    ? `owner visual asset build/icons/icon.icns ${malformedFrame} frame is not ARGB`
+                    : `owner visual asset build/icons/icon.icns ${malformedFrame} is not a PNG`;
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(failure);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a high-bit alias of the ICNS container magic', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-magic-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { highBitIcnsMagic: true });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.icns has an invalid container header'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(ownerIcnsFrames)('rejects a high-bit alias of required ICNS %s frame type', (highBitFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-fourcc-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { highBitIcnsFrame: highBitFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns is missing frame ${highBitFrame}`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(['ic04', 'ic05'] as const)('rejects a high-bit alias of legacy ICNS %s ARGB magic', (highBitFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-argb-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { highBitIcnsArgbFrame: highBitFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${highBitFrame} frame is not ARGB`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(['ic04', 'ic05'] as const)('rejects repaired legacy ICNS %s blue-tail seam pixels', (seamFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-seam-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { seamIcnsFrame: seamFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${seamFrame} frame contains #0c0a00 seam pixels`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(ownerIcnsFrames)('rejects wrong decoded pixels in required ICNS %s frame', (wrongPixelsFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-pixels-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongPixelsIcnsFrame: wrongPixelsFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${wrongPixelsFrame} pixels do not match the shipped rendition`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(ownerPngIcnsFrames)('rejects a valid PNG at the wrong ICNS %s frame dimensions', (wrongFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-dimensions-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcnsFrame: wrongFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${wrongFrame} frame must be ${ownerIcnsFrameSizes[wrongFrame]}x${ownerIcnsFrameSizes[wrongFrame]} RGBA`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each([
+        ['missing', [16, 32, 48, 64, 256]],
+        ['unexpected', [16, 20, 32, 48, 64, 256]],
+    ] as const)('rejects an ICO with %s frame sizes', (_label, frames) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { icoFrames: frames });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico frame sizes must be 16,24,32,48,64,256'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects overlapping ICO frame payloads', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-overlap-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { overlappingIcoPayloads: true });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico has overlapping frame payloads'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects malformed ICO frame payload data', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-payload-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { malformedIcoSize: 24 });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico 24x24 is not a PNG'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each(ownerIcoFrames)('rejects wrong decoded pixels in required ICO %spx frame', (wrongPixelsSize) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-pixels-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongPixelsIcoSize: wrongPixelsSize });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.ico ${wrongPixelsSize}px frame pixels do not match the shipped rendition`
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects an ICO payload whose PNG dimensions disagree with its directory entry', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-dimensions-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcoSize: 24 });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('routes malformed ICNS through the release inventory contract', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-contract-icns-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { malformedIcnsFrame: 'ic07' });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
+                'owner visual asset build/icons/icon.icns ic07 is not a PNG'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('routes wrong-dimension ICO payloads through the release inventory contract', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-contract-ico-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcoSize: 24 });
+
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
+                'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2622,7 +4016,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, TRADEMARK_NOTICE_PATH), 'changed');
             expect(trademarkReleaseInventoryContract(root).digests).not.toEqual(before.digests);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2641,7 +4035,7 @@ describe('release inventory', () => {
             writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'changed');
             expect(audioWorkletReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2702,7 +4096,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, ADAPTED_MIT_NOTICE_PATH), 'changed public notice');
             expect(adaptedMitSourceReleaseInventoryContract(root).digests[8]).not.toBe(before.digests[8]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2739,7 +4133,7 @@ describe('release inventory', () => {
                 expect.stringMatching(/^sha256:[0-9a-f]{64}:public\/wasm\/manifest\.json$/),
             ]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2785,7 +4179,7 @@ describe('release inventory', () => {
             writeFileSync(join(root, 'release/open-source-inventory.json'), '{"surface":]');
             expect(() => readReleaseInventory(root)).toThrow('invalid JSON');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2994,7 +4388,7 @@ describe('release inventory', () => {
             expect(result.fileDigests['notes.txt']).toMatch(/^[0-9a-f]{64}$/);
             expect(result.markPaths).toEqual({ Hammond: ['src/peer.ts'], Neve: [] });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3014,7 +4408,7 @@ describe('release inventory', () => {
             expect(result.externalReferences).toEqual([]);
             expect(result.markPaths).toEqual({ Roland: [] });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3032,7 +4426,7 @@ describe('release inventory', () => {
             expect(result.releaseFiles).toEqual(['src/current.ts']);
             expect(result.externalReferences).toEqual([]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3070,7 +4464,7 @@ describe('release inventory', () => {
             ]);
             expect(result.markPaths).toEqual({ Roland: ['index.html', 'public/runtime.js'] });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 

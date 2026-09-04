@@ -279,6 +279,7 @@ describe('getProjectContext', () => {
                             fadeOutBeats: 1,
                             loopEnabled: true,
                             loopLength: 2,
+                            midiOffsetBeats: 1.5,
                         },
                     ],
                     activeAlternativeId: 'alt-active',
@@ -414,6 +415,9 @@ describe('getProjectContext', () => {
             fadeOutBeats: 1,
             loopEnabled: true,
             loopLength: 2,
+            // The offset the clip actually holds: note beats are read in these coordinates, so a
+            // snapshot that defaulted it to zero would place every note of a slipped clip wrongly.
+            midiOffsetBeats: 1.5,
             minimumLoopLengthBeats: 1 / 480,
             noteCount: 0,
         });

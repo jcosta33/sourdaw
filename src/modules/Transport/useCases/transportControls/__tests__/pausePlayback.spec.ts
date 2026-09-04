@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import { audioEngine, stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
@@ -25,12 +25,21 @@ vi.mock('../stopActiveRecording', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    audioEngine: {
+        setTransportInfo: vi.fn(),
+    },
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
@@ -58,9 +67,35 @@ describe('pausePlayback', () => {
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(stopNativeLiveGraphSession).mockClear();
         vi.mocked(stopNativeLiveGraphSession).mockResolvedValue({ outcome: 'declined', reason: 'no session' });
+        vi.mocked(audioEngine.setTransportInfo).mockClear();
         loggerMock.error.mockClear();
         loggerMock.warn.mockClear();
         playheadPositionRef.current = 0;
+    });
+
+    it('publishes isPlaying: false and paused position to audioEngine.setTransportInfo on pause', () => {
+        playheadPositionRef.current = 5;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            tempo: 120,
+            loopStart: 0,
+            loopEnd: 0,
+            isLooping: false,
+            playheadPosition: 2,
+        });
+
+        pausePlayback();
+
+        expect(audioEngine.setTransportInfo).toHaveBeenCalledWith(
+            5,
+            2.5, // 5 beats at 120 BPM = 2.5 seconds
+            120,
+            false,
+            0,
+            0,
+            false
+        );
     });
 
     it('parks the native engine at the beat the pause landed on', () => {

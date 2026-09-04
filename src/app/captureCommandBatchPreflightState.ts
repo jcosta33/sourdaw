@@ -5,7 +5,7 @@ import { compileAudioGraphTopology } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { captureCommandTargetFingerprints } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 type CaptureCommandBatchPreflightStateInput = {
     assetReferences: readonly { assetHash?: string; audioBufferId?: string }[];
@@ -495,7 +495,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: false,
             targetFingerprints: addSystemTargetFingerprints({}, input.targetIds),
         };
@@ -556,7 +556,7 @@ export function captureCommandBatchPreflightState(input: CaptureCommandBatchPref
         lockedRanges: (context?.productionBrief?.locks ?? []).flatMap((lock) =>
             lock.scope.kind === 'range' ? [{ startBeat: lock.scope.startBeat, endBeat: lock.scope.endBeat }] : []
         ),
-        projectId: captureProjectRevision(),
+        projectId: captureProjectIdentity(),
         projectInvariantsValid: documentInspection.projectInvariantsValid && authoritativeProjectInvariantsValid,
         targetFingerprints,
     };

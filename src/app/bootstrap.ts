@@ -2,8 +2,10 @@
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
+import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
+    assertCanonicalLlmActionStrategies,
     completeMixAnalysis,
     failMixAnalysis,
     initializeVoiceInputAvailability,
@@ -69,12 +71,14 @@ import {
     getAssetTransfer,
     leaveSession,
 } from '#/modules/Collaboration/useCases';
+import { registerMidiTransforms } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
     configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
     executeAppAction,
+    getExecutableAppActionGroundingCatalog,
     registerProductionCommandHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
@@ -85,6 +89,7 @@ import {
     commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
+    stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
@@ -92,20 +97,22 @@ import {
     agentProjectInspectionPort,
     initBranchState,
     captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
     markActionHistoryEntryReverted,
+    recordActionHistoryEntries,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
+    sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
 import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
-import { initGrandBouleSubscribers, setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
@@ -172,6 +179,7 @@ import {
     captureAgentProjectInspectionState,
     captureCommandBatchPreflightState,
 } from './captureCommandBatchPreflightState';
+import { composeGrandBoule } from './composeGrandBoule';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { prepareOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { eventBus, logger } from './registerDependencies';
@@ -191,11 +199,14 @@ registerCrdtStorageRuntime();
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
+    recordBatch: recordActionHistoryEntries,
     markReverted: markActionHistoryEntryReverted,
     clear: clearCrdtActionHistory,
 });
+sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
 configureRuntimeGraphProjectRevisionValidator(
     (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
 );
@@ -269,7 +280,6 @@ setMixAnalysisDisplayLifecycle({
     complete: completeMixAnalysis,
     fail: failMixAnalysis,
 });
-setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
@@ -454,7 +464,9 @@ configureAudioDeviceRuntimeSink({
     updateTunerTelemetry,
 });
 
+assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
 registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
+registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is
@@ -465,7 +477,7 @@ initToasterKitPersistence();
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
 initLevainDeviceStatePersistence();
-initGrandBouleSubscribers({ eventBus, logger });
+composeGrandBoule({ eventBus, logger });
 initCrumbsDeviceStatePersistence();
 initStalenessDetection();
 

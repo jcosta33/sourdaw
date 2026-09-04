@@ -21,6 +21,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
+    removeClip: vi.fn(),
+    removeTrack: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({

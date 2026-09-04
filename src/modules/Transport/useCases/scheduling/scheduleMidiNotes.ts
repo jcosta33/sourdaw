@@ -422,6 +422,10 @@ function getYeastCandidateIterationRange({
  * emitting it anyway makes every exact-shape assertion downstream pin a
  * fallback instead of a decision (audit MD-8).
  */
+function clampOptional(value: number | undefined, min: number, max: number): number | undefined {
+    return value === undefined ? undefined : Math.min(max, Math.max(min, value));
+}
+
 function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams | undefined {
     const hasExpression = note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
     if (!hasExpression) {
@@ -429,12 +433,16 @@ function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams
     }
 
     const params: ScheduledMpeParams = {
-        pressure: note.pressure,
-        slide: note.slide,
-        pitchBend: note.pitchBend,
+        pressure: clampOptional(note.pressure, 0, 127),
+        slide: clampOptional(note.slide, 0, 127),
+        pitchBend: clampOptional(note.pitchBend, -8192, 8191),
     };
     if (note.pitchBend !== undefined) {
-        params.pitchBendRangeSemitones = note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones();
+        params.pitchBendRangeSemitones = clampOptional(
+            note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones(),
+            0,
+            127
+        );
     }
     return params;
 }
@@ -967,7 +975,8 @@ export async function scheduleMidiNotes(
                             // RPN 0 was decoded, which resolves to the MPE
                             // member default — the range they were actually
                             // performed under (audit MD-8).
-                            const noteBendRange = resolveScheduledMpeParams(note)?.pitchBendRangeSemitones;
+                            const mpe = resolveScheduledMpeParams(note);
+                            const noteBendRange = mpe?.pitchBendRangeSemitones;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
@@ -977,9 +986,9 @@ export async function scheduleMidiNotes(
                                 note: pitch,
                                 channel: noteChannel,
                                 expression: {
-                                    pressure: note.pressure,
-                                    slide: note.slide,
-                                    pitchBend: note.pitchBend,
+                                    pressure: mpe?.pressure,
+                                    slide: mpe?.slide,
+                                    pitchBend: mpe?.pitchBend,
                                 },
                                 sampleFrame,
                                 bendRangeSemitones: noteBendRange,

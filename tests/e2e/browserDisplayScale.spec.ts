@@ -36,8 +36,31 @@ async function findApplicationFrame(page: Page): Promise<Frame> {
     return frame;
 }
 
-async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<Locator> {
+/**
+ * TransportBar's compact threshold (COMPACT_TRANSPORT_MAX_WIDTH): at or below
+ * this CSS viewport width the transport collapses its direct actions, and
+ * "Open Preferences" moves into the "View and panel controls" popover as a
+ * "Preferences" item. At 125% and 200% display scale this 1280px-wide host
+ * yields 1024px and 640px viewports, so the compact route is the only one the
+ * product offers there — the same route a user at that scale takes.
+ */
+const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
+
+async function openPreferencesDialog(app: FrameLocator, frame: Frame): Promise<void> {
+    const compactTransport = await frame.evaluate(
+        (maxWidth) => window.innerWidth <= maxWidth,
+        COMPACT_TRANSPORT_MAX_WIDTH
+    );
+    if (compactTransport) {
+        await app.getByRole('button', { name: 'View and panel controls' }).click();
+        await app.getByRole('button', { name: 'Preferences', exact: true }).click();
+        return;
+    }
     await app.getByRole('button', { name: 'Open Preferences' }).click();
+}
+
+async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<Locator> {
+    await openPreferencesDialog(app, frame);
     const dialog = app.getByRole('dialog').filter({ hasText: /Preferences/i });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
@@ -213,7 +236,10 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toBeVisible();
     const menuBox = requireBox(await menu.boundingBox(), 'track context menu');
     expectInsideViewport(menuBox);
-    expect(menuBox.x).toBeCloseTo(clickPoint.x, 0);
+    // The menu anchors on the app's own pixel grid, and one app pixel spans
+    // `scale` host pixels, so anchor rounding may land up to that far from the
+    // pointer in host coordinates.
+    expect(Math.abs(menuBox.x - clickPoint.x)).toBeLessThanOrEqual(Math.max(1, scale));
     expect(menuBox.y).toBeLessThanOrEqual(clickPoint.y);
     expect(menuBox.y + menuBox.height).toBeGreaterThanOrEqual(clickPoint.y);
 
@@ -233,23 +259,43 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
-async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator): Promise<void> {
-    const timeline = app.getByLabel('Timeline editor surface');
-    const timelineBox = requireBox(await timeline.boundingBox(), 'timeline editor');
+async function expectRightEdgeContextMenuClamped(app: FrameLocator, scale: number): Promise<void> {
+    const canvas = app.getByLabel('Timeline editor surface');
+    const canvasBox = requireBox(await canvas.boundingBox(), 'timeline canvas');
+    // boundingBox() and click({ position }) are host/main-frame pixels.
+    // Iframe getBoundingClientRect CSS pixels overshoot the canvas at 50%
+    // scale and miss the right edge at 125%/200%, so the fit-vs-clamp
+    // branch is judged on the wrong x. Stay inland of the labeled box: 4px
+    // from its right edge is inspector, scrollbar, or chrome.
+    const inland = 16;
     const clickPoint = {
-        x: timelineBox.x + timelineBox.width - 4,
-        y: timelineBox.y + timelineBox.height / 2,
+        x: canvasBox.x + canvasBox.width - inland,
+        y: canvasBox.y + canvasBox.height / 2,
     };
-    await page.mouse.click(clickPoint.x, clickPoint.y, { button: 'right' });
+    await canvas.click({
+        button: 'right',
+        position: { x: canvasBox.width - inland, y: canvasBox.height / 2 },
+    });
 
     const menu = app.getByRole('menu');
     await expect(menu).toBeVisible();
     const menuBox = requireBox(await menu.boundingBox(), 'right-edge context menu');
     expectInsideViewport(menuBox);
-    expect(menuBox.x).toBeLessThan(clickPoint.x);
+    // One app pixel spans `scale` host pixels, so anchor rounding may land up
+    // to that far from the pointer in host coordinates.
+    const anchorTolerance = Math.max(1, scale);
+    // Clamping is owed only when the menu cannot fit to the right of the
+    // pointer — at 50% scale the half-size menu fits and must open at the
+    // pointer like any context menu. When it cannot fit, it must shift left;
+    // expectInsideViewport above fails a missing clamp either way.
+    if (clickPoint.x + menuBox.width > VIEWPORT.width) {
+        expect(menuBox.x).toBeLessThan(clickPoint.x);
+    } else {
+        expect(Math.abs(menuBox.x - clickPoint.x)).toBeLessThanOrEqual(anchorTolerance);
+    }
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(VIEWPORT.width);
-    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= 1;
-    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= 1;
+    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= anchorTolerance;
+    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= anchorTolerance;
     expect(attachedBelow || attachedAbove).toBe(true);
 
     await menu.getByRole('menuitem').first().press('Escape');
@@ -301,6 +347,11 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
     const band = app.getByRole('slider', { name: /EQ band 1/i });
     await canvas.scrollIntoViewIfNeeded();
     await expect(canvas).toBeVisible();
+    // Scroll the drag target itself into view, as a user would: at 200% scale
+    // the plugin window is narrower than the fixed-size EQ surface, and
+    // scrolling the canvas centers it, which leaves the lowest band outside
+    // the visible slice.
+    await band.scrollIntoViewIfNeeded();
     const bandBox = requireBox(await band.boundingBox(), 'EQ band handle');
     const before = Number(await band.getAttribute('aria-valuenow'));
 
@@ -378,7 +429,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
-        await expectRightEdgeContextMenuClamped(page, app);
+        await expectRightEdgeContextMenuClamped(app, scale);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }

@@ -9,6 +9,7 @@ native addon and sample library as real files beside it.
 - `pnpm desktop:build` is configured for a local macOS arm64 DMG and ZIP.
 - `identity: '-'` is ad-hoc signing. It is not distribution signing.
 - There is no updater, notarization flow, signing identity, or publish pipeline.
+- Linux AppImage configuration is defined with transparent icon sets in `build/icons/`.
 - Windows x64 NSIS configuration exists, but it is not shippable until the native
   addon is built for Windows and included in the package.
 - ASIO is not supported. The Windows configuration does not enable it.

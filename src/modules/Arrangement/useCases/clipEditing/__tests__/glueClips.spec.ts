@@ -32,7 +32,11 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     restoreMidiClipGlueState: mocks.restoreMidiClipGlueState,
     midiClipGlueStateMatches: mocks.midiClipGlueStateMatches,
 }));
-vi.mock('#/modules/Automation/useCases', () => ({ getAutomationLanes: mocks.getAutomationLanes }));
+vi.mock('#/modules/Automation/useCases', () => ({
+    getAutomationLanes: mocks.getAutomationLanes,
+    removeAutomationLane: vi.fn(),
+    restoreAutomationLanes: vi.fn(),
+}));
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));

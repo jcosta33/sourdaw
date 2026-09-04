@@ -1,8 +1,9 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { AlertTriangle } from 'lucide-react';
 
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
 
 import {
@@ -34,31 +35,6 @@ function rowKey(item: MissingMediaItem): string {
 export const MissingMediaPanel = (): ReactElement | null => {
     const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
     const [open, setOpen] = useState(false);
-    const panelRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!open) {
-            return undefined;
-        }
-
-        const handleClickOutside = (event: MouseEvent) => {
-            if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
-                setOpen(false);
-            }
-        };
-        const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setOpen(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape);
-        };
-    }, [open]);
 
     const items = missingMedia.items;
     if (items.length === 0) {
@@ -74,28 +50,20 @@ export const MissingMediaPanel = (): ReactElement | null => {
         items.length === fileCount
             ? null
             : `Used by ${String(items.length)} clips and tracks — relinking a file repairs every place it is used.`;
-
     return (
-        <div className="relative" ref={panelRef}>
-            <Button
-                aria-expanded={open}
-                aria-haspopup="dialog"
-                aria-label={`${summary} — show details`}
-                onClick={() => {
-                    setOpen(!open);
-                }}
-                size="sm"
-                variant="ghost"
-            >
-                <AlertTriangle aria-hidden="true" size={14} />
-                <span>{summary}</span>
-            </Button>
-
-            {open ? (
-                <div
+        <div className="relative">
+            <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                    <Button aria-label={`${summary} — show details`} size="sm" variant="ghost">
+                        <AlertTriangle aria-hidden="true" size={14} />
+                        <span>{summary}</span>
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                    align="start"
+                    sideOffset={6}
                     aria-label="Missing media"
-                    className="absolute top-full left-0 z-50 mt-1 w-80 rounded-md border border-white/10 bg-neutral-900 p-2 shadow-lg"
-                    role="dialog"
+                    className="w-80 rounded-md border border-white/10 bg-neutral-900 p-2 shadow-lg"
                 >
                     <p className="px-2 py-1 text-xs text-neutral-400">
                         The project opened without this audio. Playback is silent where it is referenced.
@@ -110,8 +78,8 @@ export const MissingMediaPanel = (): ReactElement | null => {
                             </li>
                         ))}
                     </ul>
-                </div>
-            ) : null}
+                </PopoverContent>
+            </Popover>
         </div>
     );
 };

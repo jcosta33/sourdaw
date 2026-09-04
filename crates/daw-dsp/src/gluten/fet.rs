@@ -238,14 +238,6 @@ impl FetCompressor {
     }
 }
 
-/// JFET square-law distortion — odd harmonics.
-#[inline]
-fn jfet_distortion(x: f32) -> f32 {
-    // Soft cubic nonlinearity (odd harmonics)
-    let k = 0.15;
-    x - k * x * x * x
-}
-
 /// Transformer saturation — even harmonics via tanh waveshaper.
 #[inline]
 fn transformer_saturate(x: f32, drive: f32) -> f32 {

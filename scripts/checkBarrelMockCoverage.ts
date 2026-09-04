@@ -67,57 +67,18 @@ const sourceRoot = join(repoRoot, 'src');
 export const allBarrelKinds = ['useCases', 'stores', 'events', 'presentations/views'] as const;
 
 /**
- * What the gate fails on, and why the line is here rather than around all four.
+ * Contract barrels enforced by the default gate. Existing graph-reachable but
+ * unread debt is carried below as exact key-level exemptions, so a newly required
+ * export still fails immediately instead of inheriting a pair-wide baseline.
  *
- * Not because the other three fail differently. Simulated on a `useCases` barrel,
- * vitest 4 raises the same named error it raises for a view — `No "…" export is
- * defined on the "…" mock` — and a call at module scope takes the whole file just
- * as a render does. The difference is blast radius, and even that is incidental.
- *
- * `presentations/views` and `events` are at zero. `stores` joined them despite
- * carrying its own pre-existing debt (#2364: `#/modules/Arrangement/stores` grew
- * `persistDeviceParam`, and three specs' hand-listed mocks omitted it — one of
- * them, collected as part of `main` and not some unrelated suite, failed to
- * collect at all, the same blast-radius failure `presentations/views` was gated
- * to catch). Widening the scan surfaced more than those three, because `stores`
- * fans out into use-case registries (AI action descriptions, command handlers,
- * offline render, MIDI, Knead) that statically import far more of the barrel
- * than any one spec's tests actually read, so the graph walk — which cannot tell
- * "imported" from "imported and later executed" apart without running the code —
- * over-reports. The specs whose own bug this gate exists to catch are fixed for
- * real (every missing key stubbed, not spread — spreading a barrel this size
- * measurably slows the specs that already avoid it, see `formatViolation`'s
- * App.spec.tsx numbers). The over-reported remainder are `exemptions` rows: each
- * one is evidenced by a passing `pnpm test:run` on the unmodified spec, not
- * assumed, and is documented as debt to close later rather than debt hidden by
- * narrowing the gate.
- *
- * `useCases` is not gated at all. Gating it now would need a baseline row per
- * outstanding pair whose only content is "pre-existing", which is a baseline
- * wearing an exemption table's clothes — a handful of reasoned, evidenced rows
- * is a table; a hundred unexamined ones is not. `--all` keeps that debt
- * measurable, in the unit a person repairs (the (spec, barrel) pair, counted
- * once however many consuming modules import through it), so a follow-up
- * clearing it to zero starts from a real measurement rather than a number
- * someone wrote down.
- *
- * `presentations/views` is at zero violations because every exhaustive mock of
- * that kind already lists every export its graph consumes. `events` is at zero
- * for a different reason worth naming plainly rather than folding into the same
- * sentence: no spec mocks an `events` contract barrel at all today, so this is a
- * pre-commitment, not a measured clean bill — the first `events` mock the tree
- * gets is caught by this gate the moment it goes stale, rather than needing a
- * later change to start checking it. The guard spec asserts that population is
- * zero for exactly this kind, so the day it stops being zero someone rereads
- * this paragraph instead of the assertion silently passing on an empty set.
- *
- * Exported so the guard spec makes its "no violations" claim once per gated kind
- * and cannot silently stop claiming one.
+ * Events currently have no exhaustive mocks; that kind remains a pre-commitment.
+ * Exported so the guard spec pins every enforced kind explicitly.
  */
 export const gatedBarrelKinds: ReadonlyArray<(typeof allBarrelKinds)[number]> = [
     'presentations/views',
     'stores',
     'events',
+    'useCases',
 ];
 
 function buildBarrelPattern(kinds: ReadonlyArray<string>): RegExp {
@@ -1164,7 +1125,7 @@ function main(): number {
     }
 
     if (result.violations.length > 0) {
-        const uniquePairs = new Set(result.violations.map((violation) => `${violation.spec} ${violation.barrel}`));
+        const uniquePairs = new Set(result.violations.map((violation) => `${violation.spec}${violation.barrel}`));
         const uniqueSpecs = new Set(result.violations.map((violation) => violation.spec));
         console.error(
             `\nbarrel mock coverage (${kinds.join(', ')}): ${String(result.violations.length)} violation(s) — ` +

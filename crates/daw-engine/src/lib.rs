@@ -1,6 +1,10 @@
 pub mod audio_bridge;
 pub mod audio_thread;
+pub mod capture;
 pub(crate) mod device;
+/// Why an engine has no capture side. The device seam itself stays internal;
+/// its refusal is the one part of it a host has to be able to name.
+pub use device::InputOpenRefusal;
 pub mod engine_events;
 pub mod midi;
 pub mod midi_fx;
@@ -11,7 +15,7 @@ pub mod timeline;
 pub mod transport_map;
 
 use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
-use engine_events::{engine_event_channel, EngineEvent};
+use engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
 use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
     ActiveMidiRtDiagnosticsSnapshot,
@@ -21,9 +25,10 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
     graph_progress_channel, transport_position_channel, BuiltinEffectType, GraphCommand,
     GraphProgressReader, GraphProgressSnapshot, PluginCore, RetiredGraphObjects,
-    TransportPositionReader, TransportPositionSnapshot, EFFECT_TABLE_CAPACITY,
+    TransportPositionReader, TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE,
+    EFFECT_TABLE_CAPACITY,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
@@ -113,17 +118,65 @@ pub struct EngineHandle {
     /// resets, so slots are returned by diffing against this baseline rather
     /// than by consuming the raw snapshot.
     reconciled_effect_id_collisions: u64,
+    /// Plugin ids this handle has put on the scheduler's input tap and not
+    /// taken off again.
+    ///
+    /// The same shape of ledger as [`Self::effect_registrations`] and for the
+    /// same reason: the callback's own refusal is a counter it cannot return
+    /// to the caller who asked, so the ceiling is enforced where an `Err`
+    /// reaches that caller and the callback's refusal stays the last line.
+    ///
+    /// Maintained in [`Self::push`] alone, for every command that reaches the
+    /// ring by any route, because the typed methods are not the only door: a
+    /// public [`GraphCommand`] batch registers consumers too. An id joins on a
+    /// registration, and leaves on an unregistration or on any command that
+    /// finally drops its effect — exactly the set [`final_dropped_effect_id`]
+    /// names, which is `RemovePluginWithBridge` together with the retired
+    /// track- and bus-device variants, not plugin removals alone. That mirrors
+    /// the callback, which prunes the bus inside its own final drop.
+    ///
+    /// The same sender precondition the effect ledger rests on holds here: a
+    /// retirement is only ever sent for a target already resolved against the
+    /// project the sender holds. A mis-targeted one drifts this ledger exactly
+    /// as it drifts [`Self::effect_registrations`] — freeing a slot the
+    /// callback still holds, so the next registration is admitted here and
+    /// then refused where nobody can hear it.
+    capture_consumers: Vec<usize>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
+    /// Stream errors the engine's output device reported.
     engine_events: Consumer<EngineEvent>,
+    /// Stream errors the engine's input device reported.
+    ///
+    /// Its own ring rather than a shared one: the two backends run their
+    /// error callbacks on different threads, and `EngineEvent`'s ring is
+    /// SPSC, so one `Producer` cannot serve both sides (see
+    /// `audio_thread::capture_beside`). [`Self::drain_engine_events`] merges
+    /// the two into one ordered `Vec`, output first.
+    capture_events: Consumer<EngineEvent>,
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
     /// What the render callback last published as the bridge's settled round
     /// trip, in frames. Written by the audio thread, read here.
     bridge_round_trip_frames: Arc<AtomicUsize>,
+    /// What the capture ring published as its settled latency, in frames, or
+    /// zero while it is not serving. Written by the audio thread, read here.
+    input_latency_frames: Arc<AtomicUsize>,
+    /// The kind of the capture-side refusal `capture_side` last stored, or
+    /// zero for none, encoded as `kind as u8 + 1`.
+    ///
+    /// A refusal cannot cross the capture ring the way a mid-stream error
+    /// does: whichever route produced it — a refused open, or a refused
+    /// start, which by then has already handed the ring's producer to a
+    /// backend that dropped it — the producer may already be gone by the
+    /// time the refusal is known. This slot needs no producer, so it is
+    /// always available to store into (see `audio_thread::capture_side`).
+    /// [`Self::drain_engine_events`] swaps it back to zero on every drain and
+    /// turns a non-zero read into one `EngineEvent::StreamError`.
+    capture_refusal: Arc<AtomicU8>,
 }
 
 impl EngineHandle {
@@ -154,34 +207,76 @@ impl EngineHandle {
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, transport_position_reader) = transport_position_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let (thread_handle, sample_rate, bridge_round_trip_frames, retired_adoption_tx) =
-            spawn_audio_thread_with_diagnostics(
-                rx,
-                diagnostics_tx,
-                timeline_diagnostics_tx,
-                graph_progress_tx,
-                transport_position_tx,
-                engine_event_tx,
-                force_default_buffer,
-            )?;
+        let (capture_event_tx, capture_event_rx) = engine_event_channel();
+        let spawned = spawn_audio_thread_with_diagnostics(
+            rx,
+            diagnostics_tx,
+            timeline_diagnostics_tx,
+            graph_progress_tx,
+            transport_position_tx,
+            engine_event_tx,
+            // The engine opens the default input device when it starts, the
+            // way Logic, Live and Cubase do — not later, when a recorder is
+            // created. The packaged app carries `NSMicrophoneUsageDescription`,
+            // so this is the one moment the OS asks the musician for
+            // microphone access. Handing an event ring over here is the whole
+            // of asking for capture.
+            //
+            // A refused or absent input never fails engine start — capture is
+            // additive (see `audio_thread::capture_beside`) — so a refusal is
+            // a logged line plus an `Input`-side `EngineEvent`, and the
+            // engine runs without capture. The event does not cross the ring
+            // a mid-stream error would: a refusal can still be discovered
+            // after `open.start` has already handed this producer to a
+            // backend that goes on to drop it, so `capture_side` instead
+            // stores the refused kind into a slot this handle also carries
+            // (`capture_refusal`), and `Self::drain_engine_events` is what
+            // turns that stored kind into the one reported `EngineEvent`. The
+            // open shares the output's startup timeout and its one fallback
+            // attempt (`spawn_with_fallback`, above): an input device whose
+            // open hangs fails the whole engine start exactly as a hung
+            // output would, and there is no in-session engine restart that
+            // could reopen it later. A hung input open strands the owner
+            // thread that already started this output stream — `open.start`
+            // returned before this input open began, so the stream is live,
+            // but the factory building it is now blocked past the point the
+            // startup timeout gives up on it — and the fallback attempt then
+            // opens a second output stream on the same device, on a fresh
+            // owner thread, while the first stays stranded. Both render an
+            // empty graph, so nothing is audible either way, but two output
+            // streams exist on the device for as long as the hang lasts: the
+            // stranded thread's factory call only returns once the input
+            // open resolves, at which point it drops its own stream unheard,
+            // because nothing is still waiting on its readiness. On macOS a
+            // denied microphone permission does not surface as a refusal at
+            // all — CoreAudio opens the stream and delivers silence in place
+            // of real input rather than an error, so a denial reads as
+            // capture that opened but never carries audio.
+            Some(capture_event_tx),
+            force_default_buffer,
+        )?;
 
         Ok(Self {
             command_tx: tx,
-            retired_adoption_tx,
-            _audio_thread: thread_handle,
+            retired_adoption_tx: spawned.retired_adoption_tx,
+            _audio_thread: spawned.handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             effect_registrations: 0,
             // The zero baseline is exact: the diagnostics pair this handle
             // reads is built in this same `spawn` call, and both its ends
             // start from a zeroed snapshot.
             reconciled_effect_id_collisions: 0,
+            capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
             engine_events: engine_event_rx,
-            sample_rate,
-            bridge_round_trip_frames,
+            capture_events: capture_event_rx,
+            sample_rate: spawned.sample_rate,
+            bridge_round_trip_frames: spawned.bridge_round_trip_frames,
+            input_latency_frames: spawned.input_latency_frames,
+            capture_refusal: spawned.capture_refusal,
         })
     }
 
@@ -209,6 +304,29 @@ impl EngineHandle {
         self.bridge_round_trip_frames.load(Ordering::Relaxed)
     }
 
+    /// Frames of latency the capture path is currently adding — the block the
+    /// input device delivers plus the depth its ring settled at — or zero
+    /// while capture is not serving.
+    ///
+    /// Zero means there is no figure, never that there is no delay. It reads
+    /// zero when this engine opened no input stream, and it also reads zero
+    /// after an open until the ring has filled to its settled depth, after a
+    /// stall until it resettles, and while it refills after a block or a
+    /// render callback larger than any since the last stall. The figure cannot
+    /// be published at open, because it follows the block size the device
+    /// turns out to deliver and the slice the render callback turns out to ask
+    /// for; the reader writes it each time it settles on a cadence, against a
+    /// depth it has just observed, and retracts it whenever it stops serving.
+    ///
+    /// A recording host offsets a take by this plus the output latency, the
+    /// way Logic, Live and Reaper do: what the player hears and where the
+    /// take is written are two quantities, and only the second one is this. A
+    /// host must therefore wait for a non-zero reading before it trusts one,
+    /// rather than compensating a take by zero.
+    pub fn input_latency_frames(&self) -> usize {
+        self.input_latency_frames.load(Ordering::Relaxed)
+    }
+
     /// Publish one validated batch with all-or-nothing visibility.
     ///
     /// The typed methods below stay the ordinary path; this exists for callers
@@ -231,14 +349,42 @@ impl EngineHandle {
     /// variant exists so that even an impossible failure never reports a
     /// partial application as whole.
     pub fn send_graph_batch(&mut self, ops: Vec<GraphCommand>) -> Result<(), GraphBatchError> {
+        self.send_graph_batch_with_headroom(ops, 0)
+    }
+
+    /// [`Self::send_graph_batch`], leaving `headroom` slots free behind the
+    /// batch for pushes the caller makes immediately afterwards.
+    ///
+    /// A batch sizes the ring to exactly itself — fence plus body — and then
+    /// fills every slot of it, so the next single push onto a ring this batch
+    /// provisioned is refused as "queue full" whatever it is. That is a real
+    /// outcome, not a theoretical one: the boot ring holds 256, so any batch
+    /// from about sixty tracks upwards lands exactly full, and the graph
+    /// apply's own follow-up push — the dormant plugin an engine start takes
+    /// over — is refused on precisely the projects large enough for a musician
+    /// to notice the plugin going silent.
+    ///
+    /// Reserving is the caller's to ask for, because only the caller knows how
+    /// many pushes it is about to make. The reservation changes the provision
+    /// arithmetic and nothing else: the batch still pushes fence plus body, so
+    /// a caller that asks for headroom it does not use has only made the ring
+    /// slightly larger.
+    pub fn send_graph_batch_with_headroom(
+        &mut self,
+        ops: Vec<GraphCommand>,
+        headroom: usize,
+    ) -> Result<(), GraphBatchError> {
         // Effect-table admission comes before the ring is provisioned, so a
         // batch that cannot fit the shared table never reallocates a channel
         // to carry commands that will be refused one at a time on the way in.
         self.admit_effect_registrations(&ops)
             .map_err(GraphBatchError::Refused)?;
+        self.admit_capture_registrations(&ops)
+            .map_err(GraphBatchError::Refused)?;
 
-        // The fence occupies a slot of its own alongside the body.
-        let needed = ops.len() + 1;
+        // The fence occupies a slot of its own alongside the body, and the
+        // caller's reservation sits behind both.
+        let needed = ops.len() + 1 + headroom;
         if self.command_tx.slots() < needed {
             self.provision_command_channel(needed)
                 .map_err(GraphBatchError::Refused)?;
@@ -401,13 +547,36 @@ impl EngineHandle {
         self.transport_position.snapshot()
     }
 
-    /// Take every engine event published since the last drain.
+    /// Take every engine event published since the last drain, output-side
+    /// ring events, then input-side ring events, then a capture refusal if
+    /// one is waiting.
     ///
     /// Consuming, not peeking: an event reported once is reported once. This
     /// runs on the control side, never in the audio callback, so allocating the
-    /// `Vec` here is safe.
+    /// `Vec` here — and draining two rings into it — is safe. Two rings
+    /// because the output and input backends run their error callbacks on
+    /// different threads and `EngineEvent`'s ring is SPSC (see
+    /// `audio_thread::capture_beside`).
+    ///
+    /// A capture refusal is not on either ring: it is read from
+    /// `capture_refusal`, the slot `audio_thread::capture_side` stores into
+    /// because a refusal can be discovered after the ring's own producer is
+    /// already gone. The swap both clears the slot and reads it atomically,
+    /// so a refusal is turned into exactly one trailing `StreamError` on the
+    /// first drain after it is stored, and every later drain sees zero.
     pub fn drain_engine_events(&mut self) -> Vec<EngineEvent> {
-        engine_events::drain_engine_events(&mut self.engine_events)
+        let mut events = engine_events::drain_engine_events(&mut self.engine_events);
+        events.extend(engine_events::drain_engine_events(&mut self.capture_events));
+
+        let refusal = self.capture_refusal.swap(0, Ordering::Relaxed);
+        if let Some(kind) = StreamErrorKind::from_slot(refusal) {
+            events.push(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind,
+            });
+        }
+
+        events
     }
 
     /// Add a built-in effect to the native rendering graph.
@@ -493,6 +662,43 @@ impl EngineHandle {
     /// Remove a native plugin from the audio thread.
     pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
         self.push(GraphCommand::RemovePluginWithBridge(id))
+    }
+
+    /// Feed a native plugin the audio the input device captures, block by
+    /// block, alongside the graph audio it already renders.
+    ///
+    /// Refused before the command crosses the ring — by [`Self::push`], which
+    /// holds the ceiling for every route onto it — when the bus is full or
+    /// already carries this id. The callback refuses on the same two
+    /// conditions but can only count its refusal, and a consumer that was
+    /// never registered is indistinguishable from one whose input is silent.
+    ///
+    /// The plugin need not be on the graph yet. One batch may carry the
+    /// registration ahead of the `AddPlugin` that answers it, and until the id
+    /// resolves the callback skips it.
+    pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+        self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))
+    }
+
+    /// Stop feeding a native plugin the captured input.
+    ///
+    /// The ledger slot comes back only if the command reaches the ring: a
+    /// failed push leaves the callback still feeding that consumer, and a
+    /// ledger that freed the slot anyway would admit a registration the
+    /// callback then refuses where nobody can hear it.
+    pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+        self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
+    }
+
+    /// Take an id off the capture ledger, wherever it leaves the bus from.
+    fn prune_capture_consumer(&mut self, plugin_id: usize) {
+        if let Some(slot) = self
+            .capture_consumers
+            .iter()
+            .position(|held| *held == plugin_id)
+        {
+            self.capture_consumers.swap_remove(slot);
+        }
     }
 
     /// Send a MIDI note event to a specific plugin (lock-free).
@@ -763,21 +969,98 @@ impl EngineHandle {
         Ok(())
     }
 
-    /// The one route onto the command ring, and with it the one place the
-    /// effect-table ledger is kept.
+    /// Walk `ops` the same way and refuse the batch if it would put the input
+    /// bus past its reserve, or register an id the bus already carries.
     ///
-    /// A registration past the ceiling is refused here rather than pushed: the
-    /// audio thread's own refusal is a counter it cannot return to anyone, so
-    /// past this point the instance is loaded, reports success, and passes dry
-    /// audio forever with nothing saying it was refused.
+    /// `GraphCommand` and [`EngineHandle::send_graph_batch`] are both public,
+    /// so a batch is a second door onto the bus beside
+    /// [`EngineHandle::register_capture_consumer`]. This walk exists for the
+    /// same reason [`EngineHandle::admit_effect_registrations`] does: whole-batch
+    /// admission, so a batch that would overflow the bus partway through is
+    /// refused whole by [`EngineHandle::send_graph_batch`] rather than
+    /// reported as [`GraphBatchError::Partial`] once some of it already
+    /// reached the ring.
+    ///
+    /// Order matters and netting does not, for the reason given on
+    /// [`EngineHandle::admit_effect_registrations`]; the walk carries the
+    /// batch's own unregistrations and removals so a batch that frees a slot
+    /// before reusing it is admitted, exactly as the callback will apply it.
+    fn admit_capture_registrations(&self, ops: &[GraphCommand]) -> Result<(), String> {
+        let mut held = self.capture_consumers.clone();
+        for op in ops {
+            match capture_ledger_effect(op) {
+                Some(CaptureLedgerEffect::Register(id)) => {
+                    if held.contains(&id) {
+                        return Err(capture_consumer_registered_error(id));
+                    }
+                    if held.len() >= CRUMBS_CAPTURE_RESERVE {
+                        return Err(capture_bus_full_error());
+                    }
+                    held.push(id);
+                }
+                Some(CaptureLedgerEffect::Release(id)) => {
+                    if let Some(slot) = held.iter().position(|current| *current == id) {
+                        held.swap_remove(slot);
+                    }
+                }
+                None => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// The one route onto the command ring, and with it the one place the
+    /// effect-table ledger and the capture ledger are kept.
+    ///
+    /// Both ceilings are enforced here rather than pushed past — the effect
+    /// table's and the input bus's. The audio thread's own refusal is a counter
+    /// it cannot return to anyone, so past this point the instance is loaded,
+    /// reports success, and passes dry audio forever with nothing saying it was
+    /// refused.
+    ///
+    /// [`Self::send_graph_batch`] admits both ledgers whole before it pushes
+    /// anything, so a batch that would overflow either one is refused whole
+    /// rather than reported as [`GraphBatchError::Partial`] after part of it
+    /// already crossed the ring. The effect-table pre-check belongs to the
+    /// caller that builds other state before it pushes — a plugin instance,
+    /// a bridge — not to the typed method:
+    /// [`Self::ensure_effect_table_headroom`] has to run before that id and
+    /// that bridge exist, so `commands/plugins.rs` is the route that calls
+    /// it today, ahead of [`Self::reserve_plugin_id`] and the bridge it
+    /// builds from the id. [`Self::add_plugin_with_id`] and
+    /// [`Self::add_plugin_with_bridge`] push straight through with no check
+    /// of their own, exactly as [`Self::register_capture_consumer`] does;
+    /// all three rely on this push as the ceiling, regardless of whether a
+    /// caller checked first.
     fn push(&mut self, command: GraphCommand) -> Result<(), String> {
         let delta = command.effect_table_delta();
         if delta > 0 && self.effect_registrations + delta as usize > EFFECT_TABLE_CAPACITY {
             return Err(effect_table_full_error());
         }
+        // Read before the command is moved onto the ring, applied only once it
+        // is: both ledgers follow what actually crossed. Every route onto the
+        // ring passes here, including `send_graph_batch`, so a batch cannot
+        // move the callback's bus without the ledger seeing it.
+        let capture_effect = capture_ledger_effect(&command);
+        if let Some(CaptureLedgerEffect::Register(id)) = capture_effect {
+            if self.capture_consumers.contains(&id) {
+                return Err(capture_consumer_registered_error(id));
+            }
+            if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
+                return Err(capture_bus_full_error());
+            }
+        }
         self.command_tx
             .push(command)
             .map_err(|_| "Audio command queue full".to_string())?;
+        match capture_effect {
+            // The refusals above proved the id absent and the reserve unspent,
+            // so this never duplicates an entry nor grows past the capacity
+            // the vector was built with.
+            Some(CaptureLedgerEffect::Register(id)) => self.capture_consumers.push(id),
+            Some(CaptureLedgerEffect::Release(id)) => self.prune_capture_consumer(id),
+            None => {}
+        }
         if delta >= 0 {
             self.effect_registrations += delta as usize;
         } else {
@@ -808,6 +1091,111 @@ fn effect_table_full_error() -> String {
     )
 }
 
+/// The effect a command finally drops, if it drops one.
+///
+/// These are exactly the commands [`GraphCommand::effect_table_delta`] scores
+/// `-1`: the ones whose target the scheduler removes from the effect table
+/// rather than merely detaching, and so the ones whose target it also prunes
+/// off the input bus. The control-side capture ledger tracks that set, because
+/// an id left on it after its plugin went would refuse a later registration
+/// the callback would have taken.
+fn final_dropped_effect_id(command: &GraphCommand) -> Option<usize> {
+    match command {
+        GraphCommand::RemovePluginWithBridge(id) => Some(*id),
+        GraphCommand::RemoveTrackDeviceRetired { effect_id, .. }
+        | GraphCommand::RemoveBusDeviceRetired { effect_id, .. } => Some(*effect_id),
+        #[cfg(test)]
+        GraphCommand::RemovePlugin(id) => Some(*id),
+        _ => None,
+    }
+}
+
+/// What a command does to the capture ledger once it reaches the ring.
+enum CaptureLedgerEffect {
+    Register(usize),
+    Release(usize),
+}
+
+/// Classify a command for the capture ledger.
+///
+/// One classifier, read twice: [`EngineHandle::push`] applies it to what
+/// crossed, and [`EngineHandle::admit_capture_registrations`] replays it over a
+/// batch before any of it does. A command that moves the callback's bus and is
+/// missing here moves it behind the ledger's back, which is the whole failure
+/// this classification exists to prevent.
+fn capture_ledger_effect(command: &GraphCommand) -> Option<CaptureLedgerEffect> {
+    match command {
+        GraphCommand::RegisterCaptureConsumer(id) => Some(CaptureLedgerEffect::Register(*id)),
+        GraphCommand::UnregisterCaptureConsumer(id) => Some(CaptureLedgerEffect::Release(*id)),
+        other => final_dropped_effect_id(other).map(CaptureLedgerEffect::Release),
+    }
+}
+
+/// The one wording for a refusal against the engine's input tap, so the control
+/// ledger and any later producer report the same ceiling.
+fn capture_bus_full_error() -> String {
+    format!(
+        "capture-bus-full: the engine's captured input already feeds its maximum of \
+         {CRUMBS_CAPTURE_RESERVE} consumers"
+    )
+}
+
+/// The one wording for an id the input tap already carries, so the typed path
+/// and the batch path report a duplicate the same way.
+fn capture_consumer_registered_error(plugin_id: usize) -> String {
+    format!(
+        "capture-consumer-registered: plugin {plugin_id} already receives the engine's captured \
+         input"
+    )
+}
+
+/// Assemble a fixture `EngineHandle` around channel ends a caller already
+/// built.
+///
+/// The test constructors below — this module's and `mod tests`'s — differ
+/// only in which ends of which channels they keep live and which they let
+/// drop; the struct literal itself never varies, so it is written once here
+/// rather than once per caller. Every reader and consumer is required rather
+/// than defaulted, so a caller wanting one dropped still has to build the
+/// pair and drop its other half explicitly — the same
+/// `let (_tx, rx) = channel();` pattern every call site already used before
+/// this was extracted. `capture_refusal` is likewise taken as a parameter
+/// rather than built internally: a caller driving `drain_engine_events`
+/// against a preset refusal needs to hold the same slot this handle reads.
+#[cfg(any(test, feature = "command-capture-fixture"))]
+fn engine_handle_fixture(
+    command_tx: Producer<GraphCommand>,
+    retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
+    midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
+    timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
+    graph_progress: GraphProgressReader,
+    transport_position: TransportPositionReader,
+    engine_events: Consumer<EngineEvent>,
+    capture_events: Consumer<EngineEvent>,
+    capture_refusal: Arc<AtomicU8>,
+) -> EngineHandle {
+    EngineHandle {
+        command_tx,
+        retired_adoption_tx,
+        _audio_thread: audio_thread::detached_audio_thread_handle(),
+        next_plugin_id: 1000,
+        effect_registrations: 0,
+        reconciled_effect_id_collisions: 0,
+        capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+        midi_rt_diagnostics,
+        timeline_rt_diagnostics,
+        graph_progress,
+        transport_position,
+        engine_events,
+        capture_events,
+        sample_rate: 48_000.0,
+        // Seeded exactly as a real stream is before its first callback.
+        bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
+        input_latency_frames: audio_thread::new_input_latency_slot(),
+        capture_refusal,
+    }
+}
+
 /// Build a handle whose commands land in the returned consumer.
 ///
 /// The audio thread is the only thing an `EngineHandle` cannot have in a test —
@@ -828,25 +1216,21 @@ pub fn engine_handle_for_command_capture(
     let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
     let (_transport_position_tx, transport_position_reader) = transport_position_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+    let (_capture_event_tx, capture_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
     (
-        EngineHandle {
+        engine_handle_fixture(
             command_tx,
             retired_adoption_tx,
-            _audio_thread: audio_thread::detached_audio_thread_handle(),
-            next_plugin_id: 1000,
-            effect_registrations: 0,
-            reconciled_effect_id_collisions: 0,
-            midi_rt_diagnostics: diagnostics_reader,
-            timeline_rt_diagnostics: timeline_diagnostics_reader,
-            graph_progress: graph_progress_reader,
-            transport_position: transport_position_reader,
-            engine_events: engine_event_rx,
-            sample_rate: 48_000.0,
-            // Seeded exactly as a real stream is before its first callback.
-            bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
-        },
+            diagnostics_reader,
+            timeline_diagnostics_reader,
+            graph_progress_reader,
+            transport_position_reader,
+            engine_event_rx,
+            capture_event_rx,
+            audio_thread::new_capture_refusal_slot(),
+        ),
         command_rx,
         retired_adoption_rx,
     )
@@ -855,11 +1239,11 @@ pub fn engine_handle_for_command_capture(
 #[cfg(test)]
 mod tests {
     use super::{
-        engine_handle_for_command_capture, spawn_with_fallback, GraphBatchError,
-        EFFECT_TABLE_CAPACITY,
+        engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
+        GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_bridge::create_audio_bridge;
-    use crate::engine_events::engine_event_channel;
+    use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
     };
@@ -871,7 +1255,7 @@ mod tests {
     use crate::timeline::timeline_rt_diagnostics_channel;
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
     use crate::EngineHandle;
-    use rtrb::{Consumer, RingBuffer};
+    use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
     use triple_buffer::Input;
@@ -1011,6 +1395,35 @@ mod tests {
         assert_eq!(retirements, 151);
     }
 
+    /// A batch sizes the ring to exactly itself and then fills it, so the next
+    /// single push onto that ring is refused however small it is. A caller with
+    /// a push of its own to make immediately afterwards — the graph apply, which
+    /// hands the engine every plugin loaded before it started — asks for the
+    /// slot up front, and the reservation is provisioned rather than pushed.
+    #[test]
+    fn a_batch_leaves_the_headroom_its_caller_reserved() {
+        let boot_capacity = 256;
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(boot_capacity);
+
+        // Fence plus body is exactly the boot ring: without a reservation this
+        // batch fits without provisioning and leaves nothing behind it.
+        let ops: Vec<GraphCommand> = (0..255usize)
+            .map(|id| GraphCommand::AddTrack(TimelineTrack::new(id)))
+            .collect();
+        assert_eq!(ops.len() + 1, boot_capacity);
+
+        engine
+            .send_graph_batch_with_headroom(ops, 1)
+            .expect("capacity must be provisioned, not refused");
+
+        assert!(
+            engine.command_tx.slots() >= 1,
+            "the caller's reserved slot must survive the batch, got {}",
+            engine.command_tx.slots()
+        );
+    }
+
     /// The typed handle resolves effect type and parameter names to
     /// fixed-size addresses before anything crosses the ring: a command
     /// carrying a `String` would have its allocation freed on the audio
@@ -1047,6 +1460,210 @@ mod tests {
             Ok(GraphCommand::SetParam(id, DeviceParam::ShiftSemitones, value))
                 if id == 7 && value == 3.0
         ));
+    }
+
+    /// The input tap's ceiling is enforced where the caller hears it. The
+    /// callback refuses on the same two conditions, but all it can do is count
+    /// the refusal: past that point a consumer that was never registered is
+    /// indistinguishable from one whose input happens to be silent.
+    #[test]
+    fn a_capture_consumer_past_the_reserve_or_already_on_the_bus_refuses_before_the_ring() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(id)
+                .expect("the reserve admits this one");
+        }
+        let admitted = command_rx.slots();
+
+        let full = engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect_err("the bus is full");
+        let duplicate = engine
+            .register_capture_consumer(0)
+            .expect_err("the bus already holds this id");
+
+        assert!(full.starts_with("capture-bus-full:"), "{full}");
+        assert!(
+            duplicate.starts_with("capture-consumer-registered:"),
+            "{duplicate}"
+        );
+        assert_eq!(
+            command_rx.slots(),
+            admitted,
+            "a refused registration must not cross the ring"
+        );
+    }
+
+    #[test]
+    fn unregistering_a_capture_consumer_frees_the_ledger_slot_it_held() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(id)
+                .expect("the reserve admits this one");
+        }
+        engine
+            .unregister_capture_consumer(0)
+            .expect("an id on the bus comes off it");
+        engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect("the freed slot takes the next consumer");
+
+        let mut sent = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            match command {
+                GraphCommand::RegisterCaptureConsumer(id) => sent.push((true, id)),
+                GraphCommand::UnregisterCaptureConsumer(id) => sent.push((false, id)),
+                _ => panic!("the bus methods push nothing else onto the ring"),
+            }
+        }
+
+        // In order and complete: the callback keeps its own bus by replaying
+        // exactly this sequence, so a ledger that agreed only on counts would
+        // still leave the two holding different ids.
+        let mut expected: Vec<(bool, usize)> =
+            (0..CRUMBS_CAPTURE_RESERVE).map(|id| (true, id)).collect();
+        expected.push((false, 0));
+        expected.push((true, CRUMBS_CAPTURE_RESERVE));
+        assert_eq!(sent, expected);
+    }
+
+    /// Removing a plugin takes it off the bus on the callback, so the ledger
+    /// that guards the bus has to let it go too. A ledger that did not would
+    /// refuse the id for the life of the session, on behalf of a consumer the
+    /// callback stopped feeding the moment the removal drained.
+    #[test]
+    fn removing_a_plugin_frees_the_capture_ledger_slot_its_consumer_held() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        engine
+            .register_capture_consumer(7)
+            .expect("an empty bus takes the first consumer");
+        engine.remove_plugin(7).expect("the plugin comes off");
+        engine
+            .register_capture_consumer(7)
+            .expect("the removal freed the id, so it registers again");
+
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::RegisterCaptureConsumer(7))
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::RemovePluginWithBridge(7))
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::RegisterCaptureConsumer(7))
+        ));
+    }
+
+    /// The reserve is a running capacity, not a lifetime budget: a session
+    /// that opens and closes recorders one at a time must keep working.
+    #[test]
+    fn the_capture_reserve_survives_a_full_cycle_of_removals() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+
+        for id in 0..=CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(id)
+                .unwrap_or_else(|error| panic!("consumer {id} should register: {error}"));
+            engine
+                .remove_plugin(id)
+                .unwrap_or_else(|error| panic!("plugin {id} should be removable: {error}"));
+        }
+    }
+
+    /// A batch is the second door onto the bus. Consumers that entered through
+    /// it must occupy ledger slots, or the typed path hands out a third
+    /// registration the callback silently refuses.
+    #[test]
+    fn consumers_registered_by_a_batch_fill_the_capture_ledger_the_typed_path_reads() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64);
+
+        engine
+            .send_graph_batch(
+                (0..CRUMBS_CAPTURE_RESERVE)
+                    .map(GraphCommand::RegisterCaptureConsumer)
+                    .collect(),
+            )
+            .expect("a batch that exactly fills the reserve is admitted");
+        while command_rx.pop().is_ok() {}
+
+        let refusal = engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect_err("the batch took every slot, so the typed path has none");
+
+        assert!(refusal.starts_with("capture-bus-full:"), "{refusal}");
+        assert_eq!(
+            command_rx.slots(),
+            0,
+            "a refused registration must not cross the ring"
+        );
+    }
+
+    /// The batch is refused whole, before the ring is provisioned: a batch
+    /// applied halfway would leave the callback holding consumers the ledger
+    /// never counted.
+    #[test]
+    fn a_batch_that_overruns_the_capture_reserve_is_refused_before_the_ring() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let untouched = command_rx.slots();
+
+        let overrun = engine
+            .send_graph_batch(
+                (0..=CRUMBS_CAPTURE_RESERVE)
+                    .map(GraphCommand::RegisterCaptureConsumer)
+                    .collect(),
+            )
+            .expect_err("one registration past the reserve refuses the batch");
+        assert!(
+            matches!(&overrun, GraphBatchError::Refused(error) if error.starts_with("capture-bus-full:")),
+            "{overrun:?}"
+        );
+
+        let duplicate = engine
+            .send_graph_batch(vec![
+                GraphCommand::RegisterCaptureConsumer(4),
+                GraphCommand::RegisterCaptureConsumer(4),
+            ])
+            .expect_err("a batch may not register one id twice");
+        assert!(
+            matches!(&duplicate, GraphBatchError::Refused(error) if error.starts_with("capture-consumer-registered:")),
+            "{duplicate:?}"
+        );
+
+        assert_eq!(
+            command_rx.slots(),
+            untouched,
+            "a refused batch puts nothing on the ring, not even its fence"
+        );
+    }
+
+    #[test]
+    fn a_batch_unregistration_frees_the_capture_ledger_slot_it_held() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+
+        engine
+            .send_graph_batch(
+                (0..CRUMBS_CAPTURE_RESERVE)
+                    .map(GraphCommand::RegisterCaptureConsumer)
+                    .collect(),
+            )
+            .expect("a batch that exactly fills the reserve is admitted");
+        engine
+            .send_graph_batch(vec![GraphCommand::UnregisterCaptureConsumer(0)])
+            .expect("an unregistration is always admitted");
+
+        engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect("the freed slot takes the next consumer");
     }
 
     #[test]
@@ -1518,6 +2135,152 @@ mod tests {
         );
     }
 
+    /// The capture ledger's whole claim is that it holds the ids the
+    /// callback's bus holds. Every other capture assertion in this module
+    /// reads the ledger against the reserve or against itself, and the
+    /// scheduler's own bus tests build their rings by hand and never involve
+    /// an `EngineHandle` — so a [`capture_ledger_effect`] arm that classifies
+    /// a command as neutral when the callback treats it as a release still
+    /// compiles, still passes, and silently walks the two apart. Only this
+    /// comparison makes an author write the right arm.
+    ///
+    /// The stream carries one of everything the classification has to tell
+    /// apart: registrations by both doors, a removal that names the plugin
+    /// directly, and the two retirements that free an effect through a strip
+    /// rather than by name — each landing on a chain that really holds the
+    /// effect it names, so the callback really does drop it.
+    #[test]
+    fn the_capture_ledger_matches_the_bus_it_claims_to_hold() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (retired_tx, _retired_rx) = RingBuffer::new(64);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+
+        // Sorted, because the two sides swap-remove independently: the sets
+        // are what must agree, never the order either one happens to hold.
+        fn assert_agree(engine: &EngineHandle, scheduler: &AudioScheduler, step: &str) {
+            let mut ledger = engine.capture_consumers.clone();
+            let mut bus = scheduler.capture_consumers().to_vec();
+            ledger.sort_unstable();
+            bus.sort_unstable();
+            assert_eq!(
+                ledger, bus,
+                "the ledger must hold exactly the bus it counts, after {step}"
+            );
+        }
+
+        engine.add_track(1).expect("the track registers");
+        engine.add_bus(50).expect("the bus registers");
+
+        // Two plugins that will leave through a strip retirement, and one that
+        // leaves by name. The reserve is smaller than that, so they cycle.
+        // The bridge handles stay alive for the whole stream: dropping one
+        // would tear its plugin down for a reason the classification under
+        // test has nothing to do with.
+        let _bridge_handles: Vec<_> = (7..=9usize)
+            .map(|id| {
+                let (bridge, bridge_handle) = create_audio_bridge(id);
+                engine
+                    .add_plugin_with_bridge(id, Box::new(OverwritingPlugin), bridge)
+                    .expect("the plugin registers");
+                bridge_handle
+            })
+            .collect();
+        engine
+            .insert_track_device(
+                1,
+                ChainEntry {
+                    effect_id: 7,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the track splice registers");
+        engine
+            .insert_bus_device(
+                50,
+                ChainEntry {
+                    effect_id: 8,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+        scheduler.update_graph();
+        assert_agree(
+            &engine,
+            &scheduler,
+            "the graph is built and nothing is on the bus",
+        );
+
+        // Door one: the typed method.
+        engine
+            .register_capture_consumer(7)
+            .expect("an empty bus takes the first consumer");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a typed registration");
+
+        // A retirement through the track chain. The handle never names the
+        // plugin, so only the classification connects this to the bus.
+        engine
+            .send_graph_batch(vec![GraphCommand::RemoveTrackDeviceRetired {
+                track_id: 1,
+                effect_id: 7,
+            }])
+            .expect("a retirement against a chain that holds it is admitted");
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.effect_table_len(),
+            2,
+            "the retirement must really free its slot, or the bus below is compared against nothing"
+        );
+        assert_agree(&engine, &scheduler, "a track-device retirement");
+
+        // Door two: a batch, filling the reserve.
+        engine
+            .send_graph_batch(vec![
+                GraphCommand::RegisterCaptureConsumer(8),
+                GraphCommand::RegisterCaptureConsumer(9),
+            ])
+            .expect("a batch that exactly fills the reserve is admitted");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a batch registration");
+
+        // A retirement through the bus chain, same argument as the track one.
+        engine
+            .send_graph_batch(vec![GraphCommand::RemoveBusDeviceRetired {
+                bus_id: 50,
+                effect_id: 8,
+            }])
+            .expect("a retirement against a chain that holds it is admitted");
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.effect_table_len(),
+            1,
+            "the retirement must really free its slot"
+        );
+        assert_agree(&engine, &scheduler, "a bus-device retirement");
+
+        // A removal that names the plugin, and an unregistration by batch.
+        engine.remove_plugin(9).expect("the plugin comes off");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a plugin removal");
+
+        engine
+            .register_capture_consumer(7)
+            .expect("the freed slots take a consumer again");
+        engine
+            .send_graph_batch(vec![GraphCommand::UnregisterCaptureConsumer(7)])
+            .expect("an unregistration is always admitted");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a batch unregistration");
+
+        assert!(
+            engine.capture_consumers.is_empty(),
+            "the stream ended with every consumer gone, so an equality that \
+             held on two empty sets throughout would prove nothing"
+        );
+    }
+
     /// A capture handle whose diagnostics input stays live beside it.
     ///
     /// [`engine_handle_for_command_capture`] drops the publishing end of the
@@ -1540,24 +2303,21 @@ mod tests {
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
 
         (
-            EngineHandle {
+            engine_handle_fixture(
                 command_tx,
                 retired_adoption_tx,
-                _audio_thread: crate::audio_thread::detached_audio_thread_handle(),
-                next_plugin_id: 1000,
-                effect_registrations: 0,
-                reconciled_effect_id_collisions: 0,
-                midi_rt_diagnostics: diagnostics_reader,
-                timeline_rt_diagnostics: timeline_diagnostics_reader,
-                graph_progress: graph_progress_reader,
-                transport_position: transport_position_reader,
-                engine_events: engine_event_rx,
-                sample_rate: 48_000.0,
-                bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
-            },
+                diagnostics_reader,
+                timeline_diagnostics_reader,
+                graph_progress_reader,
+                transport_position_reader,
+                engine_event_rx,
+                capture_event_rx,
+                crate::audio_thread::new_capture_refusal_slot(),
+            ),
             command_rx,
             diagnostics_tx,
         )
@@ -1706,5 +2466,136 @@ mod tests {
             .is_ok());
         engine.midi_rt_diagnostics_snapshot();
         assert_eq!(engine.registered_effect_count(), 0);
+    }
+
+    /// A handle whose two event producers stay live, for a test that pushes
+    /// onto them directly rather than through a running audio thread.
+    ///
+    /// Neither [`engine_handle_for_command_capture`] nor
+    /// `handle_with_live_diagnostics_input` hands its event producers back —
+    /// both drop them, because nothing else in this module writes to either
+    /// ring by hand. This exists for the one test that does.
+    fn engine_handle_with_live_event_producers(
+        capacity: usize,
+    ) -> (EngineHandle, Producer<EngineEvent>, Producer<EngineEvent>) {
+        let (command_tx, _command_rx) = RingBuffer::new(capacity);
+        let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
+        let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (capture_event_tx, capture_event_rx) = engine_event_channel();
+        let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
+
+        (
+            engine_handle_fixture(
+                command_tx,
+                retired_adoption_tx,
+                diagnostics_reader,
+                timeline_diagnostics_reader,
+                graph_progress_reader,
+                transport_position_reader,
+                engine_event_rx,
+                capture_event_rx,
+                crate::audio_thread::new_capture_refusal_slot(),
+            ),
+            engine_event_tx,
+            capture_event_tx,
+        )
+    }
+
+    /// [`EngineHandle::drain_engine_events`] merges two rings — output and
+    /// input each run their error callback on a different backend thread, so
+    /// one `Producer<EngineEvent>` cannot serve both (see
+    /// `audio_thread::capture_beside`). An output-side event pushed first
+    /// must still come back before an input-side one pushed after it: the
+    /// merge is output-then-input, not push order across the two rings.
+    #[test]
+    fn drain_engine_events_reports_output_before_input() {
+        let (mut engine, mut engine_event_tx, mut capture_event_tx) =
+            engine_handle_with_live_event_producers(16);
+
+        engine_event_tx
+            .push(EngineEvent::StreamError {
+                side: StreamSide::Output,
+                kind: StreamErrorKind::Xrun,
+            })
+            .expect("an empty ring should accept the output-side event");
+        capture_event_tx
+            .push(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::DeviceNotAvailable,
+            })
+            .expect("an empty ring should accept the input-side event");
+
+        assert_eq!(
+            engine.drain_engine_events(),
+            vec![
+                EngineEvent::StreamError {
+                    side: StreamSide::Output,
+                    kind: StreamErrorKind::Xrun,
+                },
+                EngineEvent::StreamError {
+                    side: StreamSide::Input,
+                    kind: StreamErrorKind::DeviceNotAvailable,
+                },
+            ],
+            "the output-side event must be reported before the input-side one"
+        );
+    }
+
+    /// A capture refusal is not on either ring — `capture_side` cannot always
+    /// reach a producer to push into (see its doc) — so it crosses through
+    /// `capture_refusal` instead: [`EngineHandle::drain_engine_events`] swaps
+    /// the slot back to zero on read and turns a non-zero value into one
+    /// trailing `Input`-side `StreamError`, after whatever the two rings
+    /// held. A drain that finds the slot already zero reports nothing for
+    /// it, so a stored refusal surfaces exactly once. Mutation: replace the
+    /// `self.capture_refusal.swap(0, Ordering::Relaxed)` call in
+    /// `drain_engine_events` with a `load` — the first drain still reports
+    /// the refusal, but the second drain this test also checks then repeats
+    /// it instead of coming back empty, and this goes red.
+    #[test]
+    fn drain_engine_events_reports_a_capture_refusal_once() {
+        let (command_tx, _command_rx) = RingBuffer::new(1);
+        let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
+        let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (_capture_event_tx, capture_event_rx) = engine_event_channel();
+        let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
+        let capture_refusal = crate::audio_thread::new_capture_refusal_slot();
+        capture_refusal.store(
+            StreamErrorKind::DeviceNotAvailable as u8 + 1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        let mut engine = engine_handle_fixture(
+            command_tx,
+            retired_adoption_tx,
+            diagnostics_reader,
+            timeline_diagnostics_reader,
+            graph_progress_reader,
+            transport_position_reader,
+            engine_event_rx,
+            capture_event_rx,
+            capture_refusal,
+        );
+
+        assert_eq!(
+            engine.drain_engine_events(),
+            vec![EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::DeviceNotAvailable,
+            }],
+            "a stored refusal is the whole of the first drain when both rings are empty"
+        );
+        assert!(
+            engine.drain_engine_events().is_empty(),
+            "the slot swaps back to zero, so a second drain reports nothing further"
+        );
     }
 }

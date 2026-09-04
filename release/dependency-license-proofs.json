@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
+        "cargoLockSha256": "a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -9,7 +9,7 @@
             },
             {
                 "path": "Cargo.toml",
-                "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
+                "sha256": "cbcef1d177ea9d9452c8ad8597290fc1f5ab2c1d0f5d41f7df4b43486e4a59a3"
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
@@ -48,16 +48,20 @@
                 "sha256": "c97271ac7945ef4965a798a93d8c75cdfd5308cbcd39d68b32f0d88d8ee95454"
             },
             {
+                "path": "crates/sourdaw-harness-tone/Cargo.toml",
+                "sha256": "7a441d870a3d9d6d03fd1dc0a276cf807d3afffd160ed7c20f44584a3f1e26d7"
+            },
+            {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "4fd533f37449bc6dc51aff27c2e5b657cf412e9cdf093ff910c6306d435e2086"
+                "sha256": "4c20de3c423b5fbc468a39ec32c57fa2db34a5c44314ba8559f508a6e03bdebe"
             },
             {
                 "path": "electron-builder.yml",
-                "sha256": "7bd6b91b280c621afb9e85f91332c04a026d75f60911d7daa866c84fc45c363f"
+                "sha256": "6c0fc543587be211dc9e41bd04ccf05f36b9f74180d117eea83b6141df11e14b"
             },
             {
                 "path": "package.json",
-                "sha256": "a6651557fe8dc64a1babbf4016a46e4921b9984d7a1317139f646cfafd154f7e"
+                "sha256": "3f5021ace70f5d1edb05b3ab21e846a69ef953c7f2ce3005452644dc5e702e39"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -65,7 +69,7 @@
             },
             {
                 "path": "scripts/buildNativeAddon.ts",
-                "sha256": "f3246c1034fcd2bebd109649810faa6e5373507832194b542a2a7e133e9f31b7"
+                "sha256": "229b3f82ff399b9b7690f8a4d18c47de629e5c37133c988bd82627fd15160d50"
             }
         ],
         "featureSelection": {
@@ -189,6 +193,32 @@
                 ]
             },
             {
+                "name": "audio-codec-algorithms",
+                "version": "0.8.1",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "0BSD OR Apache-2.0",
+                "legalFiles": [
+                    {
+                        "label": "LICENSE-0BSD",
+                        "sha256": "39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06"
+                    },
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "LICENSE-0BSD",
+                        "sha256": "39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06"
+                    },
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+                    }
+                ]
+            },
+            {
                 "name": "audioadapter",
                 "version": "5.0.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -224,7 +254,7 @@
             },
             {
                 "name": "audioadapter-buffers",
-                "version": "5.1.0",
+                "version": "5.2.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -258,7 +288,7 @@
             },
             {
                 "name": "audioadapter-sample",
-                "version": "5.1.0",
+                "version": "5.2.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -3020,20 +3050,20 @@
             },
             {
                 "name": "napi",
-                "version": "3.12.1",
+                "version": "3.12.2",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [],
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7"
+                        "sha256": "20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2"
                     }
                 ],
                 "reportedLegalFiles": [
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "a399b1cc6aed42a14348b2f572b4cad4888633e97cb2cfbfd6226da449a465b6"
+                        "sha256": "3a96af62ae0ad66e5932a688359880fd10437980255bf3dcd23a3a3d0ef587fa"
                     }
                 ]
             },
@@ -6224,7 +6254,7 @@
             },
             {
                 "name": "uuid",
-                "version": "1.24.1",
+                "version": "1.26.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
@@ -7781,14 +7811,14 @@
         ]
     },
     "packages": {
-        "cargo:napi@3.12.1": {
-            "source": "https://crates.io/api/v1/crates/napi/3.12.1/download",
-            "revision": "sha256:459197f1592f4c3dbbf9c1b13f5a4599a343e4ef66b96bc340e2a518b36a6662",
+        "cargo:napi@3.12.2": {
+            "source": "https://crates.io/api/v1/crates/napi/3.12.2/download",
+            "revision": "sha256:58c5f4d5375213fdb7be2655e152386e82f026f9a5ba36a75556e11359aafe09",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7"
+                        "sha256": "20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2"
                     }
                 ],
                 "licenses": [
@@ -8536,14 +8566,14 @@
                 ]
             }
         },
-        "npm:onnxruntime-common@1.27.0": {
-            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.27.0.tgz",
-            "revision": "sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==",
+        "npm:onnxruntime-common@1.29.0": {
+            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.29.0.tgz",
+            "revision": "sha512-/F63/e2VJoaVXGGNu6S5QH7jivBThGO95OzAVXXQ8hTta/b1QxI8udHa6cI3+3mAb5WWIIaMMwfZw01oivjJ1g==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "740784b70b19207529b9a08229aaa4bf7c211afcc30ab4594daa32891ccffb94"
+                        "sha256": "976083947171b96bb7e998fdc8137bc50d3efb44c786ff3dbafb7f1bc4684dc8"
                     }
                 ],
                 "licenses": [
@@ -8551,14 +8581,14 @@
                 ]
             }
         },
-        "npm:onnxruntime-web@1.27.0": {
-            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.27.0.tgz",
-            "revision": "sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==",
+        "npm:onnxruntime-web@1.29.0": {
+            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.29.0.tgz",
+            "revision": "sha512-LuQlpX6MFLJZu756erwUeb1mNfoJGbs1kzDwJGNlf5RvfYMdqhcY3vNpDPK40CUV2HoWTkIj+uS0o36GFHjeYw==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "8cdbce0a4f6205109083cc4675477632147ed48e13fa7f891827fd08ef3c818c"
+                        "sha256": "9c803baa1820e75a82907bbf29c0a4be84d4eaec33693b4ab3bd5051fde85ee9"
                     }
                 ],
                 "licenses": [

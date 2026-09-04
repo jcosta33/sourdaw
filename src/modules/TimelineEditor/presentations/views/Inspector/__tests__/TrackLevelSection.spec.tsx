@@ -23,10 +23,31 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
+    captureAutomationRecordingRollback: vi.fn(),
+    clipAutomationMoveStateMatches: vi.fn(),
+    duplicateClipAutomation: vi.fn(),
+    duplicateClipAutomationBatch: vi.fn(),
+    getAutomationLaneCeiling: vi.fn(),
+    getAutomationLanes: vi.fn(),
+    getClipAutomationMoveState: vi.fn(),
+    recordAutomationValue: vi.fn(),
     releaseTouchAutomation: (...args: unknown[]) => mockReleaseTouchAutomation(...args),
+    removeAutomationLane: vi.fn(),
+    removeAutomationLanesForTrack: vi.fn(),
+    removeMapping: vi.fn(),
+    removeModulator: vi.fn(),
+    restoreAutomationLanes: vi.fn(),
+    restoreClipAutomationMoveState: vi.fn(),
+    restoreTrackModulationReferences: vi.fn(),
+    shiftClipAutomation: vi.fn(),
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({

@@ -20,6 +20,11 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
+
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 type BatchOutcome = Awaited<ReturnType<ExecuteAppActionBatch>>['status'];
@@ -68,6 +73,7 @@ const projectMutationAuthorization = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
+    projectRevisionMatchesLive: vi.fn(() => true),
     unownedMutationEpoch: { value: 0 },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
@@ -83,10 +89,36 @@ const mocks = vi.hoisted(() => ({
     notifyAiChange: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (import_original) => ({
+    ...(await import_original<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLive,
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    compactProject: vi.fn(),
+    createCrdtDoc: vi.fn(),
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    loadCrdtProject: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    resetCrdtProjectAuthority: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    startCrdtAutoSave: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
@@ -180,6 +212,7 @@ function proposePendingAppAction(
 
 describe('pending chat action confirmation', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(({ targetIds }) => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -254,6 +287,7 @@ describe('pending chat action confirmation', () => {
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.projectRevision.value = 'revision-1';
+        mocks.projectRevisionMatchesLive.mockReturnValue(true);
         projectMutationAuthorization.isAuthorized.mockImplementation(
             () => mocks.projectRevision.value === 'revision-1'
         );
@@ -261,6 +295,7 @@ describe('pending chat action confirmation', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         vi.restoreAllMocks();
@@ -324,6 +359,7 @@ describe('pending chat action confirmation', () => {
     it('invalidates an app-action proposal when the project revision changed before confirmation', async () => {
         proposePendingAppAction('confirm-stale');
         mocks.projectRevision.value = 'revision-2';
+        mocks.projectRevisionMatchesLive.mockReturnValue(false);
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-stale' });
 

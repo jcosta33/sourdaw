@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect, useRef } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { Plus, Power, Trash2, Monitor, LayoutGrid, RefreshCw } from 'lucide-react';
 
@@ -7,6 +7,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import {
@@ -57,7 +58,6 @@ type PluginScanViewState = {
 
 export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSectionProps): ReactElement => {
     const [showDeviceMenu, setShowDeviceMenu] = useState(false);
-    const deviceMenuRef = useRef<HTMLDivElement>(null);
 
     const pluginScanState = useStore<PluginScanViewState>(pluginScanStore, defaultPluginScanState);
     const activationState = useStore(externalPluginActivationStore, defaultExternalPluginActivationState);
@@ -148,21 +148,6 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
         })
     );
 
-    useEffect(() => {
-        if (!showDeviceMenu) {
-            return undefined;
-        }
-        const handleClick = (event: MouseEvent): void => {
-            if (deviceMenuRef.current && !deviceMenuRef.current.contains(event.target as Node)) {
-                setShowDeviceMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClick);
-        return () => {
-            document.removeEventListener('mousedown', handleClick);
-        };
-    }, [showDeviceMenu]);
-
     return (
         <div className="overflow-visible">
             <DawHeaderBand
@@ -170,144 +155,145 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                 className="mb-2 rounded-sm"
                 title="Devices"
                 actions={
-                    <div className="relative" ref={deviceMenuRef}>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => {
-                                setShowDeviceMenu(!showDeviceMenu);
-                            }}
-                            aria-label="Add device"
-                            data-testid="add-device-button"
-                        >
-                            <Plus className="size-3" />
-                        </Button>
-                        {showDeviceMenu ? (
-                            <div
-                                className="daw-floating-surface absolute right-0 top-full z-50 mt-1 w-48 rounded-md py-1"
-                                role="menu"
+                    <Popover open={showDeviceMenu} onOpenChange={setShowDeviceMenu}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label="Add device"
+                                aria-haspopup="menu"
+                                data-testid="add-device-button"
                             >
-                                <DawMenuSectionLabel>Effects</DawMenuSectionLabel>
-                                {effectPlugins.map((plugin) => (
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        key={plugin.id}
-                                        className={cn(menuBtnClass, 'text-foreground')}
-                                        role="menuitem"
-                                        onClick={() => {
-                                            // Route through the action
-                                            // boundary so the add lands in
-                                            // one Automerge transaction and
-                                            // is undoable — the same
-                                            // mutation issued by an AI
-                                            // prompt already goes through
-                                            // this action. The dispatch door
-                                            // consumes the committed-degraded
-                                            // rejection so an unrealizable
-                                            // runtime never surfaces as an
-                                            // unhandled rejection.
-                                            void executeAddDeviceAction(track.id, plugin.id);
-                                            setShowDeviceMenu(false);
-                                        }}
-                                    >
-                                        {plugin.name}
-                                    </Button>
-                                ))}
-                                <DawMenuSeparator />
-                                <DawMenuSectionLabel>Utility</DawMenuSectionLabel>
-                                {utilityPlugins.map((plugin) => (
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        key={plugin.id}
-                                        className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
-                                        role="menuitem"
-                                        onClick={() => {
-                                            void executeAddDeviceAction(track.id, plugin.id);
-                                            setShowDeviceMenu(false);
-                                        }}
-                                    >
-                                        {plugin.name}
-                                    </Button>
-                                ))}
-                                {analyzerPlugins.length > 0 ? (
-                                    <>
-                                        <DawMenuSeparator />
-                                        <DawMenuSectionLabel>Analyzer</DawMenuSectionLabel>
-                                        {analyzerPlugins.map((plugin) => (
-                                            <Button
-                                                variant="bare"
-                                                size="bare"
-                                                type="button"
-                                                key={plugin.id}
-                                                className={cn(menuBtnClass, 'text-foreground')}
-                                                role="menuitem"
-                                                onClick={() => {
-                                                    void executeAddDeviceAction(track.id, plugin.id);
-                                                    setShowDeviceMenu(false);
-                                                }}
-                                            >
-                                                {plugin.name}
-                                            </Button>
-                                        ))}
-                                    </>
-                                ) : null}
-                                <DawMenuSeparator />
-                                <DawMenuSectionLabel>External</DawMenuSectionLabel>
-                                {platformCapabilities.hasNativePlugins && supportedExternalPlugins.length > 0 ? (
-                                    <div className="max-h-32 overflow-y-auto">
-                                        {supportedExternalPlugins.map((plugin) => (
-                                            <Button
-                                                variant="bare"
-                                                size="bare"
-                                                type="button"
-                                                key={plugin.id}
-                                                className={cn(menuBtnClass, 'justify-between text-foreground')}
-                                                role="menuitem"
-                                                onClick={() => {
-                                                    void executeAppAction({
-                                                        type: 'loadExternalPlugin',
-                                                        payload: { pluginId: plugin.id, trackId: track.id },
-                                                    });
-                                                    setShowDeviceMenu(false);
-                                                }}
-                                            >
-                                                <span className="truncate">{plugin.name}</span>
-                                                <span className="ml-1 shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase text-muted-foreground bg-muted">
-                                                    {plugin.format}
-                                                </span>
-                                            </Button>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <DawMenuDisabledRow
-                                                icon={
-                                                    <Monitor
-                                                        className="size-3 shrink-0 text-muted-foreground"
-                                                        aria-hidden="true"
-                                                    />
-                                                }
-                                            >
-                                                {platformCapabilities.hasNativePlugins
-                                                    ? 'No plugins found — scan first'
-                                                    : 'Desktop app required'}
-                                            </DawMenuDisabledRow>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="left" className="max-w-56 text-center">
+                                <Plus className="size-3" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            align="end"
+                            sideOffset={4}
+                            role="menu"
+                            aria-label="Add device"
+                            className="daw-floating-surface w-48 p-0 py-1 rounded-md"
+                        >
+                            <DawMenuSectionLabel>Effects</DawMenuSectionLabel>
+                            {effectPlugins.map((plugin) => (
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    key={plugin.id}
+                                    className={cn(menuBtnClass, 'text-foreground')}
+                                    role="menuitem"
+                                    onClick={() => {
+                                        // Route through the action
+                                        // boundary so the add lands in
+                                        // one Automerge transaction and
+                                        // is undoable — the same
+                                        // mutation issued by an AI
+                                        // prompt already goes through
+                                        // this action. The dispatch door
+                                        // consumes the committed-degraded
+                                        // rejection so an unrealizable
+                                        // runtime never surfaces as an
+                                        // unhandled rejection.
+                                        void executeAddDeviceAction(track.id, plugin.id);
+                                        setShowDeviceMenu(false);
+                                    }}
+                                >
+                                    {plugin.name}
+                                </Button>
+                            ))}
+                            <DawMenuSeparator />
+                            <DawMenuSectionLabel>Utility</DawMenuSectionLabel>
+                            {utilityPlugins.map((plugin) => (
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    key={plugin.id}
+                                    className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
+                                    role="menuitem"
+                                    onClick={() => {
+                                        void executeAddDeviceAction(track.id, plugin.id);
+                                        setShowDeviceMenu(false);
+                                    }}
+                                >
+                                    {plugin.name}
+                                </Button>
+                            ))}
+                            {analyzerPlugins.length > 0 ? (
+                                <>
+                                    <DawMenuSeparator />
+                                    <DawMenuSectionLabel>Analyzer</DawMenuSectionLabel>
+                                    {analyzerPlugins.map((plugin) => (
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
+                                            type="button"
+                                            key={plugin.id}
+                                            className={cn(menuBtnClass, 'text-foreground')}
+                                            role="menuitem"
+                                            onClick={() => {
+                                                void executeAddDeviceAction(track.id, plugin.id);
+                                                setShowDeviceMenu(false);
+                                            }}
+                                        >
+                                            {plugin.name}
+                                        </Button>
+                                    ))}
+                                </>
+                            ) : null}
+                            <DawMenuSeparator />
+                            <DawMenuSectionLabel>External</DawMenuSectionLabel>
+                            {platformCapabilities.hasNativePlugins && supportedExternalPlugins.length > 0 ? (
+                                <div className="max-h-32 overflow-y-auto">
+                                    {supportedExternalPlugins.map((plugin) => (
+                                        <Button
+                                            variant="bare"
+                                            size="bare"
+                                            type="button"
+                                            key={plugin.id}
+                                            className={cn(menuBtnClass, 'justify-between text-foreground')}
+                                            role="menuitem"
+                                            onClick={() => {
+                                                void executeAppAction({
+                                                    type: 'loadExternalPlugin',
+                                                    payload: { pluginId: plugin.id, trackId: track.id },
+                                                });
+                                                setShowDeviceMenu(false);
+                                            }}
+                                        >
+                                            <span className="truncate">{plugin.name}</span>
+                                            <span className="ml-1 shrink-0 rounded px-1 py-px text-[10px] font-bold uppercase text-muted-foreground bg-muted">
+                                                {plugin.format}
+                                            </span>
+                                        </Button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <DawMenuDisabledRow
+                                            icon={
+                                                <Monitor
+                                                    className="size-3 shrink-0 text-muted-foreground"
+                                                    aria-hidden="true"
+                                                />
+                                            }
+                                        >
                                             {platformCapabilities.hasNativePlugins
-                                                ? 'Scan for plugins in Preferences → Plugin Paths'
-                                                : DISABLED_REASONS.nativePlugins}
-                                        </TooltipContent>
-                                    </Tooltip>
-                                )}
-                            </div>
-                        ) : null}
-                    </div>
+                                                ? 'No plugins found — scan first'
+                                                : 'Desktop app required'}
+                                        </DawMenuDisabledRow>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-56 text-center">
+                                        {platformCapabilities.hasNativePlugins
+                                            ? 'Scan for plugins in Preferences → Plugin Paths'
+                                            : DISABLED_REASONS.nativePlugins}
+                                    </TooltipContent>
+                                </Tooltip>
+                            )}
+                        </PopoverContent>
+                    </Popover>
                 }
             />
             {track.devices.length > 0 ? (

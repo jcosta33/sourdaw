@@ -28,10 +28,14 @@
 //! is deliberately taken from the transport channel rather than from
 //! `GraphProgressSnapshot`, whose `playhead_frame` is the command-admission
 //! ledger's release evidence and means a happens-before, not a cursor position.
+//! That channel is the *whole* of the reading, batch count included: the two
+//! channels are published one after another at the end of every callback, so a
+//! reader taking one field from each can pair a count with a playhead the
+//! engine never held at the same moment.
 
 use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
-use daw_engine::scheduler::GraphCommand;
+use daw_engine::scheduler::{GraphCommand, TransportPositionSnapshot};
 use daw_engine::transport_map::{
     LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMaps,
 };
@@ -91,6 +95,13 @@ pub struct TransportMapsApplied {
     pub tempo_segments: u32,
     pub time_signature_segments: u32,
     pub loop_enabled: bool,
+    /// The fence number [`EngineTransportPosition::batches_applied`] reaches
+    /// once this install has drained, so a caller can tell a later reading
+    /// from one taken before the maps reached the audio thread. Numbered from
+    /// the same counter `apply_graph_commands` numbers its own batches from:
+    /// the engine counts one stream of fences, so two producers numbering it
+    /// separately would be two numbers for one count.
+    pub admitted_batch: u64,
 }
 
 /// Where the engine's transport stands, as one wire payload.
@@ -100,6 +111,16 @@ pub struct TransportMapsApplied {
 /// `loopWraps` counts how many times the playhead crossed the loop end since
 /// the engine started; a consumer that sees it change knows the position went
 /// backwards on purpose rather than jumping.
+///
+/// `batchesApplied` is the only field that says *when* this reading was taken
+/// with respect to a command. A position cannot: a locate that resolved on
+/// this side was fenced onto the command ring, not drained, so the next
+/// reading may still report where the transport was before it. The count is
+/// the witness — a reading carrying a count at or above the fence number a
+/// command was admitted at was taken after that command reached the audio
+/// thread. It travels on the transport snapshot itself
+/// ([`TransportPositionSnapshot::batches_applied`]), which is what makes it a
+/// statement about *this* playhead rather than about some other callback's.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
@@ -108,9 +129,28 @@ pub struct EngineTransportPosition {
     pub position_seconds: f64,
     pub playhead_frame: f64,
     pub loop_wraps: f64,
+    pub batches_applied: f64,
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
+}
+
+/// The engine's own snapshot, in the wire's units.
+fn transport_position_payload(
+    snapshot: TransportPositionSnapshot,
+    sample_rate: f64,
+) -> EngineTransportPosition {
+    EngineTransportPosition {
+        running: true,
+        playing: snapshot.playing,
+        position_seconds: snapshot.playhead_frame as f64 / sample_rate,
+        playhead_frame: snapshot.playhead_frame as f64,
+        loop_wraps: snapshot.loop_wraps as f64,
+        batches_applied: snapshot.batches_applied as f64,
+        tempo: snapshot.tempo,
+        time_sig_num: snapshot.time_sig_num,
+        time_sig_denom: snapshot.time_sig_denom,
+    }
 }
 
 fn tempo_segments(
@@ -187,6 +227,10 @@ fn transport_maps_commands(
         tempo_segments: tempo.segment_count() as u32,
         time_signature_segments: time_signature.segment_count() as u32,
         loop_enabled: region.active_end().is_some(),
+        // Stamped by whoever publishes the fence: a mapping that is never sent
+        // has no fence number, and inventing one here would name a batch the
+        // engine will never drain.
+        admitted_batch: 0,
     };
 
     Ok((
@@ -217,6 +261,14 @@ pub async fn set_transport_maps(
     payload: TransportMapsPayload,
     state: &AppState,
 ) -> Result<TransportMapsApplied, String> {
+    // Registry before engine, the order `apply_graph_commands` takes them in:
+    // both locks are held here because the fence this publishes has to be
+    // numbered by the same counter that numbers a graph batch's.
+    let mut registry_guard = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -226,11 +278,16 @@ pub async fn set_transport_maps(
         return Err("no native engine is running".to_string());
     };
 
-    let (ops, applied) = transport_maps_commands(&payload, engine.sample_rate())?;
+    let (ops, mut applied) = transport_maps_commands(&payload, engine.sample_rate())?;
     engine
         .send_graph_batch(ops)
         .map_err(|error| format!("transport maps were not applied: {error:?}"))?;
 
+    // Numbered only once the fence is published, and from the graph registry's
+    // own counter: the engine numbers every fence it drains, whichever command
+    // sent it, so a counter that skipped this one would leave every later graph
+    // batch numbered below the count it is compared against.
+    applied.admitted_batch = registry_guard.record_fenced_batch();
     Ok(applied)
 }
 
@@ -252,18 +309,12 @@ pub async fn engine_transport_position(
     };
 
     let sample_rate = f64::from(engine.sample_rate());
+    // One read, deliberately. The batch count that dates this reading rides on
+    // the transport snapshot itself, so the pairing is the engine's own single
+    // publish rather than an ordering this side could only hope for.
     let snapshot = engine.transport_position_snapshot();
 
-    Ok(EngineTransportPosition {
-        running: true,
-        playing: snapshot.playing,
-        position_seconds: snapshot.playhead_frame as f64 / sample_rate,
-        playhead_frame: snapshot.playhead_frame as f64,
-        loop_wraps: snapshot.loop_wraps as f64,
-        tempo: snapshot.tempo,
-        time_sig_num: snapshot.time_sig_num,
-        time_sig_denom: snapshot.time_sig_denom,
-    })
+    Ok(transport_position_payload(snapshot, sample_rate))
 }
 
 #[cfg(test)]
@@ -373,6 +424,7 @@ mod tests {
             position_seconds: 1.5,
             playhead_frame: 72_000.0,
             loop_wraps: 2.0,
+            batches_applied: 11.0,
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
@@ -383,10 +435,35 @@ mod tests {
             json,
             concat!(
                 r#"{"running":true,"playing":true,"positionSeconds":1.5,"#,
-                r#""playheadFrame":72000.0,"loopWraps":2.0,"tempo":128.0,"#,
-                r#""timeSigNum":5,"timeSigDenom":4}"#
+                r#""playheadFrame":72000.0,"loopWraps":2.0,"batchesApplied":11.0,"#,
+                r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4}"#
             )
         );
+    }
+
+    /// Every field of a reading comes from the one snapshot the engine
+    /// published, `batchesApplied` included. That field is what a caller uses
+    /// to date the reading against a command it sent, so a count drawn from a
+    /// second channel would be a count for a different callback than the
+    /// playhead beside it.
+    #[test]
+    fn a_position_is_the_transport_snapshot_the_engine_published() {
+        let snapshot = TransportPositionSnapshot {
+            playing: true,
+            playhead_frame: 72_000,
+            loop_wraps: 2,
+            batches_applied: 11,
+            tempo: 128.0,
+            time_sig_num: 5,
+            time_sig_denom: 4,
+        };
+
+        let position = transport_position_payload(snapshot, 48_000.0);
+
+        assert_eq!(position.batches_applied, 11.0);
+        assert_eq!(position.playhead_frame, 72_000.0);
+        assert_eq!(position.position_seconds, 1.5);
+        assert_eq!(position.loop_wraps, 2.0);
     }
 
     #[test]
@@ -411,5 +488,94 @@ mod tests {
             .expect_err("there is no engine to hold the maps");
 
         assert_eq!(error, "no native engine is running");
+    }
+
+    /// A batch the ring refused is not a fence, so the install must number one
+    /// only once the push has been taken. Numbering above the send would run
+    /// `batches_sent` ahead of the engine's `batches_applied` for the rest of
+    /// the session: every later batch would report a number one past the count
+    /// it is held against, `admittedBatch` would promise a drain that never
+    /// comes, and the live automation writer would discard every snapshot it
+    /// polls.
+    #[test]
+    fn a_refused_maps_push_numbers_no_fence() {
+        use crate::commands::crumbs::CrumbsState;
+        use crate::commands::graph::apply_graph_commands;
+
+        let state = AppState::default();
+        // A ring of one holds a single fence and nothing more, so the maps
+        // batch has to grow it; with the retirement adoption channel gone that
+        // growth fails, which is the engine's refusal — nothing pushed.
+        let (engine, _command_rx, retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(1);
+        drop(retired_adoption_rx);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let refusal = crate::block_on_test(set_transport_maps(maps_payload(), &state))
+            .expect_err("a batch the ring will not take is not installed");
+        assert!(
+            refusal.contains("transport maps were not applied"),
+            "got: {refusal}"
+        );
+
+        // One fence still fits the untouched ring, and it is the first fence of
+        // the session: the refused install left the counter where it found it.
+        let batch = crate::block_on_test(apply_graph_commands(
+            serde_json::json!({ "schemaVersion": 1, "commands": [] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(batch["application"], "applied");
+        assert_eq!(
+            batch["admittedBatch"].as_u64(),
+            Some(1),
+            "the first fence the engine will drain is this batch's, not the refused install's"
+        );
+    }
+
+    /// The maps install publishes a fence of its own, outside the graph batch
+    /// path, and both fences are numbered by the one counter the engine counts
+    /// with. An install that sent its fence without numbering it would leave
+    /// every later graph batch reporting a number the engine had already passed
+    /// — the ledger would release writes the audio thread never popped, and a
+    /// transport reading taken before a locate would pass for one taken after.
+    #[test]
+    fn installing_maps_numbers_its_fence_in_the_same_count_a_graph_batch_uses() {
+        use crate::commands::crumbs::CrumbsState;
+        use crate::commands::graph::apply_graph_commands;
+
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let applied = crate::block_on_test(set_transport_maps(maps_payload(), &state))
+            .expect("the maps install onto a running engine");
+        assert_eq!(
+            applied.admitted_batch, 1,
+            "the install numbered its own fence against a fresh ledger"
+        );
+
+        let mut fences = 0;
+        while let Ok(command) = command_rx.pop() {
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        assert_eq!(fences, 1, "one fence, the one the number is about");
+
+        let batch = crate::block_on_test(apply_graph_commands(
+            serde_json::json!({ "schemaVersion": 1, "commands": [] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(batch["application"], "applied");
+        assert_eq!(
+            batch["admittedBatch"].as_u64(),
+            Some(applied.admitted_batch + 1),
+            "a graph batch is numbered after the install's fence, not over it"
+        );
     }
 }

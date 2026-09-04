@@ -35,6 +35,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     getScopedGrooveConsumerId: ({ ownerId, localId }: { ownerId: string; localId: string }) => `${ownerId}:${localId}`,
     restoreGrooveAssignment: mocks.restoreGrooveAssignment,
+    getScopedGrooveAssignment: vi.fn(),
 }));
 vi.mock('../../engine/yeastRuntime', () => ({ setYeastRuntimeProjection: mocks.setYeastRuntimeProjection }));
 // The runtime projection resolves groove templates through its own MIDI

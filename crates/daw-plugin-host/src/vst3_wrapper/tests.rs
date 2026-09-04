@@ -1152,6 +1152,10 @@ struct FakeEditor {
     /// Every scale factor the host stated, in the order it stated them.
     content_scales: Mutex<Vec<f32>>,
     create_view_calls: AtomicI32,
+    /// Every thread `createView` ran on, in order — which is what decides
+    /// whether the editor-support probe was carried to the thread that owns
+    /// editor windows or ran on whoever asked.
+    create_view_threads: Mutex<Vec<ThreadId>>,
 }
 
 impl FakeEditor {
@@ -1208,6 +1212,10 @@ impl FakeEditor {
     /// `name` is a `FIDString` the host passed, so it is null or a live C string.
     unsafe fn record_create_view(&self, name: FIDString) {
         self.create_view_calls.fetch_add(1, Ordering::AcqRel);
+        self.create_view_threads
+            .lock()
+            .expect("create-view thread log")
+            .push(std::thread::current().id());
         if !name.is_null() {
             self.platform_types
                 .lock()
@@ -1230,6 +1238,13 @@ impl FakeEditor {
 
     fn content_scales(&self) -> Vec<f32> {
         self.content_scales.lock().expect("scale mutex").clone()
+    }
+
+    fn create_view_threads(&self) -> Vec<ThreadId> {
+        self.create_view_threads
+            .lock()
+            .expect("create-view thread log")
+            .clone()
     }
 
     fn platform_types(&self) -> Vec<String> {
@@ -3001,6 +3016,44 @@ fn a_plugin_that_answers_create_view_with_a_view_has_an_editor() {
     // that cannot change.
     assert!(wrapper.has_gui());
     assert_eq!(editor.create_view_calls.load(Ordering::Acquire), 1);
+}
+
+/// The support probe answers synchronously, on whatever thread asked it: the
+/// backend owns no thread of its own, by the same contract as every other
+/// editor call — the loader carries the ask to the shell's UI thread
+/// (`editor_support_on_ui_thread` in the native load path), and a backend that
+/// deferred the ask or re-threaded it internally would break that carry's
+/// synchronous answer. Asked from a thread that is not this one, because the
+/// load path asks from a worker.
+#[test]
+fn the_editor_support_probe_answers_on_the_thread_that_asked() {
+    let asking = std::thread::spawn(move || {
+        let editor = FakeEditor::sized(800, 600);
+        let state = state_with_editor(&editor);
+        let wrapper = load(&state, COMBINED_CID);
+        let offered = wrapper.has_gui();
+        (
+            offered,
+            std::thread::current().id(),
+            editor.create_view_threads(),
+        )
+    });
+    let (offered, asking_thread, asked_on) = asking.join().expect("the asking thread must finish");
+
+    assert!(
+        offered,
+        "a plugin that answers createView with a view offers an editor"
+    );
+    assert_eq!(
+        asked_on,
+        vec![asking_thread],
+        "createView must run once, synchronously, on the thread that asked"
+    );
+    assert_ne!(
+        asking_thread,
+        std::thread::current().id(),
+        "the asking thread must not be this one, or this test proves nothing"
+    );
 }
 
 /// The host does not get to pick the size. `checkSizeConstraint` is where the

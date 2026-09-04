@@ -19,6 +19,21 @@ const storageMocks = vi.hoisted(() => {
     return { mockGet, mockSet };
 });
 
+const loadMocks = vi.hoisted(() => ({
+    replaceProjectData: vi.fn(),
+    runProjectLoadTransaction: vi.fn(),
+}));
+
+// replaceProjectData and runProjectLoadTransaction are mocked so loadRecentProject's
+// not-found test does not walk the full project-replacement graph (AudioEngine, etc.).
+vi.mock('../projectPersistence/helpers/replaceProjectData', () => ({
+    replaceProjectData: loadMocks.replaceProjectData,
+}));
+
+vi.mock('../projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    runProjectLoadTransaction: loadMocks.runProjectLoadTransaction,
+}));
+
 vi.mock('#/modules/Project/repositories/project/readNamedProjectJson', () => ({
     readNamedProjectJson: vi.fn(),
 }));
@@ -46,29 +61,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    resetAudioGraph: vi.fn(),
-    getAudioContext: vi.fn(),
-}));
-
-vi.mock('../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
-    hydrateModuleStoresFromProjectData: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
-    clearUndoHistory: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-}));
-
-vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
-    verifyAudioBufferReferences: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
+    defaultTransportState: { masterGain: 75, isPlaying: false },
+    ensureTrackStrips: vi.fn(),
+    restoreTimelineMapSnapshot: vi.fn(),
 }));
 
 describe('recentProjects injectables', () => {
@@ -134,5 +129,6 @@ describe('recentProjects injectables', () => {
         expect(ok).toBe('not-found');
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('No project data found'));
         expect(stopPlayback).not.toHaveBeenCalled();
+        expect(loadMocks.replaceProjectData).not.toHaveBeenCalled();
     });
 });

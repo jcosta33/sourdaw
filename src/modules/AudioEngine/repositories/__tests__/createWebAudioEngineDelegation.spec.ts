@@ -51,6 +51,8 @@ vi.mock('../../engine/TrackNode', () => ({
             trackId: string;
             preFaderTap: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
             analyserNode: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
+            carrierGate: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
+            preFaderSendGate: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
             meterNode: null;
             deviceNodes: unknown[];
         };
@@ -62,6 +64,8 @@ vi.mock('../../engine/TrackNode', () => ({
                 trackId: id,
                 preFaderTap: { connect: vi.fn(), disconnect: vi.fn() },
                 analyserNode: { connect: vi.fn(), disconnect: vi.fn() },
+                carrierGate: { connect: vi.fn(), disconnect: vi.fn() },
+                preFaderSendGate: { connect: vi.fn(), disconnect: vi.fn() },
                 meterNode: null,
                 deviceNodes: [],
             };
@@ -69,6 +73,7 @@ vi.mock('../../engine/TrackNode', () => ({
                 setGain: vi.fn<(...args: unknown[]) => void>(),
                 setPan: vi.fn<(...args: unknown[]) => void>(),
                 setMute: vi.fn<(...args: unknown[]) => void>(),
+                setNativeCarried: vi.fn<(...args: unknown[]) => void>(),
                 getPeakLevel: vi.fn<(...args: unknown[]) => void>(),
                 setOutput: vi.fn<(...args: unknown[]) => void>(),
                 addDevice: vi.fn<(...args: unknown[]) => void>(),
@@ -98,6 +103,9 @@ vi.mock('../../engine/TrackNode', () => ({
         }
         setMute(...args: unknown[]) {
             this.mocks.setMute!(...args);
+        }
+        setNativeCarried(...args: unknown[]) {
+            this.mocks.setNativeCarried!(...args);
         }
         getPeakLevel(): number {
             this.mocks.getPeakLevel!();
@@ -576,6 +584,46 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         engine.setTrackMute('t-new', true);
 
         expect(trackMocks('t-new').setMute).toHaveBeenCalledWith(true);
+    });
+
+    describe('setNativeCarriedTracks', () => {
+        it('drives every live strip to its membership, carried and not', () => {
+            engine.ensureTrackStrip('a');
+            engine.ensureTrackStrip('b');
+
+            engine.setNativeCarriedTracks(new Set(['a']));
+
+            expect(trackMocks('a').setNativeCarried).toHaveBeenCalledWith(true);
+            expect(trackMocks('b').setNativeCarried).toHaveBeenCalledWith(false);
+        });
+
+        it('applies the remembered set to a strip ensured after the call', () => {
+            engine.setNativeCarriedTracks(new Set(['a']));
+
+            engine.ensureTrackStrip('a');
+
+            // A graph rebuild mid-play re-creates the strip; it must come back
+            // gated rather than audibly doubling the native engine.
+            expect(trackMocks('a').setNativeCarried).toHaveBeenCalledWith(true);
+        });
+
+        it('reopens a strip that the next set no longer names', () => {
+            engine.ensureTrackStrip('a');
+            engine.setNativeCarriedTracks(new Set(['a']));
+
+            engine.setNativeCarriedTracks(new Set());
+
+            expect(trackMocks('a').setNativeCarried).toHaveBeenLastCalledWith(false);
+        });
+
+        it('drops the carried set with the rest of the graph on reset', () => {
+            engine.setNativeCarriedTracks(new Set(['a']));
+
+            engine.resetGraph();
+            engine.ensureTrackStrip('a');
+
+            expect(trackMocks('a').setNativeCarried).toHaveBeenCalledWith(false);
+        });
     });
 
     it('caches bus strips, forwards bus gain, and reads bus peaks with a 0 fallback', () => {

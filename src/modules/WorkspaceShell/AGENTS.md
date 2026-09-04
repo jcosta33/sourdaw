@@ -12,6 +12,7 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
     - **Handlers**: `getWorkspaceHandlers`, `getScratchPadHandlers`.
 - `stores`: `workspaceStore` (`WorkspaceState`, `EditingTool`, `defaultWorkspaceState`), `toolSwapStore`, `alphaNoticeStore`.
 - `presentations/views`: `AppShell`, `WorkspaceAppBoundary`, `WorkspaceMobileGate`, `WorkspaceProjectLoadingFallback`, `WorkspaceRouteView`.
+- Shell-private presentation: `presentations/hooks/useProjectMutationRefusal` (`ProjectMutationRefusal`, `deriveProjectMutationRefusal`) and `presentations/components/ProjectMutationRefusedBanner`. Not exported across modules — the shell is the only surface that renders them.
 - `events`: `ShowDevicePanelPayload`, `NotifyPayload`, `ConfirmPayload`, `PromptPayload`, `ZoomToSelectionPayload`, `ToggleVoiceCommandPayload`, `ImportMidiPayload`, MIDI payload types.
 - Handlers: `getWorkspaceHandlers`, `getScratchPadHandlers`.
 
@@ -26,6 +27,8 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
 
 - Spring-loaded tool swaps must pair every `startToolSwap` with a guaranteed `finishToolSwap` on key release to prevent persistent tool lockup.
 - Workspace layout and panel states are client UI session state — never serialize workspace layout directly into project CRDT documents.
+- The mutation-refusal banner is not a dialog: keep it out of `anyDialogOpen` and out of the shell's `inert` condition. Every route out of a refusal — the assistant panel, the production brief, undo, the launch screen — lives inside the workspace it sits above, so covering the workspace would trap the user in the state the banner is explaining.
+- The banner never derives a refusal itself. `deriveProjectMutationRefusal` reads the same repair store the dispatch gate reads and calls `getProjectScopedBriefLock` for the brief gate, so the banner and the gate cannot disagree about why an edit was refused.
 
 ## Verification
 

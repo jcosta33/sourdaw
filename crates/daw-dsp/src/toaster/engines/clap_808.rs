@@ -13,7 +13,7 @@ use crate::toaster::dc_block::DcBlocker;
 /// Clap envelope state machine.
 enum ClapState {
     Idle,
-    Burst { burst_idx: u8, burst_phase: f32 },
+    Burst { burst_idx: u8 },
     Tail { env: f32 },
 }
 
@@ -91,10 +91,7 @@ impl Clap808Engine {
         self.tail_decay_coeff = (-1.0 / (tail_decay_s * sample_rate)).exp();
         self.tail_env = 0.0; // tail starts after bursts
 
-        self.state = ClapState::Burst {
-            burst_idx: 0,
-            burst_phase: 0.0,
-        };
+        self.state = ClapState::Burst { burst_idx: 0 };
 
         self.bp_ic1 = 0.0;
         self.bp_ic2 = 0.0;
@@ -129,10 +126,7 @@ impl Clap808Engine {
                 self.active = false;
                 return 0.0;
             }
-            ClapState::Burst {
-                burst_idx,
-                burst_phase: _,
-            } => {
+            ClapState::Burst { burst_idx } => {
                 let idx = *burst_idx;
 
                 // Diminishing burst amplitudes: 1.0, 0.7, 0.45
@@ -154,10 +148,7 @@ impl Clap808Engine {
                         // Start next burst after gap
                         self.burst_env = self.velocity;
                         self.burst_gap_counter = 0;
-                        self.state = ClapState::Burst {
-                            burst_idx: idx + 1,
-                            burst_phase: 0.0,
-                        };
+                        self.state = ClapState::Burst { burst_idx: idx + 1 };
                     } else {
                         // Final 20ms discharge + start tail
                         self.tail_env = self.velocity * 0.3;

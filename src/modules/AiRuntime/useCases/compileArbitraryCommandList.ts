@@ -1,10 +1,16 @@
-import { getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
+import { getMidiTransform } from '#/modules/Command/stores';
+import {
+    expandMidiTransform,
+    getExecutableAppActionGroundingRules,
+    getMidiTransformContract,
+} from '#/modules/Command/useCases';
 import { getSidechainTargetCapability } from '#/modules/Routing/useCases';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     parseSemanticCommandList,
     SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+    SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
     SEMANTIC_COMMAND_LIST_MAX_REPEAT,
     type SemanticCommandListEntity,
     type SemanticCommandListItem,
@@ -13,6 +19,14 @@ import {
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import {
+    BATCH_LOCAL_BINDING_PATTERN,
+    type BatchLocalBindingProducer,
+    CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
+    BATCH_LOCAL_BINDING_PRODUCER_NAMES,
+    PROJECT_OBJECT_CREATING_COMMANDS,
+    resolveBatchLocalBindingProducer,
+} from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 
 type Candidate = {
@@ -27,6 +41,12 @@ type Candidate = {
     bypassed?: boolean;
     enabled?: boolean;
 };
+
+/**
+ * A rejection reason reaches the chat, and a provider-authored argument is unbounded text. A
+ * reference is quoted back only while it is short enough to read as a reference.
+ */
+const MAX_QUOTED_REFERENCE_LENGTH = 64;
 
 export type ArbitraryCommandListSelectorEvidence = {
     itemId: string;
@@ -68,6 +88,12 @@ export type ArbitraryCommandListEvidence = {
     selectors: ArbitraryCommandListSelectorEvidence[];
     items: CompiledItemEvidence[];
     commands: ToolCallResult[];
+    /**
+     * The transforms this batch expanded, in list order. Every command in the batch is an ordinary
+     * catalog command, so without this record nothing downstream could tell a musician that the notes
+     * in front of them came from a named generator and a seed rather than from the provider's hand.
+     */
+    expandedMidiTransforms: string[];
 };
 
 type AcceptedCompilation = {
@@ -79,6 +105,8 @@ type AcceptedCompilation = {
 };
 
 type RejectedCompilation = { status: 'rejected'; reason: string };
+
+type DeclaredBatchLocalProducer = BatchLocalBindingProducer & { itemId: string };
 
 export type ArbitraryCommandListCompilation = AcceptedCompilation | RejectedCompilation;
 
@@ -373,11 +401,31 @@ function getTargetRuleValues(
     return isSafeId(value) ? [value] : null;
 }
 
+/**
+ * A batch-local target has no snapshot row yet, so its owning track is read from the plan: a
+ * created track or bus owns itself, and a created clip is owned by whatever its producing
+ * `addClip` targeted — which may itself still be a `$binding` literal.
+ */
+function resolveBatchLocalParentTrackId(
+    capability: AppDerivedParentTrackTargetCapability,
+    binding: string,
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>
+): string | null {
+    if (capability === 'track' || capability === 'routable-source' || capability === 'bus') {
+        return `$${binding}`;
+    }
+    return producersByBinding.get(binding)?.parentTrackReference ?? null;
+}
+
 function resolveParentTrackId(
     capability: AppDerivedParentTrackTargetCapability,
     targetId: string,
-    context: ProjectContext
+    context: ProjectContext,
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>
 ): string | null {
+    if (targetId.startsWith('$')) {
+        return resolveBatchLocalParentTrackId(capability, targetId.slice(1), producersByBinding);
+    }
     switch (capability) {
         case 'track':
         case 'routable-source':
@@ -392,6 +440,7 @@ function resolveParentTrackId(
         case 'editable-clip':
         case 'editable-audio-clip':
         case 'editable-midi-clip':
+        case 'writable-midi-clip':
             return context.tracks.find((track) => track.clips.some((clip) => clip.id === targetId))?.id ?? null;
     }
     const exhaustiveCapability: never = capability;
@@ -409,6 +458,7 @@ type AppDerivedMutationIdentityMaterializer = (input: {
     argumentRule: AppDerivedMutationIdentityArgument;
     arguments_: Readonly<Record<string, unknown>>;
     context: ProjectContext;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     targetRules: ExecutableAppActionGroundingRules['targetRules'];
 }) => readonly string[] | null;
 
@@ -416,6 +466,7 @@ const materializeParentTrackIds: AppDerivedMutationIdentityMaterializer = ({
     argumentRule,
     arguments_,
     context,
+    producersByBinding,
     targetRules,
 }) => {
     const parentTrackIds = new Set<string>();
@@ -430,7 +481,7 @@ const materializeParentTrackIds: AppDerivedMutationIdentityMaterializer = ({
             return null;
         }
         for (const targetId of targetIds) {
-            const parentTrackId = resolveParentTrackId(targetRule.capability, targetId, context);
+            const parentTrackId = resolveParentTrackId(targetRule.capability, targetId, context, producersByBinding);
             if (parentTrackId === null) {
                 return null;
             }
@@ -452,6 +503,7 @@ function materializeMutationIdentityArguments(input: {
     command: ToolCallResult;
     context: ProjectContext;
     mutationIdentityRules: readonly MutationIdentityRule[];
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     targetRules: ExecutableAppActionGroundingRules['targetRules'];
 }): { status: 'accepted'; arguments: Readonly<Record<string, unknown>> } | RejectedCompilation {
     const materializedArguments = materializeSidechainRouteIdentityArguments(input.command, input.context);
@@ -477,6 +529,7 @@ function materializeMutationIdentityArguments(input: {
                 argumentRule,
                 arguments_: materializedArguments,
                 context: input.context,
+                producersByBinding: input.producersByBinding,
                 targetRules: input.targetRules,
             });
             if (value === null) {
@@ -514,6 +567,7 @@ function checkCommandWriteConflict(input: {
     context: ProjectContext;
     mutationIdempotent: boolean;
     mutationIdentityRules: readonly MutationIdentityRule[];
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     targetRules: ExecutableAppActionGroundingRules['targetRules'];
     mutationResourceWrites: Map<string, { destructive: boolean }>;
     targetCommandArguments: Map<string, string>;
@@ -524,6 +578,7 @@ function checkCommandWriteConflict(input: {
         command: input.command,
         context: input.context,
         mutationIdentityRules: input.mutationIdentityRules,
+        producersByBinding: input.producersByBinding,
         targetRules: input.targetRules,
     });
     if (materialization.status === 'rejected') {
@@ -615,16 +670,6 @@ function stableTopologicalSort(
     return { status: 'accepted', items: sorted };
 }
 
-const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
-
-function capabilityRequiresConcreteDependency(capability: string): boolean {
-    return capability === 'device' || capability === 'device-parameter';
-}
-
-type BatchLocalBindingProducer = {
-    itemId: string;
-};
-
 function dependsTransitivelyOn(
     item: SemanticCommandListItem,
     dependencyId: string,
@@ -650,7 +695,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
     context: ProjectContext;
     item: SemanticCommandListItem;
     itemsById: ReadonlyMap<string, SemanticCommandListItem>;
-    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     selectorArgument?: string;
     selectorStableIds?: readonly string[];
     targetRules: readonly {
@@ -682,10 +727,20 @@ function validateTargetArgumentsWithoutSelectors(input: {
             }
             const binding = value.slice(1);
             if (!BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
-                return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
+                return {
+                    status: 'rejected',
+                    reason:
+                        value.length <= MAX_QUOTED_REFERENCE_LENGTH
+                            ? `Malformed batch-local target reference: ${value}`
+                            : 'Malformed batch-local target reference.',
+                };
             }
             const producer = input.producersByBinding.get(binding);
-            if (producer === undefined || !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)) {
+            if (
+                producer === undefined ||
+                !producer.capabilities.includes(targetRule.capability) ||
+                !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)
+            ) {
                 return {
                     status: 'rejected',
                     reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
@@ -733,7 +788,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
         if (
             targetRule.dependsOn !== undefined &&
             dependencyIds.length === 0 &&
-            capabilityRequiresConcreteDependency(targetRule.capability)
+            CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY.has(targetRule.capability)
         ) {
             return {
                 status: 'rejected',
@@ -789,13 +844,13 @@ function getDeclaredBatchLocalBinding(
         return null;
     }
     if (
-        item.name !== 'createBus' ||
+        !BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(item.name) ||
         typeof binding !== 'string' ||
         !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
         item.selector !== undefined ||
         repeat !== 1
     ) {
-        return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded createBus item.' };
+        return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded creation item.' };
     }
     return binding;
 }
@@ -805,17 +860,215 @@ function getDeclaredBatchLocalBinding(
  * The provider never receives generated IDs, state guards, approval authority, or
  * a per-target execution turn; the snapshot is resolved exactly once here.
  */
+function isToolCallResult(value: unknown): value is ToolCallResult {
+    return isRecord(value) && typeof value.name === 'string';
+}
+
+/**
+ * The creation budget, applied wherever a proposal reaches commands. Both proposal forms answer to
+ * it: a budget one form does not check is a budget a provider can choose its way past.
+ */
+function rejectOverCreationBudget(commands: readonly ToolCallResult[]): RejectedCompilation | null {
+    const creationCount = commands.filter((command) => PROJECT_OBJECT_CREATING_COMMANDS.has(command.name)).length;
+    return creationCount > SEMANTIC_COMMAND_LIST_MAX_CREATIONS
+        ? {
+              status: 'rejected',
+              reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
+          }
+        : null;
+}
+
+/** The only command a transform ever compiles to. Nothing new executes because of a transform. */
+const EXPANDED_TRANSFORM_COMMAND_NAME = 'addNotes';
+
+/** A transform writes notes, so its clip must be one the batch is allowed to write notes into. */
+const MIDI_TRANSFORM_TARGET_CAPABILITY = 'writable-midi-clip';
+
+/**
+ * A clip reference is provider-authored text that only has to be a bounded id, so it is named back
+ * in a rejection the chat renders only while it is short enough to read as a reference.
+ */
+function describeTargetReference(value: string): string {
+    return value.length <= MAX_QUOTED_REFERENCE_LENGTH ? `target ${value}` : 'target too long to name';
+}
+
+type TransformClipResolution = { status: 'accepted'; clipSpanBeats: number } | RejectedCompilation;
+
+/**
+ * A transform writes into exactly one clip, so its span is what bounds every note it produces. A
+ * clip this batch creates has no snapshot row yet and reports the span its own item declared; an
+ * existing clip reports the span the project holds. The clip's sounding window is narrower than that
+ * when the clip is slipped or looped, and the bridge still checks it note by note — this is the outer
+ * bound, not a substitute for that check.
+ */
+function resolveTransformClipSpanBeats(input: {
+    clipReference: unknown;
+    context: ProjectContext;
+    item: SemanticCommandListItem;
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
+}): TransformClipResolution {
+    const { clipReference } = input;
+    if (!isSafeId(clipReference)) {
+        return { status: 'rejected', reason: `MIDI transform ${input.item.name} names no bounded target clip.` };
+    }
+    if (!clipReference.startsWith('$')) {
+        const clip = input.context.tracks
+            .flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === clipReference);
+        if (
+            clip === undefined ||
+            !isAgentReferenceCapabilityCandidate({
+                capability: MIDI_TRANSFORM_TARGET_CAPABILITY,
+                context: input.context,
+                id: clipReference,
+            })
+        ) {
+            return {
+                status: 'rejected',
+                reason: `MIDI transform ${describeTargetReference(clipReference)} is outside the writable MIDI clip contract.`,
+            };
+        }
+        const clipSpanBeats = clip.endBeat - clip.startBeat;
+        return clipSpanBeats > 0
+            ? { status: 'accepted', clipSpanBeats }
+            : {
+                  status: 'rejected',
+                  reason: `MIDI transform ${describeTargetReference(clipReference)} spans no beats.`,
+              };
+    }
+    const binding = clipReference.slice(1);
+    const producer = input.producersByBinding.get(binding);
+    if (
+        !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+        producer === undefined ||
+        !producer.capabilities.includes(MIDI_TRANSFORM_TARGET_CAPABILITY) ||
+        !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)
+    ) {
+        return {
+            status: 'rejected',
+            reason: `MIDI transform ${input.item.name} requires an earlier bounded producer for ${describeTargetReference(clipReference)}.`,
+        };
+    }
+    const clipSpanBeats = producer.createdClipSpanBeats;
+    return clipSpanBeats === undefined
+        ? {
+              status: 'rejected',
+              reason: `MIDI transform ${input.item.name} has no declared clip span for ${describeTargetReference(clipReference)} to fit inside.`,
+          }
+        : { status: 'accepted', clipSpanBeats };
+}
+
+type TransformCompilation =
+    { status: 'accepted'; commands: ToolCallResult[]; itemEvidence: CompiledItemEvidence } | RejectedCompilation;
+
+/**
+ * Turns one transform item into the `addNotes` commands that carry its notes. The expansion is one
+ * application-authored write to one clip, so it registers a single write identity however many
+ * commands the note count costs — a second item writing the same clip still collides with it.
+ */
+function compileMidiTransformItem(input: {
+    commandStart: number;
+    context: ProjectContext;
+    dependsOn: string[];
+    item: SemanticCommandListItem;
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>;
+    mutationResourceWrites: Map<string, { destructive: boolean }>;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
+    targetCommandArguments: Map<string, string>;
+}): TransformCompilation {
+    const { item } = input;
+    if (item.selector !== undefined || (item.repeat?.count ?? 1) !== 1) {
+        return {
+            status: 'rejected',
+            reason: `MIDI transform ${item.name} is not one bounded item without a selector.`,
+        };
+    }
+    const clipResolution = resolveTransformClipSpanBeats({
+        clipReference: item.arguments[getMidiTransformContract().clipArgument],
+        context: input.context,
+        item,
+        itemsById: input.itemsById,
+        producersByBinding: input.producersByBinding,
+    });
+    if (clipResolution.status === 'rejected') {
+        return clipResolution;
+    }
+    const expansion = expandMidiTransform({
+        arguments: item.arguments,
+        clipSpanBeats: clipResolution.clipSpanBeats,
+        name: item.name,
+    });
+    if ('rejectionReason' in expansion) {
+        return { status: 'rejected', reason: expansion.rejectionReason };
+    }
+    const rules = getExecutableAppActionGroundingRules(EXPANDED_TRANSFORM_COMMAND_NAME);
+    if (rules === null) {
+        return {
+            status: 'rejected',
+            reason: `Structured command ${EXPANDED_TRANSFORM_COMMAND_NAME} is not an executable catalog command.`,
+        };
+    }
+    const commands: ToolCallResult[] = expansion.commands.map((commandArguments) => ({
+        name: EXPANDED_TRANSFORM_COMMAND_NAME,
+        arguments: { clipId: commandArguments.clipId, notes: structuredClone(commandArguments.notes) },
+    }));
+    const writeCheck = checkCommandWriteConflict({
+        command: commands[0]!,
+        context: input.context,
+        mutationIdempotent: rules.mutationIdempotent,
+        mutationIdentityRules: rules.mutationIdentityRules,
+        producersByBinding: input.producersByBinding,
+        targetRules: rules.targetRules,
+        mutationResourceWrites: input.mutationResourceWrites,
+        targetCommandArguments: input.targetCommandArguments,
+        targetLabel: getMutationIdentityLabel(rules.mutationIdentityRules, commands[0]!.arguments),
+    });
+    if (writeCheck.status === 'rejected') {
+        return writeCheck;
+    }
+    return {
+        status: 'accepted',
+        commands,
+        itemEvidence: {
+            canonicalStableIds: [],
+            declaredCommandIdentities: commands.map(getCanonicalCommandIdentity),
+            itemId: item.id,
+            commandName: EXPANDED_TRANSFORM_COMMAND_NAME,
+            dependsOn: input.dependsOn,
+            declaredCommandCount: commands.length,
+            omittedCommandCount: 0,
+            representativeCommandIndexes: commands.map((_command, offset) => input.commandStart + offset),
+            stableIds: [],
+            commandStart: input.commandStart,
+            commandCount: commands.length,
+        },
+    };
+}
+
 export function compileArbitraryCommandList(input: {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
     revision: string;
 }): ArbitraryCommandListCompilation {
     const proposalCalls = input.calls.filter((call) => call.name === 'command.batch.propose');
-    if (proposalCalls.length !== 1) {
+    if (proposalCalls.length === 0) {
         return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
+    }
+    // Everything below reads one proposal. Accepting a turn that carried two would apply the budget
+    // and the target rules to the first and let the second through unexamined.
+    if (proposalCalls.length > 1) {
+        return { status: 'rejected', reason: 'Provider returned more than one command batch proposal in one turn.' };
     }
     const proposal = proposalCalls[0]!;
     if (!isRecord(proposal.arguments) || proposal.arguments.list === undefined) {
+        const directCommands = isRecord(proposal.arguments) ? proposal.arguments.commands : undefined;
+        const directRejection = Array.isArray(directCommands)
+            ? rejectOverCreationBudget(directCommands.filter(isToolCallResult))
+            : null;
+        if (directRejection) {
+            return directRejection;
+        }
         return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
     }
     if (input.revision.length === 0) {
@@ -849,12 +1102,43 @@ export function compileArbitraryCommandList(input: {
     const mutationResourceWrites = new Map<string, { destructive: boolean }>();
     const canonicalCommandIndexByKey = new Map<string, number>();
     const itemsById = new Map(items.map((item) => [item.id, item]));
-    const producersByBinding = new Map<string, BatchLocalBindingProducer>();
+    const producersByBinding = new Map<string, DeclaredBatchLocalProducer>();
+    const expandedMidiTransforms: string[] = [];
 
     for (const item of items) {
         const commandStart = commands.length;
         if (containsForbiddenProviderAuthority(item.arguments)) {
             return { status: 'rejected', reason: 'Provider supplied application-owned authority or expected state.' };
+        }
+        if (getMidiTransform(item.name) !== undefined) {
+            const transformDependsOn =
+                item.dependsOn === undefined ? [] : parseIdList(item.dependsOn, 'Structured command dependencies');
+            if ('status' in transformDependsOn) {
+                return transformDependsOn;
+            }
+            const expansion = compileMidiTransformItem({
+                commandStart,
+                context: input.context,
+                dependsOn: transformDependsOn,
+                item,
+                itemsById,
+                mutationResourceWrites,
+                producersByBinding,
+                targetCommandArguments,
+            });
+            if (expansion.status === 'rejected') {
+                return expansion;
+            }
+            commands.push(...expansion.commands);
+            if (commands.length > SEMANTIC_COMMAND_LIST_MAX_COMMANDS) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command list exceeds the application command budget.',
+                };
+            }
+            compiledItems.push(expansion.itemEvidence);
+            expandedMidiTransforms.push(item.name);
+            continue;
         }
         const rules = getExecutableAppActionGroundingRules(item.name);
         if (rules === null) {
@@ -900,6 +1184,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    producersByBinding,
                     targetRules: rules.targetRules,
                     mutationResourceWrites,
                     targetCommandArguments,
@@ -941,7 +1226,19 @@ export function compileArbitraryCommandList(input: {
                 commandCount: commands.length - commandStart,
             });
             if (typeof declaredBinding === 'string') {
-                producersByBinding.set(declaredBinding, { itemId: item.id });
+                const producer = resolveBatchLocalBindingProducer({
+                    arguments: item.arguments,
+                    context: input.context,
+                    name: item.name,
+                    producersByBinding,
+                });
+                if (producer === null) {
+                    return {
+                        status: 'rejected',
+                        reason: `Batch-local binding producer does not create a typed object: ${declaredBinding}`,
+                    };
+                }
+                producersByBinding.set(declaredBinding, { ...producer, itemId: item.id });
             }
             continue;
         }
@@ -980,7 +1277,7 @@ export function compileArbitraryCommandList(input: {
         if (
             (targetRule.dependsOn !== undefined &&
                 selectorDependencyIds.length === 0 &&
-                capabilityRequiresConcreteDependency(targetRule.capability)) ||
+                CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY.has(targetRule.capability)) ||
             !resolved.stableIds.every((stableId) =>
                 (selectorDependencyIds.length === 0 ? [undefined] : selectorDependencyIds).every((dependencyId) =>
                     isAgentReferenceCapabilityCandidate({
@@ -1036,6 +1333,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    producersByBinding,
                     targetRules: rules.targetRules,
                     mutationResourceWrites,
                     targetCommandArguments,
@@ -1084,6 +1382,10 @@ export function compileArbitraryCommandList(input: {
             ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
     }
+    const creationRejection = rejectOverCreationBudget(commands);
+    if (creationRejection) {
+        return creationRejection;
+    }
     return {
         status: 'accepted',
         snapshotRevision: input.revision,
@@ -1098,6 +1400,7 @@ export function compileArbitraryCommandList(input: {
                       selectors: structuredClone(evidence),
                       items: structuredClone(compiledItems),
                       commands: structuredClone(commands),
+                      expandedMidiTransforms: [...expandedMidiTransforms],
                   },
         calls: input.calls.map((call) =>
             call === proposal ? { name: call.name, arguments: { plan: proposal.arguments.plan, commands } } : call

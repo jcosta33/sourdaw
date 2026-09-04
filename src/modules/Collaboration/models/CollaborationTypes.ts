@@ -8,6 +8,7 @@ export type PeerInfo = {
     isConnected: boolean;
     lastSeen: number;
     latencyMs: number | null;
+    syncHealth: 'converging' | 'diverged';
 };
 
 export type CollaborationState = {
@@ -63,7 +64,20 @@ export type PresenceDelta = Pick<PresenceData, 'peerId' | 'name' | 'color'> &
  * These are used to establish WebRTC connections, not for project data.
  */
 export type SignalingMessage =
-    | { type: 'offer'; peerId: PeerId; name: string; sessionId: string; sdp: string; pendingPeerId: PeerId }
+    | {
+          type: 'offer';
+          peerId: PeerId;
+          name: string;
+          sessionId: string;
+          sdp: string;
+          pendingPeerId: PeerId;
+          /**
+           * The room capability the relay checks on `join`. It travels with the
+           * invite because the invite is already the thing that grants access —
+           * carrying it separately would mean a second secret to share.
+           */
+          sessionSecret: string;
+      }
     | { type: 'answer'; peerId: PeerId; name: string; sdp: string; pendingPeerId: PeerId };
 
 /**
@@ -73,7 +87,8 @@ export type PeerMessage =
     | { type: 'crdt-sync'; docId: string; data: string }
     | { type: 'presence'; data: PresenceDelta }
     | { type: 'peer-info'; peer: PeerInfo }
-    | { type: 'peer-leave'; peerId: PeerId };
+    | { type: 'peer-leave'; peerId: PeerId }
+    | { type: 'sync-channel-quarantined'; peerId: PeerId };
 
 /** Peer colors for the first 8 collaborators (host is always the first). */
 export const PEER_COLORS = [

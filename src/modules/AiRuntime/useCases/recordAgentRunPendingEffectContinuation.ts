@@ -20,9 +20,6 @@ export function recordAgentRunPendingEffectContinuation(input: {
     agentRunLifecycle.recordPendingEffectContinuation({
         runId: input.runId,
         recordedAt: input.recordedAt ?? Date.now(),
-        continuation: {
-            ...createAgentRunPendingEffectContinuation(input),
-            ...(input.sourceRevision === undefined ? {} : { sourceRevision: input.sourceRevision }),
-        },
+        continuation: createAgentRunPendingEffectContinuation(input),
     });
 }

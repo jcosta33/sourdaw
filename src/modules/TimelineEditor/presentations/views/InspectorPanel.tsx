@@ -23,6 +23,27 @@ type InspectorPanelProps = {
     style?: CSSProperties;
 };
 
+const numericStyleSize = (value: CSSProperties['width'] | CSSProperties['minWidth']): number | undefined => {
+    return typeof value === 'number' ? value : undefined;
+};
+
+const inspectorSlotWidth = ({ style, isDeviceView }: { style?: CSSProperties; isDeviceView: boolean }): number => {
+    const slotWidth = numericStyleSize(style?.width);
+    const slotMinWidth = numericStyleSize(style?.minWidth);
+    const slotLocked = slotWidth !== undefined && slotMinWidth === slotWidth;
+    if (isDeviceView && !slotLocked) {
+        return Math.max(slotWidth ?? 260, 320);
+    }
+    if (slotWidth !== undefined) {
+        return slotWidth;
+    }
+    return isDeviceView ? 320 : 260;
+};
+
+const inspectorSlotMinWidth = ({ style, isDeviceView }: { style?: CSSProperties; isDeviceView: boolean }): number => {
+    return numericStyleSize(style?.minWidth) ?? (isDeviceView ? 300 : 200);
+};
+
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((time) => time.kind === 'master');
@@ -100,8 +121,8 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             className="transition-[width,min-width] duration-200 ease-out"
             style={{
                 ...style,
-                width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width ?? 260),
-                minWidth: isDeviceView ? 300 : 200,
+                width: inspectorSlotWidth({ style, isDeviceView }),
+                minWidth: inspectorSlotMinWidth({ style, isDeviceView }),
             }}
             aria-label="Inspector panel"
             data-onboarding="inspector"

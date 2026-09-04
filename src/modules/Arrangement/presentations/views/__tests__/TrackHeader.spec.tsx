@@ -30,6 +30,7 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('../../../useCases/folder/toggleFolderCollapse', () => ({

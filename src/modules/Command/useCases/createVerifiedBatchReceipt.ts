@@ -40,7 +40,11 @@ type BatchExecutionObservation = {
             state: 'pending';
         } & (
             | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
-            | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+            | {
+                  kind: 'external-effect';
+                  remediation: 'reconcile' | 'manual-repair';
+                  failureKind?: 'retention-capacity';
+              }
         );
     }>;
     failureKind?: 'verification';

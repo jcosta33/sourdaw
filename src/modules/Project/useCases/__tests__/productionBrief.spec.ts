@@ -796,4 +796,38 @@ describe('production brief', () => {
             doesProductionBriefAllowActionBatch([{ type: 'deleteTime', payload: { startBeat: 16, endBeat: 20 } }])
         ).toBe(false);
     });
+
+    it('refuses an unrelated action while a lock covers the whole project', () => {
+        const addTrack: AppAction = { type: 'addTrack', payload: { name: 'New track', kind: 'audio' } };
+        projectStore.set({
+            ...projectStore.value!,
+            productionBrief: {
+                ...projectStore.value!.productionBrief,
+                locks: [
+                    {
+                        id: 'lock-whole-project',
+                        scope: { kind: 'project' },
+                        statement: 'Freeze the whole arrangement',
+                        createdAt: 124,
+                    },
+                ],
+            },
+        });
+        expect(doesProductionBriefAllowActionBatch([addTrack])).toBe(false);
+        projectStore.set({
+            ...projectStore.value!,
+            productionBrief: {
+                ...projectStore.value!.productionBrief,
+                locks: [
+                    {
+                        id: 'lock-drums-track',
+                        scope: { kind: 'track', trackId: 'track-drums' },
+                        statement: 'Keep the drums as they are',
+                        createdAt: 125,
+                    },
+                ],
+            },
+        });
+        expect(doesProductionBriefAllowActionBatch([addTrack])).toBe(true);
+    });
 });

@@ -30,9 +30,21 @@ export type NativeEventCallback = (event: string, payload: unknown) => void;
  * The live native host: one instance for the life of the process, holding every
  * managed singleton the command bodies address.
  */
+/** What a file grant permits, in the addon's own wire vocabulary. */
+export type FileGrantMode = 'read' | 'readwrite';
+
 export type NativeHost = {
     /** Run the exit cascade. Synchronous today; see `shutdown.ts`. */
     readonly shutdown: () => unknown;
+    /**
+     * Grant the renderer access to one path the user picked.
+     *
+     * Declared here rather than reached through the generic command record
+     * because it is main-process-only by design: it is withheld from
+     * `EXPOSED_COMMANDS`, so the dialogs that mint grants are its only callers
+     * and they call it with named, checked arguments.
+     */
+    readonly grantPath: (path: string, mode: FileGrantMode, recursive: boolean) => Promise<void>;
     /** Dedicated dictation controls stay outside generic renderer command routing. */
     readonly startDictation: (sessionId: string) => Promise<string>;
     readonly stopDictation: (sessionId: string) => void;
@@ -41,13 +53,6 @@ export type NativeHost = {
 
 export type NativeAddon = {
     readonly SourdawNative: new (onEvent: NativeEventCallback) => NativeHost;
-    /**
-     * The bounded CLAP descriptor-extraction worker's entry point.
-     *
-     * Returns the exit code this process must terminate with when it was
-     * started as a scan worker, and `null` when it was not.
-     */
-    readonly runPluginScanWorker: () => number | null;
 };
 
 /** Overrides the resolved addon path. Set by the dev shell and by packaging. */
@@ -90,6 +95,54 @@ export const resolveNativeAddonPath = ({
     return join(repoRoot, 'crates', 'sourdaw-native', NATIVE_ADDON_FILE);
 };
 
+/** Overrides the resolved plugin-scan leaf helper path. Set by the dev shell and by packaging. */
+export const NATIVE_SCAN_HELPER_PATH_ENV = 'SOURDAW_PLUGIN_SCAN_HELPER';
+
+/**
+ * The plugin-scan leaf helper's file name for a platform.
+ *
+ * A function of `platform` rather than a bare constant so a spec can assert
+ * the Windows suffix without running on Windows.
+ */
+export const NATIVE_SCAN_HELPER_FILE = (platform: NodeJS.Platform): string =>
+    platform === 'win32' ? 'sourdaw-plugin-scan-helper.exe' : 'sourdaw-plugin-scan-helper';
+
+export type ResolveScanHelperPathInput = {
+    readonly env: Readonly<Record<string, string | undefined>>;
+    readonly isPackaged: boolean;
+    /** `process.resourcesPath` — where the helper ships in a packaged app. */
+    readonly resourcesPath: string;
+    /** The repository root, used only when running unpackaged. */
+    readonly repoRoot: string;
+    readonly platform: NodeJS.Platform;
+};
+
+/**
+ * Where the plugin-scan leaf helper executable is.
+ *
+ * The same three branches as {@link resolveNativeAddonPath}, for the same
+ * reasons: packaged, it ships unpacked in `resources/` so the Rust scan
+ * policy can spawn it as a real process; unpackaged, it is the artifact
+ * beside its own crate; the env override lets a developer point at a specific
+ * build without editing this file.
+ */
+export const resolveScanHelperPath = ({
+    env,
+    isPackaged,
+    resourcesPath,
+    repoRoot,
+    platform,
+}: ResolveScanHelperPathInput): string => {
+    const override = env[NATIVE_SCAN_HELPER_PATH_ENV];
+    if (override !== undefined && override !== '') {
+        return override;
+    }
+    if (isPackaged) {
+        return join(resourcesPath, NATIVE_SCAN_HELPER_FILE(platform));
+    }
+    return join(repoRoot, 'crates', 'sourdaw-native', NATIVE_SCAN_HELPER_FILE(platform));
+};
+
 /**
  * The entry points the shell dereferences by name, and the only ones validated
  * here.
@@ -98,7 +151,7 @@ export const resolveNativeAddonPath = ({
  * `commands.spec.ts`, against the addon's own Rust source, which catches a
  * missing method at test time rather than at the moment a user needs it.
  */
-const REQUIRED_ADDON_EXPORTS = ['SourdawNative', 'runPluginScanWorker'] as const;
+const REQUIRED_ADDON_EXPORTS = ['SourdawNative'] as const;
 
 const missingAddonExports = (loaded: object): string[] =>
     REQUIRED_ADDON_EXPORTS.filter((name) => !(name in loaded && typeof Reflect.get(loaded, name) === 'function'));

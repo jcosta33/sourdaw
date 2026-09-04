@@ -23,7 +23,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { pluginScanStore, defaultPluginScanState, type PluginScanState } from '#/modules/PluginHost/stores';
 import { SUPPORTED_PLUGIN_FORMATS, isSupportedPluginFormat, startPluginScan } from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
@@ -114,7 +114,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
     };
 
     const handleLoadPlugin = (plugin: ScannedPlugin) => {
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'loadExternalPlugin',
             payload: { pluginId: plugin.id, ...(selectedTrackId ? { trackId: selectedTrackId } : {}) },
         });

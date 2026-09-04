@@ -17,6 +17,7 @@ export async function retryAgentProjectSectionRenders(input: RetryAgentProjectSe
     await renderAgentProjectSections({
         jobs: input.jobs,
         retentionProtectedJobIds: input.approvedJobs.map((job) => job.jobId),
+        replaceMismatchedRevisionArtifacts: true,
         sourceRevision: input.sourceRevision,
         validateArtifactAttachment: input.validateArtifactAttachment,
         onRenderAttempt: input.onRenderAttempt,

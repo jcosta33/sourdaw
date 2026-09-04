@@ -42,6 +42,7 @@
 
 import {
     type AudioGraphApplyResult,
+    type AudioGraphAttachedPlugin,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
 } from '../../models/AudioGraphBackend';
@@ -77,6 +78,33 @@ function readNumber(value: unknown, field: string): number {
 }
 
 /**
+ * Read the instances `apply_graph_commands` says its engine start took over.
+ *
+ * Absent is empty, not malformed: the field is carried only by an applied batch
+ * that ran a start, and a payload without one attached nothing. An entry that
+ * does not name an instance and a bridge depth is dropped rather than guessed
+ * at — the depth is added to a latency figure, and a substituted zero is a
+ * compensation error nothing downstream can see.
+ */
+function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.flatMap((entry) => {
+        const attached = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
+        const instanceId = attached?.instanceId;
+        const bridgeRoundTripFrames = attached?.bridgeRoundTripFrames;
+        if (typeof instanceId !== 'string' || typeof bridgeRoundTripFrames !== 'number') {
+            return [];
+        }
+        if (!Number.isFinite(bridgeRoundTripFrames)) {
+            return [];
+        }
+        return [{ instanceId, bridgeRoundTripFrames }];
+    });
+}
+
+/**
  * Read `apply_graph_commands`'s mirror of {@link AudioGraphApplyResult}.
  *
  * The correlation is echoed verbatim by the native side, so it is carried back
@@ -101,7 +129,22 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     const reports = readNativeStripReports(payload.reports, 'apply_graph_commands');
     const runtimeRevision = readNumber(payload.runtimeRevision, 'runtimeRevision');
     if (applied) {
-        return { acceptance: 'accepted', application: 'applied', ...correlation, runtimeRevision, reports };
+        // Optional on the wire and optional here: the native side omits it for
+        // any outcome whose fence the engine will never drain, and a default
+        // stood in for it would be a number promising a drain that is not
+        // coming.
+        const admitted = payload.admittedBatch;
+        const admittedBatch =
+            typeof admitted === 'number' && Number.isFinite(admitted) ? { admittedBatch: admitted } : {};
+        return {
+            acceptance: 'accepted',
+            application: 'applied',
+            ...correlation,
+            runtimeRevision,
+            ...admittedBatch,
+            reports,
+            attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
+        };
     }
     const reason = payload.reason;
     return {

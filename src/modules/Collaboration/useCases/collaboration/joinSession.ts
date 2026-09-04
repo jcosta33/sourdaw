@@ -57,6 +57,10 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         // color assignment all miss their lookups. Fall back to a self-minted id
         // only for legacy invites that predate pendingPeerId.
         const peerId = invite.pendingPeerId ?? runtime.generatePeerId();
+        // Adopt the host's room capability so a relay join carries it. An invite
+        // minted before the relay had rooms has none, and such a joiner can still
+        // complete the direct WebRTC handshake — it just cannot join a relay room.
+        runtime.state.sessionSecret = invite.sessionSecret ?? null;
         // Pick a color that doesn't clash with the host's (always the first color).
         const color = runtime.pickPeerColor([PEER_COLORS[0]]);
 
@@ -78,6 +82,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
                     isConnected: false,
                     lastSeen: Date.now(),
                     latencyMs: null,
+                    syncHealth: 'converging',
                 },
             ],
             connectionStatus: 'connecting',

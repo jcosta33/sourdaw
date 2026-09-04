@@ -6,7 +6,7 @@ import {
     getCrdtDoc,
     getCrdtDocIds,
     hasCrdtDoc,
-    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
 } from '#/modules/CrdtDocument/useCases';
 
 import { PeerConnectionManager } from '../../repositories/peerConnection';
@@ -22,7 +22,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     getCrdtDoc: vi.fn(),
     createCrdtDoc: vi.fn(),
-    replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
     hasCrdtDoc: vi.fn().mockReturnValue(false),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
@@ -30,6 +30,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     sanitizeIncomingCrdtDocument: vi.fn((document) => document),
     DOC_PREFIX_ROOT: 'root',
     DOC_BRANCHES: '__branches__',
+    removeCrdtDoc: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
 }));
 
 /**
@@ -188,7 +190,7 @@ describe('AutomergeSync over an SCTP-limited data channel', () => {
         vi.mocked(getCrdtDoc).mockImplementation((docId: string) => (docId === 'root' ? projectDoc : undefined));
         // Mirror the repository: a received sync replaces the stored document,
         // and `receiveSyncMessage` outdates the one it was handed.
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ id, doc }: { id: string; doc: Doc<unknown> }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ id, doc }: { id: string; doc: Doc<unknown> }) => {
             if (id === 'root') {
                 projectDoc = doc as Doc<ProjectDoc>;
             }

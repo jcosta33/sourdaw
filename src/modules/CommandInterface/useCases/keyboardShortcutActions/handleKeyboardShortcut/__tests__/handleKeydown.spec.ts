@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { zoomTimeline } from '#/modules/Arrangement/stores';
@@ -15,7 +15,9 @@ import {
     selectClipWithFocus,
     setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
-import { executeAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
 import {
@@ -31,6 +33,7 @@ import {
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
 } from '#/modules/WorkspaceShell/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../stores/shortcutStore';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
@@ -158,7 +161,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual: typeof import('#/modules/Command/useCases') = await importOriginal();
     return {
         ...actual,
-        executeAppAction: vi.fn(),
+        executeUserAppAction: vi.fn(),
         pushUndoEntry: vi.fn(),
         redo: vi.fn(),
         undo: vi.fn(),
@@ -170,6 +173,16 @@ vi.mock('../../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: goT
 vi.mock('../../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: goToPreviousMarkerMock }));
 vi.mock('../../clipShortcuts/duplicateSelectedClipsForward', () => ({ duplicateSelectedClipsForward: vi.fn() }));
 vi.mock('../../trackShortcuts/duplicateTrack', () => ({ duplicateTrack: vi.fn() }));
+
+// The refusal test drives the real wrapper over the real admission gate, so it
+// observes what the user gets rather than the mocked dispatch seam.
+const realCommandUseCases =
+    await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+
+const notificationEventBusMock = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => undefined),
+};
 
 function descriptor(overrides: Partial<KeyDescriptor> & { key: string }): KeyDescriptor {
     return { mod: false, shift: false, alt: false, repeat: false, isInput: false, ...overrides };
@@ -192,6 +205,12 @@ describe('handleKeydown', () => {
         clipSelectionStoreMock.value = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
         loopStationStoreMock.value = { armed: false, slots: [] };
         injectDependencies(handleKeydown, { eventBus });
+        setNotificationEventBus(notificationEventBusMock);
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        agentProjectRepairStateStore.set(null);
     });
 
     it('does not turn a bare v into a microphone start', () => {
@@ -435,7 +454,7 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(descriptor({ key: ' ' }));
 
             expect(prevent).toBe(true);
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
         });
 
         it('matches a single-character combo case-insensitively', () => {
@@ -512,7 +531,7 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(descriptor({ key: 'F1' }));
 
             expect(prevent).toBe(true);
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
         });
 
         it('duplicates the marquee time range instead of the clip when both a marquee and a clip are selected', () => {
@@ -530,7 +549,7 @@ describe('handleKeydown', () => {
             handleKeydown(descriptor({ key: 'F1' }));
 
             expect(executeUndoableDuplicateTimeRange).toHaveBeenCalledWith(2, 6);
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it('forwards multi-clip duplication to duplicateSelectedClipsForward', () => {
@@ -546,7 +565,7 @@ describe('handleKeydown', () => {
             handleKeydown(descriptor({ key: 'F1' }));
 
             expect(duplicateSelectedClipsForward).toHaveBeenCalledWith(['clip-1', 'clip-2']);
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it('dispatches duplicateClip with the resolved clip id for a single selection', () => {
@@ -561,7 +580,7 @@ describe('handleKeydown', () => {
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip-9' } });
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip-9' } });
         });
 
         it('dispatches duplicateClipToNextBar only when a clip is selected', () => {
@@ -577,11 +596,11 @@ describe('handleKeydown', () => {
             ];
 
             handleKeydown(descriptor({ key: 'F1' }));
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
 
             clipSelectionStoreMock.value.selectedClipId = 'clip-7';
             handleKeydown(descriptor({ key: 'F1' }));
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'duplicateClipToNextBar',
                 payload: { clipId: 'clip-7' },
             });
@@ -918,12 +937,12 @@ describe('handleKeydown', () => {
             for (const testCase of cases) {
                 const armed = handleKeydown(descriptor({ key: 'g' }));
                 expect(armed).toBe(true);
-                expect(executeAppAction).not.toHaveBeenCalled();
+                expect(executeUserAppAction).not.toHaveBeenCalled();
 
                 const dispatched = handleKeydown(descriptor({ key: testCase.key }));
                 expect(dispatched).toBe(true);
-                expect(executeAppAction).toHaveBeenCalledWith(testCase.action);
-                vi.mocked(executeAppAction).mockClear();
+                expect(executeUserAppAction).toHaveBeenCalledWith(testCase.action);
+                vi.mocked(executeUserAppAction).mockClear();
             }
 
             performanceNow.mockRestore();
@@ -937,13 +956,13 @@ describe('handleKeydown', () => {
             handleKeydown(descriptor({ key: 'g' }));
             const consumedWithoutSelection = handleKeydown(descriptor({ key: 'b' }));
             expect(consumedWithoutSelection).toBe(true);
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
 
             clipSelectionStoreMock.value.selectedClipId = 'clip-1';
             handleKeydown(descriptor({ key: 'g' }));
             const dispatched = handleKeydown(descriptor({ key: 'b' }));
             expect(dispatched).toBe(true);
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'generateBassline',
                 payload: { clipId: 'clip-1', style: 'root-fifth' },
             });
@@ -962,7 +981,7 @@ describe('handleKeydown', () => {
             handleKeydown(descriptor({ key: 'g' }));
             const prevent = handleKeydown(descriptor({ key: 'd' }));
 
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
             expect(setEditingTool).toHaveBeenCalledWith('draw');
             expect(prevent).toBe(false);
 
@@ -977,9 +996,49 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(descriptor({ key: 'z' }));
 
             expect(prevent).toBe(false);
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
 
             performanceNow.mockRestore();
+        });
+    });
+
+    describe('mutation refusal reaches the user', () => {
+        it('notifies the user instead of silently dropping a refused duplicate-clip shortcut', async () => {
+            registerHandlerMap({
+                duplicateClip: {
+                    describe: () => ({ label: 'Duplicate Clip' }),
+                    execute: () => {},
+                    undoable: false,
+                },
+            });
+            agentProjectRepairStateStore.set({
+                audioGraphValid: false,
+                detectedRevision: 'revision-1',
+                inspectionAvailable: true,
+                projectInvariantsValid: false,
+                rawProjectRetained: true,
+                repairCandidates: [],
+                status: 'repair-required',
+            });
+            vi.mocked(executeUserAppAction).mockImplementationOnce(realCommandUseCases.executeUserAppAction);
+            shortcutStoreMock.value.definitions = [
+                {
+                    id: 'arrangement.duplicateClip',
+                    defaultKeys: ['mod+d'],
+                    action: { type: 'appAction', action: { type: 'duplicateClip', payload: { clipId: 'selected' } } },
+                },
+            ];
+            clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+
+            const prevent = handleKeydown(descriptor({ key: 'd', mod: true }));
+
+            expect(prevent).toBe(true);
+            await vi.waitFor(() => {
+                expect(notificationEventBusMock.emit).toHaveBeenCalledWith('ui.notify', {
+                    message: 'Project repair is required before project actions can execute',
+                    level: 'warning',
+                });
+            });
         });
     });
 });

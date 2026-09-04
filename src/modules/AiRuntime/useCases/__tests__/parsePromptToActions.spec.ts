@@ -872,6 +872,10 @@ describe('parsePromptToActions', () => {
             rawText: 'set tempo to 128',
             requiresConfirmation: false,
             rejectionReason: 'Recognized command conflicts with locked production intent.',
+            planningOutcome: {
+                kind: 'denied',
+                reason: 'Recognized command conflicts with locked production intent.',
+            },
         });
     });
 
@@ -885,6 +889,7 @@ describe('parsePromptToActions', () => {
             actions: [],
             rawText: 'anything',
             requiresConfirmation: false,
+            planningOutcome: { kind: 'no-match' },
         });
     });
 
@@ -903,6 +908,10 @@ describe('parsePromptToActions', () => {
             rawText: prompt,
             requiresConfirmation: false,
             rejectionReason: `Action ${actionType} cannot be executed by AI because it does not report completion.`,
+            planningOutcome: {
+                kind: 'denied',
+                reason: `Action ${actionType} cannot be executed by AI because it does not report completion.`,
+            },
         });
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
@@ -2137,6 +2146,10 @@ describe('parsePromptToActions', () => {
             rawText: 'save the project',
             requiresConfirmation: false,
             rejectionReason: 'Provider planning rejected: Provider requested an unavailable application tool.',
+            planningOutcome: {
+                kind: 'denied',
+                reason: 'Provider planning rejected: Provider requested an unavailable application tool.',
+            },
         });
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
@@ -2175,6 +2188,10 @@ describe('parsePromptToActions', () => {
             requiresConfirmation: false,
             rejectionReason:
                 'Provider planning rejected: Provider text tool planning did not complete (finish_reason: length)',
+            planningOutcome: {
+                kind: 'denied',
+                reason: 'Provider planning rejected: Provider text tool planning did not complete (finish_reason: length)',
+            },
         });
         expect(mockBridgeGroundedLlmToolCalls).not.toHaveBeenCalled();
     });
@@ -2193,6 +2210,7 @@ describe('parsePromptToActions', () => {
             rawText: 'mute the vocals',
             requiresConfirmation: false,
             rejectionReason: `Provider planning failed: ${reason}`,
+            planningOutcome: { kind: 'denied', reason: `Provider planning failed: ${reason}` },
         });
     });
 
@@ -2208,6 +2226,7 @@ describe('parsePromptToActions', () => {
                 actions: [],
                 rawText: prompt,
                 requiresConfirmation: false,
+                planningOutcome: { kind: 'no-match' },
             });
         }
     );

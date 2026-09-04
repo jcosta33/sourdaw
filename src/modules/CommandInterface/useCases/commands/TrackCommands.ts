@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { promptUser } from '#/utils/Notification/promptUser';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -30,7 +30,7 @@ export const trackCommands: CallableCommandEntry[] = [
         description: 'Create a new bus track',
         category: 'Track',
         action: () => {
-            void executeAppAction({ type: 'createBus', payload: { name: 'Bus' } });
+            void executeUserAppAction({ type: 'createBus', payload: { name: 'Bus' } });
         },
     },
     {

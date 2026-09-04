@@ -8,7 +8,7 @@ import type { ToolCallResult } from '../../transformers/toolCallParser';
 export async function generateToolCalls(
     systemPrompt: string,
     userMessage: string,
-    toolSchemas?: readonly ToolSchema[],
+    toolSchemas: readonly ToolSchema[],
     signal?: AbortSignal
 ): Promise<ToolCallResult[]> {
     const outcome = await generateToolPlanningOutcome(systemPrompt, userMessage, toolSchemas, signal);

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { appendUnitShardExclusions } from './vitestUnitShardExclusions.ts';
 import {
     formatSilentZeroCollectionFailure,
     formatZeroExecutedAssertionsFailure,
@@ -34,10 +35,11 @@ export type ZeroTestGuardOptions = {
 export function runZeroTestGuard(options: ZeroTestGuardOptions): number {
     const directory = mkdtempSync(join(tmpdir(), 'sourdaw-vitest-json-'));
     const jsonPath = join(directory, 'report.json');
+    const args = appendUnitShardExclusions(options.args);
     try {
         const result = spawnSync(
             options.vitestBin,
-            ['run', ...options.args, '--reporter=default', '--reporter=json', `--outputFile=${jsonPath}`],
+            ['run', ...args, '--reporter=default', '--reporter=json', `--outputFile=${jsonPath}`],
             {
                 cwd: options.cwd,
                 encoding: 'utf8',

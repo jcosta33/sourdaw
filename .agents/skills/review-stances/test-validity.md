@@ -19,6 +19,14 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
+
+Review publication treated a definitive GitHub validation rejection as an ordinary failed write and retained a generic lock owner with no immutable publication intent. A later operator could not prove whether the review landed, so neither release nor replay was safe.
+
+Blind spot: tests asserted request validation but not the lock's recovery evidence after a remote mutation boundary.
+
+Probe that would have caught it: force a definitive 422 after the journaled pre-write transition, then prove recovery releases only when the prepared bundle digest, head, reviewer actor, and remote review enumeration all match; mutate each field and require the exact owner to remain retained.
+
 ### 2026-08-29 — a refactor that rewrites its own witnesses (escaped via PR #2988)
 
 PR #2988 extracted render-retry execution, claimed in its body that it kept exact revision, budget,
@@ -94,3 +102,37 @@ Probe that would have caught it: when a diff adds type or name strings to regist
 plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
 any hit in the same change.
+
+### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
+
+`electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
+the bare function; `main` then invoked it unbound, so every packaged scan failed with `Illegal
+invocation`. The same PR added the identical read in `router.ts` and bound it correctly through
+`Reflect.apply(implementation, host, callArguments)` a few files away — one surface handled two ways
+in one diff, and nothing raised the divergence.
+
+Blind spot: the spec's fake host used an arrow function for `scanPlugins`, which ignores `this`
+entirely, so a bare reference and a properly bound call produced the same passing assertion; the
+fake could not distinguish the defect from the fix.
+
+Probe that would have caught it: when a diff reads a method off a native or class host and calls it
+later, fake that host receiver-sensitively — a plain function or class method that throws unless
+`this` is the host — so an unbound call fails the spec; then diff every call site reading the same
+kind of host for consistent receiver handling, and flag one that binds where another does not.
+
+### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
+
+The spec expected the `GITHUB_REPOSITORY` refusal while stubbing neither GitHub variable. Actions
+exports `GITHUB_REPOSITORY` to every step, so the runner threw for `GITHUB_TOKEN` instead and the
+case failed on every nightly shard while passing on the author's shell. PR #3526 repaired it by
+stubbing `GITHUB_REPOSITORY` to `''` before the first assertion and re-stubbing `GITHUB_TOKEN` to
+`''` before the second.
+
+Blind spot: a spec that asserts on the absence of an environment variable is only valid if it
+controls every variable the code reads, and the stance checked what the spec stubbed rather than
+what the runner already exports.
+
+Probe that would have caught it: for any assertion on a missing-environment error, list every
+`process.env` name the code path reads before the asserted one and require the spec to stub each of
+them explicitly; run the spec once with `GITHUB_REPOSITORY`, `GITHUB_ACTIONS`, `CI`, and
+`GITHUB_TOKEN` exported in the shell.

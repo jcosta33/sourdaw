@@ -5,7 +5,7 @@ import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores
 
 import { type ArrangementSnapshot } from '../../stores/arrangementStore';
 
-import { emptySnapshotAutomation, emptySnapshotMidi, emptySnapshotTracks } from './helpers';
+import { emptySnapshotAutomation, emptySnapshotMidi, emptySnapshotTracks, pickPersistedTracksSection } from './helpers';
 
 function captureMidiSnapshot(): ArrangementSnapshot['midi'] {
     const midi = midiStore.value;
@@ -28,7 +28,9 @@ export function takeSnapshot(id: string, name: string): ArrangementSnapshot {
     return {
         id,
         name,
-        tracks: trackStore.value ?? { ...emptySnapshotTracks, tracks: [...emptySnapshotTracks.tracks] },
+        tracks: trackStore.value
+            ? pickPersistedTracksSection(trackStore.value)
+            : { ...emptySnapshotTracks, tracks: [...emptySnapshotTracks.tracks] },
         automation: automationStore.value ?? { lanes: [...emptySnapshotAutomation.lanes] },
         midi: captureMidiSnapshot(),
         tempoMap: tempoMapStore.value ?? undefined,

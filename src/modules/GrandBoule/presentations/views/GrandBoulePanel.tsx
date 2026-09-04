@@ -321,8 +321,8 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     }
 
     return (
-        <div className="grand-boule-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <div className="grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3">
+        <div className="grand-boule-faceplate h-full min-h-[440px] rounded-[26px] p-3">
+            <div className="grid h-full min-h-[440px] grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3">
                 <Stack as="aside" gap={3} className="overflow-y-auto pr-1">
                     <SectionCard title="Preset shelf" detail="Signature Grand Boule voicings.">
                         <Stack gap={1}>

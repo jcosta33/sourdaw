@@ -82,8 +82,23 @@ vi.mock('#/modules/Project/stores', () => ({
         },
     },
 }));
-vi.mock('#/modules/Project/useCases', () => projectActions);
-vi.mock('#/modules/CrdtDocument/useCases', () => crdt);
+vi.mock('#/modules/Project/useCases', () => ({
+    cancelProjectSessionQuiesce: projectActions.cancelProjectSessionQuiesce,
+    discardProjectChanges: projectActions.discardProjectChanges,
+    exportProjectFile: projectActions.exportProjectFile,
+    getProjectSnapshotKey: projectActions.getProjectSnapshotKey,
+    getRecentProjects: projectActions.getRecentProjects,
+    loadRecentProject: projectActions.loadRecentProject,
+    newProject: projectActions.newProject,
+    pickAndImportProjectFile: projectActions.pickAndImportProjectFile,
+    quiesceProjectSession: projectActions.quiesceProjectSession,
+    recentProjectChanges: projectActions.recentProjectChanges,
+    saveProject: projectActions.saveProject,
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: crdt.captureProjectRevision,
+    subscribeToCrdtChanges: crdt.subscribeToCrdtChanges,
+}));
 const tracks = vi.hoisted(() => ({
     value: [
         {
@@ -103,7 +118,11 @@ const arrangement = vi.hoisted(() => ({
     selectAllClips: vi.fn(),
     zoomTimelineBy: vi.fn(),
 }));
-vi.mock('#/modules/Arrangement/useCases', () => arrangement);
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    clearClipSelection: arrangement.clearClipSelection,
+    selectAllClips: arrangement.selectAllClips,
+    zoomTimelineBy: arrangement.zoomTimelineBy,
+}));
 const workspace = vi.hoisted(() => ({
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
@@ -160,7 +179,11 @@ vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToSelection', () => ({
     zoomToSelection: workspace.zoomToSelection,
 }));
 const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefined), undo: vi.fn(), redo: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => command);
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: command.executeAppAction,
+    undo: command.undo,
+    redo: command.redo,
+}));
 const commandInterface = vi.hoisted(() => ({
     dispatchCanvasEditorCommand: vi.fn(
         (target: Element | null, action: string) =>
@@ -177,7 +200,9 @@ vi.mock('#/modules/CommandInterface/useCases', () => ({
     dispatchCanvasEditorCommand: commandInterface.dispatchCanvasEditorCommand,
 }));
 const onboarding = vi.hoisted(() => ({ startOnboardingTour: vi.fn() }));
-vi.mock('#/modules/Onboarding/useCases', () => onboarding);
+vi.mock('#/modules/Onboarding/useCases', () => ({
+    startOnboardingTour: onboarding.startOnboardingTour,
+}));
 
 describe('useNativeApplicationMenu', () => {
     beforeEach(() => {

@@ -12,7 +12,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -55,6 +54,14 @@ function fixtureGit(repository: string, args: string[]): string {
     delete env.GIT_DIR;
     delete env.GIT_WORK_TREE;
     return execFileSync('git', args, { cwd: repository, env, encoding: 'utf8' }).trim();
+}
+
+function runTrustedLanePublish(cwd: string, args: string[], env: NodeJS.ProcessEnv): string {
+    return execFileSync(process.execPath, ['scripts/trustedGithubWriteBootstrap.ts', 'lane:publish', ...args], {
+        cwd,
+        env,
+        encoding: 'utf8',
+    });
 }
 
 function initializeRepository(path: string): void {
@@ -335,25 +342,17 @@ describe('lane publish', () => {
             };
             const beforeAmbiguousIssue = snapshotLogs();
             expect(() =>
-                execFileSync(
-                    'pnpm',
-                    ['lane:publish', '12', '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
-                    {
-                        cwd: primary,
-                        env: launcherEnv,
-                        encoding: 'utf8',
-                    }
+                runTrustedLanePublish(
+                    primary,
+                    ['12', '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                    launcherEnv
                 )
             ).toThrow(/expected exactly one locked author lane for issue #12/);
             expect(snapshotLogs()).toEqual(beforeAmbiguousIssue);
-            execFileSync(
-                'pnpm',
-                ['lane:publish', '--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
-                {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                }
+            runTrustedLanePublish(
+                primary,
+                ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                launcherEnv
             );
 
             expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
@@ -384,32 +383,23 @@ describe('lane publish', () => {
             ).toBeGreaterThan(pushEvent);
             expect(events[pullRequestWriteEvent - 1]).toBe('fetch');
             const beforeForeignLock = snapshotLogs();
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', foreignIssueLane], {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                })
-            ).toThrow(/not inside a locked author lane/);
+            expect(() => runTrustedLanePublish(primary, ['--lane', foreignIssueLane], launcherEnv)).toThrow(
+                /not inside a locked author lane/
+            );
             const afterForeignLock = snapshotLogs();
             expect(afterForeignLock).toEqual(beforeForeignLock);
 
             const beforeUnlockedLane = snapshotLogs();
-            expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', unlockedIssueLane], {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                })
-            ).toThrow(/not inside a locked author lane/);
+            expect(() => runTrustedLanePublish(primary, ['--lane', unlockedIssueLane], launcherEnv)).toThrow(
+                /not inside a locked author lane/
+            );
             expect(snapshotLogs()).toEqual(beforeUnlockedLane);
 
             const beforeWrongRepository = snapshotLogs();
             expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', authorizedLane], {
-                    cwd: primary,
-                    env: { ...launcherEnv, TEST_REPOSITORY: 'attacker/sourdaw' },
-                    encoding: 'utf8',
+                runTrustedLanePublish(primary, ['--lane', authorizedLane], {
+                    ...launcherEnv,
+                    TEST_REPOSITORY: 'attacker/sourdaw',
                 })
             ).toThrow(/expected jcosta33\/sourdaw/);
             const afterWrongRepository = snapshotLogs();
@@ -419,30 +409,13 @@ describe('lane publish', () => {
             const changedBase = 'f'.repeat(40);
             const beforePrePushRace = snapshotLogs();
             expect(() =>
-                execFileSync(
-                    'pnpm',
-                    [
-                        'lane:publish',
-                        '--lane',
-                        authorizedLane,
-                        '--summary',
-                        DEFAULT_SUMMARY,
-                        '--test',
-                        TEST_INSTRUCTIONS,
-                    ],
+                runTrustedLanePublish(
+                    primary,
+                    ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
                     {
-                        cwd: primary,
-                        env: {
-                            ...launcherEnv,
-                            TEST_BASE_SHA_SEQUENCE: JSON.stringify([
-                                fixtureBase,
-                                fixtureBase,
-                                fixtureBase,
-                                changedBase,
-                            ]),
-                            TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'pre-push-base-counter'),
-                        },
-                        encoding: 'utf8',
+                        ...launcherEnv,
+                        TEST_BASE_SHA_SEQUENCE: JSON.stringify([fixtureBase, fixtureBase, fixtureBase, changedBase]),
+                        TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'pre-push-base-counter'),
                     }
                 )
             ).toThrow(/origin\/main changed after its permission-scoped token was minted/);
@@ -453,31 +426,19 @@ describe('lane publish', () => {
             const pushesBeforePostPushRace = logLines(pushLog).length;
             const pullRequestsBeforePostPushRace = readLog(pullRequestLog);
             expect(() =>
-                execFileSync(
-                    'pnpm',
-                    [
-                        'lane:publish',
-                        '--lane',
-                        authorizedLane,
-                        '--summary',
-                        DEFAULT_SUMMARY,
-                        '--test',
-                        TEST_INSTRUCTIONS,
-                    ],
+                runTrustedLanePublish(
+                    primary,
+                    ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
                     {
-                        cwd: primary,
-                        env: {
-                            ...launcherEnv,
-                            TEST_BASE_SHA_SEQUENCE: JSON.stringify([
-                                fixtureBase,
-                                fixtureBase,
-                                fixtureBase,
-                                fixtureBase,
-                                changedBase,
-                            ]),
-                            TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'post-push-base-counter'),
-                        },
-                        encoding: 'utf8',
+                        ...launcherEnv,
+                        TEST_BASE_SHA_SEQUENCE: JSON.stringify([
+                            fixtureBase,
+                            fixtureBase,
+                            fixtureBase,
+                            fixtureBase,
+                            changedBase,
+                        ]),
+                        TEST_BASE_SHA_COUNTER: join(fixtureRoot, 'post-push-base-counter'),
                     }
                 )
             ).toThrow(/origin\/main changed after its permission-scoped token was minted/);
@@ -486,11 +447,7 @@ describe('lane publish', () => {
 
             const beforeNestedPath = snapshotLogs();
             expect(() =>
-                execFileSync('pnpm', ['lane:publish', '--lane', join(authorizedLane, '.github')], {
-                    cwd: primary,
-                    env: launcherEnv,
-                    encoding: 'utf8',
-                })
+                runTrustedLanePublish(primary, ['--lane', join(authorizedLane, '.github')], launcherEnv)
             ).toThrow(/--lane must name the exact author worktree root/);
             expect(snapshotLogs()).toEqual(beforeNestedPath);
         } finally {
@@ -746,6 +703,44 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain('Related #12');
     });
 
+    it('recomposes the Related section from Closes on a flagless update whose existing body carries extra Related lines', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS).replace(
+                'Closes #12',
+                'Closes #12\nRelated #7\nRelated #9'
+            ),
+        });
+
+        publishLane(12, port);
+
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        expect(relatedSection).toBe('Closes #12');
+    });
+
+    it('skips recovering a relationship from a body naming a different issue when --relates is explicit', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(7, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS, 'relates'),
+        });
+
+        publishLane(12, port, 'relates');
+
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        expect(relatedSection).toBe('Related #12');
+    });
+
+    it('still refuses that same body on a flagless update, which must recover the lane-issue relationship', () => {
+        const { port, calls } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(7, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS, 'relates'),
+        });
+
+        expect(() => publishLane(12, port)).toThrow('pull-request body must contain exactly one relationship to #12');
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
+    });
+
     it('preserves valid existing test instructions when --test is omitted', () => {
         const existingInstructions = 'Open the settings panel and confirm the new control is visible.';
         const { port, bodies } = fakePort({
@@ -812,7 +807,9 @@ describe('lane publish', () => {
     it('validates existing state before an explicit relationship change', () => {
         const { port, calls } = fakePort({ existing: 41, existingBody: 'None.' });
 
-        expect(() => publishLane(12, port, 'relates')).toThrow(/Related tickets/);
+        // --relates is explicit, so nothing recovers a relationship from this body; the update
+        // still needs a valid existing How-to-test section to fill in the omitted --test flag.
+        expect(() => publishLane(12, port, 'relates')).toThrow(/is missing: ### 🧪 How to test/);
         expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
@@ -1137,6 +1134,18 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
+    it('refuses a summary containing an unexpected closing reference naming the offending phrase and rule', () => {
+        const { port, calls } = fakePort();
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, 'Addresses defect (closes #2174)')).toThrow(
+            'pull-request body contains unexpected issue-closing references ("closes #2174"). ' +
+                'GitHub closing keywords (close, fix, resolve #<issue>) in pull-request descriptions auto-close issues on merge; ' +
+                'remove the keyword from prose or rephrase.'
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
@@ -1192,7 +1201,7 @@ describe('lane publish', () => {
 
     it('carries the selected lane path into the port for explicit path resolution', () => {
         const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
-        const here = dirname(fileURLToPath(import.meta.url));
+        const here = import.meta.dirname;
 
         expect(here).not.toBe(resolvePrimaryRoot(undefined, here));
         expect(shellPort(session, here).cwd()).toBe(here);

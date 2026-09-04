@@ -29,9 +29,14 @@ const nativePayload = {
     bridgeOutputBlocksDropped: 6,
     unmatchedBridgeBlocks: 7,
     bridgeBacklogBlocksShed: 8,
+    bridgeBlocksPassedChainBound: 15,
     callbackFramesOverBridgeReach: 9,
     bridgeInputBlocksRefused: 10,
-    events: [{ type: 'streamError', kind: 'deviceNotAvailable' }],
+    captureConsumerRefusals: 11,
+    captureBlocksDropped: 12,
+    captureInputUnderruns: 13,
+    inputLatencyFrames: 14,
+    events: [{ type: 'streamError', side: 'input', kind: 'deviceNotAvailable' }],
 };
 
 describe('getEngineRtDiagnostics', () => {
@@ -80,12 +85,12 @@ describe('getEngineRtDiagnostics', () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockResolvedValue({
             ...nativePayload,
-            events: [{ type: 'streamError', kind: 'somethingCpalAddedLater' }],
+            events: [{ type: 'streamError', side: 'output', kind: 'somethingCpalAddedLater' }],
         });
 
         const diagnostics = await getEngineRtDiagnostics();
 
-        expect(diagnostics.events).toEqual([{ type: 'streamError', kind: 'backendSpecific' }]);
+        expect(diagnostics.events).toEqual([{ type: 'streamError', side: 'output', kind: 'backendSpecific' }]);
     });
 
     it('reports an event whose type this build does not know instead of dropping it silently', async () => {

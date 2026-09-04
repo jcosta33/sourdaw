@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
@@ -13,6 +13,7 @@ import { projectStore, type ProjectStoreState } from '../../../stores/projectSto
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
+import { resetProjectIdentityTransitionDependencies } from '../resetProjectIdentityTransitionDependencies';
 
 const CANONICAL_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
 
@@ -28,6 +29,8 @@ const mocks = vi.hoisted(() => ({
     },
     projectStoreSet: vi.fn(),
     createCrdtProject: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
+    captureDurableDocumentWitness: vi.fn(() => 'document-witness'),
     executeAppAction: vi.fn<
         (
             action: unknown,
@@ -63,24 +66,117 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    audioEngine: {},
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
+    getEngineState: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(),
+    removeBusStrip: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    removeSend: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateDeviceParam: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
+    captureProjectRevision: vi.fn(),
+    createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
+    DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
     loadCrdtProject: mocks.loadCrdtProject,
+    mutateCrdtDoc: vi.fn(),
     persistCrdtProject: mocks.persistCrdtProject,
+    preserveBranchStateForSession: vi.fn(),
     projectCrdtToStores: mocks.projectCrdtToStores,
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
     startCrdtAutoSave: mocks.startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
+    reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    appendMidiNotes: vi.fn(),
+    arpeggiate: vi.fn(),
+    canPrepareMidiClipGlueState: vi.fn(),
+    downloadMidiFile: vi.fn(),
+    duplicateClipNotes: vi.fn(),
+    duplicateMidiClipData: vi.fn(),
+    getMidiInputTrack: vi.fn(),
+    getMidiInputTrackOwnerId: vi.fn(),
+    getMidiInputTrackRevision: vi.fn(),
+    getMidiStoreState: vi.fn(),
+    hasActiveStepRecordingDependency: vi.fn(),
+    mergeImportedMidiClipNotes: vi.fn(),
     migrateAbsoluteMidiNotes: vi.fn(),
+    midiClipGlueStateMatches: vi.fn(),
+    midiClipSplitStateMatches: vi.fn(),
+    prepareMidiClipGlueState: vi.fn(),
+    prepareMidiClipSplit: vi.fn(),
+    projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
+    readMidiFile: vi.fn(),
+    removeMidiClipData: vi.fn(),
+    restoreMidiClipData: vi.fn(),
+    restoreMidiClipGlueState: vi.fn(),
+    restoreMidiClipNotes: vi.fn(),
+    restoreMidiClipSplitState: vi.fn(),
+    serializeMidiStateForClips: vi.fn(),
+    setMidiInputTrack: vi.fn(),
+    setNotesForClip: vi.fn(),
+    splitMidiNotesAtBeat: vi.fn(),
 }));
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mocks.resetModuleStores }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mocks.stopActiveAutoSave }));
@@ -126,7 +222,14 @@ describe('loadProject', () => {
             resetYeastState: false,
         });
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
-        expect(clearUndoHistory).toHaveBeenCalledTimes(1);
+        expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledTimes(1);
+        expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith({
+            projectId: CANONICAL_PROJECT_ID,
+            captureWitness: mocks.captureDurableDocumentWitness,
+        });
+        expect(mocks.projectCrdtToStores.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.reconcileSessionUndoForProject.mock.invocationCallOrder[0]!
+        );
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
         expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1);
         expect(mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad).toHaveBeenCalledTimes(1);
@@ -162,7 +265,7 @@ describe('loadProject', () => {
 
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
-        expect(clearUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(projectStore.set).not.toHaveBeenCalled();
     });
@@ -207,6 +310,31 @@ describe('loadProject', () => {
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
+    });
+
+    it('does not take the unconfigured leave path while identity-transition deps are withheld', async () => {
+        resetProjectIdentityTransitionDependencies();
+        const leaveCollaborationSession = vi.fn(() => Promise.resolve());
+
+        const loading = loadProject();
+        let settled: boolean | 'pending' = 'pending';
+        void loading.then((value) => {
+            settled = value;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(settled).toBe('pending');
+        expect(loadCrdtProject).not.toHaveBeenCalled();
+
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession,
+            resumeDurableAssetOwnerHandoffsAfterProjectLoad: mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad,
+        });
+
+        await expect(loading).resolves.toBe(true);
+        expect(leaveCollaborationSession).toHaveBeenCalledOnce();
+        expect(loadCrdtProject).toHaveBeenCalledOnce();
     });
 
     it('removes validated legacy chord data only after its restore action commits', async () => {

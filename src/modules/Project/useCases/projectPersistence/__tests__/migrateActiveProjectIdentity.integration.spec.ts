@@ -27,7 +27,20 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     return { ...actual, persistCrdtProject: mocks.persistCrdtProject };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    ensureBusStrip: vi.fn(),
     exportCachedAudioBuffers: () => Promise.resolve({}),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 
 /** A version-1 document's `projectMeta`: durable meta with no identity slot. */

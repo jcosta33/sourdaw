@@ -101,9 +101,11 @@
  * is acceptable, because that verdict belongs to the design decision it feeds.
  *
  * Usage: `pnpm transport:clock` (add `--headed` to watch it, `--json` for the
- * raw sample arrays). A number without its machine is not a measurement, so the
- * report prints the host CPU, the load average, the browser build, and the
- * sample rate it actually got.
+ * raw sample arrays, `--record <path>` to write the summarized, provenance-
+ * carrying baseline `TransportClockRecord` — see `transportClockRecord.ts` —
+ * to that path instead). A number without its machine is not a measurement,
+ * so the report prints the host CPU, the load average, the browser build, and
+ * the sample rate it actually got.
  */
 
 import { readFileSync } from 'node:fs';
@@ -114,7 +116,14 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium, type Browser, type Page } from 'playwright';
 
+import { machineProvenance, writeRecord } from './desktopLatencyRecord.ts';
 import { launchRenderDeadlineBrowser } from './renderDeadlineBrowser.ts';
+import {
+    buildTransportClockRecord,
+    percentiles,
+    recordPathFromArgv,
+    type Percentiles,
+} from './transportClockRecord.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEDULER_WORKER_SOURCE = resolve(HERE, '../src/modules/Transport/workers/schedulerWorker.ts');
@@ -191,37 +200,6 @@ const ADVISORY_LOAD_PER_CORE = 1.5;
 const EXIT_NOT_MEASURED = 2;
 
 const PROBE_ORIGIN = 'https://transport-clock-probe.invalid';
-
-type Percentiles = {
-    samples: number;
-    p50: number;
-    p95: number;
-    p99: number;
-    max: number;
-    min: number;
-    mean: number;
-};
-
-function percentiles(values: readonly number[]): Percentiles {
-    if (values.length === 0) {
-        return { samples: 0, p50: 0, p95: 0, p99: 0, max: 0, min: 0, mean: 0 };
-    }
-    const sorted = [...values].sort((a, b) => a - b);
-    const at = (fraction: number): number => {
-        const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1));
-        return sorted[index] ?? 0;
-    };
-    const total = sorted.reduce((sum, value) => sum + value, 0);
-    return {
-        samples: sorted.length,
-        p50: at(0.5),
-        p95: at(0.95),
-        p99: at(0.99),
-        max: sorted[sorted.length - 1] ?? 0,
-        min: sorted[0] ?? 0,
-        mean: total / sorted.length,
-    };
-}
 
 function formatMs(value: number): string {
     return `${value.toFixed(3)} ms`;
@@ -624,6 +602,14 @@ function reportClamp(run: TickRun, stallMs: number): void {
 async function main(): Promise<void> {
     const headed = process.argv.includes('--headed');
     const emitJson = process.argv.includes('--json');
+    let recordPath: string | undefined;
+    try {
+        recordPath = recordPathFromArgv(process.argv);
+    } catch (error) {
+        process.stdout.write(`NOT MEASURED: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = EXIT_NOT_MEASURED;
+        return;
+    }
 
     const cores = cpus().length;
     const [load1] = loadavg();
@@ -770,6 +756,20 @@ async function main(): Promise<void> {
 
         if (emitJson) {
             process.stdout.write(`\n${JSON.stringify({ granularity, runs: [idle, uiLoad, ...stallRuns] }, null, 2)}\n`);
+        }
+
+        if (recordPath !== undefined) {
+            const record = buildTransportClockRecord({
+                measuredAt: new Date().toISOString(),
+                machine: machineProvenance(),
+                browser: browser.version(),
+                grainMs: DEFAULT_SCHEDULE_GRAIN_MS,
+                lookAheadMs: MAX_DELTA_SECONDS * 1000,
+                placementBudgetMs: PLACEMENT_BUDGET_MS,
+                granularity,
+                runs: [idle, uiLoad, ...stallRuns],
+            });
+            writeRecord(recordPath, record);
         }
     } finally {
         await browser.close();

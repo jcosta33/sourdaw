@@ -1,8 +1,10 @@
 import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 
 export function getExecutableAppActionGroundingCatalog() {
-    return getExecutableCommandRegistrations().map((registration) => ({
-        actionType: registration.actionType,
-        intentPhrases: structuredClone(registration.intentPhrases),
-    }));
+    return getExecutableCommandRegistrations()
+        .filter((registration) => registration.discoverability === 'visible')
+        .map((registration) => ({
+            actionType: registration.actionType,
+            intentPhrases: structuredClone(registration.intentPhrases),
+        }));
 }

@@ -84,8 +84,8 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
             className="px-1.5 py-2 select-none"
             style={{
                 width: 52,
-                background: 'linear-gradient(180deg, #0A0A0C 0%, #0E0E10 100%)',
-                borderRight: '1px solid rgba(46,46,54,0.5)',
+                background: 'linear-gradient(180deg, var(--surface-base) 0%, var(--surface-default) 100%)',
+                borderRight: '1px solid var(--color-border-soft)',
             }}
         >
             <span className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest">Gain</span>
@@ -112,8 +112,8 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
             >
                 {/* Track rail */}
                 <div
-                    className="absolute top-0 bottom-0 rounded-full"
-                    style={{ width: 4, left: '50%', transform: 'translateX(-50%)', background: '#1E1E22' }}
+                    className="absolute top-0 bottom-0 rounded-full bg-surface-raised"
+                    style={{ width: 4, left: '50%', transform: 'translateX(-50%)' }}
                 />
 
                 {/* Fill */}
@@ -138,7 +138,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                         left: '50%',
                         bottom: `${n * 100}%`,
                         transform: 'translate(-50%, 50%)',
-                        background: '#E8E6E0',
+                        background: 'var(--color-text-primary)',
                         borderRadius: 3,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.6)',
                     }}
@@ -152,7 +152,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                             transform: 'translate(-50%, -50%)',
                             width: 8,
                             height: 2,
-                            background: '#0E0E10',
+                            background: 'var(--surface-base)',
                             borderRadius: 1,
                         }}
                     />

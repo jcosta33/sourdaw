@@ -41,6 +41,8 @@ import {
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
+import { landProjectEdit } from './landProjectEdit';
+
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 
 const providerPlan = [
@@ -830,21 +832,26 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('aborts the atomic batch when a later target no longer matches its app-owned guards', async () => {
+    it('invalidates the proposal without deleting when a target is unmuted after confirmation is requested', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
         if (!state) {
             throw new Error('Expected track state');
         }
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((track) => (track.id === 'track-muted-midi' ? { ...track, muted: false } : track)),
+        landProjectEdit(() => {
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === 'track-muted-midi' ? { ...track, muted: false } : track
+                ),
+            });
         });
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);
@@ -853,34 +860,37 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('aborts before deletion when alternative content is added after confirmation', async () => {
+    it('invalidates the proposal without deleting when alternative content is added after confirmation is requested', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
         const state = trackStore.value;
         if (!state) {
             throw new Error('Expected track state');
         }
-        trackStore.set({
-            ...state,
-            tracks: state.tracks.map((track) =>
-                track.id === 'track-muted-midi'
-                    ? {
-                          ...track,
-                          alternatives: [
-                              {
-                                  id: 'alt-collaborator',
-                                  name: 'Collaborator take',
-                                  clips: [createClip(track.id)],
-                              },
-                          ],
-                      }
-                    : track
-            ),
+        landProjectEdit(() => {
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === 'track-muted-midi'
+                        ? {
+                              ...track,
+                              alternatives: [
+                                  {
+                                      id: 'alt-collaborator',
+                                      name: 'Collaborator take',
+                                      clips: [createClip(track.id)],
+                                  },
+                              ],
+                          }
+                        : track
+                ),
+            });
         });
         const beforeConfirm = structuredClone(trackStore.value?.tracks);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toMatchObject({
-            status: 'failed',
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
         });
 
         expect(trackStore.value?.tracks).toEqual(beforeConfirm);

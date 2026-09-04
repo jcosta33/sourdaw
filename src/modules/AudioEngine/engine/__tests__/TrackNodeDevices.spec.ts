@@ -470,7 +470,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(reconnectRoutingForTrack).toHaveBeenCalledWith('t1');
         });
 
-        it('taps pre-fader sends off the preFaderTap and post-fader sends off the analyser', () => {
+        it('taps pre-fader sends off the pre-fader send gate and post-fader sends off the carrier gate', () => {
             const busGain = createMockAudioNode('gain');
             const preFaderSend = {
                 sourceTrackId: 't1',
@@ -502,9 +502,17 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             track.rebuildChain();
 
             const preFaderTap = track.strip.preFaderTap as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
+            const preFaderSendGate = track.strip.preFaderSendGate as unknown as ReturnType<
+                typeof createMockAudioNode<'gain'>
+            >;
+            const carrierGate = track.strip.carrierGate as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
             const analyser = track.strip.analyserNode as unknown as ReturnType<typeof createMockAudioNode<'analyser'>>;
-            expect(preFaderTap.connect).toHaveBeenCalledWith(preFaderSend.gainNode);
-            expect(analyser.connect).toHaveBeenCalledWith(postFaderSend.gainNode);
+            // Both taps sit behind the native-carrier gates, so a carried track
+            // stops feeding its buses along with its destination.
+            expect(preFaderSendGate.connect).toHaveBeenCalledWith(preFaderSend.gainNode);
+            expect(carrierGate.connect).toHaveBeenCalledWith(postFaderSend.gainNode);
+            expect(preFaderTap.connect).not.toHaveBeenCalledWith(preFaderSend.gainNode);
+            expect(analyser.connect).not.toHaveBeenCalledWith(postFaderSend.gainNode);
 
             const preFaderSendGain = preFaderSend.gainNode as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
             const orphanSendGain = orphanSend.gainNode as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
@@ -515,16 +523,16 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     });
 
     describe('output routing', () => {
-        it('routes the analyser into the adjustment bus when one is active for the track', () => {
+        it('routes the carrier gate into the adjustment bus when one is active for the track', () => {
             const adjustmentBus = createMockAudioNode('gain');
             const deps = makeDeps(ctx, {
                 getAdjustmentBusForTrack: vi.fn(() => adjustmentBus as unknown as AudioNode),
             });
             const track = new TrackNode('t1', deps);
 
-            const analyser = track.strip.analyserNode as unknown as ReturnType<typeof createMockAudioNode<'analyser'>>;
-            expect(analyser.connect).toHaveBeenCalledWith(adjustmentBus);
-            expect(analyser.connect).not.toHaveBeenCalledWith(deps.masterGainNode);
+            const carrierGate = track.strip.carrierGate as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
+            expect(carrierGate.connect).toHaveBeenCalledWith(adjustmentBus);
+            expect(carrierGate.connect).not.toHaveBeenCalledWith(deps.masterGainNode);
         });
 
         it('keeps an active adjustment bus as the live edge when its declared output changes', () => {
@@ -535,16 +543,16 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 getBusGainNode: vi.fn(() => targetBus as unknown as GainNode),
             });
             const track = new TrackNode('t1', deps);
-            const analyser = track.strip.analyserNode as unknown as ReturnType<typeof createMockAudioNode<'analyser'>>;
-            vi.mocked(analyser.connect).mockClear();
-            vi.mocked(analyser.disconnect).mockClear();
+            const carrierGate = track.strip.carrierGate as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
+            vi.mocked(carrierGate.connect).mockClear();
+            vi.mocked(carrierGate.disconnect).mockClear();
 
             track.setOutput('target-bus');
 
             expect(track.strip.outputId).toBe('target-bus');
             expect(track.getDefaultDestination()).toBe(targetBus);
-            expect(analyser.disconnect).not.toHaveBeenCalled();
-            expect(analyser.connect).not.toHaveBeenCalled();
+            expect(carrierGate.disconnect).not.toHaveBeenCalled();
+            expect(carrierGate.connect).not.toHaveBeenCalled();
         });
 
         it('falls back from bus to track target to master when resolving the default destination', () => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runZeroTestGuard } from '../runVitestZeroTestGuard.ts';
+import { UNIT_SHARD_EXCLUDED_SPECS, unitShardExcludeGlob } from '../vitestUnitShardExclusions.ts';
 import {
     executedAssertionCount,
     formatSilentZeroCollectionFailure,
@@ -386,6 +387,26 @@ describe('runZeroTestGuard', () => {
             expect(message).toContain('assertionResults[0]');
         } finally {
             errorSpy.mockRestore();
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
+
+    it('excludes every isolated spec from unit shard invocations, in list order', () => {
+        const fake = fakeVitest('unit-shard-exclusion');
+        try {
+            runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['--shard=2/4'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: { FAKE_VITEST_JSON: passingJson, FAKE_VITEST_EXIT: '0' },
+            });
+
+            const argv = JSON.parse(readFileSync(fake.argvPath, 'utf8')) as string[];
+            const excluded = argv.flatMap((argument, index) => (argument === '--exclude' ? [argv[index + 1]] : []));
+            expect(argv).toContain('--shard=2/4');
+            expect(excluded).toEqual(UNIT_SHARD_EXCLUDED_SPECS.map(unitShardExcludeGlob));
+        } finally {
             rmSync(fake.root, { recursive: true, force: true });
         }
     });

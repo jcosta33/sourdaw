@@ -23,6 +23,9 @@ src/routeTree.gen.ts
 # Generated model manifest whose sha256 is pinned in the release inventory.
 src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json
 
+# Pinned release inventories whose sha256 digests must not be reformatted.
+release/*.json
+
 # Generated restatement census ledger. The checker (`pnpm census:ui`) compares
 # its bytes against the canonical serialisation and fails on any difference, so
 # only `--write` may produce it and the formatter must never rewrite it.

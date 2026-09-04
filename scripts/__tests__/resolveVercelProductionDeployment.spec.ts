@@ -1,10 +1,14 @@
 /**
- * The daily web train deploys only when the revision it validated is not the one
- * production already serves. Every way that comparison can go wrong ends in one
- * of two outcomes: a deployment that was not needed, or — the one that matters —
- * a changed tree that never reaches users because the train decided it was
- * already there. These cases pin the second outcome to a readable equality and
- * nothing else.
+ * The daily web train deploys only when the revision it validated belongs
+ * ahead of what production already serves. Equality is the easy case — a
+ * byte-identical no-op — but the deploy queue is ordered by when each run's
+ * validation legs finished, not by commit order, so a served revision that
+ * differs from the candidate can still be *ahead* of it: promoting the
+ * candidate then would be a rollback. Every way the ancestry decision can go
+ * wrong ends in one of two outcomes: a deployment that was not needed, or —
+ * the one that matters — a changed tree that never reaches users because the
+ * train mistook a real advance for a rollback. These cases pin that decision
+ * to a readable ancestry answer and nothing else.
  */
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -14,16 +18,21 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    buildCompareUrl,
     buildProductionDeploymentUrl,
+    decideTrain,
+    readComparisonStatus,
     readDeployedRevision,
     reportDecision,
+    requireCommitRevision,
     resolveProductionTrain,
-    resolveTrainDecision,
+    type ProductionTrainDecision,
 } from '../resolveVercelProductionDeployment';
 
 // Hex with letters in it, so that the uppercase case below is a real case.
 const CANDIDATE = '1a'.repeat(20);
 const DEPLOYED = '2b'.repeat(20);
+const REPOSITORY = 'jcosta33/sourdaw';
 // What a compromised or merely wrong answer can carry. `GITHUB_OUTPUT` is
 // line-oriented, so the newline is the whole attack: written unvalidated, the
 // second line would define `deploy` and send the train past its own decision.
@@ -36,6 +45,10 @@ function deploymentPayload(revision: string): unknown {
 
 function okResponse(payload: unknown): { ok: boolean; status: number; json: () => Promise<unknown> } {
     return { ok: true, status: 200, json: () => Promise.resolve(payload) };
+}
+
+function notFoundResponse(): { ok: boolean; status: number; json: () => Promise<unknown> } {
+    return { ok: false, status: 404, json: () => Promise.resolve({ message: 'Not Found' }) };
 }
 
 describe('the production deployment query', () => {
@@ -82,35 +95,81 @@ describe('the deployed revision', () => {
     });
 });
 
+describe('the required commit revision', () => {
+    it('accepts a forty-character lowercase-hex revision', () => {
+        expect(requireCommitRevision(CANDIDATE)).toBe(CANDIDATE);
+    });
+
+    it('refuses anything that is not one, before it can reach a URL', () => {
+        for (const revision of [...NON_HEX_REVISIONS, INJECTION_PAYLOAD]) {
+            expect(() => requireCommitRevision(revision)).toThrow(
+                `${revision} is not a forty-character lowercase-hex commit revision`
+            );
+        }
+    });
+});
+
+describe('the compare url', () => {
+    it('three-dot compares the served revision against the candidate on the repository', () => {
+        expect(buildCompareUrl(REPOSITORY, requireCommitRevision(DEPLOYED), CANDIDATE)).toBe(
+            `https://api.github.com/repos/${REPOSITORY}/compare/${DEPLOYED}...${CANDIDATE}`
+        );
+    });
+});
+
+describe('the comparison status', () => {
+    it('is one of the four ancestry relationships GitHub reports', () => {
+        for (const status of ['ahead', 'behind', 'identical', 'diverged'] as const) {
+            expect(readComparisonStatus({ status })).toBe(status);
+        }
+    });
+
+    it('is unreadable when the answer names a status GitHub does not define', () => {
+        expect(() => readComparisonStatus({ status: 'unrelated' })).toThrow(
+            'the revision comparison answered an unknown status'
+        );
+    });
+
+    it('is unreadable when the answer carries no status at all', () => {
+        expect(() => readComparisonStatus({})).toThrow('the revision comparison answered an unknown status');
+        expect(() => readComparisonStatus(null)).toThrow('the revision comparison answered an unknown status');
+        expect(() => readComparisonStatus('ahead')).toThrow('the revision comparison answered an unknown status');
+    });
+});
+
 describe('the train decision', () => {
-    it('skips the revision production already serves', () => {
-        expect(resolveTrainDecision(deploymentPayload(CANDIDATE), CANDIDATE)).toEqual({
-            deploy: false,
-            deployedRevision: CANDIDATE,
-        });
-    });
-
-    it('deploys a revision production does not serve', () => {
-        expect(resolveTrainDecision(deploymentPayload(DEPLOYED), CANDIDATE)).toEqual({
-            deploy: true,
-            deployedRevision: DEPLOYED,
-        });
-    });
-
     it('deploys when the served revision cannot be read at all', () => {
-        expect(resolveTrainDecision({ deployments: [] }, CANDIDATE)).toEqual({
-            deploy: true,
-            deployedRevision: null,
+        expect(decideTrain(null, null)).toEqual({ deploy: true, reason: 'deploy', deployedRevision: null });
+    });
+
+    it('skips a served revision identical to the candidate', () => {
+        const served = requireCommitRevision(CANDIDATE);
+        expect(decideTrain(served, 'identical')).toEqual({
+            deploy: false,
+            reason: 'serving',
+            deployedRevision: served,
         });
     });
 
-    it('treats an unusable served revision as unread rather than comparing it', () => {
-        for (const revision of [INJECTION_PAYLOAD, ...NON_HEX_REVISIONS]) {
-            expect(resolveTrainDecision(deploymentPayload(revision), CANDIDATE)).toEqual({
-                deploy: true,
-                deployedRevision: null,
+    it('deploys a candidate that is ahead of the served revision', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        expect(decideTrain(served, 'ahead')).toEqual({ deploy: true, reason: 'deploy', deployedRevision: served });
+    });
+
+    it('refuses a served revision the candidate does not descend from', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        for (const comparison of ['behind', 'diverged'] as const) {
+            expect(decideTrain(served, comparison)).toEqual({
+                deploy: false,
+                reason: 'stale',
+                deployedRevision: served,
             });
         }
+    });
+
+    it('deploys when the served revision is readable but its ancestry could not be answered', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        expect(decideTrain(served, null)).toEqual({ deploy: true, reason: 'deploy', deployedRevision: served });
     });
 });
 
@@ -126,13 +185,19 @@ describe('the resolved train', () => {
         vi.stubEnv('VERCEL_TOKEN', 'token-fixture');
     }
 
-    it('authenticates the query it built and decides on its answer', async () => {
+    function stubGithub(): void {
+        vi.stubEnv('GITHUB_TOKEN', 'gh-token-fixture');
+        vi.stubEnv('GITHUB_REPOSITORY', REPOSITORY);
+    }
+
+    it('authenticates the deployment query it built and decides on an identical answer', async () => {
         stubCredentials();
         const fetchProduction = vi.fn().mockResolvedValue(okResponse(deploymentPayload(CANDIDATE)));
         vi.stubGlobal('fetch', fetchProduction);
 
         await expect(resolveProductionTrain(CANDIDATE)).resolves.toEqual({
             deploy: false,
+            reason: 'serving',
             deployedRevision: CANDIDATE,
         });
         expect(fetchProduction).toHaveBeenCalledWith(
@@ -141,19 +206,126 @@ describe('the resolved train', () => {
         );
     });
 
-    it('refuses to decide when the query is unanswered or unauthorised', async () => {
+    it('does not ask GitHub to compare when production already serves the candidate', async () => {
+        stubCredentials();
+        const fetchProduction = vi.fn().mockResolvedValue(okResponse(deploymentPayload(CANDIDATE)));
+        vi.stubGlobal('fetch', fetchProduction);
+
+        await resolveProductionTrain(CANDIDATE);
+        expect(fetchProduction).toHaveBeenCalledTimes(1);
+    });
+
+    it('deploys a candidate that is ahead of a different served revision', async () => {
+        stubCredentials();
+        stubGithub();
+        const fetchProduction = vi
+            .fn()
+            .mockResolvedValueOnce(okResponse(deploymentPayload(DEPLOYED)))
+            .mockResolvedValueOnce(okResponse({ status: 'ahead' }));
+        vi.stubGlobal('fetch', fetchProduction);
+
+        await expect(resolveProductionTrain(CANDIDATE)).resolves.toEqual({
+            deploy: true,
+            reason: 'deploy',
+            deployedRevision: DEPLOYED,
+        });
+        expect(fetchProduction).toHaveBeenNthCalledWith(
+            2,
+            buildCompareUrl(REPOSITORY, requireCommitRevision(DEPLOYED), CANDIDATE),
+            {
+                headers: {
+                    Authorization: 'Bearer gh-token-fixture',
+                    Accept: 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                },
+            }
+        );
+    });
+
+    it('refuses a served revision the candidate is behind', async () => {
+        stubCredentials();
+        stubGithub();
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(okResponse(deploymentPayload(DEPLOYED)))
+                .mockResolvedValueOnce(okResponse({ status: 'behind' }))
+        );
+
+        await expect(resolveProductionTrain(CANDIDATE)).resolves.toEqual({
+            deploy: false,
+            reason: 'stale',
+            deployedRevision: DEPLOYED,
+        });
+    });
+
+    it('deploys when GitHub no longer recognises the served revision', async () => {
+        stubCredentials();
+        stubGithub();
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(okResponse(deploymentPayload(DEPLOYED)))
+                .mockResolvedValueOnce(notFoundResponse())
+        );
+
+        await expect(resolveProductionTrain(CANDIDATE)).resolves.toEqual({
+            deploy: true,
+            reason: 'deploy',
+            deployedRevision: DEPLOYED,
+        });
+    });
+
+    it('refuses to decide when the comparison fails for a reason other than 404', async () => {
+        stubCredentials();
+        stubGithub();
+        vi.stubGlobal(
+            'fetch',
+            vi
+                .fn()
+                .mockResolvedValueOnce(okResponse(deploymentPayload(DEPLOYED)))
+                .mockResolvedValueOnce({ ok: false, status: 500 })
+        );
+
+        await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('the revision comparison answered 500');
+    });
+
+    it('refuses to decide when the deployment query is unanswered or unauthorised', async () => {
         stubCredentials();
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
         await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('the production deployment query answered 403');
     });
 
-    it('refuses to decide without the credentials the query needs', async () => {
+    it('refuses to decide without the Vercel credentials the deployment query needs', async () => {
         vi.stubEnv('VERCEL_PROJECT_ID', '');
         vi.stubEnv('VERCEL_ORG_ID', 'team_fixture');
         vi.stubEnv('VERCEL_TOKEN', 'token-fixture');
         const fetchProduction = vi.fn();
         vi.stubGlobal('fetch', fetchProduction);
         await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('VERCEL_PROJECT_ID must be set');
+        expect(fetchProduction).not.toHaveBeenCalled();
+    });
+
+    it('refuses to decide without the GitHub credentials a comparison needs', async () => {
+        stubCredentials();
+        vi.stubEnv('GITHUB_REPOSITORY', '');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(deploymentPayload(DEPLOYED))));
+        await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('GITHUB_REPOSITORY must be set');
+
+        vi.stubEnv('GITHUB_REPOSITORY', REPOSITORY);
+        vi.stubEnv('GITHUB_TOKEN', '');
+        await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('GITHUB_TOKEN must be set');
+    });
+
+    it('refuses a candidate that is not a commit revision before it reaches a URL', async () => {
+        stubCredentials();
+        const fetchProduction = vi.fn();
+        vi.stubGlobal('fetch', fetchProduction);
+        await expect(resolveProductionTrain('not-a-revision')).rejects.toThrow(
+            'not-a-revision is not a forty-character lowercase-hex commit revision'
+        );
         expect(fetchProduction).not.toHaveBeenCalled();
     });
 });
@@ -163,33 +335,48 @@ describe('the reported decision', () => {
         vi.unstubAllEnvs();
     });
 
-    // Every case goes through the parser rather than a hand-built decision, so
-    // what is asserted is the whole path an answer takes to the file.
-    function outputOf(payload: unknown): string {
+    function outputOf(decision: ProductionTrainDecision): string {
         const directory = mkdtempSync(join(tmpdir(), 'sourdaw-vercel-train-'));
         const outputPath = join(directory, 'github-output');
         try {
             vi.stubEnv('GITHUB_OUTPUT', outputPath);
-            reportDecision(resolveTrainDecision(payload, CANDIDATE), CANDIDATE);
+            reportDecision(decision, CANDIDATE);
             return readFileSync(outputPath, 'utf8');
         } finally {
             rmSync(directory, { recursive: true, force: true });
         }
     }
 
-    it('publishes the decision the deploying steps read', () => {
-        expect(outputOf(deploymentPayload(DEPLOYED))).toBe('deploy=true\n');
-        expect(outputOf(deploymentPayload(CANDIDATE))).toBe('deploy=false\n');
-        expect(outputOf({ deployments: [] })).toBe('deploy=true\n');
+    it('publishes exactly the decision the deploying and reporting steps read', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        expect(outputOf({ deploy: true, reason: 'deploy', deployedRevision: served })).toBe(
+            'deploy=true\nreason=deploy\n'
+        );
+        expect(outputOf({ deploy: false, reason: 'serving', deployedRevision: requireCommitRevision(CANDIDATE) })).toBe(
+            'deploy=false\nreason=serving\n'
+        );
+        expect(outputOf({ deploy: false, reason: 'stale', deployedRevision: served })).toBe(
+            'deploy=false\nreason=stale\n'
+        );
     });
 
-    it('writes nothing an answer could have chosen', () => {
-        // One output, one line, whatever the answer said. The served revision
-        // is never written at all, so no reachable path puts response text in a
-        // file whose format decides what the next steps do.
-        expect(outputOf(deploymentPayload(INJECTION_PAYLOAD))).toBe('deploy=true\n');
-        for (const revision of [...NON_HEX_REVISIONS, DEPLOYED, CANDIDATE]) {
-            expect(outputOf(deploymentPayload(revision))).not.toContain(revision);
+    it('writes nothing an API answer could have chosen', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        const output = outputOf({ deploy: false, reason: 'stale', deployedRevision: served });
+        expect(output).not.toContain(DEPLOYED);
+        expect(output).not.toContain(CANDIDATE);
+    });
+
+    it('logs a stale refusal naming the candidate as what fails to descend, not the served revision', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            outputOf({ deploy: false, reason: 'stale', deployedRevision: served });
+            expect(log).toHaveBeenCalledWith(
+                `production serves ${DEPLOYED}, which the candidate ${CANDIDATE} does not descend from; the train deploys nothing`
+            );
+        } finally {
+            log.mockRestore();
         }
     });
 });

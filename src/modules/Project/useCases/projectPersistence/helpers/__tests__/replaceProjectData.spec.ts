@@ -70,8 +70,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     importCachedAudioBuffers: mockImportCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
     resetAudioGraph: mockResetAudioGraph,
+    cancelPendingAudioBufferImport: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mockClearUndoHistory }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mockClearUndoHistory,
+    resetActionReplayAuthority: vi.fn(),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,

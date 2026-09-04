@@ -113,6 +113,24 @@ impl EarlyReflections {
         sum
     }
 
+    /// Return to the state `new` leaves behind, reusing the buffer it already
+    /// owns.
+    ///
+    /// The tap table is rebuilt from the same two functions the constructor
+    /// uses rather than from `update_room_size`, which only moves the delays:
+    /// a reset that left the gains alone would be a reset only for as long as
+    /// nothing ever writes them.
+    pub fn reset(&mut self, sample_rate: f32, room_size: f32) {
+        self.buffer.fill(0.0);
+        self.write_pos = 0;
+        for (index, tap) in self.taps.iter_mut().enumerate() {
+            *tap = (
+                tap_delay(index, sample_rate, room_size, self.len),
+                tap_gain(index),
+            );
+        }
+    }
+
     pub fn update_room_size(&mut self, sample_rate: f32, room_size: f32) {
         let len = self.len;
         for (index, tap) in self.taps.iter_mut().enumerate() {

@@ -1,7 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-import { selectorDeclaring } from '#/styles/testing/mainStylesheetRules';
 
 import { ArrangementSelector } from '../ArrangementSelector';
 
@@ -72,13 +70,16 @@ vi.mock('#/components/daw/DawPickerRow', () => ({
         heading,
         active,
         onClick,
+        endSlot,
     }: {
         heading?: React.ReactNode;
         active?: boolean;
         onClick?: React.MouseEventHandler<HTMLDivElement>;
+        endSlot?: React.ReactNode;
     }) => (
         <div data-testid="picker-row" data-active={active} onClick={onClick}>
             {heading}
+            {endSlot}
         </div>
     ),
 }));
@@ -178,11 +179,11 @@ describe('ArrangementSelector', () => {
         });
     });
 
-    it('should keep its menu rows clickable inside the desktop titlebar drag region', () => {
-        // The transport header hosts this selector, and on the desktop builds
-        // that row is the window's drag region: a press the OS takes as a window
-        // move never reaches the row's onClick. The rows are plain divs, so only
-        // the menu surface around them can opt the clicks back out.
+    it('portals its menu out of the desktop titlebar drag region so rows stay clickable', () => {
+        // The transport header is the window's drag region. A menu rendered
+        // inside that row would need an app-region no-drag ancestor; this menu
+        // is portaled to document.body so the window manager never sees the
+        // press as a drag.
         render(
             <div className="desktop-titlebar-region--overlay">
                 <ArrangementSelector />
@@ -195,7 +196,63 @@ describe('ArrangementSelector', () => {
             throw new Error('expected a second picker row');
         }
 
-        expect(arrangementRow.closest(selectorDeclaring('app-region', 'no-drag'))).not.toBeNull();
+        expect(arrangementRow.closest('.desktop-titlebar-region--overlay')).toBeNull();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+    });
+
+    it('portals its menu into document body outside the trigger container', () => {
+        render(<ArrangementSelector />);
+        const trigger = screen.getByLabelText(/Arrangement selector/i);
+        const triggerContainer = trigger.parentElement;
+        if (!triggerContainer) {
+            throw new Error('expected an arrangement selector container');
+        }
+
+        fireEvent.click(trigger);
+
+        const menu = screen.getByRole('menu', { name: 'Arrangement menu' });
+        expect(menu).toBeInTheDocument();
+        expect(triggerContainer.contains(menu)).toBe(false);
+        expect(document.body.contains(menu)).toBe(true);
+    });
+
+    it('consumes Escape to dismiss the menu', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const menu = screen.getByRole('menu', { name: 'Arrangement menu' });
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+
+        act(() => {
+            menu.dispatchEvent(escape);
+        });
+
+        expect(screen.queryByRole('menu', { name: 'Arrangement menu' })).toBeNull();
+        expect(escape.defaultPrevented).toBe(true);
+    });
+
+    it('consumes the first Escape to cancel a rename without closing the menu', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const firstRow = screen.getAllByTestId('picker-row')[0];
+        const editButton = firstRow?.querySelector('button');
+        if (!editButton) {
+            throw new Error('expected an arrangement rename button');
+        }
+        fireEvent.click(editButton);
+        const input = screen.getByTestId('compact-input');
+        const parentDismiss = vi.fn();
+        window.addEventListener('keydown', parentDismiss);
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+
+        act(() => {
+            input.dispatchEvent(escape);
+        });
+
+        expect(screen.queryByTestId('compact-input')).toBeNull();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+        expect(escape.defaultPrevented).toBe(true);
+        expect(parentDismiss).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', parentDismiss);
     });
 
     it('should have New Arrangement button', () => {

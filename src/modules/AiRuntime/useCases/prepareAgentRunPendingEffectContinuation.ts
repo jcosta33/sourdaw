@@ -26,18 +26,20 @@ export function prepareAgentRunPendingEffectContinuation(input: {
             if (settled) {
                 return;
             }
-            const sourceRevision = input.getFinalizedRevision?.();
-            const requiresExactSourceRevision = receipt.pendingEffects.every(
+            // The store admits `sourceRevision` only on render-only continuations; a generic
+            // continuation's honest recovery is manual repair without exact-revision evidence.
+            const carriesOnlySectionRenderEffects = receipt.pendingEffects.every(
                 (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
             );
-            if (requiresExactSourceRevision && sourceRevision === undefined) {
+            const sourceRevision = carriesOnlySectionRenderEffects ? input.getFinalizedRevision?.() : undefined;
+            if (carriesOnlySectionRenderEffects && sourceRevision === undefined) {
                 return;
             }
             recordAgentRunPendingEffectContinuation({
                 runId: input.runId,
                 receipt,
                 commandBatch: input.commandBatch,
-                sourceRevision,
+                ...(sourceRevision === undefined ? {} : { sourceRevision }),
             });
             settled = true;
         },

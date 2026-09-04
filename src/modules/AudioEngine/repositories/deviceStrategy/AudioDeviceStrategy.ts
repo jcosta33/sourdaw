@@ -82,6 +82,28 @@ export type DeviceNoteOffRequest = {
     readonly channel?: number;
 };
 
+/**
+ * One MPE per-note expression update, in engine units.
+ *
+ * The values arrive already normalised — semitones, 0..1 pressure and bipolar
+ * slide — because `engine/noteExpression` owns the single wire-unit conversion
+ * and the live and offline callers both go through it. A strategy converts
+ * nothing; it only addresses the right voice.
+ *
+ * That address is `noteOrPad` and `channel` together, never the pitch alone:
+ * the engines touch only a voice still held on that member channel, so a
+ * ringing release tail or a genuine MPE unison at the same pitch is left alone.
+ */
+export type DeviceNoteExpressionRequest = {
+    readonly noteOrPad: number;
+    readonly channel: number;
+    readonly bendSemitones: number;
+    readonly pressure: number;
+    readonly slide: number;
+    /** Frame within the render at which the expression must apply. Omitted means "now". */
+    readonly sampleFrame?: number;
+};
+
 export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
     /** Rejects if an initialized processor dies while an offline render is active. */
@@ -117,6 +139,14 @@ export type AudioDeviceStrategy = {
     setBypass?(bypassed: boolean): void;
     noteOn?(request: DeviceNoteOnRequest): void;
     noteOff?(request: DeviceNoteOffRequest): void;
+    /**
+     * Present only on a device whose engine actually voices per-note expression,
+     * so its absence answers "can this instrument bend a note?" instead of
+     * accepting a call that silently does nothing. That is the same distinction
+     * `acceptsNotes` above exists for: an unconditional forwarding method is
+     * truthy on devices that have no such surface at all.
+     */
+    noteExpression?(request: DeviceNoteExpressionRequest): void;
     connectPadOutput?(pad: number, destination: AudioNode): void;
     disconnectPadOutput?(pad: number, destination: AudioNode): void;
     setPadDryRouted?(pad: number, routed: boolean): void;

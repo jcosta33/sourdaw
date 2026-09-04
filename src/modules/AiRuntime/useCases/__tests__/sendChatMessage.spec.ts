@@ -91,9 +91,35 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    captureActiveBranchReference: vi.fn(),
+    compactProject: vi.fn(),
+    createCrdtDoc: vi.fn(),
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    loadCrdtProject: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    resetCrdtProjectAuthority: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    startCrdtAutoSave: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('../../repositories/cloudLlm/isCloudAvailable', () => ({
@@ -3135,6 +3161,9 @@ describe('sendChatMessage retained-provider selection', () => {
         );
         const { parseVersionedCommandBatchEnvelope } =
             await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        const { captureProjectIdentity } = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
+            '#/modules/CrdtDocument/useCases'
+        );
         mocks.compileAgentActionExecution.mockImplementation(compileAgentActionExecution);
         mocks.parseVersionedCommandBatchEnvelope.mockImplementation(parseVersionedCommandBatchEnvelope);
         commandBatchPreflightPort.setProvider(() => ({
@@ -3142,7 +3171,7 @@ describe('sendChatMessage retained-provider selection', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-fixture',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: { 'track-kick': 'track-kick:fixture' },
         }));

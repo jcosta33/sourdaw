@@ -23,7 +23,11 @@ type StoredPendingEffectBase = {
 type StoredPendingEffect = StoredPendingEffectBase &
     (
         | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
-        | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+        | {
+              kind: 'external-effect';
+              remediation: 'reconcile' | 'manual-repair';
+              failureKind?: 'retention-capacity';
+          }
     );
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -104,9 +108,12 @@ function isPendingEffect(
         typeof value.operation === 'string' &&
         typeof value.reason === 'string' &&
         value.reason.trim().length > 0 &&
-        ((value.kind === 'runtime-graph' && (value.remediation === 'retry' || value.remediation === 'repair')) ||
+        ((value.kind === 'runtime-graph' &&
+            (value.remediation === 'retry' || value.remediation === 'repair') &&
+            value.failureKind === undefined) ||
             (value.kind === 'external-effect' &&
-                (value.remediation === 'reconcile' || value.remediation === 'manual-repair'))) &&
+                (value.remediation === 'reconcile' || value.remediation === 'manual-repair') &&
+                (value.failureKind === undefined || value.failureKind === 'retention-capacity'))) &&
         value.state === 'pending' &&
         commands.some((command) => command.commandId === value.commandId && command.operation === value.operation)
     );

@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    configureAutomergeStoragePort,
-    flushAutomergeStorageWrites,
-} from '#/infra/store/storage/createAutomergeStorage';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
 import {
@@ -52,9 +49,13 @@ import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { landProjectEdit } from './landProjectEdit';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -468,6 +469,18 @@ function readPlainDoc(docId: string): Record<string, unknown> {
     return parsed;
 }
 
+function readPlainProjectDoc(docId: string): Record<string, unknown> {
+    return readPlainProjectDocFromSnapshot(readPlainDoc(docId));
+}
+
+function readPlainProjectDocFromSnapshot(document: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!document) {
+        throw new TypeError('Expected a captured project document snapshot');
+    }
+    const { commandBatchIdempotency: _commandCheckpoint, ...projectDocument } = document;
+    return projectDocument;
+}
+
 function readNotes(doc: Record<string, unknown>, clipId: string): unknown[] {
     const midi = doc.midi;
     if (!isRecord(midi) || !isRecord(midi.notesByClipId)) {
@@ -556,63 +569,64 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
-        trackStore.set({
-            tracks: [
-                createTrack('track-kick', 'Kick', 'clip-kick'),
-                createTrack('track-snare', 'Snare', 'clip-snare'),
-                createTrack('track-hats', 'Hi-Hat', 'clip-hats'),
-                createTrack('track-bass', 'Bass', 'clip-bass'),
-            ],
-            selectedTrackId: null,
-            ghostClips: [],
-        });
-        markerStore.set({
-            markers: [],
-            sections: [
-                {
-                    id: 'section-eight-bars',
-                    name: 'Verse One',
-                    startBeat: 0,
-                    endBeat: 32,
-                    color: '#ffffff',
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [
+                    createTrack('track-kick', 'Kick', 'clip-kick'),
+                    createTrack('track-snare', 'Snare', 'clip-snare'),
+                    createTrack('track-hats', 'Hi-Hat', 'clip-hats'),
+                    createTrack('track-bass', 'Bass', 'clip-bass'),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            markerStore.set({
+                markers: [],
+                sections: [
+                    {
+                        id: 'section-eight-bars',
+                        name: 'Verse One',
+                        startBeat: 0,
+                        endBeat: 32,
+                        color: '#ffffff',
+                    },
+                ],
+            });
+            transportStore.set({
+                ...defaultTransportState,
+                tempo: 120,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+            });
+            midiStore.set({
+                notesByClipId: {
+                    'clip-kick': Array.from({ length: 8 }, (_, index) => ({
+                        id: `kick-${String(index + 1)}`,
+                        pitch: 36,
+                        startBeat: index * 4,
+                        duration: 0.25,
+                        velocity: 112,
+                    })),
+                    'clip-snare': Array.from({ length: 8 }, (_, index) => ({
+                        id: `snare-${String(index + 1)}`,
+                        pitch: 38,
+                        startBeat: index * 4 + 2,
+                        duration: 0.25,
+                        velocity: 104,
+                    })),
+                    'clip-hats': Array.from({ length: 32 }, (_, index) => ({
+                        id: `hat-${String(index + 1)}`,
+                        pitch: 42,
+                        startBeat: index,
+                        duration: 0.125,
+                        velocity: 84,
+                    })),
+                    'clip-bass': [{ id: 'bass-1', pitch: 36, startBeat: 0, duration: 4, velocity: 96 }],
                 },
-            ],
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
         });
-        transportStore.set({
-            ...defaultTransportState,
-            tempo: 120,
-            timeSignatureNumerator: 4,
-            timeSignatureDenominator: 4,
-        });
-        midiStore.set({
-            notesByClipId: {
-                'clip-kick': Array.from({ length: 8 }, (_, index) => ({
-                    id: `kick-${String(index + 1)}`,
-                    pitch: 36,
-                    startBeat: index * 4,
-                    duration: 0.25,
-                    velocity: 112,
-                })),
-                'clip-snare': Array.from({ length: 8 }, (_, index) => ({
-                    id: `snare-${String(index + 1)}`,
-                    pitch: 38,
-                    startBeat: index * 4 + 2,
-                    duration: 0.25,
-                    velocity: 104,
-                })),
-                'clip-hats': Array.from({ length: 32 }, (_, index) => ({
-                    id: `hat-${String(index + 1)}`,
-                    pitch: 42,
-                    startBeat: index,
-                    duration: 0.125,
-                    velocity: 84,
-                })),
-                'clip-bass': [{ id: 'bass-1', pitch: 36, startBeat: 0, duration: 4, velocity: 96 }],
-            },
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        });
-        flushAutomergeStorageWrites();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
@@ -717,7 +731,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
 
             expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
             expect(branchStore.value?.branches).toHaveLength(4);
-            expect(readPlainDoc('root')).toEqual(sourceDocBefore);
+            expect(readPlainProjectDoc('root')).toEqual(sourceDocBefore);
             const candidateDocsAfterCommit = new Map<string, Record<string, unknown>>();
             const candidateProgramming: string[] = [];
             for (const candidate of action.payload.candidates) {
@@ -760,7 +774,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             expect(branchStore.value?.branches).toHaveLength(1);
             expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
             expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
-            expect(readPlainDoc('root')).toEqual(sourceDocBefore);
+            expect(readPlainProjectDoc('root')).toEqual(sourceDocBefore);
             expect(undoStore.value?.future).toHaveLength(1);
 
             await redo();
@@ -768,9 +782,11 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
             expect(branchStore.value?.branches).toHaveLength(4);
             expect(new Set(branchStore.value?.branches.map(({ branchId }) => branchId))).toHaveProperty('size', 4);
-            expect(readPlainDoc('root')).toEqual(sourceDocBefore);
+            expect(readPlainProjectDoc('root')).toEqual(sourceDocBefore);
             for (const candidate of action.payload.candidates) {
-                expect(readPlainDoc(candidate.rootDocId)).toEqual(candidateDocsAfterCommit.get(candidate.rootDocId));
+                expect(readPlainProjectDoc(candidate.rootDocId)).toEqual(
+                    readPlainProjectDocFromSnapshot(candidateDocsAfterCommit.get(candidate.rootDocId))
+                );
             }
         }
     );
@@ -801,30 +817,31 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    // Freezing the snare track conflicts with a source this proposal names, but
-    // the status, reason and receipt asserted here are what *any* project change
-    // after the proposal produces — adding a track the proposal names nowhere
-    // reaches the same terminal state through the same code path. This test
-    // therefore pins the project-changed disposition, not source-conflict
-    // detection; that the two are indistinguishable is the production defect
-    // filed as #2894.
+    // Freezing the snare track conflicts with a source this proposal names, and the refusal names
+    // that track: the divergence port classifies the conflict against the source it reads.
     it('creates no candidate document or receipt when the project changes before confirmation', async () => {
         const sourceDocIdsBefore = getCrdtDocIds().toSorted();
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
-        trackStore.set({
-            ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'track-snare'
-                    ? { ...track, frozen: true, freezeState: { status: 'frozen', renderId: 'collaborator-render' } }
-                    : track
-            ),
+        landProjectEdit(() => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-snare'
+                        ? {
+                              ...track,
+                              frozen: true,
+                              freezeState: { status: 'frozen', renderId: 'collaborator-render' },
+                          }
+                        : track
+                ),
+            });
         });
-        flushAutomergeStorageWrites();
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-snare']),
         });
 
         expect(getPendingActionConfirmation(confirmationId)?.status).toBe('invalidated');
@@ -833,9 +850,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(0);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-snare']));
     });
 
     it('rejects preview-branch creation when the local collaboration peer is not the host', async () => {

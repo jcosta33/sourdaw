@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY } from '../aiChangeNotificationState';
 import { type AiChangeNotification, notifyAiChange } from '../notifyAiChange';
 import { subscribeAiChangeNotification } from '../subscribeAiChangeNotification';
 
@@ -90,5 +91,47 @@ describe('notifyAiChange', () => {
         expect(retainedNotifications.map((change) => change.summary)).toEqual(['Test 1', 'Test 2']);
 
         unsubscribeRetained();
+    });
+
+    it('assigns kind notice when details are empty', () => {
+        const receivedNotifications: AiChangeNotification[] = [];
+        const unsubscribe = subscribeAiChangeNotification((change) => {
+            receivedNotifications.push(change);
+        });
+
+        notifyAiChange('Command not executed: missing target', []);
+
+        expect(receivedNotifications).toHaveLength(1);
+        expect(receivedNotifications[0]?.kind).toBe('notice');
+
+        unsubscribe();
+    });
+
+    it('assigns kind notice for the hosted privacy disclosure summary even with details', () => {
+        const receivedNotifications: AiChangeNotification[] = [];
+        const unsubscribe = subscribeAiChangeNotification((change) => {
+            receivedNotifications.push(change);
+        });
+
+        notifyAiChange(HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY, ['Prompt text may leave this device.']);
+
+        expect(receivedNotifications).toHaveLength(1);
+        expect(receivedNotifications[0]?.kind).toBe('notice');
+
+        unsubscribe();
+    });
+
+    it('assigns kind applied-change for an ordinary summary with details', () => {
+        const receivedNotifications: AiChangeNotification[] = [];
+        const unsubscribe = subscribeAiChangeNotification((change) => {
+            receivedNotifications.push(change);
+        });
+
+        notifyAiChange('Added track Drums', ['Track Drums created']);
+
+        expect(receivedNotifications).toHaveLength(1);
+        expect(receivedNotifications[0]?.kind).toBe('applied-change');
+
+        unsubscribe();
     });
 });

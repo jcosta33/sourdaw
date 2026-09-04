@@ -26,10 +26,11 @@ import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumen
 import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
-type ExecuteAppActionOptions = ExecuteOptions & {
+export type ExecuteAppActionOptions = ExecuteOptions & {
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
 };
@@ -58,6 +59,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
+            action = materializeCommandHandlerArguments(action, handler);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (

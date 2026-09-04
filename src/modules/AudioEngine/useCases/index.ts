@@ -13,10 +13,8 @@ export { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 export { getFactoryDrumKitByIndex } from './audioEngineQueries/getFactoryDrumKitByIndex';
 
 export { startAudioRecording } from './audioRecorder/startAudioRecording';
-export { startCrumbsRecordFeed } from './audioRecorder/startCrumbsRecordFeed';
 export { startInputMonitoring } from './audioRecorder/startInputMonitoring';
 export { stopAudioRecording } from './audioRecorder/stopAudioRecording';
-export { stopCrumbsRecordFeed } from './audioRecorder/stopCrumbsRecordFeed';
 export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
@@ -153,6 +151,7 @@ export { scheduleTrackGain } from './trackAudioControls/scheduleTrackGain';
 export { scheduleTrackPan } from './trackAudioControls/scheduleTrackPan';
 export { cancelTrackAutomationRamps } from './trackAudioControls/cancelTrackAutomationRamps';
 export { setTrackMute } from './trackAudioControls/setTrackMute';
+export { setNativeCarriedTracks } from './trackAudioControls/setNativeCarriedTracks';
 export { setTrackSoloGate } from './trackAudioControls/setTrackSoloGate';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';

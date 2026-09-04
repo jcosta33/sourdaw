@@ -19,7 +19,12 @@ import {
 } from 'node:fs';
 import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inflateSync } from 'node:zlib';
 
+import {
+    GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+    grandBouleMeasurementSourcePaths,
+} from '../crates/daw-dsp/benches/wasm/measurementCensus.mjs';
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
 
@@ -30,6 +35,12 @@ import { checkProjectLicense } from './checkProjectLicense.ts';
 import { DEPENDENCY_LICENSE_REPORT_PATH } from './dependencyLicenseReport.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { wasmArtifacts, type WasmManifest } from './wasm-artifacts.ts';
+
+type OwnerInflateResult = { buffer: Buffer; engine: { bytesWritten: number } };
+
+declare module 'node:zlib' {
+    function inflateSync(buffer: Buffer, options: { info: true; maxOutputLength: number }): OwnerInflateResult;
+}
 
 export const RETENTION_CLASSES = [
     'keep',
@@ -106,7 +117,7 @@ export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mut
 export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
 export const ADAPTED_MIT_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
 
-const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+export const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
     'pnpm-lock.yaml': ['javascript-dependencies'],
     'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
     'Cargo.lock': ['rust-dependencies'],
@@ -328,7 +339,7 @@ function sortedUnique(values: string[]): string[] {
     return [...new Set(values)].sort();
 }
 
-function fileSha256(path: string): string {
+export function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
@@ -348,7 +359,7 @@ function isWindowsPathLikeDigestLabel(value: string): boolean {
     return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
 }
 
-function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+export function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
     const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
     const sha256 = match?.[1];
     const path = match?.[2];
@@ -1266,12 +1277,6 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
     }
 }
 
-const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
-    'crates/daw-dsp/benches/quantum.rs',
-    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-] as const;
 const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
 function assertGrandBouleRevisionIsCommit(root: string, revision: string): void {
@@ -1314,6 +1319,24 @@ function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
     assertGrandBouleRevisionIsCommit(root, revision);
 }
 
+function assertGrandBouleMeasurementPopulation(data: {
+    options?: { measureQuanta?: number };
+    rows?: Array<{ id?: string; stats?: { n?: number }; sampleCount?: number }>;
+}): void {
+    const measureQuanta = data.options?.measureQuanta;
+    if (typeof measureQuanta !== 'number' || !Number.isInteger(measureQuanta) || measureQuanta < 1) {
+        throw new Error('Grand Boule measurement options.measureQuanta must be a positive integer');
+    }
+    for (const row of data.rows ?? []) {
+        if (row.stats?.n === measureQuanta && row.sampleCount === measureQuanta) {
+            continue;
+        }
+        throw new Error(
+            `Grand Boule measurement populations disagree for row ${row.id}: stats.n ${row.stats?.n}, sampleCount ${row.sampleCount}, options.measureQuanta ${measureQuanta}`
+        );
+    }
+}
+
 export function assertGrandBouleMeasurementAdmission(root: string): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
     const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
@@ -1321,13 +1344,14 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         sourceRevision?: string;
         sourceDigests?: Record<string, string>;
         machine?: { gitSha?: string; workingTree?: string };
-        budgetMs?: number;
-        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+        options?: { measureQuanta?: number };
         rows?: Array<{
             id?: string;
             costSite?: string;
             warmVerify?: { ok?: boolean; detail?: string };
             lateVerify?: { ok?: boolean; detail?: string };
+            stats?: { n?: number };
+            sampleCount?: number;
         }>;
     };
     const revision = data.sourceRevision;
@@ -1337,18 +1361,22 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     if (revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
         throw new Error('Grand Boule measurement must name one clean implementation source revision');
     }
+    const censusPaths = grandBouleMeasurementSourcePaths(root);
     const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
-    if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
-        throw new Error('Grand Boule measurement source-digest census is incomplete');
+    if (JSON.stringify(digestPaths) !== JSON.stringify(censusPaths)) {
+        throw new Error(
+            'Grand Boule measurement source-digest census disagrees with the compile-time closure census (#3005); ' +
+                'regenerate quantum-cost-table.json by reference-machine re-measurement'
+        );
     }
     try {
         ensureGrandBouleRevisionFetched(root, revision);
     } catch {
         throw new Error(
-            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_PATHS[0]}`
+            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_FILES[0]}`
         );
     }
-    for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
+    for (const path of censusPaths) {
         let sourceAtRevision: Buffer;
         try {
             sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
@@ -1380,15 +1408,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     ) {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
-    if (
-        typeof data.budgetMs !== 'number' ||
-        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        typeof data.referenceProject.workerMedianMs !== 'number' ||
-        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        data.referenceProject.workerMedianMs >= data.budgetMs
-    ) {
-        throw new Error('Grand Boule measured reference project exceeds its render budget');
-    }
+    assertGrandBouleMeasurementPopulation(data);
     const markdown = readFileSync(resolve(root, markdownPath), 'utf8');
     assertGeneratedRegionMatches(markdown, data);
     for (const required of [revision, row.warmVerify.detail!, row.lateVerify.detail!]) {
@@ -1400,6 +1420,28 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         if (!markdown.includes(path) || !markdown.includes(`sha256:${digest}`)) {
             throw new Error(`Grand Boule Markdown measurement provenance omits ${path}`);
         }
+    }
+}
+
+/**
+ * The measured reference project is an eleven-device audio-thread mix, so its
+ * render budget is a whole-engine capability gate, never grand-boule-specific
+ * (ADR 0038). Kept out of the Grand Boule admission so no surviving assertion
+ * there claims provenance over bytes the narrowed census no longer pins.
+ */
+export function assertWholeEngineQuantumCapability(root: string): void {
+    const data = JSON.parse(readFileSync(resolve(root, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')) as {
+        budgetMs?: number;
+        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+    };
+    if (
+        typeof data.budgetMs !== 'number' ||
+        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
+        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
+        data.referenceProject.workerMedianMs >= data.budgetMs
+    ) {
+        throw new Error('Whole-engine measured reference project exceeds its render budget');
     }
 }
 
@@ -1597,13 +1639,22 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             ],
             digestLabel: 'grand-boule-live-runtime',
         },
+        // `paths` states surface membership for licensing; `gitPathspecs` states what
+        // a released Grand Boule project is read back through, so it hashes only what
+        // this surface distributes. The shared files outside the module stay pinned
+        // whole because they are the registration and argument-versioning contracts
+        // that decide how a stored Grand Boule command is resolved and dispatched: a
+        // change to any of them can change what an already-released project does, and
+        // no per-declaration hashing exists to narrow them. Module specs and the module
+        // AGENTS.md are excluded because nothing in them reaches a distributed
+        // artifact — the line `isScannedSource` already draws for scanned source.
         {
             paths: [
                 'src/modules/GrandBoule/**',
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-                'src/app/bootstrap.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
@@ -1611,10 +1662,12 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             gitPathspecs: [
                 'src/modules/GrandBoule',
                 ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+                ':(exclude,glob)src/modules/GrandBoule/**/__tests__/**',
+                ':(exclude)src/modules/GrandBoule/AGENTS.md',
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-                'src/app/bootstrap.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
@@ -1639,6 +1692,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -1651,6 +1706,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -1727,7 +1784,509 @@ export function trademarkReleaseInventoryContract(root: string): TrademarkSurfac
     };
 }
 
+type DecodedRgbaPng = {
+    height: number;
+    pixels: Buffer;
+    width: number;
+};
+
+const OWNER_ICON_ICNS_MAGIC = Buffer.from('icns', 'ascii');
+const OWNER_ICON_LEGACY_ARGB_MAGIC = Buffer.from('ARGB', 'ascii');
+const OWNER_ICON_PNG_FILE_BYTE_LIMIT = 2 * 1024 * 1024;
+const OWNER_ICON_PNG_IDAT_BYTE_LIMIT = 1024 * 1024;
+const OWNER_ICON_PNG_PIXEL_BYTE_LIMIT = 5 * 1024 * 1024;
+const OWNER_ICON_CONTAINER_BYTE_LIMIT = 4 * 1024 * 1024;
+const OWNER_ICON_REQUIRED_ICNS_FRAMES = [
+    'ic04',
+    'ic05',
+    'ic07',
+    'ic08',
+    'ic09',
+    'ic10',
+    'ic11',
+    'ic12',
+    'ic13',
+    'ic14',
+] as const;
+const OWNER_ICON_REQUIRED_ICO_SIZES = [16, 24, 32, 48, 64, 256] as const;
+const OWNER_ICON_ICNS_FRAME_SIZES: Readonly<Record<(typeof OWNER_ICON_REQUIRED_ICNS_FRAMES)[number], number>> = {
+    ic04: 16,
+    ic05: 32,
+    ic07: 128,
+    ic08: 256,
+    ic09: 512,
+    ic10: 1024,
+    ic11: 32,
+    ic12: 64,
+    ic13: 256,
+    ic14: 512,
+};
+const OWNER_ICON_CANONICAL_PIXEL_SHA256 = 'df64d234b2fe81e6bd7f3b27c4693b25cd6a3fd386c70e014f573a19f1a293aa';
+const OWNER_ICON_ICNS_PIXEL_SHA256: Readonly<Record<(typeof OWNER_ICON_REQUIRED_ICNS_FRAMES)[number], string>> = {
+    ic04: '0c05a640b4346aac77d2679fa491a2138af41b6902758bcf790de3abd78377c8',
+    ic05: 'ed1a498196931aee8c80f949c84ce3103d16307e0e86ae0e0121337f28ee4533',
+    ic07: '543654b1ddc7d4b42bebb757410410856fc3bedd9fa425bfd79585814b794bd1',
+    ic08: 'd588241c43aba42d6402bfce996a3c0897d06a1f723cd4b97e4d874a04ffb581',
+    ic09: 'b853eeb5486c2d0b57fcf72bae8f6feef156d1d6ee5b6f58539f1d27ad10c33c',
+    ic10: 'e823d45911b4fd730003628f4347aa828eff37c6402c556c66b6b29bf735e3fa',
+    ic11: 'ed1a498196931aee8c80f949c84ce3103d16307e0e86ae0e0121337f28ee4533',
+    ic12: '126cf6ca24987a08000069f5c03ec55411b20a15644a66a5ef3445bdde658249',
+    ic13: 'd588241c43aba42d6402bfce996a3c0897d06a1f723cd4b97e4d874a04ffb581',
+    ic14: 'b853eeb5486c2d0b57fcf72bae8f6feef156d1d6ee5b6f58539f1d27ad10c33c',
+};
+const OWNER_ICON_ICO_PIXEL_SHA256: Readonly<Record<number, string>> = {
+    16: '0c05a640b4346aac77d2679fa491a2138af41b6902758bcf790de3abd78377c8',
+    24: 'a881a6078aa3a3ded7827ad66ad64b16571b4b7e9482c287bc44d9b7d105931f',
+    32: 'ed1a498196931aee8c80f949c84ce3103d16307e0e86ae0e0121337f28ee4533',
+    48: '771a681fb2fd52de876f4686838e06f90641f185cb0990b1695c35cf5e6381e7',
+    64: '126cf6ca24987a08000069f5c03ec55411b20a15644a66a5ef3445bdde658249',
+    256: 'd588241c43aba42d6402bfce996a3c0897d06a1f723cd4b97e4d874a04ffb581',
+};
+
+function paethPredictor(left: number, above: number, upperLeft: number): number {
+    const prediction = left + above - upperLeft;
+    const leftDistance = Math.abs(prediction - left);
+    const aboveDistance = Math.abs(prediction - above);
+    const upperLeftDistance = Math.abs(prediction - upperLeft);
+    if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) {
+        return left;
+    }
+    return aboveDistance <= upperLeftDistance ? above : upperLeft;
+}
+
+function pngFilterPredictor(filter: number, left: number, above: number, upperLeft: number): number {
+    if (filter === 1) {
+        return left;
+    }
+    if (filter === 2) {
+        return above;
+    }
+    if (filter === 3) {
+        return Math.floor((left + above) / 2);
+    }
+    if (filter === 4) {
+        return paethPredictor(left, above, upperLeft);
+    }
+    return 0;
+}
+
+function ownerPngCrc32(value: Buffer): number {
+    let crc = 0xffffffff;
+    for (const byte of value) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+function ownerIcnsFrameKey(type: Buffer): string {
+    return type.toString('hex');
+}
+
+function isOwnerPngChunkType(type: Buffer): boolean {
+    return type.every((byte) => (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122));
+}
+
+function readBoundedOwnerAsset(path: string, label: string, byteLimit: number): Buffer {
+    const descriptor = openSync(path, constants.O_RDONLY);
+    try {
+        const size = fstatSync(descriptor).size;
+        if (!Number.isSafeInteger(size) || size > byteLimit) {
+            throw new Error(`owner visual asset ${label} exceeds ${byteLimit}-byte limit`);
+        }
+        const data = Buffer.alloc(size);
+        let offset = 0;
+        while (offset < size) {
+            const bytesRead = readSync(descriptor, data, offset, size - offset, offset);
+            if (bytesRead === 0) {
+                throw new Error(`owner visual asset ${label} changed while being read`);
+            }
+            offset += bytesRead;
+        }
+        const overflow = Buffer.alloc(1);
+        if (readSync(descriptor, overflow, 0, 1, size) !== 0) {
+            throw new Error(`owner visual asset ${label} changed while being read`);
+        }
+        return data;
+    } finally {
+        closeSync(descriptor);
+    }
+}
+
+function decodeOwnerRgbaPng(data: Buffer, label: string): DecodedRgbaPng {
+    if (data.length > OWNER_ICON_PNG_FILE_BYTE_LIMIT) {
+        throw new Error(`owner visual asset ${label} exceeds ${OWNER_ICON_PNG_FILE_BYTE_LIMIT}-byte PNG limit`);
+    }
+    const signature = Buffer.from('89504e470d0a1a0a', 'hex');
+    if (data.length < signature.length || !data.subarray(0, signature.length).equals(signature)) {
+        throw new Error(`owner visual asset ${label} is not a PNG`);
+    }
+    let offset = signature.length;
+    let header: Buffer | undefined;
+    const imageData: Buffer[] = [];
+    let imageDataBytes = 0;
+    let imageDataEnded = false;
+    let imageDataStarted = false;
+    let ended = false;
+    let chunkIndex = 0;
+    while (offset < data.length) {
+        if (offset + 12 > data.length) {
+            throw new Error(`owner visual asset ${label} PNG is truncated`);
+        }
+        const length = data.readUInt32BE(offset);
+        const end = offset + 12 + length;
+        if (end > data.length) {
+            throw new Error(`owner visual asset ${label} PNG chunk is truncated`);
+        }
+        const typeBytes = data.subarray(offset + 4, offset + 8);
+        if (!isOwnerPngChunkType(typeBytes)) {
+            throw new Error(`owner visual asset ${label} PNG chunk type is invalid`);
+        }
+        const type = typeBytes.toString('ascii');
+        const payload = data.subarray(offset + 8, offset + 8 + length);
+        const expectedCrc = data.readUInt32BE(offset + 8 + length);
+        const actualCrc = ownerPngCrc32(data.subarray(offset + 4, offset + 8 + length));
+        if (actualCrc !== expectedCrc) {
+            throw new Error(`owner visual asset ${label} PNG ${type} CRC is invalid`);
+        }
+        if (chunkIndex === 0 && type !== 'IHDR') {
+            throw new Error(`owner visual asset ${label} PNG IHDR must be first`);
+        }
+        if (type === 'IHDR') {
+            if (chunkIndex !== 0 || header !== undefined || length !== 13) {
+                throw new Error(`owner visual asset ${label} PNG has an invalid header`);
+            }
+            header = payload;
+        } else if (type === 'IDAT') {
+            if (header === undefined) {
+                throw new Error(`owner visual asset ${label} PNG IDAT must follow IHDR`);
+            }
+            if (imageDataEnded) {
+                throw new Error(`owner visual asset ${label} PNG IDAT chunks must be consecutive`);
+            }
+            imageDataStarted = true;
+            imageDataBytes += length;
+            if (imageDataBytes > OWNER_ICON_PNG_IDAT_BYTE_LIMIT) {
+                throw new Error(
+                    `owner visual asset ${label} PNG IDAT exceeds ${OWNER_ICON_PNG_IDAT_BYTE_LIMIT}-byte limit`
+                );
+            }
+            imageData.push(payload);
+        } else if (type === 'IEND') {
+            if (!imageDataStarted) {
+                throw new Error(`owner visual asset ${label} PNG IEND must follow IDAT`);
+            }
+            if (length !== 0) {
+                throw new Error(`owner visual asset ${label} PNG has an invalid IEND chunk`);
+            }
+            ended = true;
+            offset = end;
+            break;
+        } else {
+            const typeFirstByte = typeBytes[0];
+            if (typeFirstByte === undefined) {
+                throw new Error(`owner visual asset ${label} PNG chunk type is truncated`);
+            }
+            if ((typeFirstByte & 0x20) === 0 && type !== 'PLTE') {
+                throw new Error(`owner visual asset ${label} PNG has unknown critical chunk ${type}`);
+            }
+            if (type === 'PLTE' && imageDataStarted) {
+                throw new Error(`owner visual asset ${label} PNG PLTE must precede IDAT`);
+            }
+            if (imageDataStarted) {
+                imageDataEnded = true;
+            }
+        }
+        offset = end;
+        chunkIndex += 1;
+    }
+    if (header === undefined || imageData.length === 0 || !ended || offset !== data.length) {
+        throw new Error(`owner visual asset ${label} PNG structure is incomplete`);
+    }
+    const width = header.readUInt32BE(0);
+    const height = header.readUInt32BE(4);
+    if (
+        width === 0 ||
+        height === 0 ||
+        width > 4096 ||
+        height > 4096 ||
+        header[8] !== 8 ||
+        header[9] !== 6 ||
+        header[10] !== 0 ||
+        header[11] !== 0 ||
+        header[12] !== 0
+    ) {
+        throw new Error(`owner visual asset ${label} PNG must be non-interlaced 8-bit RGBA`);
+    }
+    const stride = width * 4;
+    if (stride * height > OWNER_ICON_PNG_PIXEL_BYTE_LIMIT) {
+        throw new Error(`owner visual asset ${label} PNG pixels exceed ${OWNER_ICON_PNG_PIXEL_BYTE_LIMIT}-byte limit`);
+    }
+    const compressed = Buffer.concat(imageData);
+    const inflated = inflateSync(compressed, {
+        info: true,
+        maxOutputLength: (stride + 1) * height,
+    });
+    if (inflated.engine.bytesWritten !== compressed.length) {
+        throw new Error(`owner visual asset ${label} PNG IDAT contains trailing compressed bytes`);
+    }
+    const filtered = inflated.buffer;
+    if (filtered.length !== (stride + 1) * height) {
+        throw new Error(`owner visual asset ${label} PNG pixel data has the wrong length`);
+    }
+    const pixels = Buffer.alloc(stride * height);
+    for (let y = 0; y < height; y += 1) {
+        const inputRow = y * (stride + 1);
+        const outputRow = y * stride;
+        const filter = filtered[inputRow];
+        if (filter === undefined) {
+            throw new Error(`owner visual asset ${label} PNG pixel data is truncated`);
+        }
+        if (filter > 4) {
+            throw new Error(`owner visual asset ${label} PNG uses an invalid row filter`);
+        }
+        for (let x = 0; x < stride; x += 1) {
+            const value = filtered[inputRow + 1 + x];
+            if (value === undefined) {
+                throw new Error(`owner visual asset ${label} PNG pixel data is truncated`);
+            }
+            const left = x >= 4 ? pixels[outputRow + x - 4]! : 0;
+            const above = y > 0 ? pixels[outputRow - stride + x]! : 0;
+            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4]! : 0;
+            const predictor = pngFilterPredictor(filter, left, above, upperLeft);
+            pixels[outputRow + x] = (value + predictor) & 0xff;
+        }
+    }
+    return { height, pixels, width };
+}
+
+function assertCanonicalOwnerIcon(root: string): void {
+    const canonicalPath = resolve(root, 'public/icon.png');
+    const authorityPath = resolve(root, 'public/icon-transparent.png');
+    const canonicalBytes = readBoundedOwnerAsset(canonicalPath, 'public/icon.png', OWNER_ICON_PNG_FILE_BYTE_LIMIT);
+    const authorityBytes = readBoundedOwnerAsset(
+        authorityPath,
+        'public/icon-transparent.png',
+        OWNER_ICON_PNG_FILE_BYTE_LIMIT
+    );
+    const canonical = decodeOwnerRgbaPng(canonicalBytes, 'public/icon.png');
+    const authority = decodeOwnerRgbaPng(authorityBytes, 'public/icon-transparent.png');
+    if (canonical.width !== 480 || canonical.height !== 480) {
+        throw new Error('owner visual asset public/icon.png must be 480x480 RGBA');
+    }
+    if (authority.width !== 346 || authority.height !== 427) {
+        throw new Error('owner visual asset public/icon-transparent.png must be 346x427 RGBA');
+    }
+    const sourdawBytes = readBoundedOwnerAsset(
+        resolve(root, 'sourdaw.png'),
+        'sourdaw.png',
+        OWNER_ICON_PNG_FILE_BYTE_LIMIT
+    );
+    if (!sourdawBytes.equals(canonicalBytes)) {
+        throw new Error('owner visual asset sourdaw.png must match public/icon.png');
+    }
+    assertOwnerFramePixels(canonical, OWNER_ICON_CANONICAL_PIXEL_SHA256, 'public/icon.png');
+}
+
+function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: number): DecodedRgbaPng {
+    if (
+        payload.length < OWNER_ICON_LEGACY_ARGB_MAGIC.length ||
+        !payload.subarray(0, 4).equals(OWNER_ICON_LEGACY_ARGB_MAGIC)
+    ) {
+        throw new Error(`owner visual asset build/icons/icon.icns ${type} frame is not ARGB`);
+    }
+    const pixelCount = size * size;
+    const expectedBytes = pixelCount * 4;
+    const channels = Buffer.alloc(expectedBytes);
+    let input = 4;
+    let output = 0;
+    while (output < expectedBytes) {
+        if (input >= payload.length) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+        }
+        const code = payload[input];
+        if (code === undefined) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+        }
+        input += 1;
+        const count = code < 0x80 ? code + 1 : code - 0x7d;
+        if (output + count > expectedBytes) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data exceeds ${size}x${size}`);
+        }
+        if (code < 0x80) {
+            if (input + count > payload.length) {
+                throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+            }
+            payload.copy(channels, output, input, input + count);
+            input += count;
+        } else {
+            if (input >= payload.length) {
+                throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+            }
+            const repeatedValue = payload[input];
+            if (repeatedValue === undefined) {
+                throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+            }
+            channels.fill(repeatedValue, output, output + count);
+            input += 1;
+        }
+        output += count;
+    }
+    if (input !== payload.length && !(input + 1 === payload.length && payload[input] === 0)) {
+        throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data has trailing bytes`);
+    }
+    const pixels = Buffer.alloc(expectedBytes);
+    for (let index = 0; index < pixelCount; index += 1) {
+        const alpha = channels[index]!;
+        const red = channels[pixelCount + index]!;
+        const green = channels[pixelCount * 2 + index]!;
+        const blue = channels[pixelCount * 3 + index]!;
+        if (alpha === 255 && red === 12 && green === 10 && blue === 0) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} frame contains #0c0a00 seam pixels`);
+        }
+        const pixelOffset = index * 4;
+        pixels[pixelOffset] = red;
+        pixels[pixelOffset + 1] = green;
+        pixels[pixelOffset + 2] = blue;
+        pixels[pixelOffset + 3] = alpha;
+    }
+    return { height: size, pixels, width: size };
+}
+
+function assertOwnerFramePixels(image: DecodedRgbaPng, expectedSha256: string, label: string): void {
+    const actualSha256 = createHash('sha256').update(image.pixels).digest('hex');
+    if (actualSha256 !== expectedSha256) {
+        throw new Error(`owner visual asset ${label} pixels do not match the shipped rendition`);
+    }
+}
+
+function assertOwnerIcnsFrames(root: string): void {
+    const path = resolve(root, 'build/icons/icon.icns');
+    const data = readBoundedOwnerAsset(path, 'build/icons/icon.icns', OWNER_ICON_CONTAINER_BYTE_LIMIT);
+    if (data.length < 8 || !data.subarray(0, 4).equals(OWNER_ICON_ICNS_MAGIC) || data.readUInt32BE(4) !== data.length) {
+        throw new Error('owner visual asset build/icons/icon.icns has an invalid container header');
+    }
+    const frames = new Map<string, Buffer>();
+    let offset = 8;
+    while (offset < data.length) {
+        if (offset + 8 > data.length) {
+            throw new Error('owner visual asset build/icons/icon.icns has a truncated frame header');
+        }
+        const typeBytes = data.subarray(offset, offset + 4);
+        const type = typeBytes.toString('ascii');
+        const length = data.readUInt32BE(offset + 4);
+        const key = ownerIcnsFrameKey(typeBytes);
+        if (length <= 8 || offset + length > data.length || frames.has(key)) {
+            throw new Error(`owner visual asset build/icons/icon.icns has an invalid ${type} frame`);
+        }
+        frames.set(key, data.subarray(offset + 8, offset + length));
+        offset += length;
+    }
+    for (const required of OWNER_ICON_REQUIRED_ICNS_FRAMES) {
+        const payload = frames.get(ownerIcnsFrameKey(Buffer.from(required, 'ascii')));
+        if (payload === undefined) {
+            throw new Error(`owner visual asset build/icons/icon.icns is missing frame ${required}`);
+        }
+        const size = OWNER_ICON_ICNS_FRAME_SIZES[required];
+        let image: DecodedRgbaPng;
+        if (required === 'ic04' || required === 'ic05') {
+            image = decodeOwnerLegacyArgb(payload, required, size);
+        } else {
+            image = decodeOwnerRgbaPng(payload, `build/icons/icon.icns ${required}`);
+            if (image.width !== size || image.height !== size) {
+                throw new Error(
+                    `owner visual asset build/icons/icon.icns ${required} frame must be ${size}x${size} RGBA`
+                );
+            }
+        }
+        assertOwnerFramePixels(image, OWNER_ICON_ICNS_PIXEL_SHA256[required], `build/icons/icon.icns ${required}`);
+    }
+}
+
+function assertOwnerIcoFrames(root: string): void {
+    const path = resolve(root, 'build/icons/icon.ico');
+    const data = readBoundedOwnerAsset(path, 'build/icons/icon.ico', OWNER_ICON_CONTAINER_BYTE_LIMIT);
+    if (data.length < 6 || data.readUInt16LE(0) !== 0 || data.readUInt16LE(2) !== 1) {
+        throw new Error('owner visual asset build/icons/icon.ico has an invalid container header');
+    }
+    const count = data.readUInt16LE(4);
+    if (count === 0 || 6 + count * 16 > data.length) {
+        throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+    }
+    const directoryEnd = 6 + count * 16;
+    const frames: Array<{ end: number; size: number; start: number }> = [];
+    for (let index = 0; index < count; index += 1) {
+        const offset = 6 + index * 16;
+        if (offset + 16 > data.length) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        const widthByte = data[offset];
+        const heightByte = data[offset + 1];
+        if (widthByte === undefined || heightByte === undefined) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        const width = widthByte === 0 ? 256 : widthByte;
+        const height = heightByte === 0 ? 256 : heightByte;
+        const planes = data.readUInt16LE(offset + 4);
+        const bitDepth = data.readUInt16LE(offset + 6);
+        const length = data.readUInt32LE(offset + 8);
+        const payloadOffset = data.readUInt32LE(offset + 12);
+        if (
+            width !== height ||
+            planes !== 1 ||
+            bitDepth !== 32 ||
+            length === 0 ||
+            payloadOffset < directoryEnd ||
+            payloadOffset + length > data.length
+        ) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        frames.push({ end: payloadOffset + length, size: width, start: payloadOffset });
+    }
+    const orderedFrames = [...frames].sort((left, right) => left.start - right.start);
+    for (let index = 1; index < orderedFrames.length; index += 1) {
+        const current = orderedFrames[index];
+        const previous = orderedFrames[index - 1];
+        if (current === undefined || previous === undefined) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        if (current.start < previous.end) {
+            throw new Error('owner visual asset build/icons/icon.ico has overlapping frame payloads');
+        }
+    }
+    const sizes = frames.map(({ size }) => size);
+    sizes.sort((left, right) => left - right);
+    if (JSON.stringify(sizes) !== JSON.stringify(OWNER_ICON_REQUIRED_ICO_SIZES)) {
+        throw new Error(
+            `owner visual asset build/icons/icon.ico frame sizes must be ${OWNER_ICON_REQUIRED_ICO_SIZES.join(',')}`
+        );
+    }
+    for (const frame of frames) {
+        const payload = data.subarray(frame.start, frame.end);
+        const image = decodeOwnerRgbaPng(payload, `build/icons/icon.ico ${frame.size}x${frame.size}`);
+        if (image.width !== frame.size || image.height !== frame.size) {
+            throw new Error(
+                `owner visual asset build/icons/icon.ico ${frame.size}px frame payload has wrong dimensions`
+            );
+        }
+        const expectedSha256 = OWNER_ICON_ICO_PIXEL_SHA256[frame.size];
+        if (expectedSha256 === undefined) {
+            throw new Error('owner visual asset build/icons/icon.ico has an unexpected frame size');
+        }
+        assertOwnerFramePixels(image, expectedSha256, `build/icons/icon.ico ${frame.size}px frame`);
+    }
+}
+
+export function assertOwnerVisualAssetIntegrity(root: string): void {
+    assertCanonicalOwnerIcon(root);
+    assertOwnerIcnsFrames(root);
+    assertOwnerIcoFrames(root);
+}
+
 export function ownerVisualAssetReleaseInventoryContract(root: string): SurfaceContract {
+    assertOwnerVisualAssetIntegrity(root);
     const files = [
         'public/favicon.ico',
         'public/icon-192.png',
@@ -1878,20 +2437,131 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
     };
 }
 
+function digestEntryLabel(entry: string): string {
+    return entry.slice(entry.lastIndexOf(':') + 1);
+}
+
+// Only Grand Boule's boundaries currently produce `tracked-set-sha256:` digests,
+// so this is the one place a differing label can resolve to a tracked set of
+// paths worth printing; every other surface's digests stay unannotated.
+function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly string[] | undefined {
+    return GRAND_BOULE_RELEASE_REGISTRY.boundaries.find((boundary) => boundary.digestLabel === digestLabel)
+        ?.gitPathspecs;
+}
+
+// `recorded` comes straight from parsed JSON, so an element can be anything;
+// a typeof guard keeps a non-string entry out of digestEntryLabel instead of
+// laundering it through a cast.
+function labelableRecordedEntries(recorded: unknown): { entries: string[]; invalidIndexes: number[] } {
+    const entries: string[] = [];
+    const invalidIndexes: number[] = [];
+    if (!Array.isArray(recorded)) {
+        return { entries, invalidIndexes };
+    }
+    for (const [index, entry] of (recorded as unknown[]).entries()) {
+        if (typeof entry === 'string') {
+            entries.push(entry);
+        } else {
+            invalidIndexes.push(index);
+        }
+    }
+    return { entries, invalidIndexes };
+}
+
+// Folding entries into a Map by label is lossy: a duplicated label keeps only
+// its last write, and a pure reordering produces the same Map either way. So
+// when assertSurfaceContract has already decided the two arrays differ but no
+// per-label line was emitted, the difference is one of those two shapes —
+// name it directly rather than leaving a bare header and remedy with nothing
+// between them.
+function describeUnlabeledDigestsDifference(recordedEntries: readonly string[], current: readonly string[]): string[] {
+    const recordedLabels = recordedEntries.map(digestEntryLabel);
+    const duplicateLabels = [
+        ...new Set(recordedLabels.filter((digestLabel, index) => recordedLabels.indexOf(digestLabel) !== index)),
+    ];
+    if (duplicateLabels.length > 0) {
+        return duplicateLabels.map((digestLabel) => {
+            const count = recordedLabels.filter((candidate) => candidate === digestLabel).length;
+            return `  ${digestLabel}: recorded ${count} entries where one is expected`;
+        });
+    }
+    return [
+        `  recorded order differs from the tree; recorded: [${recordedLabels.join(', ')}] current: [${current
+            .map(digestEntryLabel)
+            .join(', ')}]`,
+    ];
+}
+
+// A `digests` mismatch on its own names neither the offending boundary nor the
+// remedy, and a `tracked-set-sha256` value differs from an unrelated file's
+// `sha256` digest by nothing a caller can eyeball, so `field does not match
+// provenance` alone leaves whoever hits it grepping the boundary registry by
+// hand. Pairing recorded and current entries by their trailing label instead
+// names exactly what drifted and where to fix it.
+function formatDigestsMismatch(recorded: unknown, current: readonly string[], label: string): string {
+    const { entries: recordedEntries, invalidIndexes } = labelableRecordedEntries(recorded);
+    const recordedByLabel = new Map(recordedEntries.map((entry) => [digestEntryLabel(entry), entry]));
+    const currentByLabel = new Map(current.map((entry) => [digestEntryLabel(entry), entry]));
+    const orderedLabels = [
+        ...currentByLabel.keys(),
+        ...[...recordedByLabel.keys()].filter((digestLabel) => !currentByLabel.has(digestLabel)),
+    ];
+
+    const lines = [`${label} release inventory digests does not match provenance`];
+    for (const index of invalidIndexes) {
+        lines.push(`  ${index}: recorded entry is not a string`);
+    }
+    let namedADifference = invalidIndexes.length > 0;
+    for (const digestLabel of orderedLabels) {
+        const recordedEntry = recordedByLabel.get(digestLabel);
+        const currentEntry = currentByLabel.get(digestLabel);
+        if (recordedEntry === currentEntry) {
+            continue;
+        }
+        namedADifference = true;
+        lines.push(
+            `  ${digestLabel}: recorded ${recordedEntry ?? 'nothing'} but the tree now yields ${currentEntry ?? 'nothing'}`
+        );
+        const trackedSetPathspecs = grandBouleTrackedSetPathspecsForLabel(digestLabel);
+        if (trackedSetPathspecs !== undefined) {
+            lines.push(`    tracked set: ${trackedSetPathspecs.join(', ')}`);
+        }
+    }
+    if (!namedADifference) {
+        lines.push(...describeUnlabeledDigestsDifference(recordedEntries, current));
+    }
+    lines.push(
+        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes.`
+    );
+    return lines.join('\n');
+}
+
 function assertSurfaceContract(
     surface: Partial<ReleaseSurface> | undefined,
     expected: Partial<ReleaseSurface>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
-        if (JSON.stringify(surface?.[field as keyof ReleaseSurface]) !== JSON.stringify(value)) {
-            throw new Error(`${label} release inventory ${field} does not match provenance`);
+        const recorded = surface?.[field as keyof ReleaseSurface];
+        if (JSON.stringify(recorded) === JSON.stringify(value)) {
+            continue;
         }
+        if (field === 'digests' && Array.isArray(value)) {
+            throw new Error(formatDigestsMismatch(recorded, value, label));
+        }
+        throw new Error(`${label} release inventory ${field} does not match provenance`);
     }
 }
 
 export function assertDdspModelsReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
+}
+
+export function assertDdspTfjsRuntimeReleaseInventory(
+    root: string,
+    surface: Partial<ReleaseSurface> | undefined
+): void {
+    assertSurfaceContract(surface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
 }
 
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
@@ -2398,6 +3068,17 @@ export function loadRepositorySnapshot(
     };
 }
 
+export function validateDdspReleaseInventorySurfaces(
+    root: string,
+    inventory: ReleaseInventory,
+    validateSurface: (surfaceId: string, validate: () => void) => void
+): void {
+    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    validateSurface('ddsp-tfjs-runtime', () => assertDdspTfjsRuntimeReleaseInventory(root, ddspTfjsRuntimeSurface));
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
+}
+
 export function checkReleaseInventory(
     root: string,
     projectLicensePreflight: ProjectLicensePreflight = (preflightRoot, inventoryContents) =>
@@ -2426,6 +3107,7 @@ export function checkReleaseInventory(
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     assertGrandBouleMeasurementAdmission(root);
+    assertWholeEngineQuantumCapability(root);
     const wasmSurface = currentInventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')
@@ -2462,16 +3144,7 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
-    const ddspTfjsRuntimeSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    validateSurface('ddsp-tfjs-runtime', () =>
-        assertSurfaceContract(
-            ddspTfjsRuntimeSurface,
-            ddspTfjsRuntimeReleaseInventoryContract(root),
-            'DDSP TF.js runtime'
-        )
-    );
-    const ddspModelsSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
+    validateDdspReleaseInventorySurfaces(root, currentInventory, validateSurface);
     checkElectronRuntimeProvenance(root);
     const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

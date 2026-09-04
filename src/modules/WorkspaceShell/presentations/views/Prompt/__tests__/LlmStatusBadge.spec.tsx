@@ -91,4 +91,34 @@ describe('LlmStatusBadge', () => {
             screen.getByText('Downloads and verifies this model for private use in this browser.')
         ).toBeInTheDocument();
     });
+
+    it('calls onLoad and closes the popover when the download button is clicked in idle state', () => {
+        const onLoad = vi.fn();
+        capabilityStore.set({ phase: 'done', report: verifiedWebGpuReport });
+        render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={onLoad} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Load AI' }));
+        const downloadButton = screen.getByRole('button', { name: /^Download & Load/ });
+        expect(downloadButton).toBeInTheDocument();
+
+        fireEvent.click(downloadButton);
+        expect(onLoad).toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: /^Download & Load/ })).not.toBeInTheDocument();
+    });
+
+    it('opens the ready-state popover with model details and unload option', () => {
+        render(
+            <LlmStatusBadge
+                status={{ state: 'ready', backend: 'webllm', modelId: 'webllm-llama-3-8b' }}
+                onLoad={vi.fn()}
+            />
+        );
+
+        const readyButton = screen.getByRole('button', { name: 'AI Ready' });
+        expect(readyButton).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Unload from Memory' })).not.toBeInTheDocument();
+
+        fireEvent.click(readyButton);
+        expect(screen.getByRole('button', { name: 'Unload from Memory' })).toBeInTheDocument();
+    });
 });

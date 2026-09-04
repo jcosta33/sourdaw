@@ -35,6 +35,10 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.devices.splice(anchorIndex + 1, 0, device);
             continue;
         }
+        if (action.type === 'discardDuplicatedClip') {
+            projected.clips = projected.clips.filter((clip) => clip.id !== action.payload.clipId);
+            continue;
+        }
         if (action.type === 'setTrackGain') {
             projected.gain = action.payload.gain;
         } else if (action.type === 'renameTrack') {
@@ -43,6 +47,8 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.color = action.payload.color;
         } else if (action.type === 'setTrackPan') {
             projected.pan = action.payload.pan;
+        } else if (action.type === 'setAutomationMode') {
+            projected.automationMode = action.payload.mode;
         } else if (action.type === 'muteTrack') {
             projected.muted = action.payload.muted;
         } else if (action.type === 'setTrackOutput') {

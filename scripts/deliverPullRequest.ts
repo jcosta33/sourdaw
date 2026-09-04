@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { lstatSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -27,7 +30,17 @@ import {
     parseDeliveryReceipt,
     type DeliveryReceiptPayload,
 } from './prContract.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
+import {
+    runRecoverDeliveryLockCli,
+    type DeliveryLockRecoveryDependencies,
+    type DeliveryLockRecoveryTrustedLauncher,
+} from './recoverDeliveryLock.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
 export type HeadCheckRun = {
@@ -76,6 +89,8 @@ export type StackedPullRequest = Pick<
 export type CheckEvidencePort = {
     gateRequiredCheckNames: () => ReadonlySet<string>;
     headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
+    /** The `required_status_checks` contexts on the live `main` ruleset, read fresh from GitHub. */
+    requiredStatusCheckContexts: () => string[];
 };
 
 export type DeliveryPort = CheckEvidencePort & {
@@ -84,12 +99,23 @@ export type DeliveryPort = CheckEvidencePort & {
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
+    merge: (number: number, expectedHead: string, hasDependents: boolean, expectedTitle?: string) => void;
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
+    deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
     addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
+    readDeliveryReceiptAuthority: (number: number) => PersistedDeliveryReceiptAuthority | undefined;
+    writeDeliveryReceiptAuthority: (
+        number: number,
+        authority: PersistedDeliveryReceiptAuthority,
+        expectedCurrent?: DeliveryReceiptAuthorityExpectation
+    ) => void;
+    clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
     log: (message: string) => void;
 };
+
+export type DeliveryReceiptAuthorityExpectation =
+    { mode: 'absent' } | { mode: 'present'; authority: PersistedDeliveryReceiptAuthority };
 
 export type DeliveryReceiptComment = {
     id: string;
@@ -103,6 +129,13 @@ export type DeliveryReceiptComment = {
 
 export type TrackerCompletionPort = {
     complete: (issueNumber: number) => void;
+};
+
+export type DeliveryReceiptProof = {
+    totalCount: number;
+    latestCommentId: string | undefined;
+    commentIds?: string[];
+    editedCommentIds?: string[];
 };
 
 export type ShellRunner = {
@@ -130,11 +163,146 @@ const NON_BLOCKING_CONCLUSIONS = new Set([PASSING_CONCLUSION, SKIPPED_CONCLUSION
  */
 const NON_VERDICT_CONCLUSIONS = new Set([SUPERSEDED_CONCLUSION, SKIPPED_CONCLUSION]);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
+/**
+ * The one merge state GitHub's own ruleset enforcement refuses to merge under, whatever CI admission
+ * mode this delivery is running in. Every other `mergeStateStatus` value is a report, not a refusal:
+ * advisory admission tolerates it and lets the merge attempt stand or fail on its own. `BLOCKED`
+ * alone means the merge endpoint would answer 405 no matter what this script does next, so admitting
+ * it here would only spend a receipt comment and a merge attempt on a result already decided.
+ */
+const BLOCKED_MERGE_STATE = 'BLOCKED';
 const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 
 type CiAdmissionMode = 'advisory' | 'required';
 
 const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
+
+type DeliveryMergeRejectionCertainty = 'ambiguous' | 'definitive-no-merge';
+
+export type DeliveryReceiptAuthorityPhase = 'released' | 'prepared' | 'merge-authorized' | 'terminal';
+
+export class DeliveryMergeRejectedError extends Error {
+    readonly certainty: DeliveryMergeRejectionCertainty;
+
+    constructor(message: string, certainty: DeliveryMergeRejectionCertainty = 'ambiguous') {
+        super(message);
+        this.name = 'DeliveryMergeRejectedError';
+        this.certainty = certainty;
+    }
+}
+
+function classifyGithubMergeRejection(number: number, error: unknown): DeliveryMergeRejectedError | undefined {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (!/\bHTTP (403|404|405|409|422)\b/u.test(detail)) {
+        return undefined;
+    }
+    return new DeliveryMergeRejectedError(
+        `PR #${number} was not merged: ${detail}`,
+        /\bHTTP 422\b/u.test(detail) ? 'definitive-no-merge' : 'ambiguous'
+    );
+}
+
+export type PersistedPreparedPostMergeValidation = {
+    headRefOid: string;
+    headRefName: string;
+    baseRefName: string;
+    bodySha256: string;
+    trackerTarget: number | null;
+    title?: string;
+};
+
+type PersistedDeliveryReceiptAuthorityBase = {
+    receiptId: string;
+};
+
+type CurrentPersistedDeliveryReceiptAuthorityBase = PersistedDeliveryReceiptAuthorityBase & {
+    receiptBody?: string;
+};
+
+type LegacyPersistedDeliveryReceiptAuthority = PersistedDeliveryReceiptAuthorityBase & {
+    phase: 'legacy';
+};
+
+type CurrentPersistedPreparedDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'prepared';
+    postMergeValidation?: PersistedPreparedPostMergeValidation;
+};
+
+type CurrentPersistedReleasedDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'released';
+};
+
+type CurrentPersistedMergeRecoveredDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'merge-authorized' | 'terminal';
+    postMergeValidation?: PersistedPreparedPostMergeValidation;
+};
+
+type CurrentPersistedDeliveryReceiptAuthority =
+    | CurrentPersistedReleasedDeliveryReceiptAuthority
+    | CurrentPersistedPreparedDeliveryReceiptAuthority
+    | CurrentPersistedMergeRecoveredDeliveryReceiptAuthority;
+
+export type PersistedDeliveryReceiptAuthority =
+    | LegacyPersistedDeliveryReceiptAuthority
+    | CurrentPersistedReleasedDeliveryReceiptAuthority
+    | CurrentPersistedPreparedDeliveryReceiptAuthority
+    | CurrentPersistedMergeRecoveredDeliveryReceiptAuthority;
+
+type StoredLegacyDeliveryReceiptAuthority = {
+    version: 1;
+    receiptId: string;
+};
+
+type StoredCurrentDeliveryReceiptAuthority =
+    | ({ version: 2 } & CurrentPersistedReleasedDeliveryReceiptAuthority)
+    | ({ version: 2 } & CurrentPersistedPreparedDeliveryReceiptAuthority)
+    | ({ version: 2 } & CurrentPersistedMergeRecoveredDeliveryReceiptAuthority);
+
+type StoredDeliveryReceiptAuthority = StoredLegacyDeliveryReceiptAuthority | StoredCurrentDeliveryReceiptAuthority;
+
+function isCurrentPersistedDeliveryReceiptAuthority(
+    authority: PersistedDeliveryReceiptAuthority
+): authority is CurrentPersistedDeliveryReceiptAuthority {
+    return authority.phase !== 'legacy';
+}
+
+function isFrozenPersistedDeliveryReceiptAuthority(
+    authority: PersistedDeliveryReceiptAuthority | undefined
+): authority is CurrentPersistedDeliveryReceiptAuthority {
+    return (
+        authority !== undefined &&
+        authority.phase !== 'legacy' &&
+        (authority.phase === 'merge-authorized' ||
+            authority.phase === 'terminal' ||
+            (authority.phase === 'prepared' && authority.postMergeValidation !== undefined))
+    );
+}
+
+function assertFrozenPersistedDeliveryReceiptAuthority(
+    number: number,
+    current: CurrentPersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority
+): void {
+    if (current.receiptId !== next.receiptId) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    if (
+        current.receiptBody !== undefined &&
+        next.receiptBody !== undefined &&
+        current.receiptBody !== next.receiptBody
+    ) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    if (
+        current.phase !== 'released' &&
+        next.phase !== 'released' &&
+        current.postMergeValidation !== undefined &&
+        next.postMergeValidation !== undefined &&
+        !samePreparedPostMergeValidation(current.postMergeValidation, next.postMergeValidation)
+    ) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+}
 
 function validatePullRequest(
     pullRequest: PullRequestSnapshot,
@@ -158,9 +326,66 @@ function validatePullRequest(
 
 function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort, mode: CiAdmissionMode): void {
     if (mode === 'advisory') {
+        validateAdvisoryMergeGate(pullRequest, checks);
         return;
     }
     validateRequiredCiAdmission(pullRequest, checks);
+}
+
+/**
+ * Advisory admission otherwise ignores `mergeStateStatus` entirely, but `BLOCKED` is GitHub's own
+ * ruleset refusing the merge before this script ever calls it: attempting it anyway spends a receipt
+ * comment and a merge call on a 405 the ruleset already decided, and both of those calls mark the
+ * remote mutation boundary, which is what strands the per-PR lock. Refusing here, before either call,
+ * lets the lock release normally. The named checks are read best-effort, purely to make the refusal
+ * legible, and the three outcomes say different things: a failed read cannot name anything; an
+ * unsatisfied set names what is still pending or failing; an empty set means every required check the
+ * ruleset names is already a settled success, so the block is something else the ruleset also
+ * enforces — an unresolved review thread, the review decision, or another rule entirely — and saying
+ * "could not be listed" there would be false, not just uninformative.
+ */
+function validateAdvisoryMergeGate(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+    if (pullRequest.mergeStateStatus !== BLOCKED_MERGE_STATE) {
+        return;
+    }
+    const unsatisfied = unsatisfiedAdvisoryRequiredContexts(pullRequest, checks);
+    if (unsatisfied === undefined) {
+        fail(`PR #${pullRequest.number} merge state is BLOCKED and the required checks could not be listed`);
+    }
+    if (unsatisfied.length === 0) {
+        fail(
+            `PR #${pullRequest.number} merge state is BLOCKED although every required check succeeded; ` +
+                `the block is an unresolved review thread, the review decision, or another ruleset rule`
+        );
+    }
+    fail(`PR #${pullRequest.number} merge state is BLOCKED on required check(s): ${unsatisfied.join(', ')}`);
+}
+
+/**
+ * The names GitHub's live ruleset requires, filtered to the ones the head's own check runs do not yet
+ * show as a settled success. Both the ruleset read and the check-run read are network calls that can
+ * fail independently of the `BLOCKED` verdict itself, and either failure leaves this undefined rather
+ * than losing the refusal to an unrelated exception.
+ */
+function unsatisfiedAdvisoryRequiredContexts(
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    checks: CheckEvidencePort
+): string[] | undefined {
+    try {
+        const requiredContexts = checks.requiredStatusCheckContexts();
+        const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
+        return requiredContexts.filter(
+            (context) =>
+                !checkRuns.some(
+                    (run) =>
+                        run.name === context &&
+                        run.status === SETTLED_CHECK_STATUS &&
+                        run.conclusion === PASSING_CONCLUSION
+                )
+        );
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -197,28 +422,40 @@ function validateStructuralMergeability(pullRequest: PullRequestSnapshot): void 
     fail(`PR #${pullRequest.number} has invalid structural mergeability ${String(pullRequest.mergeable)}`);
 }
 
-function resolveStructuralMergeability(
+function refreshStructuralMergeability(
     initial: PullRequestSnapshot,
-    port: Pick<DeliveryPort, 'pullRequest'>
+    port: Pick<DeliveryPort, 'pullRequest'>,
+    observe?: (pullRequest: PullRequestSnapshot) => void
 ): PullRequestSnapshot {
     let pullRequest = initial;
-    if (pullRequest.state === 'MERGED') {
+    observe?.(pullRequest);
+    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
         return pullRequest;
     }
     for (
         let refreshes = 0;
-        pullRequest.state !== 'MERGED' &&
+        pullRequest.state === 'OPEN' &&
         pullRequest.mergeable === 'UNKNOWN' &&
         refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
-        pullRequest = port.pullRequest(initial.number);
-        validateStablePullRequest(initial, pullRequest);
-        if (pullRequest.state === 'MERGED') {
-            return pullRequest;
+        const refreshed = port.pullRequest(initial.number);
+        observe?.(refreshed);
+        if (refreshed.state === 'MERGED' || refreshed.state === 'CLOSED') {
+            return refreshed;
         }
+        validateStablePullRequest(initial, refreshed);
+        pullRequest = refreshed;
     }
-    if (pullRequest.state === 'MERGED') {
+    return pullRequest;
+}
+
+function resolveStructuralMergeability(
+    initial: PullRequestSnapshot,
+    port: Pick<DeliveryPort, 'pullRequest'>
+): PullRequestSnapshot {
+    const pullRequest = refreshStructuralMergeability(initial, port);
+    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
         return pullRequest;
     }
     validateStructuralMergeability(pullRequest);
@@ -267,12 +504,11 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
 /**
  * Only a later attempt that itself reached a verdict retires an earlier one. A non-verdict
  * conclusion and a still-running rerun decide nothing, so reading either as the newer word would
- * drop a real failure out of the evidence — the one direction this rule must never move. The
- * repository mints that shape by itself: every non-approving `pull_request_review` event starts a
- * run whose `decide` job is skipped, so each job downstream of it settles as `SKIPPED` with an
- * evaluation-time start later than the push run's. Were a skip allowed to retire, one comment on a
- * pull request would stamp a fresh non-verdict over a genuine failing execution and the head would
- * merge.
+ * drop a real failure out of the evidence — the one direction this rule must never move. Health
+ * gates no longer subscribe to `pull_request_review`, so this repository no longer mints that skip
+ * itself; a skipped later attempt from any other path would still be the same shape. Were a skip
+ * allowed to retire, it would stamp a fresh non-verdict over a genuine failing execution and the
+ * head would merge.
  *
  * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
  * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.
@@ -338,7 +574,7 @@ const EXPRESSION_OPENER = '${{';
 const GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 /** One job as the workflow declares it. Every value is unresolved, because resolving one is a rule. */
-type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
 type WorkflowJobs = Record<string, WorkflowJob>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -368,7 +604,7 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
                 `so no check can be proven to gate the merge`
         );
     }
-    return new Set(gateNeeds(gate.needs).map((jobId) => requiredCheckName(jobId, jobs)));
+    return new Set(gateNeeds(gate.needs).flatMap((jobId) => requiredCheckNames(jobId, jobs)));
 }
 
 function workflowJobs(serialized: string): WorkflowJobs {
@@ -425,13 +661,14 @@ function gateNeeds(declared: unknown): string[] {
 }
 
 /**
- * The name GitHub labels a job's check with, or a refusal where this gate cannot produce it. A
- * matrix name is a template GitHub substitutes per shard, and a reusable workflow reports one check
- * per inner job as `<job name> / <inner job name>` — in both cases the declared name matches no
- * check on the head, so it would silently match nothing and tolerate every real cancellation. Both
- * refuse instead. The matrix refusal is recorded as issue #2924.
+ * Every name GitHub labels a job's checks with, or a refusal where this gate cannot produce them. A
+ * matrix job reports one check per combination with its `name:` substituted, so it contributes one
+ * name per combination. A reusable workflow reports one check per inner job as
+ * `<job name> / <inner job name>`, which this reader cannot produce and refuses, as does a name
+ * still carrying an expression once the matrix values are substituted: either would match no check
+ * on the head, and so tolerate every real cancellation.
  */
-function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
+function requiredCheckNames(jobId: string, jobs: WorkflowJobs): string[] {
     const job = jobs[jobId];
     if (job === undefined) {
         fail(
@@ -445,17 +682,275 @@ function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
                 `whose checks GitHub reports as one name per inner job rather than the one name this gate derives`
         );
     }
-    const name = declaredCheckName(jobId, job.name);
-    if (name.includes(EXPRESSION_OPENER)) {
+    const combinations = matrixCombinations(jobId, job.strategy);
+    if (combinations === undefined) {
+        return [reportedCheckName(jobId, declaredCheckName(jobId, job.name), undefined)];
+    }
+    const declared = matrixCheckName(jobId, job.name);
+    return distinctCheckNames(
+        jobId,
+        combinations.map((combination) => reportedCheckName(jobId, declared, combination))
+    );
+}
+
+/**
+ * GitHub labels a matrix job that declares no name `<job id> (<value>, <value>)` rather than the
+ * bare job id, so the fallback a job without a matrix answers with is a name no check on the head
+ * carries. Rendering that parenthesised form would mean reproducing which keys GitHub puts in it and
+ * in which order, so this refuses instead.
+ */
+function matrixCheckName(jobId: string, name: unknown): string {
+    if (name === undefined || name === null || name === '') {
         fail(
-            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${name}, ` +
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a matrix and no name, ` +
+                `so GitHub labels its checks with values this gate does not render`
+        );
+    }
+    return declaredCheckName(jobId, name);
+}
+
+/** The declared name with this combination substituted into it, or a refusal for any other expression. */
+function reportedCheckName(jobId: string, declared: string, combination: MatrixCombination | undefined): string {
+    const reported = combination === undefined ? declared : substituteMatrixValues(jobId, declared, combination);
+    if (reported.includes(EXPRESSION_OPENER)) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${declared}, ` +
                 `which GitHub substitutes per matrix job before reporting it`
         );
     }
-    return name;
+    return reported;
 }
 
-/** A job that declares no name is labelled with its job id, which is what GitHub reports for it. */
+/**
+ * GitHub reports one check per matrix job, so two combinations sharing a name leave one of them
+ * with no check of its own: the other's success answers for both, and its cancellation is invisible.
+ * A matrix job whose name references no matrix value has this shape for every combination it runs.
+ */
+function distinctCheckNames(jobId: string, names: string[]): string[] {
+    const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+    if (duplicate !== undefined) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} gives more than one matrix job the check name ` +
+                `${duplicate}, which GitHub reports as one check name this gate cannot tell apart`
+        );
+    }
+    return names;
+}
+
+type MatrixValue = string | number | boolean;
+
+/** One matrix job as GitHub runs it: every key that job carries, mapped to its value. */
+type MatrixCombination = ReadonlyMap<string, MatrixValue>;
+
+/** Combinations already in the matrix, kept apart from those an `include` entry added to it. */
+type MatrixExpansion = { decorated: MatrixCombination[]; added: MatrixCombination[] };
+
+const MATRIX_KEY = 'matrix';
+const MATRIX_INCLUDE = 'include';
+const MATRIX_EXCLUDE = 'exclude';
+const MATRIX_REFERENCE = /\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}/g;
+
+/**
+ * The combinations GitHub runs a job as, or `undefined` for a job that declares no matrix. A matrix
+ * this gate cannot expand exactly refuses: a combination too many derives a name that matches
+ * nothing on the head, and one too few leaves a real shard ungated.
+ */
+function matrixCombinations(jobId: string, strategy: unknown): MatrixCombination[] | undefined {
+    const matrix = declaredMatrix(jobId, strategy);
+    if (matrix === undefined) {
+        return undefined;
+    }
+    const axes = matrixAxes(jobId, matrix);
+    const axisKeys = new Set(axes.map(([axis]) => axis));
+    const remaining = withoutExcluded(baseCombinations(axes), excludeEntries(jobId, matrix, axisKeys));
+    const combinations = withIncluded(remaining, matrixEntries(jobId, matrix, MATRIX_INCLUDE), axisKeys);
+    if (combinations.length === 0) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a matrix that runs no job, ` +
+                `so no check of that job can be proven to gate the merge`
+        );
+    }
+    return combinations;
+}
+
+function declaredMatrix(jobId: string, strategy: unknown): Record<string, unknown> | undefined {
+    if (strategy === undefined || strategy === null) {
+        return undefined;
+    }
+    if (!isRecord(strategy)) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a strategy that is not a mapping, ` +
+                `so the names GitHub reports for its jobs cannot be derived from the workflow`
+        );
+    }
+    const matrix = strategy[MATRIX_KEY];
+    if (matrix === undefined || matrix === null) {
+        return undefined;
+    }
+    if (!isRecord(matrix)) {
+        failUnexpandableMatrix(jobId, matrix);
+    }
+    return matrix;
+}
+
+/**
+ * A matrix GitHub builds at run time — `fromJSON` of another job's output is the usual form — runs
+ * jobs no reading of the workflow enumerates.
+ */
+function failUnexpandableMatrix(jobId: string, declared: unknown): never {
+    const shape =
+        typeof declared === 'string' && declared.includes(EXPRESSION_OPENER)
+            ? `the expression ${declared}`
+            : 'something other than a mapping of variations';
+    fail(
+        `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares its matrix as ${shape}, ` +
+            `so the names GitHub reports for its jobs cannot be derived from the workflow`
+    );
+}
+
+function matrixAxes(jobId: string, matrix: Record<string, unknown>): Array<[string, MatrixValue[]]> {
+    return Object.entries(matrix)
+        .filter(([key]) => key !== MATRIX_INCLUDE && key !== MATRIX_EXCLUDE)
+        .map(([axis, declared]): [string, MatrixValue[]] => [axis, axisValues(jobId, axis, declared)]);
+}
+
+function axisValues(jobId: string, axis: string, declared: unknown): MatrixValue[] {
+    if (!Array.isArray(declared) || declared.length === 0) {
+        failUnexpandableAxis(jobId, axis);
+    }
+    return declared.map((value) => matrixValue(jobId, axis, value));
+}
+
+/** GitHub substitutes a matrix value as plain text, which it can only do for a plain scalar. */
+function matrixValue(jobId: string, axis: string, value: unknown): MatrixValue {
+    if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) {
+        return value;
+    }
+    if (typeof value === 'string' && !value.includes(EXPRESSION_OPENER)) {
+        return value;
+    }
+    return failUnexpandableAxis(jobId, axis);
+}
+
+function failUnexpandableAxis(jobId: string, axis: string): never {
+    fail(
+        `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares matrix ${axis} as something other than ` +
+            `a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow`
+    );
+}
+
+function matrixEntries(jobId: string, matrix: Record<string, unknown>, key: string): MatrixCombination[] {
+    const declared = matrix[key];
+    if (declared === undefined || declared === null) {
+        return [];
+    }
+    if (!Array.isArray(declared)) {
+        failUnexpandableAxis(jobId, key);
+    }
+    return declared.map((entry) => {
+        if (!isRecord(entry)) {
+            failUnexpandableAxis(jobId, key);
+        }
+        return new Map(
+            Object.entries(entry).map(([name, value]): [string, MatrixValue] => [name, matrixValue(jobId, key, value)])
+        );
+    });
+}
+
+/**
+ * An `exclude` key the matrix never declared removes nothing, so the job runs combinations this
+ * gate would still have to name. It refuses rather than deriving a set it cannot stand behind.
+ */
+function excludeEntries(
+    jobId: string,
+    matrix: Record<string, unknown>,
+    axisKeys: ReadonlySet<string>
+): MatrixCombination[] {
+    const entries = matrixEntries(jobId, matrix, MATRIX_EXCLUDE);
+    const undeclared = entries.flatMap((entry) => [...entry.keys()]).find((key) => !axisKeys.has(key));
+    if (undeclared !== undefined) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} excludes matrix ${undeclared}, ` +
+                `which its matrix does not declare, so which jobs GitHub runs cannot be derived from the workflow`
+        );
+    }
+    return entries;
+}
+
+/** The cartesian product of the axes, and no combination at all when the matrix declares none. */
+function baseCombinations(axes: ReadonlyArray<readonly [string, MatrixValue[]]>): MatrixCombination[] {
+    if (axes.length === 0) {
+        return [];
+    }
+    return axes.reduce<MatrixCombination[]>(
+        (combinations, [axis, values]) =>
+            combinations.flatMap((combination) => values.map((value) => new Map(combination).set(axis, value))),
+        [new Map<string, MatrixValue>()]
+    );
+}
+
+function withoutExcluded(combinations: MatrixCombination[], excludes: MatrixCombination[]): MatrixCombination[] {
+    return combinations.filter((combination) => !excludes.some((entry) => matchesCombination(combination, entry)));
+}
+
+function matchesCombination(combination: MatrixCombination, entry: MatrixCombination): boolean {
+    return [...entry].every(([key, value]) => combination.get(key) === value);
+}
+
+/**
+ * GitHub adds an `include` entry's keys to every combination whose axis values the entry matches,
+ * and makes the entry a combination of its own only when it matches none — so an entry naming an
+ * axis value the matrix never declared adds a job, while one naming a declared value only adds keys
+ * to jobs already there. Entries match the combinations the axes produced and never one an earlier
+ * entry added, which is why two entries naming the same undeclared value stay two jobs.
+ */
+function withIncluded(
+    combinations: MatrixCombination[],
+    includes: MatrixCombination[],
+    axisKeys: ReadonlySet<string>
+): MatrixCombination[] {
+    const expansion = includes.reduce<MatrixExpansion>((state, entry) => applyInclude(state, entry, axisKeys), {
+        decorated: combinations,
+        added: [],
+    });
+    return [...expansion.decorated, ...expansion.added];
+}
+
+function applyInclude(
+    state: MatrixExpansion,
+    entry: MatrixCombination,
+    axisKeys: ReadonlySet<string>
+): MatrixExpansion {
+    const selector = new Map([...entry].filter(([key]) => axisKeys.has(key)));
+    if (!state.decorated.some((combination) => matchesCombination(combination, selector))) {
+        return { decorated: state.decorated, added: [...state.added, entry] };
+    }
+    return {
+        decorated: state.decorated.map((combination) =>
+            matchesCombination(combination, selector) ? new Map([...combination, ...entry]) : combination
+        ),
+        added: state.added,
+    };
+}
+
+function substituteMatrixValues(jobId: string, declared: string, combination: MatrixCombination): string {
+    return declared.replace(MATRIX_REFERENCE, (_reference, key: string) => {
+        const value = combination.get(key);
+        if (value === undefined) {
+            fail(
+                `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check with matrix.${key}, ` +
+                    `which its matrix does not declare for every job it runs`
+            );
+        }
+        return String(value);
+    });
+}
+
+/**
+ * A job that declares no name is labelled with its job id, which is what GitHub reports for a job
+ * that runs no matrix. A matrix job is labelled from its combination instead, and never reaches the
+ * fallback here.
+ */
 function declaredCheckName(jobId: string, name: unknown): string {
     if (name === undefined || name === null || name === '') {
         return jobId;
@@ -527,7 +1022,7 @@ function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
 }
 
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'body'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'title', 'body'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
@@ -541,30 +1036,299 @@ function validateStableTrackerTarget(number: number, before: number | undefined,
     }
 }
 
+function bodySha256(body: string | null): string {
+    return createHash('sha256')
+        .update(body ?? '')
+        .digest('hex');
+}
+
+function persistedPreparedPostMergeValidation(
+    pullRequest: Pick<PullRequestSnapshot, 'headRefOid' | 'headRefName' | 'baseRefName' | 'title' | 'body'>,
+    trackerTarget: number | undefined
+): PersistedPreparedPostMergeValidation {
+    return {
+        headRefOid: pullRequest.headRefOid,
+        headRefName: pullRequest.headRefName,
+        baseRefName: pullRequest.baseRefName,
+        title: pullRequest.title,
+        bodySha256: bodySha256(pullRequest.body),
+        trackerTarget: trackerTarget ?? null,
+    };
+}
+
 function validatePostMergeSnapshot(
-    authorized: PullRequestSnapshot,
+    expected: PersistedPreparedPostMergeValidation,
     merged: PullRequestSnapshot,
-    number: number,
-    expectedTrackerTarget: number | undefined
+    number: number
 ): void {
+    if (expected.title === undefined) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
     validateAuthorAppMerger(merged);
     validateBaseBranch(merged);
-    validateStableTrackerTarget(number, expectedTrackerTarget, trackerCompletionTarget(merged));
-    validateStablePullRequest(authorized, merged);
+    if (expected.title !== merged.title) {
+        fail(`PR #${number} title changed during delivery`);
+    }
+    if (expected.bodySha256 !== bodySha256(merged.body)) {
+        fail(`PR #${number} body changed during delivery`);
+    }
+    if (expected.headRefOid !== merged.headRefOid) {
+        fail(`PR #${number} headRefOid changed during delivery`);
+    }
+    if (expected.headRefName !== merged.headRefName) {
+        fail(`PR #${number} headRefName changed during delivery`);
+    }
+    if (expected.baseRefName !== merged.baseRefName) {
+        fail(`PR #${number} baseRefName changed during delivery`);
+    }
+    validateStableTrackerTarget(number, expected.trackerTarget ?? undefined, trackerCompletionTarget(merged));
+}
+
+function validateReceiptPayloadAgainstPreparedPostMergeValidation(
+    number: number,
+    payload: DeliveryReceiptPayload,
+    validation: PersistedPreparedPostMergeValidation,
+    phase: 'delivery' | 'recovery'
+): void {
+    const timing = phase === 'delivery' ? 'during delivery' : 'during recovery';
+    if (payload.schemaVersion === 1) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if (payload.head !== validation.headRefOid) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if (payload.bodySha256 !== validation.bodySha256) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if ((payload.closingIssue ?? undefined) !== (validation.trackerTarget ?? undefined)) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
 }
 
 function expectedDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
-    closingIssue: number | undefined
+    closingIssue: number | undefined,
+    ciAdmissionMode: CiAdmissionMode,
+    checks: CheckEvidencePort
 ): DeliveryReceiptPayload {
     return {
+        schemaVersion: 2,
         pullRequest: pullRequest.number,
         head: pullRequest.headRefOid,
-        bodySha256: createHash('sha256')
-            .update(pullRequest.body ?? '')
-            .digest('hex'),
+        bodySha256: bodySha256(pullRequest.body),
         closingIssue,
+        ciAdmissionMode,
+        ...(ciAdmissionMode === 'advisory' ? { observedCiState: observedAdvisoryCiState(pullRequest, checks) } : {}),
     };
+}
+
+function observedAdvisoryCiState(
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    checks: CheckEvidencePort
+): NonNullable<DeliveryReceiptPayload['observedCiState']> {
+    try {
+        return normalizeObservedCiState(checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid));
+    } catch {
+        return 'unavailable';
+    }
+}
+
+const PENDING_CHECK_STATUSES = new Set(['QUEUED', 'IN_PROGRESS', 'PENDING', 'EXPECTED', 'REQUESTED', 'WAITING']);
+
+function normalizeObservedCiState(checkRuns: HeadCheckRun[]): NonNullable<DeliveryReceiptPayload['observedCiState']> {
+    if (checkRuns.length === 0) {
+        return 'absent';
+    }
+    const successfulNames = new Set<string>();
+    const cancelledNames = new Set<string>();
+    let sawSuccess = false;
+    let sawSkipped = false;
+    let sawPending = false;
+    let sawFailed = false;
+    let sawMalformed = false;
+    for (const check of checkRuns) {
+        const state = observedCheckRunState(check);
+        if (state === 'successful') {
+            sawSuccess = true;
+            successfulNames.add(check.name);
+            continue;
+        }
+        if (state === 'skipped') {
+            sawSkipped = true;
+            continue;
+        }
+        if (state === 'cancelled') {
+            cancelledNames.add(check.name);
+            continue;
+        }
+        if (state === 'pending') {
+            sawPending = true;
+            continue;
+        }
+        if (state === 'failed') {
+            sawFailed = true;
+            continue;
+        }
+        sawMalformed = true;
+    }
+    if (sawMalformed) {
+        return 'malformed';
+    }
+    if (sawFailed) {
+        return 'failed';
+    }
+    if (sawPending) {
+        return 'pending';
+    }
+    for (const name of cancelledNames) {
+        if (!successfulNames.has(name)) {
+            return 'cancelled';
+        }
+    }
+    if (cancelledNames.size > 0) {
+        return 'unstable';
+    }
+    if (sawSuccess) {
+        return 'successful';
+    }
+    return sawSkipped ? 'skipped' : 'absent';
+}
+
+function observedCheckRunState(
+    check: HeadCheckRun
+): 'successful' | 'skipped' | 'failed' | 'pending' | 'cancelled' | 'malformed' {
+    if (check.name === '') {
+        return 'malformed';
+    }
+    if (check.status === SETTLED_CHECK_STATUS) {
+        if (check.conclusion === PASSING_CONCLUSION) {
+            return 'successful';
+        }
+        if (check.conclusion === 'SKIPPED') {
+            return 'skipped';
+        }
+        if (check.conclusion === SUPERSEDED_CONCLUSION) {
+            return 'cancelled';
+        }
+        if (check.conclusion === null || check.conclusion === '') {
+            return 'malformed';
+        }
+        return 'failed';
+    }
+    if (check.conclusion !== null) {
+        return 'malformed';
+    }
+    return PENDING_CHECK_STATUSES.has(check.status) ? 'pending' : 'malformed';
+}
+
+function sameDeliveryReceiptKey(left: DeliveryReceiptPayload, right: DeliveryReceiptPayload): boolean {
+    return (
+        left.pullRequest === right.pullRequest &&
+        left.head === right.head &&
+        left.bodySha256 === right.bodySha256 &&
+        left.closingIssue === right.closingIssue
+    );
+}
+
+function sameExactDeliveryReceipt(left: DeliveryReceiptPayload, right: DeliveryReceiptPayload): boolean {
+    if (!sameDeliveryReceiptKey(left, right)) {
+        return false;
+    }
+    if (left.schemaVersion === 1 || right.schemaVersion === 1) {
+        return left.schemaVersion === 1 && right.schemaVersion === 1;
+    }
+    if (left.ciAdmissionMode !== right.ciAdmissionMode) {
+        return false;
+    }
+    if (left.ciAdmissionMode !== 'advisory') {
+        return true;
+    }
+    return left.observedCiState === right.observedCiState;
+}
+
+function sameDeliveryReceiptMode(left: DeliveryReceiptPayload, right: DeliveryReceiptPayload): boolean {
+    if (!sameDeliveryReceiptKey(left, right)) {
+        return false;
+    }
+    if (left.schemaVersion === 1 || right.schemaVersion === 1) {
+        return true;
+    }
+    return left.ciAdmissionMode === right.ciAdmissionMode;
+}
+
+function frozenCurrentDeliveryReceiptPayload(
+    number: number,
+    receiptBody: string,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptPayload {
+    const payload = parseDeliveryReceipt(receiptBody);
+    if (payload === undefined || payload.schemaVersion === 1 || !sameDeliveryReceiptMode(payload, expected)) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    return payload;
+}
+
+function deliveryReceiptKey(payload: DeliveryReceiptPayload): string {
+    return [payload.pullRequest, payload.head, payload.bodySha256, payload.closingIssue ?? 'none'].join(':');
+}
+
+function assertCompatibleDeliveryReceiptLineage(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): void {
+    const seenV2ByKey = new Map<string, DeliveryReceiptPayload>();
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (payload.schemaVersion === 1) {
+            continue;
+        }
+        const key = deliveryReceiptKey(payload);
+        const previous = seenV2ByKey.get(key);
+        if (previous !== undefined && !sameDeliveryReceiptMode(previous, payload)) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+        seenV2ByKey.set(key, payload);
+    }
+}
+
+function assertExpectedDeliveryReceiptAuthority(
+    lineage: DeliveryReceiptComment[],
+    expected: DeliveryReceiptPayload,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): void {
+    if (expected.schemaVersion === 1) {
+        return;
+    }
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (!sameDeliveryReceiptKey(payload, expected) || payload.schemaVersion === 1) {
+            continue;
+        }
+        if (!sameDeliveryReceiptMode(payload, expected)) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+    }
+}
+
+function authoritativeEquivalentDeliveryReceipt(
+    lineage: DeliveryReceiptComment[],
+    expected: DeliveryReceiptPayload,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment | undefined {
+    assertExpectedDeliveryReceiptAuthority(lineage, expected, pullRequest);
+    if (
+        !lineage.some((receipt) => sameDeliveryReceiptKey(assertDeliveryReceiptForHead(receipt, pullRequest), expected))
+    ) {
+        return undefined;
+    }
+    const newest = lineage.at(-1);
+    if (newest === undefined) {
+        return undefined;
+    }
+    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(newest, pullRequest), expected)) {
+        return newest;
+    }
+    return undefined;
 }
 
 function deliveryReceiptsForHead(
@@ -593,16 +1357,7 @@ function orderedDeliveryReceiptLineage(
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
     const ordered = deliveryReceiptsForHead(comments, pullRequest);
-    for (let index = 1; index < ordered.length; index += 1) {
-        const previous = ordered[index - 1];
-        const current = ordered[index];
-        if (previous === undefined || current === undefined) {
-            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
-        }
-        if (previous.body === current.body) {
-            fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
-        }
-    }
+    assertCompatibleDeliveryReceiptLineage(ordered, pullRequest);
     return ordered;
 }
 
@@ -645,23 +1400,763 @@ function assertCanonicalDeliveryReceipt(
     expected: DeliveryReceiptPayload
 ): DeliveryReceiptPayload {
     const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-    if (comment.body !== composeDeliveryReceipt(expected)) {
+    if (!sameExactDeliveryReceipt(payload, expected)) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     return payload;
 }
 
-function newestDeliveryReceipt(lineage: DeliveryReceiptComment[], pullRequestNumber: number): DeliveryReceiptComment {
-    const receipt = lineage.at(-1);
-    if (receipt === undefined) {
-        fail(`PR #${pullRequestNumber} has no delivery receipt for its current head`);
+function deliveryReceiptAuthorityPhaseRank(phase: DeliveryReceiptAuthorityPhase): number {
+    if (phase === 'released') {
+        return -1;
     }
+    if (phase === 'prepared') {
+        return 0;
+    }
+    if (phase === 'merge-authorized') {
+        return 1;
+    }
+    return 2;
+}
+
+function samePreparedPostMergeValidation(
+    left: PersistedPreparedPostMergeValidation | undefined,
+    right: PersistedPreparedPostMergeValidation | undefined
+): boolean {
+    return (
+        left?.headRefOid === right?.headRefOid &&
+        left?.headRefName === right?.headRefName &&
+        left?.baseRefName === right?.baseRefName &&
+        left?.title === right?.title &&
+        left?.bodySha256 === right?.bodySha256 &&
+        left?.trackerTarget === right?.trackerTarget
+    );
+}
+
+function samePersistedDeliveryReceiptAuthority(
+    left: PersistedDeliveryReceiptAuthority | undefined,
+    right: PersistedDeliveryReceiptAuthority
+): boolean {
+    if (left?.phase === 'legacy' || right.phase === 'legacy') {
+        return left?.phase === right.phase && left?.receiptId === right.receiptId;
+    }
+    return (
+        left?.phase === right.phase &&
+        left?.receiptId === right.receiptId &&
+        left?.receiptBody === right.receiptBody &&
+        samePreparedPostMergeValidation(
+            left?.phase !== 'released' ? left.postMergeValidation : undefined,
+            right.phase !== 'released' ? right.postMergeValidation : undefined
+        )
+    );
+}
+
+export function expectedAbsentDeliveryReceiptAuthority(): DeliveryReceiptAuthorityExpectation {
+    return { mode: 'absent' };
+}
+
+function exactDeliveryReceiptAuthorityExpectation(
+    authority: PersistedDeliveryReceiptAuthority | undefined
+): DeliveryReceiptAuthorityExpectation {
+    if (authority === undefined) {
+        return expectedAbsentDeliveryReceiptAuthority();
+    }
+    return { mode: 'present', authority };
+}
+
+function matchesDeliveryReceiptAuthorityExpectation(
+    current: PersistedDeliveryReceiptAuthority | undefined,
+    expected: DeliveryReceiptAuthorityExpectation
+): boolean {
+    if (expected.mode === 'absent') {
+        return current === undefined;
+    }
+    return samePersistedDeliveryReceiptAuthority(current, expected.authority);
+}
+
+function mergePersistedDeliveryReceiptAuthority(
+    current: PersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority
+): PersistedDeliveryReceiptAuthority {
+    if (current.phase === 'legacy') {
+        return next;
+    }
+    if (current.receiptId !== next.receiptId) {
+        return next;
+    }
+    const currentRank = deliveryReceiptAuthorityPhaseRank(current.phase);
+    const nextRank = deliveryReceiptAuthorityPhaseRank(next.phase);
+    if (currentRank > nextRank) {
+        return current;
+    }
+    if (nextRank > currentRank) {
+        return next;
+    }
+    const receiptBody = next.receiptBody ?? current.receiptBody;
+    let postMergeValidation: PersistedPreparedPostMergeValidation | undefined;
+    if (current.phase !== 'released' && next.phase !== 'released') {
+        postMergeValidation = next.postMergeValidation ?? current.postMergeValidation;
+    }
+    if (current.phase === 'released' && next.phase === 'released') {
+        return {
+            phase: 'released',
+            receiptId: current.receiptId,
+            ...(receiptBody === undefined ? {} : { receiptBody }),
+        };
+    }
+    if (current.phase === 'prepared' && next.phase === 'prepared') {
+        return {
+            phase: 'prepared',
+            receiptId: current.receiptId,
+            ...(receiptBody === undefined ? {} : { receiptBody }),
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        };
+    }
+    return {
+        phase: next.phase,
+        receiptId: current.receiptId,
+        ...(receiptBody === undefined ? {} : { receiptBody }),
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
+function persistDeliveryReceiptAuthority(
+    number: number,
+    authority: PersistedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (isFrozenPersistedDeliveryReceiptAuthority(current)) {
+        assertFrozenPersistedDeliveryReceiptAuthority(number, current, authority);
+    }
+    const next = current === undefined ? authority : mergePersistedDeliveryReceiptAuthority(current, authority);
+    if (samePersistedDeliveryReceiptAuthority(current, next)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, next, exactDeliveryReceiptAuthorityExpectation(current));
+}
+
+function persistPreparedDeliveryReceiptAuthority(
+    number: number,
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    port: DeliveryPort,
+    postMergeValidation?: PersistedPreparedPostMergeValidation
+): void {
+    persistDeliveryReceiptAuthority(
+        number,
+        {
+            phase: 'prepared',
+            receiptId: receipt.id,
+            receiptBody: receipt.body,
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        },
+        port
+    );
+}
+
+function releasedDeliveryReceiptAuthority(
+    authority: Pick<CurrentPersistedDeliveryReceiptAuthority, 'receiptId' | 'receiptBody'>
+): CurrentPersistedReleasedDeliveryReceiptAuthority {
+    return {
+        phase: 'released',
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+    };
+}
+
+function preparedDeliveryReceiptAuthority(
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation?: PersistedPreparedPostMergeValidation
+): CurrentPersistedPreparedDeliveryReceiptAuthority {
+    return {
+        phase: 'prepared',
+        receiptId: receipt.id,
+        receiptBody: receipt.body,
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
+function restorePreArmedDeliveryReceiptAuthority(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (!samePersistedDeliveryReceiptAuthority(current, armed)) {
+        return;
+    }
+    if (beforeArming === undefined || beforeArming.phase === 'legacy') {
+        port.clearDeliveryReceiptAuthority(number, exactDeliveryReceiptAuthorityExpectation(current));
+        return;
+    }
+    if (samePersistedDeliveryReceiptAuthority(current, beforeArming)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, beforeArming, exactDeliveryReceiptAuthorityExpectation(current));
+}
+
+function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+    number: number,
+    expectedCurrent: CurrentPersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    if (samePersistedDeliveryReceiptAuthority(expectedCurrent, next)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, next, exactDeliveryReceiptAuthorityExpectation(expectedCurrent));
+}
+
+function frozenDeliveryReceiptAuthorityHead(
+    number: number,
+    authority: CurrentPersistedDeliveryReceiptAuthority
+): string | undefined {
+    if (authority.phase === 'prepared' && authority.postMergeValidation !== undefined) {
+        return authority.postMergeValidation.headRefOid;
+    }
+    if (authority.receiptBody === undefined) {
+        return undefined;
+    }
+    const payload = parseDeliveryReceipt(authority.receiptBody);
+    if (payload === undefined || payload.schemaVersion === 1) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    return payload.head;
+}
+
+function samePreparedDeliveryInputsForOpenRetry(
+    pullRequest: PullRequestSnapshot,
+    authority: CurrentPersistedPreparedDeliveryReceiptAuthority
+): boolean {
+    if (authority.postMergeValidation === undefined) {
+        return false;
+    }
+    return samePreparedPostMergeValidation(
+        authority.postMergeValidation,
+        persistedPreparedPostMergeValidation(pullRequest, trackerCompletionTarget(pullRequest))
+    );
+}
+
+function releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort
+): void {
+    const current = port.readDeliveryReceiptAuthority(pullRequest.number);
+    if (!isFrozenPersistedDeliveryReceiptAuthority(current)) {
+        return;
+    }
+    if (current.phase === 'prepared' && current.postMergeValidation !== undefined) {
+        if (samePreparedDeliveryInputsForOpenRetry(pullRequest, current)) {
+            return;
+        }
+        replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+            pullRequest.number,
+            current,
+            releasedDeliveryReceiptAuthority(current),
+            port
+        );
+        return;
+    }
+    const frozenHead = frozenDeliveryReceiptAuthorityHead(pullRequest.number, current);
+    if (frozenHead === undefined || frozenHead === pullRequest.headRefOid) {
+        return;
+    }
+    replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+        pullRequest.number,
+        current,
+        releasedDeliveryReceiptAuthority(current),
+        port
+    );
+}
+
+function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest: PullRequestSnapshot): boolean {
+    return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
+}
+
+function restoreDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (current?.phase === 'legacy') {
+        persistDeliveryReceiptAuthority(number, { phase: 'released', receiptId: current.receiptId }, port);
+        return;
+    }
+    if (current?.phase !== 'prepared' || current.postMergeValidation === undefined) {
+        return;
+    }
+    const beforeArming = releasedDeliveryReceiptAuthority(current);
+    restorePreArmedDeliveryReceiptAuthority(number, beforeArming, current, port);
+}
+
+function withRestorablePreArmedDeliveryReceiptAuthority<Result>(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort,
+    shouldRestore: () => boolean,
+    run: () => Result
+): Result {
+    try {
+        return run();
+    } catch (error) {
+        if (shouldRestore()) {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        }
+        throw error;
+    }
+}
+
+function resolveFinalSnapshotWithRestorablePreparedAuthority(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): PullRequestSnapshot {
+    let latestDefinitiveUnmerged: PullRequestSnapshot | undefined;
+    let sawFinalSnapshot = false;
+
+    try {
+        port.fetch();
+        const initial = port.pullRequest(number);
+        sawFinalSnapshot = true;
+        if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(initial)) {
+            latestDefinitiveUnmerged = initial;
+        }
+        const finalSnapshot = refreshStructuralMergeability(initial, port, (pullRequest) => {
+            if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest)) {
+                latestDefinitiveUnmerged = pullRequest;
+            }
+        });
+        if (finalSnapshot.state !== 'MERGED') {
+            validateStructuralMergeability(finalSnapshot);
+        }
+        return finalSnapshot;
+    } catch (error) {
+        if (!sawFinalSnapshot) {
+            try {
+                const recovered = resolveStructuralMergeability(port.pullRequest(number), port);
+                if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(recovered)) {
+                    latestDefinitiveUnmerged = recovered;
+                }
+            } catch {
+                // Preserve the armed authority when the post-merge state remains unreadable.
+            }
+        }
+        if (latestDefinitiveUnmerged !== undefined) {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        }
+        throw error;
+    }
+}
+
+function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    let latestObserved: PullRequestSnapshot | undefined;
+    try {
+        port.fetch();
+        const raw = port.pullRequest(number);
+        latestObserved = raw;
+        if (raw.state === 'MERGED') {
+            return;
+        }
+        if (raw.state === 'CLOSED') {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+            return;
+        }
+        if (raw.state !== 'OPEN') {
+            return;
+        }
+        const current = refreshStructuralMergeability(raw, port, (pullRequest) => {
+            latestObserved = pullRequest;
+        });
+        latestObserved = current;
+        if (current.state === 'MERGED') {
+            return;
+        }
+        if (current.state === 'OPEN' && current.mergeable === 'CONFLICTING') {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+            return;
+        }
+        if (current.state !== 'OPEN' && current.state !== 'CLOSED') {
+            return;
+        }
+    } catch {
+        if (
+            latestObserved !== undefined &&
+            shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(latestObserved)
+        ) {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        }
+        return;
+    }
+    if (
+        latestObserved !== undefined &&
+        shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(latestObserved)
+    ) {
+        restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+    }
+}
+
+function persistMergeAuthorizedDeliveryReceiptAuthority(
+    number: number,
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation: PersistedPreparedPostMergeValidation | undefined,
+    port: DeliveryPort
+): void {
+    persistDeliveryReceiptAuthority(
+        number,
+        {
+            phase: 'merge-authorized',
+            receiptId: receipt.id,
+            receiptBody: receipt.body,
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        },
+        port
+    );
+}
+
+function persistTerminalDeliveryReceiptAuthority(
+    number: number,
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation: PersistedPreparedPostMergeValidation | undefined,
+    port: DeliveryPort
+): void {
+    persistDeliveryReceiptAuthority(
+        number,
+        {
+            phase: 'terminal',
+            receiptId: receipt.id,
+            receiptBody: receipt.body,
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        },
+        port
+    );
+}
+
+function readExactDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string
+): DeliveryReceiptComment {
+    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
+    if (receipt === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    assertDeliveryReceiptForHead(receipt, pullRequest);
     return receipt;
 }
 
-function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
-    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    return assertDeliveryReceiptForHead(newestDeliveryReceipt(lineage, pullRequest.number), pullRequest);
+function readStableExactDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string
+): DeliveryReceiptComment {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = firstLineage.find((comment) => comment.id === expectedReceiptId);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = secondLineage.find((comment) => comment.id === expectedReceiptId);
+    if (first === undefined || second === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    assertDeliveryReceiptForHead(second, pullRequest);
+    return second;
+}
+
+function readStableExactMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string,
+    validate: (
+        lineage: DeliveryReceiptComment[],
+        receipt: DeliveryReceiptComment,
+        payload: DeliveryReceiptPayload
+    ) => void
+): DeliveryReceiptComment {
+    const read = () => {
+        const lineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+        const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
+        if (receipt === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+        }
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        validate(lineage, receipt, payload);
+        return receipt;
+    };
+    const first = read();
+    const second = read();
+    if (first.id !== second.id || first.body !== second.body) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return second;
+}
+
+function assertCompleteDeliveryReceiptProof(
+    number: number,
+    comments: DeliveryReceiptComment[],
+    proof: DeliveryReceiptProof
+): void {
+    if (!Array.isArray(proof.commentIds) || proof.commentIds.some((commentId) => typeof commentId !== 'string')) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (new Set(proof.commentIds).size !== proof.commentIds.length) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (
+        !Array.isArray(proof.editedCommentIds) ||
+        proof.editedCommentIds.some((commentId) => typeof commentId !== 'string') ||
+        new Set(proof.editedCommentIds).size !== proof.editedCommentIds.length
+    ) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (proof.commentIds.length !== proof.totalCount) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (comments.length !== proof.totalCount) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    const commentIdSet = new Set(proof.commentIds);
+    const editedCommentIds = new Set(proof.editedCommentIds);
+    for (const editedCommentId of editedCommentIds) {
+        if (!commentIdSet.has(editedCommentId)) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
+    if (proof.totalCount === 0) {
+        if (proof.latestCommentId !== undefined || proof.commentIds.length > 0 || proof.editedCommentIds.length > 0) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        return;
+    }
+    if (proof.latestCommentId !== undefined && !commentIdSet.has(proof.latestCommentId)) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    const restCommentIds = comments.map((comment) => comment.id);
+    for (const commentId of restCommentIds) {
+        if (!commentIdSet.has(commentId)) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
+    for (let index = 0; index < comments.length; index += 1) {
+        const comment = comments[index];
+        if (
+            comment !== undefined &&
+            editedCommentIds.has(comment.id) &&
+            isAuthorBotNodeId(comment.authorNodeId) &&
+            comment.authorType === 'Bot'
+        ) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
+}
+
+function provenDeliveryReceiptComments(
+    pullRequest: Pick<PullRequestSnapshot, 'number'>,
+    port: DeliveryPort
+): DeliveryReceiptComment[] {
+    const comments = port.deliveryReceipts(pullRequest.number);
+    assertCompleteDeliveryReceiptProof(pullRequest.number, comments, port.deliveryReceiptProof(pullRequest.number));
+    for (const comment of comments) {
+        if (
+            isAuthorBotNodeId(comment.authorNodeId) &&
+            comment.authorType === 'Bot' &&
+            comment.createdAt !== comment.updatedAt
+        ) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+    }
+    return comments;
+}
+
+function newestCanonicalDeliveryReceiptForKey(
+    lineage: DeliveryReceiptComment[],
+    key: string,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
+        const comment = lineage[index];
+        if (comment === undefined) {
+            continue;
+        }
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (deliveryReceiptKey(payload) !== key) {
+            continue;
+        }
+        return comment;
+    }
+    fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    throw new Error('unreachable');
+}
+
+function newestLogicalDeliveryReceiptAuthority(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    const newest = lineage.at(-1);
+    if (newest === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    const payload = assertDeliveryReceiptForHead(newest, pullRequest);
+    return newestCanonicalDeliveryReceiptForKey(lineage, deliveryReceiptKey(payload), pullRequest);
+}
+
+function readStrictStableEquivalentDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment | undefined {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = authoritativeEquivalentDeliveryReceipt(firstLineage, expected, pullRequest);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = authoritativeEquivalentDeliveryReceipt(secondLineage, expected, pullRequest);
+    if (first === undefined || second === undefined) {
+        if (first === undefined && second === undefined) {
+            return undefined;
+        }
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    return second;
+}
+
+function tryStableHistoricalDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment | undefined {
+    try {
+        return readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        if (
+            /delivery receipt authority cannot be proven/u.test(detail) ||
+            /delivery receipt changed during delivery/u.test(detail)
+        ) {
+            return undefined;
+        }
+        throw error;
+    }
+}
+
+function compatibleBodylessPersistedMergedRecoveryReceipt(
+    lineage: DeliveryReceiptComment[],
+    authority: CurrentPersistedDeliveryReceiptAuthority,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    const stored = lineage.find((receipt) => receipt.id === authority.receiptId);
+    if (stored === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    const storedPayload = assertDeliveryReceiptForHead(stored, pullRequest);
+    if (storedPayload.schemaVersion === 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (authority.phase !== 'released') {
+        const validation = authority.postMergeValidation;
+        if (validation === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            pullRequest.number,
+            storedPayload,
+            validation,
+            'recovery'
+        );
+    }
+    const authoritative = newestLogicalDeliveryReceiptAuthority(lineage, pullRequest);
+    const authoritativePayload = assertDeliveryReceiptForHead(authoritative, pullRequest);
+    if (
+        !sameDeliveryReceiptKey(storedPayload, authoritativePayload) ||
+        !sameDeliveryReceiptMode(storedPayload, authoritativePayload)
+    ) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return stored;
+}
+
+function validateLegacyPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    payload: DeliveryReceiptPayload
+): void {
+    if (payload.schemaVersion !== 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (payload.bodySha256 !== bodySha256(pullRequest.body)) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if ((payload.closingIssue ?? undefined) !== trackerCompletionTarget(pullRequest)) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+}
+
+function readCompatibleBodylessPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    authority: CurrentPersistedDeliveryReceiptAuthority
+): DeliveryReceiptComment {
+    return readStableExactMergedRecoveryReceipt(
+        pullRequest,
+        port,
+        authority.receiptId,
+        (lineage, _receipt, _payload) => {
+            compatibleBodylessPersistedMergedRecoveryReceipt(lineage, authority, pullRequest);
+        }
+    );
+}
+
+function readPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    authority: PersistedDeliveryReceiptAuthority
+): DeliveryReceiptComment {
+    if (authority.phase === 'legacy') {
+        return readStableExactMergedRecoveryReceipt(
+            pullRequest,
+            port,
+            authority.receiptId,
+            (_lineage, _receipt, payload) => validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload)
+        );
+    }
+    if (authority.phase === 'released') {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    if (authority.postMergeValidation === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    const preparedPostMergeValidation = authority.postMergeValidation;
+    validatePostMergeSnapshot(preparedPostMergeValidation, pullRequest, pullRequest.number);
+    if (authority.receiptBody === undefined) {
+        return readCompatibleBodylessPersistedMergedRecoveryReceipt(pullRequest, port, authority);
+    }
+    const receipt = readStableExactMergedRecoveryReceipt(pullRequest, port, authority.receiptId, () => undefined);
+    if (receipt.body !== authority.receiptBody) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (preparedPostMergeValidation !== undefined) {
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        if (payload.schemaVersion === 1) {
+            validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload);
+            return receipt;
+        }
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            pullRequest.number,
+            payload,
+            preparedPostMergeValidation,
+            'recovery'
+        );
+    }
+    return receipt;
 }
 
 function validateStableDeliveryReceipt(
@@ -669,7 +2164,7 @@ function validateStableDeliveryReceipt(
     expected: DeliveryReceiptPayload,
     recovered: DeliveryReceiptPayload
 ): void {
-    if (composeDeliveryReceipt(expected) !== composeDeliveryReceipt(recovered)) {
+    if (!sameExactDeliveryReceipt(expected, recovered)) {
         fail(`PR #${number} delivery receipt changed during delivery`);
     }
 }
@@ -677,20 +2172,80 @@ function validateStableDeliveryReceipt(
 function ensureDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
     closingIssue: number | undefined,
-    port: DeliveryPort
-): DeliveryReceiptPayload {
-    const expected = expectedDeliveryReceipt(pullRequest, closingIssue);
+    port: DeliveryPort,
+    ciAdmissionMode: CiAdmissionMode
+): DeliveryReceiptComment {
+    const expected = expectedDeliveryReceipt(pullRequest, closingIssue, ciAdmissionMode, port);
     const expectedBody = composeDeliveryReceipt(expected);
-    const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    let receipt = existing.at(-1);
-    if (receipt?.body !== expectedBody) {
+    const persistedAuthority = port.readDeliveryReceiptAuthority(pullRequest.number);
+    const currentPersistedAuthority =
+        persistedAuthority !== undefined && isCurrentPersistedDeliveryReceiptAuthority(persistedAuthority)
+            ? persistedAuthority
+            : undefined;
+    const frozenAuthority = isFrozenPersistedDeliveryReceiptAuthority(currentPersistedAuthority)
+        ? currentPersistedAuthority
+        : undefined;
+    let receipt: DeliveryReceiptComment | undefined;
+    let expectedReceipt = expected;
+    if (frozenAuthority !== undefined) {
+        if (frozenAuthority.receiptBody === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+        expectedReceipt = frozenCurrentDeliveryReceiptPayload(
+            pullRequest.number,
+            frozenAuthority.receiptBody,
+            expected
+        );
+        try {
+            receipt = readStableExactDeliveryReceipt(pullRequest, port, frozenAuthority.receiptId);
+        } catch {
+            fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+        }
+        if (receipt.body !== frozenAuthority.receiptBody) {
+            fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+        }
+        if (frozenAuthority.phase === 'prepared' && frozenAuthority.postMergeValidation !== undefined) {
+            validateReceiptPayloadAgainstPreparedPostMergeValidation(
+                pullRequest.number,
+                expectedReceipt,
+                frozenAuthority.postMergeValidation,
+                'delivery'
+            );
+        }
+        assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
+    }
+    const existing =
+        receipt === undefined
+            ? orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest)
+            : [];
+    const knownReceiptIds = new Set(existing.map((existingReceipt) => existingReceipt.id));
+    const historical = authoritativeEquivalentDeliveryReceipt(existing, expected, pullRequest);
+    if (receipt === undefined) {
+        receipt =
+            historical === undefined ? undefined : tryStableHistoricalDeliveryReceipt(pullRequest, port, expected);
+    }
+    if (
+        receipt === undefined &&
+        currentPersistedAuthority?.phase !== 'released' &&
+        currentPersistedAuthority?.receiptBody === expectedBody
+    ) {
+        try {
+            receipt = readExactDeliveryReceipt(pullRequest, port, currentPersistedAuthority.receiptId);
+        } catch {
+            fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+        }
+    }
+    if (receipt === undefined) {
         try {
             receipt = port.addDeliveryReceipt(pullRequest.number, expectedBody);
         } catch (error) {
-            const recovered = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(
-                -1
-            );
-            if (recovered?.body !== expectedBody) {
+            let recovered: DeliveryReceiptComment | undefined;
+            try {
+                recovered = readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+            } catch {
+                throw error;
+            }
+            if (recovered === undefined || knownReceiptIds.has(recovered.id)) {
                 throw error;
             }
             receipt = recovered;
@@ -699,12 +2254,27 @@ function ensureDeliveryReceipt(
     if (receipt === undefined) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
-    const verified = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(-1);
-    if (verified === undefined || verified.id !== receipt.id || verified.body !== expectedBody) {
+    const receiptPayload = assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
+    persistPreparedDeliveryReceiptAuthority(pullRequest.number, receipt, port);
+    let verified: DeliveryReceiptComment | undefined;
+    try {
+        verified =
+            frozenAuthority === undefined
+                ? readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expectedReceipt)
+                : readStableExactDeliveryReceipt(pullRequest, port, receipt.id);
+    } catch {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    return assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
+    if (
+        verified === undefined ||
+        verified.id !== receipt.id ||
+        verified.body !== receipt.body ||
+        !sameExactDeliveryReceipt(assertDeliveryReceiptForHead(verified, pullRequest), expectedReceipt)
+    ) {
+        fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+    }
+    assertCanonicalDeliveryReceipt(verified, pullRequest, receiptPayload);
+    return verified;
 }
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
@@ -781,20 +2351,47 @@ function deliverPullRequestWithCiAdmission(
     number: number,
     port: DeliveryPort,
     tracker: TrackerCompletionPort,
-    ciAdmissionMode: CiAdmissionMode
+    ciAdmissionMode: CiAdmissionMode,
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
     port.fetch();
-    const initial = resolveStructuralMergeability(port.pullRequest(number), port);
+    const rawInitial = port.pullRequest(number);
+    if (rawInitial.state === 'CLOSED') {
+        restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+    }
+    const initial = resolveStructuralMergeability(rawInitial, port);
+    if (initial.state === 'CLOSED') {
+        restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+    }
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
-        const receipt = readDeliveryReceipt(initial, port);
+        const receiptAuthority = port.readDeliveryReceiptAuthority(number);
+        if (receiptAuthority === undefined) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        const receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
+        const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+        let recoveryPostMergeValidation: PersistedPreparedPostMergeValidation | undefined;
+        if (receiptAuthority.phase === 'legacy') {
+            recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
+                initial,
+                receiptPayload.closingIssue ?? undefined
+            );
+        } else if (receiptAuthority.phase !== 'released') {
+            recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
+        }
+        if (receiptAuthority.phase !== 'terminal') {
+            persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
+        }
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
-        completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+        completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
+        persistTerminalDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
+    releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(initial, port);
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
     validatePullRequest(initial, port, ciAdmissionMode);
@@ -806,20 +2403,31 @@ function deliverPullRequestWithCiAdmission(
     }
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
-    const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port);
+    const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port, ciAdmissionMode);
+    const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+    const preparedPostMergeValidation = persistedPreparedPostMergeValidation(initial, initialTrackerTarget);
+    const authorityBeforeFinalFetchArming = port.readDeliveryReceiptAuthority(number);
+    const finalFetchArmedAuthority = preparedDeliveryReceiptAuthority(receipt, preparedPostMergeValidation);
+    persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
 
-    port.fetch();
-    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    const finalSnapshot = resolveFinalSnapshotWithRestorablePreparedAuthority(
+        number,
+        authorityBeforeFinalFetchArming,
+        finalFetchArmedAuthority,
+        port
+    );
     if (finalSnapshot.state === 'MERGED') {
-        validateAuthorAppMerger(finalSnapshot);
-    }
-    const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
-    validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
-    validateStablePullRequest(initial, finalSnapshot);
-    if (finalSnapshot.state === 'MERGED') {
-        validateBaseBranch(finalSnapshot);
-        const recoveredReceipt = readDeliveryReceipt(finalSnapshot, port);
-        validateStableDeliveryReceipt(number, receipt, recoveredReceipt);
+        validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
+        const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
+        const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            number,
+            recoveredPayload,
+            preparedPostMergeValidation,
+            'delivery'
+        );
+        validateStableDeliveryReceipt(number, receiptPayload, recoveredPayload);
+        persistMergeAuthorizedDeliveryReceiptAuthority(number, recoveredReceipt, preparedPostMergeValidation, port);
         const finalDependents = port
             .dependents(finalSnapshot.headRefName)
             .filter((candidate) => candidate.number !== number);
@@ -828,43 +2436,124 @@ function deliverPullRequestWithCiAdmission(
             validateDependent(port.pullRequest(dependent.number), dependent);
         }
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-        completeIssueAfterMerge(number, recoveredReceipt.closingIssue, tracker);
+        completeIssueAfterMerge(number, recoveredPayload.closingIssue, tracker);
+        persistTerminalDeliveryReceiptAuthority(number, recoveredReceipt, preparedPostMergeValidation, port);
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
         return;
     }
-    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
-    validateBaseBranch(finalSnapshot);
-    validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
-    const finalDependents = port
-        .dependents(finalSnapshot.headRefName)
-        .filter((candidate) => candidate.number !== number);
-    validateDependentSet(dependents, finalDependents);
-    for (const dependent of finalDependents) {
-        validateDependent(port.pullRequest(dependent.number), dependent);
-    }
+    const { finalDependents, finalTrackerTarget, finalReceipt, finalReceiptPayload, preMergeArmedAuthority } =
+        withRestorablePreArmedDeliveryReceiptAuthority(
+            number,
+            authorityBeforeFinalFetchArming,
+            finalFetchArmedAuthority,
+            port,
+            () => shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(finalSnapshot),
+            () => {
+                restorePreArmedDeliveryReceiptAuthority(
+                    number,
+                    authorityBeforeFinalFetchArming,
+                    finalFetchArmedAuthority,
+                    port
+                );
+                const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
+                validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
+                validateStablePullRequest(initial, finalSnapshot);
+                validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+                validateBaseBranch(finalSnapshot);
+                validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
+                const finalDependents = port
+                    .dependents(finalSnapshot.headRefName)
+                    .filter((candidate) => candidate.number !== number);
+                validateDependentSet(dependents, finalDependents);
+                for (const dependent of finalDependents) {
+                    validateDependent(port.pullRequest(dependent.number), dependent);
+                }
 
-    port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+                const finalReceipt = ensureDeliveryReceipt(finalSnapshot, finalTrackerTarget, port, ciAdmissionMode);
+                const finalReceiptPayload = assertDeliveryReceiptForHead(finalReceipt, finalSnapshot);
+                const preMergeArmedAuthority = preparedDeliveryReceiptAuthority(
+                    finalReceipt,
+                    persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget)
+                );
+                persistPreparedDeliveryReceiptAuthority(
+                    number,
+                    finalReceipt,
+                    port,
+                    preMergeArmedAuthority.postMergeValidation
+                );
+                return {
+                    finalDependents,
+                    finalTrackerTarget,
+                    finalReceipt,
+                    finalReceiptPayload,
+                    preMergeArmedAuthority,
+                };
+            }
+        );
+    try {
+        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
+    } catch (error) {
+        if (error instanceof DeliveryMergeRejectedError) {
+            if (error.certainty === 'definitive-no-merge') {
+                markRemoteMutationKnownAbsent?.();
+            }
+            tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+                number,
+                authorityBeforeFinalFetchArming,
+                preMergeArmedAuthority,
+                port
+            );
+        }
+        throw error;
+    }
     const mergedSnapshot = port.pullRequest(number);
-    validatePostMergeSnapshot(finalSnapshot, mergedSnapshot, number, finalTrackerTarget);
+    validatePostMergeSnapshot(
+        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
+        mergedSnapshot,
+        number
+    );
+    persistMergeAuthorizedDeliveryReceiptAuthority(
+        number,
+        finalReceipt,
+        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
+        port
+    );
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-    completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+    completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
+    persistTerminalDeliveryReceiptAuthority(
+        number,
+        finalReceipt,
+        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
+        port
+    );
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
-    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE);
+export function deliverPullRequest(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort,
+    markRemoteMutationKnownAbsent?: () => void
+): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE, markRemoteMutationKnownAbsent);
 }
 
 /** Retained as the snapshot-backed cutover path if CI becomes merge-authoritative again. */
 export function deliverPullRequestWithRequiredCi(
     number: number,
     port: DeliveryPort,
-    tracker: TrackerCompletionPort
+    tracker: TrackerCompletionPort,
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
-    deliverPullRequestWithCiAdmission(number, port, tracker, 'required');
+    deliverPullRequestWithCiAdmission(number, port, tracker, 'required', markRemoteMutationKnownAbsent);
 }
 
 function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: false,
+        ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -875,7 +2564,12 @@ function capture(command: string, args: string[]): string {
 }
 
 function run(command: string, args: string[]): void {
-    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit', shell: false });
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        shell: false,
+        ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -942,6 +2636,7 @@ type RawRollupContexts = {
 };
 
 type RawRollupEntry = {
+    id?: unknown;
     __typename?: unknown;
     name?: unknown;
     status?: unknown;
@@ -950,6 +2645,25 @@ type RawRollupEntry = {
     context?: unknown;
     state?: unknown;
     createdAt?: unknown;
+};
+
+type RollupNode = {
+    id: string;
+    checkRun: HeadCheckRun;
+};
+
+type DeliveryReceiptProofResponse = {
+    data?: {
+        repository?: {
+            pullRequest?: {
+                comments?: {
+                    totalCount?: unknown;
+                    pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
+                    nodes?: Array<{ id?: unknown; lastEditedAt?: unknown } | null> | null;
+                } | null;
+            } | null;
+        };
+    };
 };
 
 const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
@@ -966,8 +2680,8 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
             pageInfo{hasNextPage endCursor}
             nodes{
               __typename
-              ... on CheckRun{name status conclusion startedAt}
-              ... on StatusContext{context state createdAt}
+              ... on CheckRun{id name status conclusion startedAt}
+              ... on StatusContext{id context state createdAt}
             }
           }
         }
@@ -982,20 +2696,51 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
  * conclusion this gate draws from the rollup — a tolerated cancellation as much as a refusal — would
  * then rest on evidence that may simply be absent, and each further review event adds a whole run's
  * worth of contexts, so heads cross that line in the ordinary course of a long review. The rollup is
- * read through GraphQL instead, paged until the nodes account for `totalCount`, and refused when
- * they do not. A partial list is never merged over.
+ * read through GraphQL instead, pinned to the first page's declared total, paged through every page
+ * GitHub offers, and refused unless the terminal page accounts for that exact unique node count.
+ * A partial or self-contradictory list is never merged over.
  */
 function readHeadCheckRuns(pullRequestNumber: number, readPage: (cursor: string | null) => RollupPage): HeadCheckRun[] {
+    const runs: HeadCheckRun[] = [];
+    const seenNodeIds = new Set<string>();
+    const emittedCursors = new Set<string>();
     let page = readPage(null);
-    const nodes: unknown[] = [...page.nodes];
-    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && nodes.length < page.totalCount) {
-        page = readPage(page.pageInfo.endCursor);
-        nodes.push(...page.nodes);
+    let cursor: string | null = null;
+    const expectedTotalCount = page.totalCount;
+    while (true) {
+        if (page.totalCount !== expectedTotalCount) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: rollup totalCount drifted`);
+        }
+        for (const entry of page.nodes) {
+            const node = toRollupNode(entry, pullRequestNumber);
+            if (seenNodeIds.has(node.id)) {
+                fail(
+                    `cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: rollup repeated a node`
+                );
+            }
+            seenNodeIds.add(node.id);
+            runs.push(node.checkRun);
+        }
+        if (runs.length > expectedTotalCount) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: got ${runs.length}`);
+        }
+        if (!page.pageInfo.hasNextPage) {
+            break;
+        }
+        if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: cursor did not advance`);
+        }
+        if (emittedCursors.has(page.pageInfo.endCursor)) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: cursor did not advance`);
+        }
+        emittedCursors.add(page.pageInfo.endCursor);
+        cursor = page.pageInfo.endCursor;
+        page = readPage(cursor);
     }
-    if (nodes.length !== page.totalCount) {
-        fail(`cannot read all ${page.totalCount} checks on PR #${pullRequestNumber}: got ${nodes.length}`);
+    if (runs.length !== expectedTotalCount) {
+        fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: got ${runs.length}`);
     }
-    return nodes.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+    return runs;
 }
 
 function parseRollupPage(response: string, pullRequestNumber: number): RollupPage {
@@ -1026,20 +2771,36 @@ function parseRollupPage(response: string, pullRequestNumber: number): RollupPag
  * only the `CheckRun` arm would drop a failing status context out of the evidence entirely, so an
  * entry that matches neither arm refuses rather than being skipped.
  */
-function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun {
+function toRollupNode(value: unknown, pullRequestNumber: number): RollupNode {
     const entry = (value === null || typeof value !== 'object' ? {} : value) as RawRollupEntry;
-    if (entry.__typename === 'CheckRun' && typeof entry.name === 'string' && typeof entry.status === 'string') {
+    if (
+        typeof entry.id === 'string' &&
+        entry.__typename === 'CheckRun' &&
+        typeof entry.name === 'string' &&
+        typeof entry.status === 'string'
+    ) {
         return {
-            name: entry.name,
-            status: entry.status,
-            conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
-            startedAt: reportedTimestamp(entry.startedAt),
+            id: entry.id,
+            checkRun: {
+                name: entry.name,
+                status: entry.status,
+                conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+                startedAt: reportedTimestamp(entry.startedAt),
+            },
         };
     }
-    if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
+    if (
+        typeof entry.id === 'string' &&
+        entry.__typename === 'StatusContext' &&
+        typeof entry.context === 'string' &&
+        typeof entry.state === 'string'
+    ) {
         // A status context carries no start of its own; its creation is when the reporting integration
         // first spoke about this commit, which is the same ordering evidence for the same purpose.
-        return toStatusContextCheckRun(entry.context, entry.state, reportedTimestamp(entry.createdAt));
+        return {
+            id: entry.id,
+            checkRun: toStatusContextCheckRun(entry.context, entry.state, reportedTimestamp(entry.createdAt)),
+        };
     }
     return fail(`cannot read a check on PR #${pullRequestNumber}`);
 }
@@ -1135,15 +2896,389 @@ function readMergedByActorNodeId(
     return mergedBy.id;
 }
 
+function readDeliveryReceiptProofFromGithub(
+    number: number,
+    repository: { owner: string; name: string },
+    shell: Pick<ShellRunner, 'capture'>
+): DeliveryReceiptProof {
+    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
+    const readPage = (cursor: string | null) => {
+        const response = parseJson<DeliveryReceiptProofResponse>(
+            shell.capture('gh', [
+                'api',
+                'graphql',
+                '-f',
+                `query=${query}`,
+                '-f',
+                `owner=${repository.owner}`,
+                '-f',
+                `name=${repository.name}`,
+                '-F',
+                `number=${number}`,
+                ...(cursor === null ? [] : ['-f', `cursor=${cursor}`]),
+            ]),
+            `PR #${number} delivery receipt proof`
+        );
+        const comments = response.data?.repository?.pullRequest?.comments;
+        if (
+            typeof comments?.totalCount !== 'number' ||
+            typeof comments.pageInfo?.hasNextPage !== 'boolean' ||
+            !Array.isArray(comments.nodes)
+        ) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        return {
+            totalCount: comments.totalCount,
+            pageInfo: {
+                hasNextPage: comments.pageInfo.hasNextPage,
+                endCursor: typeof comments.pageInfo.endCursor === 'string' ? comments.pageInfo.endCursor : null,
+            },
+            nodes: comments.nodes.map((comment) => {
+                if (comment === null || comment === undefined || typeof comment.id !== 'string') {
+                    fail(`cannot inspect delivery receipts for PR #${number}`);
+                }
+                if (
+                    comment.lastEditedAt !== undefined &&
+                    comment.lastEditedAt !== null &&
+                    typeof comment.lastEditedAt !== 'string'
+                ) {
+                    fail(`cannot inspect delivery receipts for PR #${number}`);
+                }
+                return {
+                    id: comment.id,
+                    lastEditedAt: typeof comment.lastEditedAt === 'string' ? comment.lastEditedAt : undefined,
+                };
+            }),
+        };
+    };
+    let page = readPage(null);
+    const expectedTotalCount = page.totalCount;
+    const commentIds: string[] = [];
+    const editedCommentIds: string[] = [];
+    const seenCommentIds = new Set<string>();
+    const emittedCursors = new Set<string>();
+    let cursor: string | null = null;
+    while (true) {
+        if (page.totalCount !== expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        let pageContributed = 0;
+        for (const node of page.nodes) {
+            if (seenCommentIds.has(node.id)) {
+                fail(`cannot inspect delivery receipts for PR #${number}`);
+            }
+            seenCommentIds.add(node.id);
+            commentIds.push(node.id);
+            if (node.lastEditedAt !== undefined) {
+                editedCommentIds.push(node.id);
+            }
+            pageContributed += 1;
+        }
+        if (commentIds.length > expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (!page.pageInfo.hasNextPage) {
+            break;
+        }
+        if (cursor !== null && pageContributed === 0) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (commentIds.length >= expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (emittedCursors.has(page.pageInfo.endCursor)) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        emittedCursors.add(page.pageInfo.endCursor);
+        cursor = page.pageInfo.endCursor;
+        page = readPage(cursor);
+    }
+    if (commentIds.length !== expectedTotalCount) {
+        fail(`cannot inspect delivery receipts for PR #${number}`);
+    }
+    return {
+        totalCount: expectedTotalCount,
+        latestCommentId: commentIds.at(-1),
+        commentIds,
+        editedCommentIds,
+    };
+}
+
+type PullRequestReviewRecord = {
+    id: string;
+    state: string;
+    submittedAt: string | null;
+    author: { id: string | null; login: string; __typename: string } | null;
+    commitOid: string | null;
+};
+
+type ReviewThreadRecord = {
+    id: string;
+    isResolved: boolean;
+};
+
+type ReviewStatePage = {
+    pullRequestId: string;
+    headRefOid: string;
+    reviews: {
+        nodes: PullRequestReviewRecord[];
+        pageInfo: { hasPreviousPage: boolean; startCursor: string | null };
+    };
+    reviewThreads: {
+        nodes: ReviewThreadRecord[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    };
+};
+
+type CompleteReviewState = {
+    pullRequestId: string;
+    headRefOid: string;
+    reviews: PullRequestReviewRecord[];
+    reviewThreads: ReviewThreadRecord[];
+};
+
+const REVIEW_STATE_PAGE_SIZE = 100;
+const REVIEW_STATE_PAGE_LIMIT = 1_000;
+const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+
+function invalidReviewState(number: number): never {
+    fail(`cannot prove complete review state for PR #${number}`);
+}
+
+function requiredReviewStateString(value: unknown, number: number): string {
+    if (typeof value !== 'string' || value.trim() === '') {
+        invalidReviewState(number);
+    }
+    return value;
+}
+
+function parseReviewAuthor(value: unknown, number: number): PullRequestReviewRecord['author'] {
+    if (value === null) {
+        return null;
+    }
+    if (!isRecord(value)) {
+        invalidReviewState(number);
+    }
+    if (value.id !== undefined && (typeof value.id !== 'string' || value.id.trim() === '')) {
+        invalidReviewState(number);
+    }
+    return {
+        id: typeof value.id === 'string' ? value.id : null,
+        login: requiredReviewStateString(value.login, number),
+        __typename: requiredReviewStateString(value.__typename, number),
+    };
+}
+
+function parseReviewRecord(value: unknown, number: number): PullRequestReviewRecord {
+    if (!isRecord(value)) {
+        invalidReviewState(number);
+    }
+    if (value.submittedAt !== null && typeof value.submittedAt !== 'string') {
+        invalidReviewState(number);
+    }
+    let commitOid: string | null = null;
+    if (value.commit !== null) {
+        if (!isRecord(value.commit)) {
+            invalidReviewState(number);
+        }
+        commitOid = requiredReviewStateString(value.commit.oid, number);
+    }
+    return {
+        id: requiredReviewStateString(value.id, number),
+        state: requiredReviewStateString(value.state, number),
+        submittedAt: value.submittedAt,
+        author: parseReviewAuthor(value.author, number),
+        commitOid,
+    };
+}
+
+function parseReviewThreadRecord(value: unknown, number: number): ReviewThreadRecord {
+    if (!isRecord(value) || typeof value.isResolved !== 'boolean') {
+        invalidReviewState(number);
+    }
+    return {
+        id: requiredReviewStateString(value.id, number),
+        isResolved: value.isResolved,
+    };
+}
+
+function parseReviewStatePage(response: string, number: number): ReviewStatePage {
+    const envelope = parseJson<unknown>(response, 'review query');
+    if (
+        !isRecord(envelope) ||
+        (Object.hasOwn(envelope, 'errors') && (!Array.isArray(envelope.errors) || envelope.errors.length > 0)) ||
+        !isRecord(envelope.data) ||
+        !isRecord(envelope.data.repository)
+    ) {
+        invalidReviewState(number);
+    }
+    const pullRequest = envelope.data.repository.pullRequest;
+    if (
+        !isRecord(pullRequest) ||
+        !isRecord(pullRequest.reviews) ||
+        !Array.isArray(pullRequest.reviews.nodes) ||
+        !isRecord(pullRequest.reviews.pageInfo) ||
+        typeof pullRequest.reviews.pageInfo.hasPreviousPage !== 'boolean' ||
+        (pullRequest.reviews.pageInfo.startCursor !== null &&
+            typeof pullRequest.reviews.pageInfo.startCursor !== 'string') ||
+        !isRecord(pullRequest.reviewThreads) ||
+        !Array.isArray(pullRequest.reviewThreads.nodes) ||
+        !isRecord(pullRequest.reviewThreads.pageInfo) ||
+        typeof pullRequest.reviewThreads.pageInfo.hasNextPage !== 'boolean' ||
+        (pullRequest.reviewThreads.pageInfo.endCursor !== null &&
+            typeof pullRequest.reviewThreads.pageInfo.endCursor !== 'string')
+    ) {
+        invalidReviewState(number);
+    }
+    return {
+        pullRequestId: requiredReviewStateString(pullRequest.id, number),
+        headRefOid: requiredReviewStateString(pullRequest.headRefOid, number),
+        reviews: {
+            nodes: pullRequest.reviews.nodes.map((node) => parseReviewRecord(node, number)),
+            pageInfo: {
+                hasPreviousPage: pullRequest.reviews.pageInfo.hasPreviousPage,
+                startCursor: pullRequest.reviews.pageInfo.startCursor,
+            },
+        },
+        reviewThreads: {
+            nodes: pullRequest.reviewThreads.nodes.map((node) => parseReviewThreadRecord(node, number)),
+            pageInfo: {
+                hasNextPage: pullRequest.reviewThreads.pageInfo.hasNextPage,
+                endCursor: pullRequest.reviewThreads.pageInfo.endCursor,
+            },
+        },
+    };
+}
+
+function nextReviewStateCursor(number: number, cursor: string | null, seen: Set<string>): string {
+    if (cursor === null || cursor.trim() === '' || seen.has(cursor)) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+    seen.add(cursor);
+    return cursor;
+}
+
+function assertReviewStatePageBudget(number: number, pagesRead: number): void {
+    if (pagesRead >= REVIEW_STATE_PAGE_LIMIT) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+}
+
+function assertReviewStatePageIdentity(
+    number: number,
+    page: ReviewStatePage,
+    pullRequestId: string,
+    expectedHead: string
+): void {
+    if (page.pullRequestId !== pullRequestId || page.headRefOid !== expectedHead) {
+        invalidReviewState(number);
+    }
+}
+
+function readCompleteReviewState(
+    number: number,
+    expectedHead: string,
+    expectedPullRequestId: string | undefined,
+    readPage: (reviewsBefore: string | null, threadsAfter: string | null) => ReviewStatePage
+): CompleteReviewState {
+    const initialPage = readPage(null, null);
+    const pullRequestId = expectedPullRequestId ?? initialPage.pullRequestId;
+    assertReviewStatePageIdentity(number, initialPage, pullRequestId, expectedHead);
+    const reviewPages = [initialPage.reviews.nodes];
+    const reviewCursors = new Set<string>();
+    let reviewPage = initialPage.reviews;
+    let reviewPagesRead = 1;
+    while (reviewPage.pageInfo.hasPreviousPage) {
+        assertReviewStatePageBudget(number, reviewPagesRead);
+        const cursor = nextReviewStateCursor(number, reviewPage.pageInfo.startCursor, reviewCursors);
+        const nextPage = readPage(cursor, null);
+        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
+        reviewPage = nextPage.reviews;
+        reviewPages.push(reviewPage.nodes);
+        reviewPagesRead += 1;
+    }
+
+    const reviewThreads = [...initialPage.reviewThreads.nodes];
+    const threadCursors = new Set<string>();
+    let threadPage = initialPage.reviewThreads;
+    let threadPagesRead = 1;
+    while (threadPage.pageInfo.hasNextPage) {
+        assertReviewStatePageBudget(number, threadPagesRead);
+        const cursor = nextReviewStateCursor(number, threadPage.pageInfo.endCursor, threadCursors);
+        const nextPage = readPage(null, cursor);
+        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
+        threadPage = nextPage.reviewThreads;
+        reviewThreads.push(...threadPage.nodes);
+        threadPagesRead += 1;
+    }
+
+    return {
+        pullRequestId,
+        headRefOid: expectedHead,
+        reviews: reviewPages.reverse().flat(),
+        reviewThreads,
+    };
+}
+
+type BranchRulesetRule = {
+    type: string;
+    parameters?: {
+        required_status_checks?: Array<{ context: string }>;
+    };
+};
+
+/**
+ * A live read of the rule GitHub itself merges against, as opposed to `readGateRequiredCheckNames`,
+ * which derives a name from the pinned workflow for the required-CI path's own, unrelated purpose.
+ * This one exists only to name what a `BLOCKED` head is waiting on, and the caller's own "found
+ * nothing" outcome — every required check already succeeded, so the block is something else — is
+ * only true when the ruleset itself explicitly says so. A missing or malformed
+ * `required_status_checks` rule has not said that; it is a failed read, and must land in the caller's
+ * could-not-be-listed branch rather than being mistaken for an explicit, empty requirement.
+ *
+ * `rules/branches/main` aggregates every ruleset that applies to the branch, not one: more than one
+ * can carry its own `required_status_checks` rule, and the merge is blocked on the union of what any
+ * of them require. Keeping only the first, as `find` would, silently drops a second rule's contexts —
+ * and dropping only the rules that failed to parse, keeping the rest, has the same failure shape:
+ * the union comes back short of one rule's contexts and reads as complete. The union is trustworthy
+ * only when every matching rule parsed, so one unparsed rule fails the whole read.
+ */
+function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner): string[] {
+    const rules = parseJson<BranchRulesetRule[]>(
+        shell.capture('gh', ['api', `repos/${repository}/rules/branches/main`]),
+        `branch ruleset for ${repository}`
+    );
+    const requiredStatusCheckRules = rules.filter((rule) => rule.type === 'required_status_checks');
+    if (requiredStatusCheckRules.length === 0) {
+        fail(`branch ruleset for ${repository} carries no required_status_checks rule with a parameters array`);
+    }
+    const requiredStatusCheckArrays = requiredStatusCheckRules
+        .map((rule) => rule.parameters?.required_status_checks)
+        .filter((contexts): contexts is Array<{ context: string }> => contexts !== undefined);
+    if (requiredStatusCheckArrays.length !== requiredStatusCheckRules.length) {
+        fail(`branch ruleset for ${repository} carries a required_status_checks rule with no parameters array`);
+    }
+    return [...new Set(requiredStatusCheckArrays.flat().map((check) => check.context))];
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string; helperDir?: string } = {}
+    options: {
+        gitToken?: string;
+        helperDir?: string;
+        primaryRoot?: string;
+        markRemoteMutationAttempt?: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'];
+    } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
         fail(`invalid GitHub repository: ${repository}`);
     }
+    const primaryRoot = options.primaryRoot ?? process.cwd();
     const pullRequestFields = [
         'number',
         'state',
@@ -1214,63 +3349,44 @@ export function shellPort(
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
+        requiredStatusCheckContexts: () => readRequiredStatusCheckContexts(repository, shell),
         reviewState: (number, expectedHead) => {
-            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
-            const response = parseJson<{
-                data?: {
-                    repository?: {
-                        pullRequest?: {
-                            reviews: {
-                                nodes: Array<{
-                                    state: string;
-                                    submittedAt?: string | null;
-                                    author: { id?: string; login: string; __typename: string } | null;
-                                    commit: { oid: string } | null;
-                                }>;
-                                pageInfo: { hasPreviousPage: boolean };
-                            };
-                            reviewThreads: {
-                                nodes: Array<{ isResolved: boolean }>;
-                                pageInfo: { hasNextPage: boolean };
-                            };
-                        };
-                    };
-                };
-            }>(
-                shell.capture('gh', [
-                    'api',
-                    'graphql',
-                    '-f',
-                    `query=${query}`,
-                    '-f',
-                    `owner=${owner}`,
-                    '-f',
-                    `name=${name}`,
-                    '-F',
-                    `number=${number}`,
-                ]),
-                'review query'
-            );
-            const review = response.data?.repository?.pullRequest;
-            if (
-                review === undefined ||
-                review.reviews.pageInfo.hasPreviousPage ||
-                review.reviewThreads.pageInfo.hasNextPage
-            ) {
-                fail(`cannot prove complete review state for PR #${number}`);
+            const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
+                parseReviewStatePage(
+                    shell.capture('gh', [
+                        'api',
+                        'graphql',
+                        '-f',
+                        `query=${REVIEW_STATE_QUERY}`,
+                        '-f',
+                        `owner=${owner}`,
+                        '-f',
+                        `name=${name}`,
+                        '-F',
+                        `number=${number}`,
+                        ...(reviewsBefore === null ? [] : ['-f', `reviewsBefore=${reviewsBefore}`]),
+                        ...(threadsAfter === null ? [] : ['-f', `threadsAfter=${threadsAfter}`]),
+                    ]),
+                    number
+                );
+            const firstScan = readCompleteReviewState(number, expectedHead, undefined, readPage);
+            const secondScan = readCompleteReviewState(number, expectedHead, firstScan.pullRequestId, readPage);
+            if (!isDeepStrictEqual(firstScan, secondScan)) {
+                fail(`cannot prove stable review state for PR #${number}`);
             }
-            const onHead = review.reviews.nodes.filter(
+            const review = secondScan;
+            const onHead = review.reviews.filter(
                 (candidate) =>
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
-                    candidate.commit?.oid === expectedHead &&
+                    candidate.commitOid === expectedHead &&
                     candidate.author?.__typename === 'Bot' &&
                     isReviewerBotNodeId(candidate.author.id)
             );
             onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {
                 latestReviewerStateOnHead: onHead.at(-1)?.state ?? null,
-                unresolvedThreads: review.reviewThreads.nodes.filter((thread) => !thread.isResolved).length,
+                unresolvedThreads: review.reviewThreads.filter((thread) => !thread.isResolved).length,
             };
         },
         dependents: (baseBranch) => {
@@ -1302,29 +3418,43 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        merge: (number, expectedHead, hasDependents) => {
+        merge: (number, expectedHead, hasDependents, expectedTitle) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
-            const result = parseJson<{ merged: boolean; message: string }>(
-                shell.capture('gh', [
-                    'api',
-                    '--method',
-                    'PUT',
-                    `repos/${repository}/pulls/${number}/merge`,
-                    '-f',
-                    `sha=${expectedHead}`,
-                    '-f',
-                    `merge_method=${policy.method}`,
-                ]),
-                'merge request'
-            );
+            options.markRemoteMutationAttempt?.();
+            const mergeArgs = [
+                'api',
+                '--method',
+                'PUT',
+                `repos/${repository}/pulls/${number}/merge`,
+                '-f',
+                `sha=${expectedHead}`,
+                '-f',
+                `merge_method=${policy.method}`,
+                ...(expectedTitle === undefined ? [] : ['-f', `commit_title=${expectedTitle}`]),
+            ];
+            let response: string;
+            try {
+                response = shell.capture('gh', mergeArgs);
+            } catch (error) {
+                const rejection = classifyGithubMergeRejection(number, error);
+                if (rejection !== undefined) {
+                    throw rejection;
+                }
+                throw error;
+            }
+            const result = parseJson<{ merged: boolean; message: string }>(response, 'merge request');
             if (!result.merged) {
-                fail(`PR #${number} was not merged: ${result.message}`);
+                throw new DeliveryMergeRejectedError(
+                    `PR #${number} was not merged: ${result.message}`,
+                    'definitive-no-merge'
+                );
             }
         },
-        retarget: (number, baseBranch) =>
+        retarget: (number, baseBranch) => {
+            options.markRemoteMutationAttempt?.();
             shell.run('gh', [
                 'api',
                 '--method',
@@ -1333,7 +3463,8 @@ export function shellPort(
                 '-f',
                 `base=${baseBranch}`,
                 '--silent',
-            ]),
+            ]);
+        },
         // REST issue comments are returned in ascending comment-ID order. Pagination, flattening,
         // and filtering preserve that immutable order; receipt authority must never sort by time.
         deliveryReceipts: (number) => {
@@ -1355,8 +3486,10 @@ export function shellPort(
             }
             return comments;
         },
-        addDeliveryReceipt: (number, body) =>
-            toDeliveryReceiptComment(
+        deliveryReceiptProof: (number) => readDeliveryReceiptProofFromGithub(number, { owner, name }, shell),
+        addDeliveryReceipt: (number, body) => {
+            options.markRemoteMutationAttempt?.();
+            return toDeliveryReceiptComment(
                 parseJson<unknown>(
                     shell.capture('gh', [
                         'api',
@@ -1368,17 +3501,34 @@ export function shellPort(
                     ]),
                     `delivery receipt for PR #${number}`
                 )
-            ),
+            );
+        },
+        readDeliveryReceiptAuthority: (number) => readDeliveryReceiptAuthority(primaryRoot, number),
+        writeDeliveryReceiptAuthority: (number, authority, expectedCurrent) =>
+            writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
+        clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
+            clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
         log: (message) => console.log(message),
     };
 }
 
-export function parseCliArgs(args: string[]): { number?: number; help: boolean } {
+const DELIVER_USAGE = [
+    'Usage:',
+    '  pnpm deliver <pr-number>',
+    '  pnpm deliver --recover-lock <pr-number> --owner <owner-oid>',
+].join('\n');
+
+export type DeliverCliArgs = { number?: number; recoverLockArgs?: string[]; help: boolean };
+
+export function parseCliArgs(args: string[]): DeliverCliArgs {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
         return { help: true };
+    }
+    if (args[0] === '--recover-lock') {
+        return { help: false, recoverLockArgs: args.slice(1) };
     }
     const number = Number(args[0]);
     if (!Number.isSafeInteger(number) || number <= 0) {
@@ -1395,104 +3545,410 @@ export type DeliveryAuthentication = {
     session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
 };
 
-type DeliveryLockOwner = {
-    version: 1;
-    pid: number;
-    token: string;
-};
+type DeliveryReceiptAuthority = StoredDeliveryReceiptAuthority;
 
-export type DeliverySerialization = <Value>(
-    primaryRoot: string,
-    number: number,
-    operation: () => Promise<Value>
-) => Promise<Value>;
-
-const DELIVERY_LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-function deliveryLockRef(number: number): string {
+function deliveryReceiptAuthorityRef(number: number): string {
     if (!Number.isSafeInteger(number) || number <= 0) {
-        fail('delivery lock requires a positive pull-request number');
+        fail('delivery receipt authority requires a positive pull-request number');
     }
-    return `refs/sourdaw/delivery/pr-${number}`;
+    return `refs/sourdaw/delivery-receipt/pr-${number}`;
 }
 
 function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
     return spawnSync('git', args, {
         cwd: primaryRoot,
+        env: trustedDeliveryGitEnv(),
         encoding: 'utf8',
         shell: false,
         ...(input === undefined ? {} : { input }),
     });
 }
 
-function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockOwner {
-    let value: unknown;
-    try {
-        value = JSON.parse(contents) as unknown;
-    } catch {
-        fail(`PR #${number} delivery lock ownership is malformed`);
-    }
-    if (
-        typeof value !== 'object' ||
-        value === null ||
-        Object.keys(value).length !== 3 ||
-        !('version' in value) ||
-        value.version !== 1 ||
-        !('pid' in value) ||
-        typeof value.pid !== 'number' ||
-        !Number.isSafeInteger(value.pid) ||
-        value.pid <= 0 ||
-        !('token' in value) ||
-        typeof value.token !== 'string' ||
-        !DELIVERY_LOCK_TOKEN_PATTERN.test(value.token)
-    ) {
-        fail(`PR #${number} delivery lock ownership is malformed`);
-    }
-    return { version: 1, pid: value.pid, token: value.token };
+function trustedDeliveryGitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return {
+        ...parent,
+        GIT_NO_REPLACE_OBJECTS: '1',
+    };
 }
 
-function deliveryLockObjectId(value: string, number: number): string {
+function deliveryObjectId(value: string, invalidMessage: string): string {
     const oid = value.trim();
     if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
-        fail(`PR #${number} delivery lock object identity is malformed`);
+        fail(invalidMessage);
     }
     return oid;
 }
 
-function writeDeliveryLockOwner(primaryRoot: string, owner: DeliveryLockOwner, number: number): string {
-    const result = deliveryLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner));
+function isPersistedPreparedPostMergeValidation(value: unknown): value is PersistedPreparedPostMergeValidation {
+    const allowedKeys = new Set(['headRefOid', 'headRefName', 'baseRefName', 'title', 'bodySha256', 'trackerTarget']);
+    const keys = typeof value === 'object' && value !== null ? Object.keys(value) : [];
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        (keys.length === 5 || keys.length === 6) &&
+        keys.every((key) => allowedKeys.has(key)) &&
+        'headRefOid' in value &&
+        typeof value.headRefOid === 'string' &&
+        value.headRefOid !== '' &&
+        'headRefName' in value &&
+        typeof value.headRefName === 'string' &&
+        value.headRefName !== '' &&
+        'baseRefName' in value &&
+        typeof value.baseRefName === 'string' &&
+        value.baseRefName !== '' &&
+        'bodySha256' in value &&
+        typeof value.bodySha256 === 'string' &&
+        /^[0-9a-f]{64}$/u.test(value.bodySha256) &&
+        (!('title' in value) || (typeof value.title === 'string' && value.title !== '')) &&
+        'trackerTarget' in value &&
+        (value.trackerTarget === null ||
+            (typeof value.trackerTarget === 'number' &&
+                Number.isSafeInteger(value.trackerTarget) &&
+                value.trackerTarget > 0))
+    );
+}
+
+function skipJsonWhitespace(source: string, index: number): number {
+    while (index < source.length && /\s/u.test(source[index] ?? '')) {
+        index += 1;
+    }
+    return index;
+}
+
+function readJsonStringToken(source: string, start: number): { value: string; end: number } {
+    if (source[start] !== '"') {
+        throw new Error('expected JSON string');
+    }
+    let index = start + 1;
+    while (index < source.length) {
+        const character = source[index];
+        if (character === '"') {
+            const end = index + 1;
+            return { value: JSON.parse(source.slice(start, end)) as string, end };
+        }
+        if (character === '\\') {
+            index += 2;
+            continue;
+        }
+        if (character === undefined || character < ' ') {
+            throw new Error('invalid JSON string');
+        }
+        index += 1;
+    }
+    throw new Error('unterminated JSON string');
+}
+
+function readJsonNumberEnd(source: string, start: number): number {
+    let index = start;
+    if (source[index] === '-') {
+        index += 1;
+    }
+    const firstDigit = source[index];
+    if (firstDigit === '0') {
+        index += 1;
+    } else {
+        if (firstDigit === undefined || firstDigit < '1' || firstDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    if (source[index] === '.') {
+        index += 1;
+        const fractionDigit = source[index];
+        if (fractionDigit === undefined || fractionDigit < '0' || fractionDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    const exponent = source[index];
+    if (exponent === 'e' || exponent === 'E') {
+        index += 1;
+        const sign = source[index];
+        if (sign === '+' || sign === '-') {
+            index += 1;
+        }
+        const exponentDigit = source[index];
+        if (exponentDigit === undefined || exponentDigit < '0' || exponentDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    return index;
+}
+
+function readJsonLiteralEnd(source: string, start: number, literal: 'true' | 'false' | 'null'): number {
+    if (!source.startsWith(literal, start)) {
+        throw new Error(`invalid JSON literal ${literal}`);
+    }
+    return start + literal.length;
+}
+
+function scanJsonValueForDuplicateMembers(source: string, start: number): number {
+    const index = skipJsonWhitespace(source, start);
+    const character = source[index];
+    if (character === '{') {
+        return scanJsonObjectForDuplicateMembers(source, index);
+    }
+    if (character === '[') {
+        return scanJsonArrayForDuplicateMembers(source, index);
+    }
+    if (character === '"') {
+        return readJsonStringToken(source, index).end;
+    }
+    if (character === 't') {
+        return readJsonLiteralEnd(source, index, 'true');
+    }
+    if (character === 'f') {
+        return readJsonLiteralEnd(source, index, 'false');
+    }
+    if (character === 'n') {
+        return readJsonLiteralEnd(source, index, 'null');
+    }
+    return readJsonNumberEnd(source, index);
+}
+
+function scanJsonObjectForDuplicateMembers(source: string, start: number): number {
+    let index = skipJsonWhitespace(source, start + 1);
+    const keys = new Set<string>();
+    if (source[index] === '}') {
+        return index + 1;
+    }
+    while (true) {
+        const key = readJsonStringToken(source, index);
+        if (keys.has(key.value)) {
+            throw new Error(`duplicate key ${key.value}`);
+        }
+        keys.add(key.value);
+        index = skipJsonWhitespace(source, key.end);
+        if (source[index] !== ':') {
+            throw new Error('expected object colon');
+        }
+        index = scanJsonValueForDuplicateMembers(source, index + 1);
+        index = skipJsonWhitespace(source, index);
+        if (source[index] === '}') {
+            return index + 1;
+        }
+        if (source[index] !== ',') {
+            throw new Error('expected object comma');
+        }
+        index = skipJsonWhitespace(source, index + 1);
+    }
+}
+
+function scanJsonArrayForDuplicateMembers(source: string, start: number): number {
+    let index = skipJsonWhitespace(source, start + 1);
+    if (source[index] === ']') {
+        return index + 1;
+    }
+    while (true) {
+        index = scanJsonValueForDuplicateMembers(source, index);
+        index = skipJsonWhitespace(source, index);
+        if (source[index] === ']') {
+            return index + 1;
+        }
+        if (source[index] !== ',') {
+            throw new Error('expected array comma');
+        }
+        index = skipJsonWhitespace(source, index + 1);
+    }
+}
+
+function parseJsonWithoutDuplicateMembers<Value>(source: string): Value {
+    const end = scanJsonValueForDuplicateMembers(source, 0);
+    if (skipJsonWhitespace(source, end) !== source.length) {
+        throw new Error('unexpected trailing JSON content');
+    }
+    return JSON.parse(source) as Value;
+}
+
+function parseDeliveryReceiptAuthority(contents: string, number: number): DeliveryReceiptAuthority {
+    let value: unknown;
+    try {
+        value = parseJsonWithoutDuplicateMembers<unknown>(contents);
+    } catch {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (typeof value !== 'object' || value === null) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const authority = value as Record<string, unknown>;
+    if (
+        Object.keys(authority).length === 2 &&
+        authority.version === 1 &&
+        typeof authority.receiptId === 'string' &&
+        authority.receiptId !== ''
+    ) {
+        return { version: 1, receiptId: authority.receiptId };
+    }
+    const keys = Object.keys(authority);
+    if (
+        !keys.includes('version') ||
+        authority.version !== 2 ||
+        !keys.includes('phase') ||
+        (authority.phase !== 'released' &&
+            authority.phase !== 'prepared' &&
+            authority.phase !== 'merge-authorized' &&
+            authority.phase !== 'terminal') ||
+        !keys.includes('receiptId') ||
+        typeof authority.receiptId !== 'string' ||
+        authority.receiptId === '' ||
+        keys.some((key) => !['version', 'phase', 'receiptId', 'receiptBody', 'postMergeValidation'].includes(key))
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (
+        authority.receiptBody !== undefined &&
+        (typeof authority.receiptBody !== 'string' || authority.receiptBody === '')
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (authority.phase === 'released' && authority.postMergeValidation !== undefined) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (
+        authority.postMergeValidation !== undefined &&
+        !isPersistedPreparedPostMergeValidation(authority.postMergeValidation)
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const receiptBody = typeof authority.receiptBody === 'string' ? authority.receiptBody : undefined;
+    const postMergeValidation =
+        authority.phase !== 'released' && isPersistedPreparedPostMergeValidation(authority.postMergeValidation)
+            ? authority.postMergeValidation
+            : undefined;
+    return {
+        version: 2,
+        phase: authority.phase,
+        receiptId: authority.receiptId,
+        ...(receiptBody === undefined ? {} : { receiptBody }),
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
+function writeDeliveryReceiptAuthorityBlob(
+    primaryRoot: string,
+    authority: DeliveryReceiptAuthority,
+    number: number
+): string {
+    const result = deliveryLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(authority));
     if (result.error !== undefined) {
         throw result.error;
     }
     if (result.status !== 0) {
-        fail(`PR #${number} delivery lock owner could not be stored`);
+        fail(`PR #${number} delivery receipt authority could not be stored`);
     }
-    return deliveryLockObjectId(result.stdout, number);
+    return deliveryObjectId(result.stdout, `PR #${number} delivery receipt authority object identity is malformed`);
 }
 
-function readDeliveryLockOid(primaryRoot: string, ref: string, number: number): string | undefined {
-    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+function readOptionalDeliveryRefOid(
+    primaryRoot: string,
+    ref: string,
+    number: number,
+    label: string
+): string | undefined {
+    const refPath = deliveryLockGit(primaryRoot, ['rev-parse', '--git-path', ref]);
+    if (refPath.error !== undefined) {
+        throw refPath.error;
+    }
+    if (refPath.status !== 0) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
+    let exactPathKind: 'missing' | 'directory' | 'regular' = 'missing';
+    let refStats: ReturnType<typeof lstatSync> | undefined;
+    try {
+        refStats = lstatSync(exactRefPath);
+    } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+            throw error;
+        }
+        exactPathKind = 'missing';
+    }
+    if (refStats !== undefined) {
+        if (refStats.isDirectory()) {
+            exactPathKind = 'directory';
+        } else if (refStats.isFile()) {
+            exactPathKind = 'regular';
+        } else {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+    }
+    const result = deliveryLockGit(primaryRoot, [
+        'for-each-ref',
+        '--format=%(refname)%00%(objectname)%00%(symref)',
+        '--',
+        ref,
+    ]);
     if (result.error !== undefined) {
         throw result.error;
     }
-    if (result.status === 1) {
-        return undefined;
-    }
     if (result.status !== 0) {
-        fail(`PR #${number} delivery lock ownership cannot be verified`);
+        fail(`PR #${number} ${label} cannot be verified`);
     }
-    return deliveryLockObjectId(result.stdout, number);
+    const entries = result.stdout
+        .split('\n')
+        .filter((entry) => entry.length > 0)
+        .map((entry) => entry.split('\u0000'));
+    if (entries.length > 1) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const entry = entries[0];
+    if (entry !== undefined) {
+        if (exactPathKind === 'directory') {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        const [resolvedRef = '', oid = '', symref = ''] = entry;
+        if (resolvedRef !== ref) {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        if (symref !== '') {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        return deliveryObjectId(oid, `PR #${number} ${label} object identity is malformed`);
+    }
+    if (exactPathKind !== 'missing' && exactPathKind !== 'directory') {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    return undefined;
 }
 
-function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number): DeliveryLockOwner {
+function readDeliveryReceiptAuthorityBlob(primaryRoot: string, oid: string, number: number): DeliveryReceiptAuthority {
+    const type = deliveryLockGit(primaryRoot, ['cat-file', '-t', oid]);
+    if (type.error !== undefined) {
+        throw type.error;
+    }
+    if (type.status !== 0 || type.stdout.trim() !== 'blob') {
+        fail(`PR #${number} delivery receipt authority cannot be verified`);
+    }
     const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
     if (result.error !== undefined) {
         throw result.error;
     }
     if (result.status !== 0) {
-        fail(`PR #${number} delivery lock ownership cannot be verified`);
+        fail(`PR #${number} delivery receipt authority cannot be verified`);
     }
-    return parseDeliveryLockOwner(result.stdout, number);
+    return parseDeliveryReceiptAuthority(result.stdout, number);
 }
 
 function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
@@ -1503,40 +3959,117 @@ function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
     return result.status === 0;
 }
 
-function acquireDeliveryLock(primaryRoot: string, number: number): { ref: string; oid: string } {
-    const ref = deliveryLockRef(number);
-    const owner: DeliveryLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
-    const oid = writeDeliveryLockOwner(primaryRoot, owner, number);
-    if (updateDeliveryLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
-        return { ref, oid };
+function toPersistedDeliveryReceiptAuthority(authority: DeliveryReceiptAuthority): PersistedDeliveryReceiptAuthority {
+    if (authority.version === 1) {
+        return { phase: 'legacy', receiptId: authority.receiptId };
     }
-
-    const previousOid = readDeliveryLockOid(primaryRoot, ref, number);
-    if (previousOid === undefined) {
-        fail(`PR #${number} delivery lock could not be acquired`);
-    }
-    const previousOwner = readDeliveryLockOwner(primaryRoot, previousOid, number);
-    return fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
+    return {
+        phase: authority.phase,
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+        ...(authority.phase === 'released' || authority.postMergeValidation === undefined
+            ? {}
+            : { postMergeValidation: authority.postMergeValidation }),
+    };
 }
 
-function releaseDeliveryLock(primaryRoot: string, ref: string, oid: string, number: number): void {
-    if (!updateDeliveryLockRef(primaryRoot, ['-d', ref, oid])) {
-        fail(`PR #${number} delivery lock ownership changed before release`);
-    }
+function readDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number
+): PersistedDeliveryReceiptAuthority | undefined {
+    return readDeliveryReceiptAuthorityEntry(primaryRoot, number)?.authority;
 }
 
-export async function withPullRequestDeliveryLock<Value>(
+function readDeliveryReceiptAuthorityEntry(
+    primaryRoot: string,
+    number: number
+): { oid: string; authority: PersistedDeliveryReceiptAuthority } | undefined {
+    const oid = readOptionalDeliveryRefOid(
+        primaryRoot,
+        deliveryReceiptAuthorityRef(number),
+        number,
+        'delivery receipt authority'
+    );
+    if (oid === undefined) {
+        return undefined;
+    }
+    return {
+        oid,
+        authority: toPersistedDeliveryReceiptAuthority(readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number)),
+    };
+}
+
+function writeDeliveryReceiptAuthority(
     primaryRoot: string,
     number: number,
-    operation: () => Promise<Value>
-): Promise<Value> {
-    const lock = acquireDeliveryLock(primaryRoot, number);
-    try {
-        return await operation();
-    } finally {
-        releaseDeliveryLock(primaryRoot, lock.ref, lock.oid, number);
+    authority: PersistedDeliveryReceiptAuthority,
+    expectedCurrent?: DeliveryReceiptAuthorityExpectation
+): void {
+    if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (authority.receiptId === '') {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (authority.receiptBody !== undefined && authority.receiptBody === '') {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const stored: StoredCurrentDeliveryReceiptAuthority = {
+        version: 2,
+        phase: authority.phase,
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+        ...(authority.phase === 'released' || authority.postMergeValidation === undefined
+            ? {}
+            : { postMergeValidation: authority.postMergeValidation }),
+    };
+    const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
+    if (
+        expectedCurrent !== undefined &&
+        !matchesDeliveryReceiptAuthorityExpectation(current?.authority, expectedCurrent)
+    ) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    if (samePersistedDeliveryReceiptAuthority(current?.authority, authority)) {
+        return;
+    }
+    const oid = writeDeliveryReceiptAuthorityBlob(primaryRoot, stored, number);
+    const expectedOldOid = current?.oid ?? '0'.repeat(oid.length);
+    if (!updateDeliveryLockRef(primaryRoot, ['--no-deref', deliveryReceiptAuthorityRef(number), oid, expectedOldOid])) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    const verified = readDeliveryReceiptAuthority(primaryRoot, number);
+    if (!samePersistedDeliveryReceiptAuthority(verified, authority)) {
+        fail(`PR #${number} delivery receipt authority could not be verified`);
     }
 }
+
+function clearDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number,
+    expectedCurrent?: DeliveryReceiptAuthorityExpectation
+): void {
+    const ref = deliveryReceiptAuthorityRef(number);
+    const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
+    if (
+        expectedCurrent !== undefined &&
+        !matchesDeliveryReceiptAuthorityExpectation(current?.authority, expectedCurrent)
+    ) {
+        fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
+    if (current === undefined) {
+        return;
+    }
+    if (!updateDeliveryLockRef(primaryRoot, ['--no-deref', '-d', ref, current.oid])) {
+        fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
+    if (readDeliveryReceiptAuthority(primaryRoot, number) !== undefined) {
+        fail(`PR #${number} delivery receipt authority could not be verified`);
+    }
+}
+
+export type DeliverySerialization = PullRequestMutationSerialization;
+export { withPullRequestMutationLock as withPullRequestDeliveryLock };
 
 export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
@@ -1544,16 +4077,26 @@ export type DeliveryCoordinatorDependencies = {
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
-    deliveryPort: (repository: string, authentication: DeliveryAuthentication, primaryRoot: string) => DeliveryPort;
+    deliveryPort: (
+        repository: string,
+        authentication: DeliveryAuthentication,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
-    deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
+    deliver: (
+        number: number,
+        port: DeliveryPort,
+        tracker: TrackerCompletionPort,
+        markRemoteMutationKnownAbsent?: () => void
+    ) => void;
 };
 
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
-        serializeDelivery: withPullRequestDeliveryLock,
+        serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
@@ -1561,15 +4104,30 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        deliveryPort: (repository, authentication, primaryRoot) => {
+        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
-                    spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
-                run: (command, args) => spawnRun(command, args, { env: authentication.session.env, cwd: primaryRoot }),
+                    spawnCapture(command, args, {
+                        env:
+                            command === 'git'
+                                ? trustedDeliveryGitEnv(authentication.session.env)
+                                : authentication.session.env,
+                        cwd: primaryRoot,
+                    }),
+                run: (command, args) =>
+                    spawnRun(command, args, {
+                        env:
+                            command === 'git'
+                                ? trustedDeliveryGitEnv(authentication.session.env)
+                                : authentication.session.env,
+                        cwd: primaryRoot,
+                    }),
             };
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
+                primaryRoot,
+                markRemoteMutationAttempt,
             });
         },
         trackerPort: (session) => trackerIssueShellPort(session, cwd),
@@ -1578,43 +4136,101 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
     };
 }
 
+function markTrackerMutationAttempts(
+    port: ReconcileTrackerIssuePort,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReconcileTrackerIssuePort {
+    return {
+        ...port,
+        update: (number, input) => {
+            markRemoteMutationAttempt();
+            return port.update(number, input);
+        },
+        comment: (number, body) => {
+            markRemoteMutationAttempt();
+            return port.comment(number, body);
+        },
+    };
+}
+
 export async function coordinateDelivery(
     number: number,
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeDelivery(primaryRoot, number, async () => {
-        const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
-        let trackerAuth: DeliveryAuthentication | undefined;
-        try {
-            if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
-                fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+    await dependencies.serializeDelivery(
+        primaryRoot,
+        number,
+        async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
+            const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+            let trackerAuth: DeliveryAuthentication | undefined;
+            try {
+                if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
+                    fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+                }
+                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+                assertRequiredRepository(repository);
+                const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
+                trackerAuth = authenticatedTracker;
+                const trackerPort = markTrackerMutationAttempts(
+                    dependencies.trackerPort(authenticatedTracker.session),
+                    markRemoteMutationAttempt
+                );
+                dependencies.deliver(
+                    number,
+                    dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                    {
+                        complete: (issueNumber) =>
+                            dependencies.completeIssue(
+                                issueNumber,
+                                authenticatedTracker.minted.actorNodeId,
+                                trackerPort
+                            ),
+                    },
+                    markRemoteMutationKnownAbsent
+                );
+            } finally {
+                trackerAuth?.session.dispose();
+                authorAuth.session.dispose();
             }
-            const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-            assertRequiredRepository(repository);
-            const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
-            trackerAuth = authenticatedTracker;
-            const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
-            dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
-                complete: (issueNumber) =>
-                    dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
-            });
-        } finally {
-            trackerAuth?.session.dispose();
-            authorAuth.session.dispose();
         }
-    });
+    );
 }
 
-export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {
+export type DeliverCliTrustedDependencies = {
+    trustedLauncher?: DeliveryLockRecoveryTrustedLauncher;
+    recovery?: DeliveryLockRecoveryDependencies;
+};
+
+export type DeliverCliDependencies = DeliveryCoordinatorDependencies | DeliverCliTrustedDependencies;
+
+function isDeliveryCoordinatorDependencies(
+    dependencies: DeliverCliDependencies | undefined
+): dependencies is DeliveryCoordinatorDependencies {
+    return dependencies !== undefined && 'primaryRoot' in dependencies;
+}
+
+function recoveryDependencies(
+    dependencies: DeliverCliDependencies | undefined
+): DeliveryLockRecoveryDependencies | undefined {
+    if (dependencies === undefined || isDeliveryCoordinatorDependencies(dependencies)) {
+        return undefined;
+    }
+    return dependencies.recovery ?? { trustedLauncher: dependencies.trustedLauncher };
+}
+
+export async function runDeliverCli(args: string[], dependencies?: DeliverCliDependencies): Promise<number> {
     const parsed = parseCliArgs(args);
     if (parsed.help) {
-        console.log('Usage: pnpm deliver <pr-number>');
+        console.log(DELIVER_USAGE);
         return 0;
+    }
+    if (parsed.recoverLockArgs !== undefined) {
+        return runRecoverDeliveryLockCli(parsed.recoverLockArgs, recoveryDependencies(dependencies));
     }
     if (parsed.number === undefined) {
         fail('usage: pnpm deliver <pr-number>');
     }
-    await coordinateDelivery(parsed.number, dependencies);
+    await coordinateDelivery(parsed.number, isDeliveryCoordinatorDependencies(dependencies) ? dependencies : undefined);
     return 0;
 }

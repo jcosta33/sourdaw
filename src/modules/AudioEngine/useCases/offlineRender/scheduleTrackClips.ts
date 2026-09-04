@@ -11,6 +11,7 @@ import {
 } from '#/modules/Synth/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
 // is a cycle: importing that barrel here reds `deps:validate` with ~200 no-circular rows.
@@ -18,6 +19,7 @@ import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
+import { hasNoteExpression, normalizeNoteExpression } from '../../engine/noteExpression';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { offlineDeviceParameterLawState } from '../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
@@ -39,12 +41,12 @@ import { getCompensationDelay } from '../latencyCompensation/compensation/getCom
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
 import { checkCancel } from './checkCancel';
-import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
+import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
-import { type OfflineScheduleTally, type PendingWorkletEvent } from './types';
+import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
 type GetSourceOccurrenceOffsetInput = {
@@ -399,6 +401,13 @@ export async function scheduleTrackClips({
         pitchBendRangeSemitones?: number;
         clipGain: number;
     };
+    /** The clamped MPE a note carries, in the wire units project truth stores. */
+    type ScheduledMpe = {
+        pressure?: number;
+        slide?: number;
+        pitchBend?: number;
+        pitchBendRangeSemitones?: number;
+    };
     type WorkletMidiEvent = {
         time: number;
         type: 'on' | 'off';
@@ -408,6 +417,8 @@ export async function scheduleTrackClips({
         toasterPadIndex: number;
         articulationId?: number;
         channel?: number;
+        /** Present on a note-on whose note recorded per-note expression. */
+        mpe?: ScheduledMpe;
     };
 
     function clampOptional(value: number | undefined, minimum: number, maximum: number): number | undefined {
@@ -417,13 +428,12 @@ export async function scheduleTrackClips({
         return Math.max(minimum, Math.min(maximum, value));
     }
 
-    function resolveScheduledMpe(note: ScheduledMidiNote) {
-        const hasExpression = note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
-        if (!hasExpression) {
+    function resolveScheduledMpe(note: ScheduledMidiNote): ScheduledMpe | undefined {
+        if (!hasNoteExpression(note)) {
             return undefined;
         }
 
-        const mpe = {
+        const mpe: ScheduledMpe = {
             pressure: clampOptional(note.pressure, 0, 127),
             slide: clampOptional(note.slide, 0, 127),
             pitchBend: clampOptional(note.pitchBend, -8192, 8191),
@@ -536,6 +546,9 @@ export async function scheduleTrackClips({
                     toasterPadIndex,
                     articulationId: note.articulationId,
                     channel: noteChannel,
+                    // Toaster addresses pads rather than note instances, so it
+                    // has no voice for expression to reach.
+                    mpe: isToaster ? undefined : resolveScheduledMpe(note),
                 });
                 if (!isToaster) {
                     workletEvents.push({
@@ -835,8 +848,12 @@ export async function scheduleTrackClips({
     }
 
     if (instrumentControls && workletEvents.length > 0 && pendingWorkletEvents) {
+        // Read off the strategy, not `instrumentControls`: `buildDeviceChain`
+        // only ever copied `noteOn`/`noteOff` onto that, and expression is
+        // present only on an instrument whose engine actually voices it.
+        const dispatchExpression = instrumentEntry?.strategy.noteExpression;
         for (const event of workletEvents) {
-            const pendingEvent: PendingWorkletEvent = {
+            const pendingEvent: PendingNoteWorkletEvent = {
                 time: event.time,
                 type: event.type,
                 pitch: event.pitch,
@@ -852,6 +869,30 @@ export async function scheduleTrackClips({
                 pendingEvent.channel = event.channel;
             }
             pendingWorkletEvents.push(pendingEvent);
+
+            if (event.type !== 'on' || !event.mpe || !dispatchExpression) {
+                continue;
+            }
+            // Live playback posts the note-on and then this, at one sample
+            // frame, so the worklet applies it to the voice that note-on just
+            // started. The recorded bend depth — the MPE member default when the
+            // note predates RPN 0 decoding — is the range it was performed
+            // under, and `normalizeNoteExpression` owns the conversion to
+            // engine units for both paths.
+            const { bendSemitones, pressure, slide } = normalizeNoteExpression(
+                event.mpe,
+                event.mpe.pitchBendRangeSemitones
+            );
+            pendingWorkletEvents.push({
+                time: event.time,
+                type: 'expression',
+                pitch: event.pitch,
+                channel: event.channel ?? 0,
+                dispatch: dispatchExpression,
+                bendSemitones,
+                pressure,
+                slide,
+            });
         }
     }
 }

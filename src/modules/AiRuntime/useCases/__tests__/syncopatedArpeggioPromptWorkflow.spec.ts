@@ -42,6 +42,8 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -619,13 +621,16 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
                 track.id === 'track-chords' ? { ...track, frozen: true } : track
             ),
         });
+        flushAutomergeStorageWrites();
 
-        const result = await confirmPendingChatActions({ confirmationId });
-
-        expect(result.status).toBe('failed');
+        expect(await confirmPendingChatActions({ confirmationId })).toEqual({
+            status: 'invalidated',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-chords']),
+        });
         expect(midiStore.value?.notesByClipId['clip-chords']).toEqual(original);
         expect(undoStore.value?.past).toEqual([]);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'failed' });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({ status: 'invalidated' });
     });
 
     it('keeps grouped undo and redo retryable when a collaborator changes the clip or freeze state', async () => {

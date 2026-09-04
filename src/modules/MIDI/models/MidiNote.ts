@@ -26,6 +26,17 @@ export type MidiNote = {
     articulation?: string;
 };
 
+export const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
+export const MIDI_NOTE_OPTIONAL_KEYS = [
+    'probability',
+    'pressure',
+    'slide',
+    'pitchBend',
+    'pitchBendRangeSemitones',
+    'channel',
+    'articulation',
+] as const;
+
 export type MidiCC = {
     id: string;
     controller: number;

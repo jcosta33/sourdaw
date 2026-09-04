@@ -45,12 +45,17 @@ const addonMethods = (): string[] =>
 
 /**
  * `#[napi]` items that are shell plumbing, not renderer-invokable commands:
- * the scan-worker process entry point, the engine's constructor and shutdown,
- * and the plugin-window host seam the shell itself drives — its registration,
- * and the answers it needs when the user or the display resizes an editor
- * window, neither of which the renderer can ask for. Pinned
- * by name so a new addon method lands in the registered set by default and
- * must be triaged here explicitly to escape the exposed/denied partition.
+ * the engine's constructor and shutdown, and the plugin-window host seam the
+ * shell itself drives — its registration, and the answers it needs when the
+ * user or the display resizes an editor window, neither of which the
+ * renderer can ask for. Pinned by name so a new addon method lands in the
+ * registered set by default and must be triaged here explicitly to escape the
+ * exposed/denied partition.
+ *
+ * The scan-worker leaf entry point used to be one of these, reached through a
+ * `#[napi] run_plugin_scan_worker` wrapper; it is now
+ * `sourdaw-plugin-scan-helper`, a standalone executable outside the addon
+ * entirely, and publishes nothing here to plumb.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'apply_plugin_gui_scale',
@@ -58,7 +63,6 @@ const ADDON_PLUMBING: ReadonlySet<string> = new Set([
     'notify_plugin_window_closed',
     'register_plugin_window_host',
     'resize_plugin_gui',
-    'run_plugin_scan_worker',
     'service_plugin_editor_run_loops',
     'shutdown',
 ]);
@@ -351,7 +355,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['collab_merge_bundle', ['path']],
     ['collab_save_bundle', ['path']],
     ['commit_pitch_edit', ['request']],
-    ['create_crumbs', ['instance_id', 'sample_rate']],
+    ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
     ['crumbs_note_off', ['instance_id', 'note']],
     ['crumbs_note_on', ['instance_id', 'note', 'velocity']],
@@ -362,7 +366,6 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['engine_rt_diagnostics', []],
     ['engine_transport_position', []],
     ['engine_transport_set_maps', ['maps']],
-    ['feed_crumbs_record_input', ['audio_bytes']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],

@@ -180,6 +180,10 @@ export type ScanResult = {
     scan_duration_ms: number;
     /** Candidates the scan skipped because a prior helper crash or hang quarantined them (#2911). */
     quarantined: QuarantinedPlugin[];
+    /** Whether the walk reached every candidate under every authorized root. */
+    complete: boolean;
+    /** The candidate paths this walk reached — the only rows this result is authoritative for. */
+    scanned_paths: string[];
 };
 
 export type PluginGuiInfo = {

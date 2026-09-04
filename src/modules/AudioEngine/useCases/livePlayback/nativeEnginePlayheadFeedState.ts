@@ -8,12 +8,32 @@
  * the bridge would wake the renderer per audio block to deliver a number
  * nothing is going to paint. So the seam is a poll, driven from the same
  * `animationScheduler` the cursor's own painting runs on: at most one reading
- * per animation frame, and none at all while the window is not painting, which
- * is exactly when a position nobody can see costs nothing to miss.
+ * per animation frame. That cadence is bridge-wakeup economy, not a claim that
+ * a frame this poll skips costs nothing to miss — the live automation writer
+ * below reads the same tick, and under the desktop shell the loop this poll
+ * rides never stops, hidden window or not (see "Why the writer may ride this
+ * loop").
  *
  * One request is in flight at a time. A bridge round trip that outlasts a frame
  * must not stack: the reading is a level, not a stream, so a late answer that
  * arrives behind a newer one has nothing to contribute.
+ *
+ * ## Why the writer may ride this loop
+ *
+ * This progress tick is the automation writer's only steady-state clock — arm
+ * itself pumps once more, from `armNativeLiveAutomationWriter.ts`, to prime
+ * the first write, but every write after that arrives through this poll. A
+ * paint loop that stopped while the window sat hidden or minimised would
+ * drain that writer's window and freeze every automated parameter at its
+ * last value — the defect #3364 describes.
+ *
+ * It does not happen, because the desktop shell is the only process that
+ * holds the native engine, and that shell creates its window with
+ * `backgroundThrottling: false` (`electron/main.ts`). Under that option
+ * Chromium throttles neither animation frames nor timers, and the Page
+ * Visibility API never reports the page hidden. `electron/__tests__/security.spec.ts`
+ * pins the option, so a copied or rewritten window config cannot silently
+ * reintroduce the gate.
  *
  * ## Why the epoch, and not a boolean
  *
@@ -37,6 +57,9 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type EngineTransportPosition } from '../../models/EngineTransportPosition';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
+
+import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
+import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
 
 /** The scheduler id this feed registers its per-frame poll under. */
 export const NATIVE_ENGINE_PLAYHEAD_FEED_ID = 'audio-engine/native-engine-playhead';
@@ -62,6 +85,12 @@ export const nativeEnginePlayheadFeed: {
 /** Ask the engine where it is, unless this run's previous ask is unanswered. */
 export function pollNativeEnginePlayheadOnce(): void {
     const epoch = nativeEnginePlayheadFeed.epoch;
+    // The pass this read belongs to. A locate or a loop edit re-arms the writer
+    // without touching this feed's own run, so the feed's epoch alone cannot
+    // tell a reading of the world the new pass lives in from one of the world
+    // it replaced — and a reading of the old one would window the new pass at
+    // the position the musician just left.
+    const writerEpoch = nativeLiveAutomationWriter.epoch;
     // Only this run's own unanswered request holds the line. A request left
     // behind by an earlier run must not make this run skip its first frame.
     if (nativeEnginePlayheadFeed.inFlightEpoch === epoch) {
@@ -73,9 +102,24 @@ export function pollNativeEnginePlayheadOnce(): void {
             // A reading that lands after its own run ended belongs to a session
             // that is over; keeping it would let the next session start on a
             // stale position.
-            if (nativeEnginePlayheadFeed.epoch === epoch && nativeEnginePlayheadFeed.running) {
-                nativeEnginePlayheadFeed.reading = reading;
+            if (nativeEnginePlayheadFeed.epoch !== epoch || !nativeEnginePlayheadFeed.running) {
+                return;
             }
+            nativeEnginePlayheadFeed.reading = reading;
+            if (!reading.playing) {
+                return;
+            }
+            // The progress tick is also the automation writer's clock. It is
+            // the cadence `crates/sourdaw-native/src/commands/graph.rs` names
+            // when it leaves the per-pass re-arm to this side: the snapshot
+            // carries both the position the next window is measured from and
+            // the wrap count that says a loop seam closed.
+            void pumpNativeLiveAutomationWriter({
+                positionSeconds: reading.positionSeconds,
+                loopWraps: reading.loopWraps,
+                batchesApplied: reading.batchesApplied,
+                writerEpoch,
+            });
         })
         .catch((error: unknown) => {
             // A refused poll is not a reason to stop polling: the engine mutex
