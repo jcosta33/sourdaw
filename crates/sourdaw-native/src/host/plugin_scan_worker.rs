@@ -29,7 +29,14 @@ pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worke
 /// (`commands::plugins`). A helper handed less is killed for the walk's clock
 /// rather than its own, and the refusal it reports cannot be told apart from a
 /// plugin that genuinely hangs — so the two bounds have to be the same value.
-pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
+///
+/// Ten seconds because a large sampled instrument legitimately needs more than
+/// a couple of them to load its entry point and answer: killing it earlier
+/// quarantines a working plugin for being big, and quarantine is a record the
+/// user has to clear by hand. A plugin that is genuinely wedged is still
+/// bounded — this decides how long a scan waits before saying so, not whether
+/// it ever does.
+pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 
 /// The refusal `scan_worker` returns when the helper child exited with a

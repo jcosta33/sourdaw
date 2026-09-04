@@ -14,13 +14,18 @@
 //! symlink components at that moment rather than trusted from when it was
 //! written.
 //!
-//! What the file *is* trusted for, verbatim, is the mapping from a registry key
-//! to a `(path, descriptor_id)` pair. The stored fingerprint gates staleness, not
-//! authenticity: it can tell that the file at that path has changed since the
-//! scan, and it can tell nothing whatsoever about whether the bytes there were
-//! ever the plugin the row claims. An attacker who can write this file can
-//! point an authorized key at any other policy-authorized plugin, and the
-//! fingerprint will agree. Anything stronger — a content hash, a signature —
+//! What the file *is* trusted for, verbatim, is everything a scan learned about
+//! a plugin: the path and descriptor identity activation resolves by, and the
+//! metadata a scan would otherwise re-read — which the walk republishes for an
+//! unchanged file rather than spawning its helpers again ([`ScanRow`],
+//! [`PluginRegistryStore::reusable_rows`]). The stored fingerprint gates
+//! staleness, not authenticity: it can tell that the file at that path has
+//! changed since the scan, and it can tell nothing whatsoever about whether the
+//! bytes there were ever the plugin the row claims. An attacker who can write
+//! this file can point an authorized key at any other policy-authorized plugin,
+//! and describe it to the browser however they like, and the fingerprint will
+//! agree. What they cannot do through it is make a plugin loadable that the
+//! live policy would refuse. Anything stronger — a content hash, a signature —
 //! would be a different mechanism; do not build on the weaker one as if it were
 //! that.
 //!
@@ -41,6 +46,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
+use daw_plugin_host::scanner::{self, PluginFormat, ScannedPlugin};
+use daw_plugin_host::vst3_module;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::filesystem::APP_DIR_NAME;
@@ -75,25 +82,66 @@ use crate::state::PluginRegistryEntry;
 /// `quarantine` carries no serde default, so a version 3 document fails to
 /// deserialize outright rather than hydrate with an empty quarantine map that
 /// would misreport every previously-quarantined binary as healthy.
-const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 4;
+///
+/// Bumped to 5 when the row started carrying the scan's whole `ScannedPlugin`
+/// rather than the handful of columns activation reads. A version 4 row has no
+/// vendor, category, version or parameter contract, so it cannot stand in for
+/// the scan that produced it — which is exactly what the walk now asks of an
+/// unchanged file's row. Same policy as every earlier bump: the document reads
+/// as absent, and the next scan refills it in full.
+const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 5;
 
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
 const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
 
-/// Refuse to parse a registry file larger than a scan could have written.
-/// A bounded scan yields at most a few hundred entries of a few hundred bytes;
-/// anything past this is not this file's content and is not worth the parse.
-const MAX_REGISTRY_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// The most plugins one bundle's factory may declare before the scan refuses
+/// the bundle.
+///
+/// Restated from `daw_plugin_host::scanner::MAX_SCANNED_BUNDLE_PLUGINS`, which
+/// is private to that crate. A restatement, not a second opinion: this store
+/// cannot hold more rows for a bundle than the scanner will emit for it, so a
+/// value below the scanner's refuses documents the scanner itself produced.
+const MAX_BUNDLE_PLUGINS: usize = 32;
+
+/// Registry keys one scanned plugin is stored under: its path hash and its own
+/// descriptor id. `commands::plugins::key_scanned_plugins` writes both.
+const KEYS_PER_PLUGIN: usize = 2;
 
 /// Refuse a document carrying more rows than a completed scan could index.
 ///
-/// Twice [`MAX_SCAN_CANDIDATES`] because every scanned CLAP plugin claims two
-/// keys — the path hash and the CLAP descriptor id — and both are rows here.
+/// Every factor, because every one of them multiplies: a walk indexes at most
+/// [`MAX_SCAN_CANDIDATES`] files, each file may declare up to
+/// [`MAX_BUNDLE_PLUGINS`] plugins, and each plugin is stored under
+/// [`KEYS_PER_PLUGIN`] keys. Counting candidates alone was wrong by the whole
+/// bundle factor — one two-plugin bundle in an otherwise full folder writes
+/// more rows than such a bound admits — and the reader would then refuse, at
+/// every launch, a file this build's own writer produced.
+///
 /// Bounding the row count as well as the byte count matters because the two
-/// costs are different: a few hundred kilobytes of deeply repetitive JSON is
-/// inside the byte bound and still expands into a map far larger than any scan
-/// this build can produce.
-const MAX_REGISTRY_ENTRIES: usize = 2 * MAX_SCAN_CANDIDATES;
+/// costs are different: deeply repetitive JSON well inside the byte bound still
+/// expands into a map far larger than any scan can produce.
+const MAX_REGISTRY_ENTRIES: usize = MAX_SCAN_CANDIDATES * MAX_BUNDLE_PLUGINS * KEYS_PER_PLUGIN;
+
+/// Refuse to parse a registry file larger than a scan could have written.
+///
+/// Derived from [`MAX_REGISTRY_ENTRIES`] and the largest row this build can
+/// write: a whole [`ScannedPlugin`] at the scanner's own caps — 256 parameter
+/// descriptors with names and modules at the per-parameter byte cap — which
+/// serialises to a little over 100 KB. The bound is the next power of two above
+/// that product.
+///
+/// It is deliberately enormous, and that is the right shape for it. This is the
+/// ceiling a pathological plugin folder could write, not a description of a
+/// real registry: an actual musician's file is under a megabyte, because real
+/// bundles declare a handful of plugins with a handful of parameters. The bound
+/// exists so the reader never refuses a document the writer produced — that
+/// failure is unrecoverable without deleting the file by hand, and it repeats
+/// at every launch. What it screens out is a file that is not this file at all,
+/// and one of those is orders of magnitude away from either number.
+///
+/// `the_byte_bound_admits_a_registry_full_of_maximal_rows` measures the row
+/// rather than trusting this arithmetic, and fails if either side moves.
+const MAX_REGISTRY_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// Distinguishes one process's temporary registry file from another's.
 ///
@@ -130,30 +178,44 @@ pub struct PersistedQuarantineEntry {
     pub quarantined_at_ms: u64,
 }
 
+/// One scanned plugin and every registry key it answers to, which is what
+/// [`PluginRegistryStore::persist`] turns into rows.
+///
+/// The keys travel with the row rather than being derived here, because the
+/// caller knows things this store does not: a scan publishes a plugin under its
+/// path hash and its descriptor id, and an activation rescan additionally
+/// publishes it under the stale key the saved project actually recorded.
+#[derive(Debug, Clone)]
+pub struct ScanRow {
+    pub keys: Vec<String>,
+    pub plugin: ScannedPlugin,
+}
+
 /// One persisted registry row: what the scan learned, plus the fingerprint of
 /// the file it learned it from.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedPluginEntry {
-    pub path: String,
-    /// `ScannedPlugin::id` — the hash of the path this plugin was scanned at.
-    pub stable_id: String,
-    /// The CLAP descriptor's own id. Empty for formats that carry none.
-    pub descriptor_id: String,
-    pub format: String,
-    pub name: String,
-    /// What the scan read from the plugin's own capability extensions: total
-    /// declared audio channels each way, and whether it implements `clap.gui`.
-    pub num_inputs: u32,
-    pub num_outputs: u32,
-    pub has_custom_ui: bool,
-    /// Present exactly when the three fields above are unqueried defaults.
-    /// Persisted alongside them rather than recomputed, because whether a scan
-    /// asked is a fact about that scan and cannot be rederived from its answer.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability_metadata_reason: Option<String>,
-    /// Size of the plugin file, in bytes, when it was scanned.
+    /// The scan's whole answer for this plugin, verbatim.
+    ///
+    /// Stored whole rather than as the columns activation happens to read,
+    /// because the scan walk now reuses an unchanged file's rows in place of
+    /// re-running its helpers: a row that dropped the vendor, the category, the
+    /// version or the parameter contract could not stand in for the scan that
+    /// produced it, and the browse list would lose a field on every run that
+    /// did not re-inspect the plugin.
+    pub plugin: ScannedPlugin,
+    /// Where this plugin sat among the plugins its file declares.
+    ///
+    /// A bundle's plugins are ordered by its factory, and that order is not
+    /// recoverable from the rows themselves — they are keyed by identity, not
+    /// by position. Recorded so a reused file comes back in the order a fresh
+    /// scan of it would have produced.
+    pub bundle_position: u32,
+    /// Size, in bytes, of the binary this plugin loads from — which is the file
+    /// inside the bundle, not the bundle directory the walk found. See
+    /// [`scanned_binary_location`].
     pub file_size_bytes: u64,
-    /// Modification time of the plugin file when it was scanned, in
+    /// Modification time of that same binary when it was scanned, in
     /// milliseconds since the unix epoch.
     ///
     /// Millisecond resolution is the fingerprint's floor: a replacement written
@@ -164,17 +226,18 @@ pub struct PersistedPluginEntry {
 
 impl PersistedPluginEntry {
     fn as_registry_entry(&self) -> PluginRegistryEntry {
-        PluginRegistryEntry {
-            path: self.path.clone(),
-            stable_id: self.stable_id.clone(),
-            descriptor_id: self.descriptor_id.clone(),
-            format: self.format.clone(),
-            name: self.name.clone(),
-            num_inputs: self.num_inputs,
-            num_outputs: self.num_outputs,
-            has_custom_ui: self.has_custom_ui,
-            capability_metadata_reason: self.capability_metadata_reason.clone(),
-        }
+        PluginRegistryEntry::from_scanned(&self.plugin)
+    }
+
+    /// Whether an instance inspection ran for this row and answered.
+    ///
+    /// `parameters` is `Some` exactly when the bounded instance worker returned
+    /// a contract, and `parameter_metadata_reason` is `Some` exactly when it
+    /// was asked and could not. Both absent is the third case and the one the
+    /// pair exists to separate: nobody asked at all — a targeted activation
+    /// rescan reads the descriptor and stops there.
+    fn instance_inspection_answered(&self) -> bool {
+        self.plugin.parameters.is_some() && self.plugin.parameter_metadata_reason.is_none()
     }
 }
 
@@ -372,6 +435,63 @@ impl PluginRegistryStore {
         self.lock_stored().entries.get(plugin_id).cloned()
     }
 
+    /// The rows a fresh scan of `path` would only reproduce, or nothing.
+    ///
+    /// `Some` means the file at `path` is byte-for-byte the size and age the
+    /// scan that wrote these rows recorded, the policy still authorizes it, and
+    /// every row for it came from an instance inspection that ran and answered.
+    /// A caller holding that may publish the rows instead of spawning the
+    /// helpers again.
+    ///
+    /// The inspection condition is what makes the reuse converge rather than
+    /// freeze. A row whose inspection was refused, or never ran at all, records
+    /// less than a scan can learn about that file — so it is rescanned on every
+    /// run until one of them answers, instead of pinning an incomplete answer
+    /// for as long as the file sits still.
+    ///
+    /// All-or-nothing per file, because the rows of one bundle are one scan's
+    /// output: reusing the answered half and re-inspecting the rest would
+    /// publish a list assembled from two different reads of the same file.
+    pub fn reusable_rows(
+        &self,
+        path: &Path,
+        scan_policy: &PluginScanPolicy,
+    ) -> Option<Vec<ScannedPlugin>> {
+        let path_as_scanned = path.display().to_string();
+        let stored = self.lock_stored();
+        let mut rows: Vec<&PersistedPluginEntry> = stored
+            .entries
+            .values()
+            .filter(|entry| entry.plugin.path == path_as_scanned)
+            .collect();
+        if rows.is_empty() {
+            return None;
+        }
+        if !rows
+            .iter()
+            .all(|entry| entry_is_still_the_scanned_file(entry, scan_policy))
+        {
+            return None;
+        }
+        if !rows
+            .iter()
+            .all(|entry| entry.instance_inspection_answered())
+        {
+            return None;
+        }
+
+        rows.sort_by_key(|entry| entry.bundle_position);
+        // One plugin holds a row under each key it answers to, and the scan
+        // result carries it once.
+        let mut published = BTreeSet::new();
+        Some(
+            rows.into_iter()
+                .filter(|entry| published.insert(entry.plugin.id.clone()))
+                .map(|entry| entry.plugin.clone())
+                .collect(),
+        )
+    }
+
     /// Whether `path` is currently quarantined, and why.
     pub fn is_quarantined(&self, path: &Path) -> Option<PersistedQuarantineEntry> {
         self.lock_stored()
@@ -496,16 +616,17 @@ impl PluginRegistryStore {
         let mut stored = self.lock_stored();
         stored
             .entries
-            .retain(|_, entry| keeps_persisted_row(Path::new(&entry.path)));
+            .retain(|_, entry| keeps_persisted_row(Path::new(&entry.plugin.path)));
         stored.resolutions.clear();
     }
 
-    /// Write the registry to the file, merged over what the file already holds.
+    /// Write these scan rows to the file, merged over what the file already
+    /// holds.
     ///
-    /// A union, not a replacement. The in-memory registry is not the whole
+    /// A union, not a replacement. What one caller scanned is not the whole
     /// truth about the file: hydration deliberately refuses stale rows while
     /// keeping them as last-known locations, and a targeted rescan publishes
-    /// exactly one key. Replacing the document with the live registry alone
+    /// exactly one plugin. Replacing the document with one caller's rows alone
     /// deleted every row hydration had refused — so a user whose plugins had
     /// all been updated in place lost every last-known location the moment one
     /// of them resolved, and every other plugin's activation fell into the
@@ -515,45 +636,47 @@ impl PluginRegistryStore {
     /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)
     /// applied, so a merge cannot resurrect a row a scan removed this session.
     ///
-    /// A registry entry whose file cannot be fingerprinted right now is left
-    /// out of the fresh side: without a fingerprint the next hydration has
-    /// nothing to invalidate against, and an entry that can never be proven
-    /// stale is worse than an entry that is missing. Whatever the file already
-    /// held for that key stands.
+    /// A row whose file cannot be fingerprinted at all is dropped, not kept:
+    /// the scan publisher applies its removals before calling this, so the
+    /// union source no longer holds a previous row for that key either. That is
+    /// the intended outcome for the only case that reaches it — the scanned
+    /// path is not on disk — and it is why [`scanned_file_path`] falls back to
+    /// the scanned path rather than reporting nothing whenever a *binary*
+    /// inside it cannot be resolved.
+    ///
+    /// `rows` is ordered, and the order is what records each plugin's position
+    /// in the file it came from — see [`PersistedPluginEntry::bundle_position`].
     ///
     /// Failure is reported and swallowed. A scan that found plugins has already
     /// succeeded for this session, and turning a full disk into a failed scan
     /// would take away the working half too.
-    pub fn persist(&self, plugin_registry: &HashMap<String, PluginRegistryEntry>) {
+    pub fn persist(&self, rows: &[ScanRow]) {
         let Some(location) = self.location.as_deref() else {
             return;
         };
 
         let mut fingerprints: HashMap<&str, Option<(u64, u64)>> = HashMap::new();
+        let mut plugins_seen_per_file: HashMap<&str, u32> = HashMap::new();
         let mut scanned_this_session = BTreeMap::new();
-        for (key, entry) in plugin_registry {
+        for row in rows {
+            let path = row.plugin.path.as_str();
             let fingerprint = *fingerprints
-                .entry(entry.path.as_str())
-                .or_insert_with(|| file_fingerprint(Path::new(&entry.path)));
+                .entry(path)
+                .or_insert_with(|| scanned_file_fingerprint(&row.plugin));
             let Some((file_size_bytes, file_modified_ms)) = fingerprint else {
                 continue;
             };
-            scanned_this_session.insert(
-                key.clone(),
-                PersistedPluginEntry {
-                    path: entry.path.clone(),
-                    stable_id: entry.stable_id.clone(),
-                    descriptor_id: entry.descriptor_id.clone(),
-                    format: entry.format.clone(),
-                    name: entry.name.clone(),
-                    num_inputs: entry.num_inputs,
-                    num_outputs: entry.num_outputs,
-                    has_custom_ui: entry.has_custom_ui,
-                    capability_metadata_reason: entry.capability_metadata_reason.clone(),
-                    file_size_bytes,
-                    file_modified_ms,
-                },
-            );
+            let bundle_position = plugins_seen_per_file.entry(path).or_insert(0);
+            let entry = PersistedPluginEntry {
+                plugin: row.plugin.clone(),
+                bundle_position: *bundle_position,
+                file_size_bytes,
+                file_modified_ms,
+            };
+            *bundle_position += 1;
+            for key in &row.keys {
+                scanned_this_session.insert(key.clone(), entry.clone());
+            }
         }
 
         let mut stored = self.lock_stored();
@@ -617,7 +740,7 @@ fn entry_is_still_the_scanned_file(
     entry: &PersistedPluginEntry,
     scan_policy: &PluginScanPolicy,
 ) -> bool {
-    let path = Path::new(&entry.path);
+    let path = Path::new(&entry.plugin.path);
     if !path.is_absolute() {
         return false;
     }
@@ -625,9 +748,136 @@ fn entry_is_still_the_scanned_file(
         return false;
     }
 
-    file_fingerprint(path).is_some_and(|(size, modified)| {
+    scanned_file_fingerprint(&entry.plugin).is_some_and(|(size, modified)| {
         size == entry.file_size_bytes && modified == entry.file_modified_ms
     })
+}
+
+/// The fingerprint of the file this plugin is actually loaded from, or nothing.
+///
+/// The one reader and writer of a row's fingerprint. Both sides go through it
+/// so that a stored fingerprint and a compared fingerprint always describe the
+/// same file: a capture that stats one file and a comparison that stats another
+/// answers "unchanged" about a question nobody asked.
+///
+/// `None` means the scanned path is not there at all, and that is a refusal on
+/// both sides — the row is not written with a fingerprint it could never be
+/// checked against, and a row already holding one is neither hydrated nor
+/// reused. Skipping is right in exactly that case, because the plugin is gone.
+pub(crate) fn scanned_file_fingerprint(plugin: &ScannedPlugin) -> Option<(u64, u64)> {
+    file_fingerprint(&scanned_file_path(plugin)?)
+}
+
+/// The file whose size and modification time stand for this plugin's version.
+///
+/// The resolved binary when there is one, and the scanned path itself when
+/// there is not. The fallback is what keeps a bundle this build cannot resolve
+/// a module inside — a VST3 whose `Info.plist` names an executable by some
+/// other route, a layout added after this code was written — exactly as
+/// fingerprintable as it was before any of it was resolved: its row is written,
+/// hydrated and compared against the bundle directory, which is the weaker
+/// answer the store gave every plugin until now. Weaker, because a directory
+/// does not change when a file inside it is rewritten, so such a bundle's rows
+/// are reused until something about the directory itself moves. Losing the row
+/// instead would be worse than weak reuse: the scan would find the plugin,
+/// publish it, persist nothing, and the next launch could not activate it.
+pub(crate) fn scanned_file_path(plugin: &ScannedPlugin) -> Option<PathBuf> {
+    let resolved = scanned_binary_location(plugin).filter(|location| location.is_file());
+    if let Some(binary) = resolved {
+        return Some(binary);
+    }
+    let candidate = Path::new(&plugin.path);
+    fs::metadata(candidate)
+        .is_ok()
+        .then(|| candidate.to_path_buf())
+}
+
+/// Where this plugin's binary belongs, whether or not it is there yet.
+///
+/// A scanned path is the candidate the walk found, and for both hosted formats
+/// that candidate is a bundle *directory* on at least one platform. A directory
+/// carries the size and modification time of its own listing, and rewriting a
+/// binary inside it moves neither: fingerprinting the candidate would read an
+/// in-place plugin update as unchanged for as long as the bundle's own entries
+/// stayed put, which on macOS is forever. So the fingerprint follows the file
+/// the loader opens, resolved through the same public resolvers the loaders
+/// themselves use rather than a second copy of each layout.
+///
+/// Separate from [`scanned_file_path`] because existence is a different
+/// question from location: a bundle whose executable is missing still has a
+/// place that executable belongs, which is what a fixture needs to know and
+/// what a fingerprint must not be taken from.
+pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf> {
+    let candidate = Path::new(&plugin.path);
+    if !candidate.is_dir() {
+        return Some(candidate.to_path_buf());
+    }
+    match PluginFormat::from_wire_name(&plugin.format)? {
+        PluginFormat::Clap => scanner::clap_library_path(candidate).ok(),
+        PluginFormat::Vst3 => vst3_bundle_binary_location(candidate),
+        PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
+    }
+    .filter(|location| !location.is_dir())
+}
+
+/// The VST3 module inside a bundle, by this platform's layout.
+///
+/// macOS loads a bundle through `CFBundleCreate`, which takes its executable
+/// from `Info.plist`'s `CFBundleExecutable` and is under no obligation to name
+/// it after the bundle. The stem-named path is the convention and is tried
+/// first; when it is not there, the one regular file in `Contents/MacOS` is
+/// what CoreFoundation would have opened. Lowest path wins among several, so
+/// repeated runs resolve the same file — `read_dir` order is not stable, and an
+/// unstable pick would read as a plugin that changes every scan.
+#[cfg(target_os = "macos")]
+fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    let stem_named = vst3_module::macos_executable_path(bundle).ok()?;
+    if stem_named.is_file() {
+        return Some(stem_named);
+    }
+    lowest_regular_file(&bundle.join("Contents").join("MacOS")).or(Some(stem_named))
+}
+
+/// The lexicographically lowest regular file directly inside `directory`,
+/// ignoring the dot-prefixed ones.
+///
+/// Finder leaves `.DS_Store` behind and AppleDouble leaves `._Name`, and both
+/// sort below every executable name a vendor would choose. An unfiltered
+/// minimum would fingerprint a sidecar the loader never opens — and then an
+/// update that rewrote the real module would read as unchanged, because the
+/// sidecar had not moved.
+#[cfg(target_os = "macos")]
+fn lowest_regular_file(directory: &Path) -> Option<PathBuf> {
+    fs::read_dir(directory)
+        .ok()?
+        .flatten()
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .min()
+}
+
+/// The VST3 module inside a bundle, by this platform's layout.
+///
+/// Windows names several architecture directories a host tries in order, so an
+/// existing module decides; with none present the preferred one is still the
+/// place the module belongs, and the existence gate above rejects it.
+#[cfg(target_os = "windows")]
+fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    let candidates = vst3_module::windows_module_paths(bundle, std::env::consts::ARCH).ok()?;
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .or_else(|| candidates.first())
+        .cloned()
+}
+
+/// The VST3 module inside a bundle, by this platform's layout.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    vst3_module::linux_module_path(bundle, std::env::consts::ARCH)
+        .ok()
+        .flatten()
 }
 
 fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
@@ -721,6 +971,7 @@ fn write_registry_document(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daw_plugin_host::scanner::ScannedParameterDescriptor;
     use std::fs::{File, FileTimes};
     use std::time::{Duration, SystemTime};
 
@@ -773,24 +1024,41 @@ mod tests {
         }
     }
 
-    fn registry_entry(path: &Path, stable_id: &str) -> PluginRegistryEntry {
-        PluginRegistryEntry {
-            path: path.display().to_string(),
-            stable_id: stable_id.to_string(),
-            descriptor_id: "com.vendor.reverb".to_string(),
-            format: "clap".to_string(),
+    /// A fully inspected scan result: an instance was created, so `parameters`
+    /// is an answer and there is no parameter reason.
+    fn scanned_plugin(path: &Path, stable_id: &str) -> ScannedPlugin {
+        ScannedPlugin {
+            id: stable_id.to_string(),
             name: "Vendor Reverb".to_string(),
+            vendor: "Vendor".to_string(),
+            format: "clap".to_string(),
+            category: "effect".to_string(),
+            path: path.display().to_string(),
+            version: "1.0.0".to_string(),
+            descriptor_id: "com.vendor.reverb".to_string(),
             num_inputs: 2,
             num_outputs: 2,
+            num_parameters: 0,
             has_custom_ui: true,
+            parameters: Some(Vec::new()),
+            parameter_metadata_reason: None,
             capability_metadata_reason: None,
         }
     }
 
-    fn registry_with(
-        entries: Vec<(String, PluginRegistryEntry)>,
-    ) -> HashMap<String, PluginRegistryEntry> {
-        entries.into_iter().collect()
+    /// One scan row per `(key, plugin)` pair, the shape `persist` takes.
+    fn rows_for(plugins: Vec<(&str, ScannedPlugin)>) -> Vec<ScanRow> {
+        plugins
+            .into_iter()
+            .map(|(key, plugin)| ScanRow {
+                keys: vec![key.to_string()],
+                plugin,
+            })
+            .collect()
+    }
+
+    fn one_row(path: &Path, stable_id: &str) -> Vec<ScanRow> {
+        rows_for(vec![(stable_id, scanned_plugin(path, stable_id))])
     }
 
     /// The defect: nothing survived the process, so a saved project reopened
@@ -799,10 +1067,9 @@ mod tests {
     fn a_persisted_entry_resolves_again_in_a_new_process() {
         let test_root = TestRegistryRoot::create("registry-hydrate");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
-        test_root.store().persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
 
         // A second store over the same file is the next launch: nothing carries
         // over but what was written.
@@ -828,14 +1095,14 @@ mod tests {
     fn hydration_does_not_displace_an_entry_this_session_scanned() {
         let test_root = TestRegistryRoot::create("registry-hydrate-additive");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
-        test_root.store().persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
 
-        let mut rescanned = registry_entry(&plugin_path, "aaaa1111");
+        let mut rescanned =
+            PluginRegistryEntry::from_scanned(&scanned_plugin(&plugin_path, "aaaa1111"));
         rescanned.name = "Vendor Reverb 2".to_string();
-        let session_registry = Mutex::new(registry_with(vec![("aaaa1111".to_string(), rescanned)]));
+        let session_registry = Mutex::new(HashMap::from([("aaaa1111".to_string(), rescanned)]));
         test_root
             .store()
             .hydrate_into(&session_registry, &test_root.scan_policy());
@@ -859,10 +1126,9 @@ mod tests {
     fn a_plugin_file_whose_size_changed_does_not_hydrate() {
         let test_root = TestRegistryRoot::create("registry-stale-size");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
-        test_root.store().persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
 
         let scanned_times = File::open(&plugin_path)
             .expect("plugin file should open")
@@ -901,10 +1167,9 @@ mod tests {
     fn a_plugin_file_whose_modification_time_changed_does_not_hydrate() {
         let test_root = TestRegistryRoot::create("registry-stale-mtime");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
-        test_root.store().persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
 
         File::options()
             .write(true)
@@ -934,10 +1199,7 @@ mod tests {
         let test_root = TestRegistryRoot::create("registry-last-known");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
         let store = test_root.store();
-        store.persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
         fs::remove_file(&plugin_path).expect("plugin file should be removable");
 
         let next_launch = test_root.store();
@@ -946,8 +1208,8 @@ mod tests {
         let last_known = next_launch
             .last_known_entry("aaaa1111")
             .expect("the removed plugin's last known location must survive");
-        assert_eq!(last_known.path, plugin_path.display().to_string());
-        assert_eq!(last_known.name, "Vendor Reverb");
+        assert_eq!(last_known.plugin.path, plugin_path.display().to_string());
+        assert_eq!(last_known.plugin.name, "Vendor Reverb");
     }
 
     #[test]
@@ -971,10 +1233,9 @@ mod tests {
     fn a_registry_file_from_another_schema_reads_as_an_absent_one() {
         let test_root = TestRegistryRoot::create("registry-schema");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
-        test_root.store().persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
 
         let location = test_root.root.join(REGISTRY_FILE_NAME);
         let mut document: PersistedScanRegistry =
@@ -999,6 +1260,152 @@ mod tests {
                 .is_empty(),
             "a document this build does not understand must be read as absent, not in part"
         );
+    }
+
+    /// The version 4 document an upgrading user actually has on disk, written
+    /// out literally rather than derived from a current one.
+    ///
+    /// A real version 4 row has no `plugin` object at all — no vendor, no
+    /// category, no version, no parameter contract — so serde discards the
+    /// document before the version gate is ever consulted, exactly as it does
+    /// for version 2. What this pins is the outcome an upgrading user gets: one
+    /// full rescan, never a row read in part. The version gate itself is pinned
+    /// by [`a_current_row_labelled_with_the_previous_schema_version_does_not_hydrate`].
+    ///
+    /// Mutation this catches: giving `PersistedPluginEntry::plugin` a serde
+    /// default admits this row with an invented scan result, and hydration then
+    /// resolves a plugin whose vendor, version and parameters are fabrications.
+    #[test]
+    fn a_literal_version_four_document_reads_as_an_absent_one() {
+        let test_root = TestRegistryRoot::create("registry-schema-v4");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let metadata = fs::metadata(&plugin_path).expect("plugin metadata should be readable");
+        let size = metadata.len();
+        let modified = metadata
+            .modified()
+            .expect("plugin mtime should be readable")
+            .duration_since(UNIX_EPOCH)
+            .expect("plugin mtime should be after the unix epoch")
+            .as_millis() as u64;
+        // Fingerprinted so it would hydrate on every other ground: the file is
+        // there, unmodified, inside an authorized root. Only the schema version
+        // stops it.
+        let document = format!(
+            r#"{{"schema_version":4,"entries":{{"aaaa1111":{{"path":{},"stable_id":"aaaa1111","descriptor_id":"com.vendor.reverb","format":"clap","name":"Vendor Reverb","num_inputs":2,"num_outputs":2,"has_custom_ui":true,"file_size_bytes":{size},"file_modified_ms":{modified}}}}},"quarantine":{{}}}}"#,
+            serde_json::to_string(&plugin_path.display().to_string())
+                .expect("a path should serialize as a JSON string")
+        );
+        fs::write(test_root.root.join(REGISTRY_FILE_NAME), document)
+            .expect("version 4 registry should be written");
+
+        let next_launch_registry = Mutex::new(HashMap::new());
+        let store = test_root.store();
+        store.hydrate_into(&next_launch_registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .is_empty(),
+            "a version 4 row carries no scanned plugin to stand in for a scan; it must read as absent"
+        );
+        assert!(
+            store.last_known_entry("aaaa1111").is_none(),
+            "the whole document must be absent, not admitted into the persisted view"
+        );
+    }
+
+    /// The version gate on its own, with a body this build can parse: only the
+    /// declared version stops it. Version 4 is written literally rather than
+    /// derived from the constant, because a test that says
+    /// `SCAN_REGISTRY_SCHEMA_VERSION - 1` moves with the constant and can never
+    /// notice a bump that was not made.
+    ///
+    /// Mutation this catches: leaving `SCAN_REGISTRY_SCHEMA_VERSION` at 4
+    /// admits this document, and the row hydrates.
+    #[test]
+    fn a_current_row_labelled_with_the_previous_schema_version_does_not_hydrate() {
+        let test_root = TestRegistryRoot::create("registry-schema-previous");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        test_root
+            .store()
+            .persist(&one_row(&plugin_path, "aaaa1111"));
+
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        let mut document: PersistedScanRegistry =
+            serde_json::from_slice(&fs::read(&location).expect("registry should be readable"))
+                .expect("registry should parse");
+        document.schema_version = 4;
+        fs::write(
+            &location,
+            serde_json::to_vec(&document).expect("registry should serialize"),
+        )
+        .expect("registry should be rewritten");
+
+        let next_launch_registry = Mutex::new(HashMap::new());
+        test_root
+            .store()
+            .hydrate_into(&next_launch_registry, &test_root.scan_policy());
+
+        assert!(
+            next_launch_registry
+                .lock()
+                .expect("registry lock")
+                .is_empty(),
+            "the row shape changed under version 5; a document still claiming 4 must read as absent"
+        );
+    }
+
+    /// The row has to carry the scan's whole answer, not the columns activation
+    /// happens to read: the walk republishes it in place of re-inspecting an
+    /// unchanged file, so anything it drops is a field the browse list loses on
+    /// every run that reuses the row.
+    ///
+    /// Mutation this catches: persisting any projection of `ScannedPlugin`
+    /// instead of the value itself — dropping `vendor`, `category`, `version`,
+    /// `num_parameters` or `parameters` — fails the field it dropped.
+    #[test]
+    fn a_persisted_row_round_trips_the_whole_scanned_plugin() {
+        let test_root = TestRegistryRoot::create("registry-round-trip");
+        let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
+        let mut plugin = scanned_plugin(&plugin_path, "aaaa1111");
+        plugin.vendor = "Valhalla".to_string();
+        plugin.category = "reverb".to_string();
+        plugin.version = "3.2.1".to_string();
+        plugin.num_parameters = 1;
+        plugin.parameters = Some(vec![ScannedParameterDescriptor {
+            id: 7,
+            name: "Mix".to_string(),
+            module: Some("Master".to_string()),
+            min_value: 0.0,
+            max_value: 1.0,
+            default_value: 0.5,
+            is_automatable: true,
+            is_modulatable: false,
+            is_stepped: false,
+            is_enum: false,
+        }]);
+        test_root
+            .store()
+            .persist(&rows_for(vec![("aaaa1111", plugin.clone())]));
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let persisted = next_launch
+            .last_known_entry("aaaa1111")
+            .expect("the persisted row must survive the file")
+            .plugin;
+
+        assert_eq!(persisted.vendor, "Valhalla");
+        assert_eq!(persisted.category, "reverb");
+        assert_eq!(persisted.version, "3.2.1");
+        assert_eq!(persisted.num_parameters, 1);
+        assert_eq!(persisted.parameters, plugin.parameters);
+        assert_eq!(persisted.name, plugin.name);
+        assert_eq!(persisted.descriptor_id, plugin.descriptor_id);
+        assert_eq!(persisted.num_inputs, plugin.num_inputs);
+        assert_eq!(persisted.num_outputs, plugin.num_outputs);
+        assert_eq!(persisted.has_custom_ui, plugin.has_custom_ui);
     }
 
     /// The version 1 document this build actually has to survive, written out
@@ -1058,10 +1465,9 @@ mod tests {
             .expect("outside directory should be created");
         let outside_path = test_root.root.join("elsewhere").join("Smuggled.clap");
         fs::write(&outside_path, b"clap-bytes").expect("outside plugin should be written");
-        test_root.store().persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&outside_path, "aaaa1111"),
-        )]));
+        test_root
+            .store()
+            .persist(&one_row(&outside_path, "aaaa1111"));
 
         let next_launch_registry = Mutex::new(HashMap::new());
         test_root
@@ -1089,15 +1495,9 @@ mod tests {
         let test_root = TestRegistryRoot::create("registry-persist-union");
         let fresh_path = test_root.write_plugin_file("Fresh.clap", b"clap-bytes");
         let stale_path = test_root.write_plugin_file("Stale.clap", b"clap-bytes");
-        test_root.store().persist(&registry_with(vec![
-            (
-                "fresh0001".to_string(),
-                registry_entry(&fresh_path, "fresh0001"),
-            ),
-            (
-                "stale0001".to_string(),
-                registry_entry(&stale_path, "stale0001"),
-            ),
+        test_root.store().persist(&rows_for(vec![
+            ("fresh0001", scanned_plugin(&fresh_path, "fresh0001")),
+            ("stale0001", scanned_plugin(&stale_path, "stale0001")),
         ]));
         // Only the second plugin is updated in place, so only its row goes
         // stale: hydration admits one and refuses the other.
@@ -1111,16 +1511,16 @@ mod tests {
             1,
             "the fixture must produce one admitted row and one refused one"
         );
-        // The save any activation triggers: a snapshot holding only what
-        // hydration admitted.
-        second_launch.persist(&registry.lock().expect("registry lock").clone());
+        // The save any activation triggers: only the plugin that resolved is
+        // written, and the refused row is not part of it.
+        second_launch.persist(&one_row(&fresh_path, "fresh0001"));
 
         let third_launch = test_root.store();
         third_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
         let last_known = third_launch
             .last_known_entry("stale0001")
             .expect("a row refused as stale must survive a save it was not part of");
-        assert_eq!(last_known.path, stale_path.display().to_string());
+        assert_eq!(last_known.plugin.path, stale_path.display().to_string());
     }
 
     /// The other half of the union: a plugin the user actually uninstalled must
@@ -1130,16 +1530,13 @@ mod tests {
         let test_root = TestRegistryRoot::create("registry-persist-removal");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
         let store = test_root.store();
-        store.persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
 
         // The scan publisher's retention predicate for a completed scan of the
         // plugin root, run when the scan found nothing there any more.
         let scanned_root = test_root.root.join("plugins");
         store.apply_completed_scan_removals(|path| !path.starts_with(&scanned_root));
-        store.persist(&HashMap::new());
+        store.persist(&[]);
 
         let next_launch = test_root.store();
         next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
@@ -1158,15 +1555,8 @@ mod tests {
             entries.insert(
                 format!("key-{index:05}"),
                 PersistedPluginEntry {
-                    path: plugin_path.display().to_string(),
-                    stable_id: format!("key-{index:05}"),
-                    descriptor_id: "com.vendor.reverb".to_string(),
-                    format: "clap".to_string(),
-                    name: "Vendor Reverb".to_string(),
-                    num_inputs: 2,
-                    num_outputs: 2,
-                    has_custom_ui: true,
-                    capability_metadata_reason: None,
+                    plugin: scanned_plugin(&plugin_path, &format!("key-{index:05}")),
+                    bundle_position: 0,
                     file_size_bytes: 10,
                     file_modified_ms: 0,
                 },
@@ -1280,7 +1670,7 @@ mod tests {
             "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
             1_700_000_000_000,
         );
-        store.persist(&HashMap::new());
+        store.persist(&[]);
 
         let next_launch = test_root.store();
         next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
@@ -1305,10 +1695,10 @@ mod tests {
         let plugin_path = test_root.write_plugin_file("Recovered.clap", b"clap-bytes");
         let store = test_root.store();
         store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
-        store.persist(&HashMap::new());
+        store.persist(&[]);
 
         store.clear_quarantine(&plugin_path);
-        store.persist(&HashMap::new());
+        store.persist(&[]);
 
         let next_launch = test_root.store();
         next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
@@ -1341,12 +1731,12 @@ mod tests {
             "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
             1_700_000_000_000,
         );
-        store_b.persist(&HashMap::new());
+        store_b.persist(&[]);
 
         // Store A persists next, having never touched the quarantine column
         // at all. A straight replace with A's stale in-memory copy (empty)
         // would erase B's row here.
-        store_a.persist(&HashMap::new());
+        store_a.persist(&[]);
 
         // Store C: a fresh launch, must still see the row B wrote.
         let store_c = test_root.store();
@@ -1369,7 +1759,7 @@ mod tests {
         // Store A quarantines and persists first, so there is a row on disk.
         let store_a = test_root.store();
         store_a.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
-        store_a.persist(&HashMap::new());
+        store_a.persist(&[]);
 
         // Store B hydrates, sees the row, and decides to clear it — but has
         // not persisted that decision yet.
@@ -1380,11 +1770,11 @@ mod tests {
         // Store A persists again in between, having never touched the key
         // itself: this must be a no-op for the quarantine column, leaving the
         // row exactly as B is about to find it.
-        store_a.persist(&HashMap::new());
+        store_a.persist(&[]);
 
         // Store B's persist must still remove the row, not resurrect it from
         // A's untouched re-write.
-        store_b.persist(&HashMap::new());
+        store_b.persist(&[]);
 
         let store_c = test_root.store();
         store_c.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
@@ -1420,16 +1810,80 @@ mod tests {
         );
     }
 
+    /// The largest parameter contract the scanner will emit, at its own caps:
+    /// 256 descriptors (`MAX_SCANNED_PARAMETER_DESCRIPTORS`) whose names and
+    /// modules are each 128 bytes (`MAX_SCANNED_PARAMETER_NAME_BYTES`). Both
+    /// are private to the scanner, so they are spelled out here; the assertion
+    /// they feed is an upper bound, and over-stating them only makes it safer.
+    fn maximal_scanned_plugin(path: &Path) -> ScannedPlugin {
+        let filler = "p".repeat(128);
+        let mut plugin = scanned_plugin(path, "aaaa1111");
+        plugin.num_parameters = 256;
+        plugin.parameters = Some(
+            (0..256)
+                .map(|id| ScannedParameterDescriptor {
+                    id,
+                    name: filler.clone(),
+                    module: Some(filler.clone()),
+                    min_value: f64::MIN,
+                    max_value: f64::MAX,
+                    default_value: 0.0,
+                    is_automatable: true,
+                    is_modulatable: true,
+                    is_stepped: true,
+                    is_enum: true,
+                })
+                .collect(),
+        );
+        plugin.capability_metadata_reason = Some(filler);
+        plugin
+    }
+
+    /// The row now carries the scan's whole answer rather than the few columns
+    /// activation reads, so the byte bound is no longer a round number with
+    /// slack in it — it is a number the row size decides. A bound the largest
+    /// legal registry exceeds is not a limit but a permanent refusal: every
+    /// launch reads the file, rejects it, and the user's only recovery is
+    /// deleting it by hand.
+    ///
+    /// Mutation this catches: shrinking `MAX_REGISTRY_FILE_BYTES`, or growing
+    /// the persisted row without revisiting the bound.
+    #[test]
+    fn the_byte_bound_admits_a_registry_full_of_maximal_rows() {
+        assert_eq!(
+            MAX_REGISTRY_ENTRIES,
+            MAX_SCAN_CANDIDATES * MAX_BUNDLE_PLUGINS * KEYS_PER_PLUGIN,
+            "the row cap is the product of every factor that multiplies it: \
+             candidates, the plugins one bundle may declare, and the keys each \
+             plugin is stored under"
+        );
+
+        let entry = PersistedPluginEntry {
+            plugin: maximal_scanned_plugin(Path::new("/plugins/Reverb.clap")),
+            bundle_position: 0,
+            file_size_bytes: u64::MAX,
+            file_modified_ms: u64::MAX,
+        };
+        let row_bytes = serde_json::to_vec(&entry)
+            .expect("a persisted row should serialize")
+            .len() as u64;
+
+        let largest_document = MAX_REGISTRY_ENTRIES as u64 * row_bytes;
+        assert!(
+            largest_document <= MAX_REGISTRY_FILE_BYTES,
+            "the byte bound must admit the largest registry a scan can write: \
+             {MAX_REGISTRY_ENTRIES} rows of {row_bytes} bytes is {largest_document}, \
+             over a bound of {MAX_REGISTRY_FILE_BYTES}"
+        );
+    }
+
     #[test]
     fn a_store_with_no_file_neither_reads_nor_writes() {
         let test_root = TestRegistryRoot::create("registry-in-memory");
         let plugin_path = test_root.write_plugin_file("Reverb.clap", b"clap-bytes");
 
         let store = PluginRegistryStore::in_memory_only();
-        store.persist(&registry_with(vec![(
-            "aaaa1111".to_string(),
-            registry_entry(&plugin_path, "aaaa1111"),
-        )]));
+        store.persist(&one_row(&plugin_path, "aaaa1111"));
         let registry = Mutex::new(HashMap::new());
         store.hydrate_into(&registry, &test_root.scan_policy());
 
