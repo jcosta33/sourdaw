@@ -1,0 +1,21 @@
+scripts/removeLane.ts
+  s_9b530f08172a54::t_a6f73d9b2bf2fc 152
+scripts/__tests__/removeLane.spec.ts
+  s_9b530f08172a54::t_384b4030bdc30d 192-193,199,201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9dc7fce60ca69566c5e5e70fe19148bb373cfb6d",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
