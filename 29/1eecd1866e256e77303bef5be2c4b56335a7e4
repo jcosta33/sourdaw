@@ -1,0 +1,68 @@
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_9b530f08172a54::t_d96eefa96c841b 106-131,133-136
+  s_9b530f08172a54::t_06a2b545f1df2a 132
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_b28afaa053ca07 290-295,306-318
+  s_9b530f08172a54::t_55fd5b07fb536a 296-305
+  s_9b530f08172a54::t_925345b413aa3c 102,108-112
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_9b530f08172a54::t_fd08565b0710ec 427-437
+  s_9b530f08172a54::t_951787917fc4a3 444-445
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_65281ab02f464d 944
+  s_9b530f08172a54::t_39a1146380950d 930-931,939
+  s_9b530f08172a54::t_5865f2a5296fa0 860,871,878-890,896-929,932-938,940-943
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_895f8ca5dbe09d 385-391
+  s_9b530f08172a54::t_af2191c9ec6c58 446-448
+  s_9b530f08172a54::t_d0077df686bf83 671,673-677
+  s_9b530f08172a54::t_0461575c98f305 567,590,656
+  s_9b530f08172a54::t_4e4a9812fda404 672
+  s_9b530f08172a54::t_847b052880146f 552-556
+  s_9b530f08172a54::t_f0f720e65dcaef 564
+  s_9b530f08172a54::t_2b063387424e25 566
+  s_9b530f08172a54::t_67d0e04d1afa01 451-496,498-508
+  s_9b530f08172a54::t_c79d100ff861ea 591-593
+  s_9b530f08172a54::t_8f0e3a892e3c67 568-570,587-589
+  s_71651fa5c901b0::t_8d87b684bc77a9 571-586,594-640,662-667
+  s_9b530f08172a54::t_7181d9c6938915 557-562
+  s_9b530f08172a54::t_172dd5f910838b 563,642-643,645-646,650-655,657-658
+  s_9b530f08172a54::t_556e0f61d9c25a 659-661,668-670
+  s_9b530f08172a54::t_9ddd73198139e8 449-450
+  s_9b530f08172a54::t_8c2b23c4441e95 412-417
+.agents/decisions/0044-two-carrier-live-playback-until-native-hosts-every-device.md
+  s_9b530f08172a54::t_ea5d5ab7c86463 89
+  s_28abfd94826e36::t_d104bbd545a8f1 99-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "291eecd1866e256e77303bef5be2c4b56335a7e4",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_71651fa5c901b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aea1b168a15d8c06b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
