@@ -1,0 +1,14 @@
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  h_1228e573df1f42 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d014f67d871b4e75a03957ee2dd6667c03930939",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
