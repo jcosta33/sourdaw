@@ -148,6 +148,7 @@ function compilerEvidenceFor(providerKnownTargetIds: readonly string[]): Arbitra
         selectors: [],
         items: [],
         commands: [],
+        expandedMidiTransforms: [],
     };
 }
 
@@ -218,7 +219,7 @@ describe('composeVerifiedProviderProposalScope', () => {
         ).toEqual([]);
     });
 
-    it('leaves the actions it measures untouched', () => {
+    it('measures and compiles a glue plan without ever writing it onto the caller action', () => {
         seedGluableTrack();
         const action: AppAction = { type: 'glueClips', payload: { clipIds: ['clip-keys-one', 'clip-keys-two'] } };
         const asProvided = structuredClone(action);
@@ -226,10 +227,12 @@ describe('composeVerifiedProviderProposalScope', () => {
         composeFor({ actions: [action], workflowCapabilityId: 'syncopated-arpeggio' });
 
         expect(action).toEqual(asProvided);
-        // The same compilation, given the action itself, writes the glue plan into it: without the
-        // clone the measurement above would have left that plan on the batch the application runs.
-        migrateLegacyAppActionToVersionedCommandEnvelope({ action, expectedEffect: 'glueClips' });
-        expect(action).not.toEqual(asProvided);
+        // Compilation canonicalizes an owned clone, so the glue plan reaches the envelope the
+        // application runs while the caller's own action keeps the payload it planned.
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({ action, expectedEffect: 'glueClips' });
+
+        expect(action).toEqual(asProvided);
+        expect(envelope.arguments).not.toEqual(asProvided.payload);
     });
 
     it('reserves no application default while measuring a plan that creates a track', () => {

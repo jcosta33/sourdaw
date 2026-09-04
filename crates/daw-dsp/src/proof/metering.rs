@@ -1102,27 +1102,64 @@ pub struct LoudnessRange {
     cached_lra: f32,
     hop_counter: usize,
     hop_size: usize,
+    /// Samples still to be processed before the short-term window holds nothing
+    /// but real audio. See [`Self::process_sample`].
+    warmup_remaining: usize,
+    /// The short-term window length, kept so `reset` can restate the warm-up
+    /// without re-deriving it from a sample rate this struct no longer holds.
+    window_size: usize,
 }
 
 impl LoudnessRange {
     pub fn new(sr: f64) -> Self {
         let hop_size = sanitized_sample_count(0.1, sr); // 100ms hop
+        let st_lufs = ShortTermLufs::new(sr);
+        let window_size = st_lufs.window_size;
         Self {
-            st_lufs: ShortTermLufs::new(sr),
+            st_lufs,
             blocks: BlockStore::new(),
             scratch: Vec::with_capacity(MAX_LOUDNESS_BLOCKS),
             quantiles: LoudnessQuantiles::new(),
             cached_lra: 0.0,
             hop_counter: 0,
             hop_size,
+            warmup_remaining: window_size,
+            window_size,
         }
     }
 
+    /// Feed one sample, and push a gating block at each 100 ms hop boundary
+    /// **once the 3-second short-term window is full**.
+    ///
+    /// EBU Tech 3342 §2 defines loudness range over short-term blocks of 3 s
+    /// duration, the first of which ends at t = 3.0 s. The short-term ring
+    /// buffer starts zeroed, so a block taken before the window is full covers
+    /// a window that is part audio and part silence. `ShortTermLufs::energy()`
+    /// divides by the full 3 s window size, so the first 29 blocks record an
+    /// energy ramp from 1/30 to 29/30 of true energy. Every one of them clears
+    /// the −70 LUFS absolute gate and is recorded, fabricating several LU of
+    /// Loudness Range (LRA) on steady audio where true LRA is 0.0 LU.
+    ///
+    /// Gating block emission until `warmup_remaining == 0` ensures only complete
+    /// 3-second blocks enter the block store and quantile estimator, matching
+    /// [`IntegratedLufs::process_sample`].
+    ///
+    /// The counter runs from construction *and* from `reset`, deliberately
+    /// without a special case for either: the ramp is identical whichever way
+    /// the window came to be zeroed.
+    ///
+    /// The hop counter keeps running through warm-up, so the hop grid stays
+    /// anchored to sample zero and the first block lands on the 3.0 s boundary
+    /// rather than 3.0 s after it.
     pub fn process_sample(&mut self, l: f32, r: f32) {
         self.st_lufs.process_sample(l, r);
         self.hop_counter += 1;
+        self.warmup_remaining = self.warmup_remaining.saturating_sub(1);
         if self.hop_counter >= self.hop_size {
             self.hop_counter = 0;
+            if self.warmup_remaining > 0 {
+                return;
+            }
             let block = self.st_lufs.energy();
             self.record_block(block);
         }
@@ -1190,6 +1227,7 @@ impl LoudnessRange {
         self.quantiles.clear();
         self.cached_lra = 0.0;
         self.hop_counter = 0;
+        self.warmup_remaining = self.window_size;
     }
 }
 
@@ -2030,6 +2068,114 @@ mod integrated_warmup_tests {
         assert!(
             meter.get_lufs() > -100.0,
             "the first complete 400 ms block must be recorded at t = 400 ms, not later"
+        );
+    }
+}
+
+#[cfg(test)]
+mod lra_warmup_tests {
+    //! EBU Tech 3342 §2 defines loudness range over short-term blocks of 3 s
+    //! duration. Emitting blocks before the 3-second window is full averages in
+    //! the zeroed ring buffer, recording an energy ramp from 1/30 to 30/30 of
+    //! true energy. These blocks clear the −70 LUFS absolute gate and fabricate
+    //! several LU of LRA on a steady tone where true LRA is 0.0 LU.
+    //!
+    //! These tests verify that warm-up gating prevents block emission until the
+    //! 3-second window is full, keeping steady audio within 0.1 LU across 5 s,
+    //! 10 s, 20 s, and 30 s, and that `reset()` re-arms the warm-up gate.
+
+    use super::LoudnessRange;
+
+    const SR: f64 = 48_000.0;
+
+    /// EBU Tech 3341's tolerance on a loudness measurement.
+    const TOLERANCE_LU: f32 = 0.1;
+
+    /// Peak amplitude of a 1 kHz sine whose per-channel RMS is −23 dBFS.
+    fn tone_amplitude() -> f64 {
+        10.0_f64.powf(-23.0 / 20.0) * core::f64::consts::SQRT_2
+    }
+
+    fn tone_sample(n: usize) -> f32 {
+        (tone_amplitude() * (2.0 * core::f64::consts::PI * 1_000.0 * n as f64 / SR).sin()) as f32
+    }
+
+    #[test]
+    fn steady_tone_has_zero_loudness_range_across_startup() {
+        let mut meter = LoudnessRange::new(SR);
+        let check_points_sec = [5, 10, 20, 30];
+        let mut total_samples = 0;
+
+        for &sec in &check_points_sec {
+            let target_samples = (sec as f64 * SR) as usize;
+            for n in total_samples..target_samples {
+                let s = tone_sample(n);
+                meter.process_sample(s, s);
+            }
+            total_samples = target_samples;
+            let lra = meter.get_lra();
+            assert!(
+                lra <= TOLERANCE_LU,
+                "at {sec} s on a steady -23 dBFS tone, LRA is {lra:.4} LU — \
+                 must be <= {TOLERANCE_LU} LU. Without warm-up gating, the startup ramp \
+                 fabricates several LU of range."
+            );
+        }
+    }
+
+    #[test]
+    fn reset_rearms_warmup_gate() {
+        let mut meter = LoudnessRange::new(SR);
+        // Process 10 seconds of tone first.
+        let ten_sec = (10.0 * SR) as usize;
+        for n in 0..ten_sec {
+            let s = tone_sample(n);
+            meter.process_sample(s, s);
+        }
+        assert!(meter.get_lra() <= TOLERANCE_LU);
+
+        meter.reset();
+        assert_eq!(meter.get_lra(), 0.0, "reset must clear LRA to 0.0");
+
+        // Feed samples again after reset and verify steady tone remains <= 0.1 LU.
+        let check_points_sec = [5, 10, 20, 30];
+        let mut total_samples = 0;
+        for &sec in &check_points_sec {
+            let target_samples = (sec as f64 * SR) as usize;
+            for n in total_samples..target_samples {
+                let s = tone_sample(n);
+                meter.process_sample(s, s);
+            }
+            total_samples = target_samples;
+            let lra = meter.get_lra();
+            assert!(
+                lra <= TOLERANCE_LU,
+                "at {sec} s after reset on a steady -23 dBFS tone, LRA is {lra:.4} LU — \
+                 must be <= {TOLERANCE_LU} LU. Reset must re-arm the warm-up gate."
+            );
+        }
+    }
+
+    #[test]
+    fn no_block_is_recorded_before_short_term_window_is_full() {
+        let mut meter = LoudnessRange::new(SR);
+        let window = (SR * 3.0) as usize;
+        for n in 0..window - 1 {
+            let s = tone_sample(n);
+            meter.process_sample(s, s);
+        }
+        assert_eq!(
+            meter.blocks.as_slice().len(),
+            0,
+            "no block should be recorded before the 3-second window is full"
+        );
+
+        let s = tone_sample(window - 1);
+        meter.process_sample(s, s);
+        assert_eq!(
+            meter.blocks.as_slice().len(),
+            1,
+            "first block must be recorded at exactly t = 3.0 s"
         );
     }
 }

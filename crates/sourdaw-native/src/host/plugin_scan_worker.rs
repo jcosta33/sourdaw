@@ -22,7 +22,21 @@ pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
 /// isolation shape is unchanged, still one bounded child per plugin whose crash
 /// or hang is the supervisor's problem and not the app's.
 pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worker";
-const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
+/// The whole time one candidate's helper is allowed to run, whichever pass
+/// spawned it.
+///
+/// `pub(crate)` because the scan walk hands every candidate exactly this bound
+/// (`commands::plugins`). A helper handed less is killed for the walk's clock
+/// rather than its own, and the refusal it reports cannot be told apart from a
+/// plugin that genuinely hangs — so the two bounds have to be the same value.
+///
+/// Ten seconds because a large sampled instrument legitimately needs more than
+/// a couple of them to load its entry point and answer: killing it earlier
+/// quarantines a working plugin for being big, and quarantine is a record the
+/// user has to clear by hand. A plugin that is genuinely wedged is still
+/// bounded — this decides how long a scan waits before saying so, not whether
+/// it ever does.
+pub(crate) const WORKER_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
 
 /// The refusal `scan_worker` returns when the helper child exited with a

@@ -55,7 +55,7 @@ describe('TrackNode', () => {
         expect(track.strip.muted).toBe(false);
 
         // Initial wiring check (simplified)
-        // gainNode -> preFaderTap -> faderNode -> postFaderGain -> panNode -> meterNode -> analyserNode -> masterGain
+        // gainNode -> preFaderTap -> faderNode -> postFaderGain -> panNode -> meterNode -> analyserNode -> carrierGate -> masterGain
         expect(track.strip.gainNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
         expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.faderNode);
         expect(track.strip.faderNode.connect).toHaveBeenCalledWith(track.strip.postFaderGain);
@@ -66,7 +66,53 @@ describe('TrackNode', () => {
         }
         expect(track.strip.panNode.connect).toHaveBeenCalledWith(meterNode);
         expect(meterNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
-        expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(deps.masterGainNode);
+        // The destination hangs off the carrier gate, not off the analyser: the
+        // analyser has to keep metering a track the native engine is carrying.
+        expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(track.strip.carrierGate);
+        expect(track.strip.carrierGate.connect).toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.analyserNode.connect).not.toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.preFaderSendGate);
+    });
+
+    describe('native-carrier gates', () => {
+        it('closes both exits when the native engine takes the track and reopens them when it gives it back', () => {
+            const track = new TrackNode('track-1', deps);
+
+            track.setNativeCarried(true);
+
+            expect(track.strip.nativeCarried).toBe(true);
+            expect(track.strip.carrierGate.gain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.005);
+            expect(track.strip.preFaderSendGate.gain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.005);
+
+            track.setNativeCarried(false);
+
+            expect(track.strip.nativeCarried).toBe(false);
+            expect(track.strip.carrierGate.gain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.005);
+            expect(track.strip.preFaderSendGate.gain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.005);
+        });
+
+        it('leaves the mute and solo gates alone, so carrying cannot clear either', () => {
+            const track = new TrackNode('track-1', deps);
+            vi.mocked(track.strip.postFaderGain.gain.setTargetAtTime).mockClear();
+            vi.mocked(track.strip.preFaderTap.gain.setTargetAtTime).mockClear();
+
+            track.setNativeCarried(true);
+
+            expect(track.strip.postFaderGain.gain.setTargetAtTime).not.toHaveBeenCalled();
+            expect(track.strip.preFaderTap.gain.setTargetAtTime).not.toHaveBeenCalled();
+        });
+
+        it('keeps the analyser→carrierGate edge across a chain rebuild', () => {
+            const track = new TrackNode('track-1', deps);
+            track.setNativeCarried(true);
+
+            track.rebuildChain();
+
+            // rebuildChain never disconnects the analyser, so the gate — and the
+            // closed state it holds — survives without being re-driven.
+            expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalled();
+            expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.preFaderSendGate);
+        });
     });
 
     it('should set gain with clamping', () => {
@@ -286,7 +332,7 @@ describe('TrackNode', () => {
         track.setOutput('bus-1');
 
         expect(deps.getBusGainNode).toHaveBeenCalledWith('bus-1');
-        expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(busGain);
+        expect(track.strip.carrierGate.connect).toHaveBeenCalledWith(busGain);
     });
 
     it('disconnects only its previous output destination when rerouting', () => {
@@ -296,9 +342,9 @@ describe('TrackNode', () => {
 
         track.setOutput('bus-1');
 
-        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledTimes(1);
-        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
-        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
+        expect(track.strip.carrierGate.disconnect).toHaveBeenCalledTimes(1);
+        expect(track.strip.carrierGate.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.carrierGate.disconnect).not.toHaveBeenCalledWith();
     });
 
     it('reports a rejected output mutation after restoring its previous live route', () => {
@@ -306,16 +352,16 @@ describe('TrackNode', () => {
         vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
         const track = new TrackNode('track-1', deps);
         const connectError = new Error('output connect failed');
-        vi.mocked(track.strip.analyserNode.connect).mockClear();
-        vi.mocked(track.strip.analyserNode.disconnect).mockClear();
-        vi.mocked(track.strip.analyserNode.connect).mockImplementationOnce(() => {
+        vi.mocked(track.strip.carrierGate.connect).mockClear();
+        vi.mocked(track.strip.carrierGate.disconnect).mockClear();
+        vi.mocked(track.strip.carrierGate.connect).mockImplementationOnce(() => {
             throw connectError;
         });
 
         expect(() => track.setOutput('bus-1')).toThrow(RuntimeGraphMutationRejected);
         expect(track.strip.outputId).toBeUndefined();
-        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
-        expect(track.strip.analyserNode.connect).toHaveBeenLastCalledWith(deps.masterGainNode);
+        expect(track.strip.carrierGate.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.carrierGate.connect).toHaveBeenLastCalledWith(deps.masterGainNode);
     });
 
     it('reports an uncompensated output mutation when restoring its previous live route fails', () => {
@@ -324,9 +370,9 @@ describe('TrackNode', () => {
         const track = new TrackNode('track-1', deps);
         const connectError = new Error('output connect failed');
         const restoreError = new Error('output restore failed');
-        vi.mocked(track.strip.analyserNode.connect).mockClear();
-        vi.mocked(track.strip.analyserNode.disconnect).mockClear();
-        vi.mocked(track.strip.analyserNode.connect)
+        vi.mocked(track.strip.carrierGate.connect).mockClear();
+        vi.mocked(track.strip.carrierGate.disconnect).mockClear();
+        vi.mocked(track.strip.carrierGate.connect)
             .mockImplementationOnce(() => {
                 throw connectError;
             })
@@ -352,26 +398,28 @@ describe('TrackNode', () => {
         const busGain = ctx.createGain();
         vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
         const track = new TrackNode('track-1', deps);
-        vi.mocked(track.strip.analyserNode.connect).mockClear();
-        vi.mocked(track.strip.analyserNode.disconnect).mockImplementationOnce(() => {
+        vi.mocked(track.strip.carrierGate.connect).mockClear();
+        vi.mocked(track.strip.carrierGate.disconnect).mockImplementationOnce(() => {
             throw new Error('output disconnect failed');
         });
 
         expect(() => track.setOutput('bus-1')).toThrow(RuntimeGraphMutationRejected);
         expect(track.strip.outputId).toBeUndefined();
-        expect(track.strip.analyserNode.connect).not.toHaveBeenCalled();
+        expect(track.strip.carrierGate.connect).not.toHaveBeenCalled();
     });
 
-    it('preserves analyser output, send, and sidechain edges across a chain rebuild', () => {
+    it('preserves carrier-gate output, send, and sidechain edges across a chain rebuild', () => {
         const track = new TrackNode('track-1', deps);
         const unrelatedEdge = ctx.createGain();
-        track.strip.analyserNode.connect(unrelatedEdge as unknown as AudioNode);
+        track.strip.carrierGate.connect(unrelatedEdge as unknown as AudioNode);
         vi.mocked(track.strip.analyserNode.disconnect).mockClear();
+        vi.mocked(track.strip.carrierGate.disconnect).mockClear();
 
         track.rebuildChain();
 
         expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
-        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith(unrelatedEdge);
+        expect(track.strip.carrierGate.disconnect).not.toHaveBeenCalledWith();
+        expect(track.strip.carrierGate.disconnect).not.toHaveBeenCalledWith(unrelatedEdge);
     });
 
     it('adds a built-in device through the use-case resolver and wires it into the track chain', () => {

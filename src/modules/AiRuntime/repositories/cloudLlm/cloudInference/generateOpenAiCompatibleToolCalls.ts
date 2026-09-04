@@ -14,6 +14,7 @@ type GenerateOpenAiCompatibleToolCallsInput = {
     systemPrompt: string;
     userMessage: string;
     toolSchemas: readonly ToolSchema[];
+    maxOutputTokens: number;
     signal?: AbortSignal;
 };
 
@@ -81,6 +82,9 @@ function parseToolCalls(response: unknown, decodeWireName: (wireName: string) =>
         throw new ToolPlanningRejectedError('Hosted AI refused tool planning');
     }
     const finishReason = firstChoice.finish_reason;
+    if (finishReason === 'length') {
+        throw new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit');
+    }
     const hasValidFinishReason = finishReason === 'tool_calls' || finishReason === 'stop';
     if (!hasValidFinishReason) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
@@ -134,6 +138,7 @@ export async function generateOpenAiCompatibleToolCalls({
     systemPrompt,
     userMessage,
     toolSchemas,
+    maxOutputTokens,
     signal,
 }: GenerateOpenAiCompatibleToolCallsInput): Promise<ToolCallResult[]> {
     const codec = buildWireToolNameCodec(toolSchemas);
@@ -153,6 +158,9 @@ export async function generateOpenAiCompatibleToolCalls({
         tool_choice: 'auto',
         n: 1,
         stream: false,
+        ...(runtime.provider === 'openai'
+            ? { max_completion_tokens: maxOutputTokens }
+            : { max_tokens: maxOutputTokens }),
         ...(runtime.provider === 'openai' && isGpt56FamilyModel(runtime.model) ? { reasoning_effort: 'none' } : {}),
     });
     const chunks: Uint8Array[] = [];

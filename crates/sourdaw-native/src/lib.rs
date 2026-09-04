@@ -81,11 +81,13 @@ impl NativeSingletons {
 
 /// Run the bounded CLAP descriptor-extraction worker.
 ///
-/// The Node addon reaches this through `#[napi] run_plugin_scan_worker`,
-/// handing it the same process-argument contract every shell has used, so the
-/// scan policy — bounded child process, absolute paths, no entry point loaded
-/// in the application process — is independent of which shell started the
-/// process.
+/// `src/bin/sourdaw-plugin-scan-helper.rs` is the sole caller: a standalone
+/// executable, built from this same package (`[[bin]]` in `Cargo.toml`), that
+/// the application ships and the Rust scan policy launches directly rather
+/// than re-entering the application runtime. Handing it the same
+/// process-argument contract every shell has used keeps the scan policy —
+/// bounded child process, absolute paths, no entry point loaded in the
+/// application process — independent of which shell started the process.
 ///
 /// Returns the exit code the worker process must terminate with, or `None` when
 /// this process was not started as a scan worker.

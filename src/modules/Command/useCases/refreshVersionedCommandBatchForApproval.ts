@@ -39,9 +39,9 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
     const actions = resolvedCommands.map(
         (command) => ({ type: command.operation, payload: command.arguments }) as AppAction
     );
-    const commandsCompatible = actions.every((action) => {
+    const commandsCompatible = actions.every((action, actionIndex) => {
         const handler = getCommandHandler(action);
-        return handler?.canReapplyAfterDivergence?.(action) === true;
+        return handler?.canReapplyAfterDivergence?.(action, { actions, actionIndex }) === true;
     });
     const targetIds = getVersionedCommandBatchDivergenceTargetIds(resolvedEnvelope);
     const divergence = commandProjectDivergencePort.classify({

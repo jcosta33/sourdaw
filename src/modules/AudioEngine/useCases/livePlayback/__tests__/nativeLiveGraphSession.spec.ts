@@ -17,12 +17,17 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
+import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
+import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
+import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
 import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
@@ -36,9 +41,22 @@ const mocks = vi.hoisted(() => ({
     /** Runs when the probe is awaited, which is before the project is read. */
     onProbe: vi.fn(),
     applyGraphCommands: vi.fn<(input: { batch: unknown }) => Promise<unknown>>(),
-    setEngineTransportMaps: vi.fn(
-        (_maps: unknown): Promise<{ outcome: 'applied' } | { outcome: 'declined'; reason: string }> =>
-            Promise.resolve({ outcome: 'applied' })
+    /**
+     * The engine's own answer about the pair it installed, `loopEnabled`
+     * included — not an echo of the request, but derived from it here because
+     * this double has no floor a short region could fall under.
+     */
+    setEngineTransportMaps: vi.fn((maps: unknown): Promise<SetEngineTransportMapsResult> =>
+        Promise.resolve({
+            outcome: 'applied',
+            applied: {
+                sampleRate: 48_000,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: (maps as EngineTransportMaps).loopRegion?.enabled === true,
+                admittedBatch: 1,
+            },
+        })
     ),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
@@ -61,6 +79,19 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn<(message: string) => void>(),
     /** Every bridge call this session made, in order. */
     wireCalls: [] as string[],
+    /**
+     * PluginHost's correction for an instance the engine has just taken over.
+     * Doubled because what this file owns is which instances the session
+     * forwards, not what PluginHost then writes.
+     */
+    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
+    /**
+     * One entry per live backend handle the session opened, flipped when that
+     * handle is closed. A declined batch has to close the handle it opened, and
+     * a leaked one is invisible from the session state — which records only the
+     * handle that is *kept*.
+     */
+    openedBackends: [] as { disposed: boolean }[],
 }));
 
 vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
@@ -81,12 +112,35 @@ vi.mock('../stopNativeEnginePlayheadFeed', () => ({
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return { ...actual, markExternalPluginEngineAttached: mocks.markExternalPluginEngineAttached };
+});
 vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../readLiveGraphProgramme')>();
     return {
         readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) =>
             (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
             actual.readLiveGraphProgramme(input),
+    };
+});
+vi.mock('../../../repositories/nativeGraph/createNativeLiveGraphBackend', async (importOriginal) => {
+    const actual =
+        await importOriginal<typeof import('../../../repositories/nativeGraph/createNativeLiveGraphBackend')>();
+    return {
+        ...actual,
+        createNativeLiveGraphBackend: (deps: Parameters<typeof actual.createNativeLiveGraphBackend>[0]) => {
+            const backend = actual.createNativeLiveGraphBackend(deps);
+            const handle = { disposed: false };
+            mocks.openedBackends.push(handle);
+            return {
+                ...backend,
+                dispose: () => {
+                    handle.disposed = true;
+                    backend.dispose();
+                },
+            };
+        },
     };
 });
 vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
@@ -139,6 +193,21 @@ const LOOPED_MAPS = {
     ...FLAT_MAPS,
     loopRegion: { enabled: true, startSeconds: 2, endSeconds: 4 },
 };
+
+/** The feed's snapshot of a rolling engine, as a re-arm reads it. */
+function rollingReading(positionSeconds: number): EngineTransportPosition {
+    return {
+        running: true,
+        playing: true,
+        positionSeconds,
+        playheadFrame: positionSeconds * SAMPLE_RATE,
+        loopWraps: 0,
+        batchesApplied: 0,
+        tempo: 120,
+        timeSigNum: 4,
+        timeSigDenom: 4,
+    };
+}
 
 const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] };
 
@@ -207,6 +276,76 @@ function appliedBatches(): AudioGraphCommandBatch[] {
     return mocks.applyGraphCommands.mock.calls.map(([input]) => input.batch as AudioGraphCommandBatch);
 }
 
+/** The whole-topology batches, which are the only ones that rebuild strips. */
+function topologyBatches(): AudioGraphCommandBatch[] {
+    return appliedBatches().filter((batch) => batch.replaceTopology === true);
+}
+
+/** How one batch built the strip for `trackId`, or `undefined` if it built none. */
+function stripCreation(batch: AudioGraphCommandBatch | undefined, trackId: string) {
+    return batch?.commands.find((command) => command.kind === 'create-track-strip' && command.trackId === trackId);
+}
+
+/** A device the host has resolved to an external plugin instance. */
+function externalPluginDevice(instanceId: string): Device {
+    return {
+        id: `device-${instanceId}`,
+        name: `device-${instanceId}`,
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalPluginId: 'clap:com.example.reverb',
+        externalInstanceId: instanceId,
+    };
+}
+
+/**
+ * A programme that gives `audio-1` something to play, which is what makes
+ * `contributesAudio` a question about that strip's chain at all.
+ */
+const PLAYING_PROGRAMME = {
+    playbacksByStripId: new Map([
+        [
+            'audio-1',
+            [
+                {
+                    trackId: 'audio-1',
+                    source: { sourceId: 'sample-1', buffer: MATERIAL },
+                    startTime: 0,
+                    sourceOffsetSeconds: 0,
+                    durationSeconds: 1,
+                    playbackRate: 1,
+                    gain: 1,
+                    fade: { microFadeSeconds: 0.005 },
+                },
+            ],
+        ],
+    ]),
+    bakedStripIds: new Set<string>(),
+    exclusions: [],
+};
+
+/**
+ * PluginHost's real write, doubled: `markExternalPluginEngineAttached` records
+ * the attachment in the parameter snapshot, and that snapshot is what the
+ * producer reads. Without it the re-send would rebuild the same topology and
+ * this file would be asserting a batch count rather than a binding.
+ */
+function attachReportedInstancesInStore(): void {
+    mocks.markExternalPluginEngineAttached.mockImplementation(({ instanceId }) => {
+        externalPluginParameterStore.update((state) => {
+            const current = state ?? defaultExternalPluginParameterState;
+            return {
+                ...current,
+                byInstanceId: {
+                    ...current.byInstanceId,
+                    [instanceId]: { engineAttached: true, parameters: [] },
+                },
+            };
+        });
+    });
+}
+
 beforeEach(() => {
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
@@ -218,7 +357,13 @@ beforeEach(() => {
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
     mocks.warn.mockClear();
+    mocks.markExternalPluginEngineAttached.mockReset();
+    mocks.openedBackends = [];
     mocks.wireCalls = [];
+    // Attach state is process-wide store state, so a case inheriting the
+    // previous one's would build strips against an engine that never took
+    // those instances.
+    externalPluginParameterStore.set(defaultExternalPluginParameterState);
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
     registeredNativeTimelineSampleIds.clear();
@@ -226,7 +371,16 @@ beforeEach(() => {
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.monitorShadowed = true;
     nativeLiveGraphSession.rolling = false;
+    nativeLiveGraphSession.loopRegion = null;
+    nativeLiveGraphSession.loopEnabled = false;
     nativeLiveGraphSession.pending = Promise.resolve();
+    // The start and the maps update arm the real writer, and its pass is what
+    // the arm-wiring cases below read — so it is reset with the session's own.
+    nativeLiveAutomationWriter.epoch += 1;
+    nativeLiveAutomationWriter.inFlightEpoch = null;
+    nativeLiveAutomationWriter.pass = null;
+    nativeLiveAutomationWriter.reportedExclusions = null;
+    nativeEnginePlayheadFeed.reading = null;
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
 
@@ -250,6 +404,260 @@ describe('startNativeLiveGraphSession', () => {
 
         expect(result).toEqual({ outcome: 'declined', reason: 'no desktop bridge (browser runtime)' });
         expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+    });
+
+    // This batch is what starts the native engine, so it is also what takes over
+    // every plugin instance loaded before there was one. Those instances were
+    // reported to their devices as loaded but processing no audio, and this
+    // result is the only correction that report ever gets.
+    it('forwards every instance the engine start took over', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [
+                { instanceId: 'inst-1', bridgeRoundTripFrames: 512 },
+                { instanceId: 'inst-2', bridgeRoundTripFrames: 1024 },
+            ],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-1', bridgeRoundTripFrames: 512 }],
+            [{ instanceId: 'inst-2', bridgeRoundTripFrames: 1024 }],
+        ]);
+    });
+
+    // A batch takes only the instances it reserved command-ring slots for, so
+    // one loaded while the topology was in flight is taken by the next batch —
+    // within a start sequence, the roll. Read on the topology alone, that
+    // instance runs natively and stays reported as degraded for the whole
+    // session.
+    it('forwards the instances the roll took, not only the topology’s', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+        ]);
+    });
+
+    it('corrects nothing when the start attached no instances', async () => {
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached).not.toHaveBeenCalled();
+    });
+
+    // `apply_graph_commands` captures its plugin lookup before mapping and
+    // attaches dormant instances behind the fence, so the batch that attaches an
+    // instance is mapped while the engine does not yet hold it: read once, the
+    // first play after loading a plugin renders the strip without it.
+    it('sends the topology again, bound to the instances the first batch attached', async () => {
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const boundReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: ['device-i1'] }];
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({
+                ...APPLIED,
+                attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+            })
+            .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2, reports: boundReports });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        const [first, second] = topologyBatches();
+        expect(topologyBatches()).toHaveLength(2);
+        // The first batch could not have a body for an instance the engine was
+        // not yet holding; the second is built against the attach state that
+        // batch's own report created.
+        expect(stripCreation(first, 'audio-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'audio-1')).toMatchObject({ contributesAudio: true });
+        // Both go out parked, ahead of the roll: `replaceTopology` tears every
+        // strip down inside one fence, which a rolling engine would be heard
+        // doing.
+        expect(appliedBatches()[2]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 0, locate: false },
+        ]);
+        // The second batch replaced every strip the first built, so its reports
+        // are the only ones describing the graph the engine now holds.
+        expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
+    });
+
+    it('sends the topology once when the first batch attached nothing to bind', async () => {
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(topologyBatches()).toHaveLength(1);
+    });
+
+    it('never sends a third topology, however much the re-send attaches', async () => {
+        // The re-send is bounded, not iterated: a loop's fixed point is whatever
+        // the engine happens to attach next, and the roll already reports what
+        // this batch left dormant.
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1'), externalPluginDevice('i2')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i2', bridgeRoundTripFrames: 256 }] });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(topologyBatches()).toHaveLength(2);
+        // Bounded is not silent: the instance the re-send took is still
+        // corrected on its device, it simply waits for the next play to be
+        // spliced into the chain.
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+            [{ instanceId: 'i2', bridgeRoundTripFrames: 256 }],
+        ]);
+    });
+
+    it('keeps the session the first batch installed when the engine refuses the re-send', async () => {
+        // `map_batch` builds its mapping on a clone of the registry and commits
+        // it only on success, so a refused batch left the first one's topology
+        // installed. Discarded here, the engine would be parked with the whole
+        // project mirrored while every caller is told there is no live session
+        // to stop, reposition or re-map.
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const firstReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: [] }];
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({
+                ...APPLIED,
+                reports: firstReports,
+                attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+            })
+            .mockResolvedValueOnce({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'engine-not-running: no default output device',
+            });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // The session is the first batch's: its reports, its revision, and the
+        // handle it opened.
+        expect(result).toEqual({ outcome: 'started', runtimeRevision: 1, reports: firstReports });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([false]);
+        // What the refusal cost is the binding, and a cost nobody states is a
+        // plugin silently missing from the chain for the rest of the session.
+        expect(mocks.warn.mock.calls.map(([message]) => message)).toContainEqual(
+            expect.stringContaining('engine-not-running: no default output device')
+        );
+        // A standing session goes on to install its maps and roll.
+        expect(mocks.setEngineTransportMaps).toHaveBeenCalledWith(FLAT_MAPS);
+    });
+
+    it('discards the session when the re-send is left half applied', async () => {
+        // A partial topology replacement is neither this batch's graph nor the
+        // one before it, so there is nothing left to keep — unlike a refusal,
+        // which changed nothing.
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({
+                acceptance: 'accepted',
+                application: 'needs-reconcile',
+                compensation: 'not-attempted',
+                reason: 'strip audio-1 was rebuilt without its chain',
+                runtimeRevision: 2,
+                reports: [],
+            });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'strip audio-1 was rebuilt without its chain',
+        });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([true]);
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+    });
+
+    it('keeps no session when the very first topology is left half applied', async () => {
+        // The first batch has no predecessor to fall back on, so both non-applied
+        // outcomes cost the session — the refusal case is proven below.
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'accepted',
+            application: 'needs-reconcile',
+            compensation: 'failed',
+            reason: 'the graph could not be restored',
+            runtimeRevision: 1,
+            reports: [],
+        });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toEqual({ outcome: 'declined', reason: 'the graph could not be restored' });
+        expect(nativeLiveGraphSession.backend).toBeNull();
     });
 
     it('starts the engine on desktop by applying the session topology', async () => {
@@ -354,6 +762,49 @@ describe('startNativeLiveGraphSession', () => {
         const mapsInstalled = mocks.setEngineTransportMaps.mock.invocationCallOrder[0]!;
         expect(mapsInstalled).toBeGreaterThan(mocks.applyGraphCommands.mock.invocationCallOrder[0]!);
         expect(mapsInstalled).toBeLessThan(mocks.applyGraphCommands.mock.invocationCallOrder[1]!);
+    });
+
+    it('opens the automation pass once the engine is rolling, stamped with the roll’s own fence', async () => {
+        // Topology, then the roll: the second batch carries the fence the
+        // pass's snapshots are dated against, and the maps install's fence
+        // (1) says nothing about it.
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({ ...APPLIED, admittedBatch: 6 });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toMatchObject({ outcome: 'started' });
+        // The headline path of pressing play on the native engine: a pass
+        // opens where the transport rolled, proven against the roll's batch.
+        expect(nativeLiveAutomationWriter.pass).toMatchObject({
+            entrySeconds: 2.5,
+            sampleRate: SAMPLE_RATE,
+            provenAfterBatch: 6,
+            looping: false,
+        });
+    });
+
+    it('opens no automation pass when the roll is declined and the engine stays parked', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'command-queue-full',
+        });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // A parked engine plays no automation because it plays nothing: the
+        // session stands, and no pass opens over it.
+        expect(result).toMatchObject({ outcome: 'started' });
+        expect(nativeLiveGraphSession.rolling).toBe(false);
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
     });
 
     it('installs the transport maps outside the topology batch, and only once it is applied', async () => {
@@ -576,6 +1027,39 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
         expect(appliedBatches()).toHaveLength(batchesBefore);
     });
 
+    it('re-arms the pass from where the engine stands when the install changes the region', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        const epochAtStart = nativeLiveAutomationWriter.epoch;
+        expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBe(0);
+
+        // The pass was written for the region that is about to go away. The
+        // feed has read the engine since the start, so its snapshot is where
+        // the re-armed pass begins; the install's own fence is what its
+        // snapshots are dated against, because the region is not the engine's
+        // until that batch has drained.
+        nativeEnginePlayheadFeed.reading = rollingReading(3.25);
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({
+            outcome: 'applied',
+            applied: {
+                sampleRate: SAMPLE_RATE,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: true,
+                admittedBatch: 7,
+            },
+        });
+
+        const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+
+        expect(result).toEqual({ outcome: 'updated' });
+        expect(nativeLiveAutomationWriter.epoch).toBeGreaterThan(epochAtStart);
+        expect(nativeLiveAutomationWriter.pass).toMatchObject({
+            entrySeconds: 3.25,
+            provenAfterBatch: 7,
+            looping: true,
+        });
+    });
+
     it('replaces the stale pair on a session parked by declined maps, and still does not roll it', async () => {
         mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'malformed maps' });
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
@@ -647,13 +1131,22 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
             [12, 0],
         ]);
         const reached: number[] = [];
-        const settleByRegion = (maps: unknown): Promise<{ outcome: 'applied' }> => {
+        const settleByRegion = (maps: unknown): Promise<SetEngineTransportMapsResult> => {
             const endSeconds = (maps as typeof LOOPED_MAPS).loopRegion.endSeconds;
             return new Promise((resolve) => {
                 setTimeout(
                     () => {
                         reached.push(endSeconds);
-                        resolve({ outcome: 'applied' });
+                        resolve({
+                            outcome: 'applied',
+                            applied: {
+                                sampleRate: 48_000,
+                                tempoSegments: 1,
+                                timeSignatureSegments: 1,
+                                loopEnabled: true,
+                                admittedBatch: 1,
+                            },
+                        });
                     },
                     settleMs.get(endSeconds) ?? 0
                 );
@@ -696,6 +1189,26 @@ describe('stopNativeLiveGraphSession', () => {
         // A stop that replaced would tear the graph down and take the plugin
         // runtimes standing on it with it; a stop is not a project close.
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
+    });
+
+    // A stop is a batch like any other, and an instance loaded while the
+    // transport was rolling is taken by whichever batch comes next. When that
+    // batch is the stop, nothing else follows it until the next start, so a
+    // correction dropped here leaves the device reporting a plugin that
+    // processes no audio while the engine has been rendering it all along.
+    it('forwards the instances the stop’s batch took over', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.markExternalPluginEngineAttached.mockClear();
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+        });
+
+        await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+        ]);
     });
 
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
@@ -773,6 +1286,25 @@ describe('repositionNativeLiveGraphSession', () => {
         // A locate that replaced would tear down the topology the plugin
         // runtimes are standing on to move the playhead a few beats.
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
+    });
+
+    // Every route that applies a batch carries the correction, because any
+    // batch may be the one that finds an instance parked: a plugin loaded while
+    // the session was already rolling is taken by whatever batch comes next,
+    // and a locate is a batch.
+    it('forwards the instances a locate’s batch took over', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.markExternalPluginEngineAttached.mockClear();
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+        });
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+        ]);
     });
 
     it('refuses to roll an engine the session parked because its maps were declined', async () => {

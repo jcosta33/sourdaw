@@ -39,7 +39,7 @@ import { ELECTRON_RUNTIME_CONTRACT, type ElectronRuntimeContract } from './elect
 import { findFuseMismatches, REQUIRED_FUSES } from './flipElectronFuses.ts';
 import { parseJsonWithUniqueKeys } from './strictJson.ts';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const PROOF_FILE = 'release-proof.json';
 const DESKTOP_APP_ROOT = 'Sourdaw.app';
 const DESKTOP_RESOURCE_ROOT = `${DESKTOP_APP_ROOT}/Contents/Resources`;
@@ -47,6 +47,7 @@ const DESKTOP_EXECUTABLE = `${DESKTOP_APP_ROOT}/Contents/MacOS/Sourdaw`;
 const DESKTOP_FRAMEWORK_EXECUTABLE = `${DESKTOP_APP_ROOT}/Contents/Frameworks/Sourdaw Framework.framework/Versions/A/Sourdaw Framework`;
 const DESKTOP_FFMPEG = `${DESKTOP_APP_ROOT}/Contents/Frameworks/Sourdaw Framework.framework/Versions/A/Libraries/libffmpeg.dylib`;
 const DESKTOP_NATIVE_ADDON = `${DESKTOP_RESOURCE_ROOT}/sourdaw-native.node`;
+const DESKTOP_SCAN_HELPER = `${DESKTOP_RESOURCE_ROOT}/sourdaw-plugin-scan-helper`;
 const DESKTOP_ASAR = `${DESKTOP_RESOURCE_ROOT}/app.asar`;
 const ELECTRON_RUNTIME_FFMPEG =
     'node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib';
@@ -3221,10 +3222,12 @@ function desktopSnapshot(archive: string): DesktopSnapshot {
         const executable = join(temporary, DESKTOP_EXECUTABLE);
         const framework = join(temporary, DESKTOP_FRAMEWORK_EXECUTABLE);
         const nativeAddon = join(temporary, DESKTOP_NATIVE_ADDON);
+        const scanHelper = join(temporary, DESKTOP_SCAN_HELPER);
         const ffmpeg = join(temporary, DESKTOP_FFMPEG);
         validateMachO(executable, MH_EXECUTE, 'desktop application executable', errors);
         validateMachO(framework, MH_DYLIB, 'desktop Electron framework', errors);
         validateMachO(nativeAddon, MH_BUNDLE, 'desktop native addon', errors);
+        validateMachO(scanHelper, MH_EXECUTE, 'desktop plugin scan helper', errors);
         validateMachO(ffmpeg, MH_DYLIB, 'desktop packaged libffmpeg.dylib', errors);
         validatePackagedFuses(framework, errors);
         const rendererFiles = asarRendererFiles(join(temporary, DESKTOP_ASAR), errors);
@@ -3304,6 +3307,7 @@ function validateDesktopArchiveContents(
         manifest.executablePath !== DESKTOP_EXECUTABLE ||
         manifest.frameworkExecutablePath !== DESKTOP_FRAMEWORK_EXECUTABLE ||
         manifest.nativeAddonPath !== DESKTOP_NATIVE_ADDON ||
+        manifest.scanHelperPath !== DESKTOP_SCAN_HELPER ||
         manifest.asarPath !== DESKTOP_ASAR ||
         manifest.packagedFfmpegPath !== DESKTOP_FFMPEG ||
         manifest.packagedFfmpegSha256 !== snapshot.ffmpegSha256 ||
@@ -3321,7 +3325,7 @@ function validateDesktopArchiveContents(
             errors.push(`desktop archive resources are missing ${required}`);
         }
     }
-    for (const required of ['app.asar', 'sourdaw-native.node']) {
+    for (const required of ['app.asar', 'sourdaw-native.node', 'sourdaw-plugin-scan-helper']) {
         if (!Object.hasOwn(files, required)) {
             errors.push(`desktop archive resources are missing ${required}`);
         }
@@ -3801,7 +3805,7 @@ export function validateReleaseProof(options: ReleaseProofOptions): string[] {
         return errors;
     }
     if (proof.schemaVersion !== SCHEMA_VERSION) {
-        errors.push('release proof schemaVersion must be 1');
+        errors.push(`release proof schemaVersion must be ${String(SCHEMA_VERSION)}`);
     }
     if (proof.sourceRevision !== options.expectedRevision) {
         errors.push('release proof sourceRevision does not match the exact candidate revision');
@@ -4191,6 +4195,7 @@ export function assembleReleaseProof(
             executablePath: DESKTOP_EXECUTABLE,
             frameworkExecutablePath: DESKTOP_FRAMEWORK_EXECUTABLE,
             nativeAddonPath: DESKTOP_NATIVE_ADDON,
+            scanHelperPath: DESKTOP_SCAN_HELPER,
             asarPath: DESKTOP_ASAR,
             packagedFfmpegPath: DESKTOP_FFMPEG,
             packagedFfmpegSha256: desktop.ffmpegSha256,

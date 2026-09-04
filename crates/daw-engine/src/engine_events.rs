@@ -59,12 +59,54 @@ impl From<&cpal::Error> for StreamErrorKind {
     }
 }
 
+impl StreamErrorKind {
+    /// Decode the value `audio_thread::capture_side` stores into the capture
+    /// refusal slot, where zero means "no refusal" and every kind is stored
+    /// as `kind as u8 + 1`.
+    ///
+    /// An explicit match rather than the arithmetic inverse of the encode: a
+    /// slot that was never written, or corrupted, decodes to `None` instead
+    /// of silently aliasing onto whichever variant its `u8` happens to land
+    /// on — the failure this exists to avoid is a wrong kind reported as a
+    /// right one.
+    pub(crate) fn from_slot(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::DeviceNotAvailable),
+            2 => Some(Self::DeviceBusy),
+            3 => Some(Self::DeviceChanged),
+            4 => Some(Self::StreamInvalidated),
+            5 => Some(Self::Xrun),
+            6 => Some(Self::BackendSpecific),
+            _ => None,
+        }
+    }
+}
+
+/// Which of the engine's two device streams a report came from.
+///
+/// A failing capture stream and a failing playback stream are different
+/// conditions for a musician: one costs the take being recorded, the other
+/// costs monitoring outright, and the recoveries differ accordingly. Nothing
+/// downstream can infer which one a bare error came from, because the event is
+/// drained long after the callback that produced it, so the side travels with
+/// the kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum StreamSide {
+    /// The stream the engine renders into.
+    Output,
+    /// The stream the engine captures from.
+    Input,
+}
+
 /// An observable engine condition that the layer above the audio thread can act
 /// on. Fixed size and `Copy` so it can be published from the audio callback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum EngineEvent {
-    /// The audio backend reported an error on the output stream.
-    StreamError { kind: StreamErrorKind },
+    /// The audio backend reported an error on one of the engine's streams.
+    StreamError {
+        side: StreamSide,
+        kind: StreamErrorKind,
+    },
 }
 
 pub(crate) fn engine_event_channel() -> (Producer<EngineEvent>, Consumer<EngineEvent>) {
@@ -97,7 +139,7 @@ pub(crate) fn drain_engine_events(consumer: &mut Consumer<EngineEvent>) -> Vec<E
 #[cfg(test)]
 mod tests {
     use super::{
-        drain_engine_events, engine_event_channel, EngineEvent, StreamErrorKind,
+        drain_engine_events, engine_event_channel, EngineEvent, StreamErrorKind, StreamSide,
         ENGINE_EVENT_QUEUE_CAPACITY,
     };
 
@@ -107,11 +149,13 @@ mod tests {
 
         producer
             .push(EngineEvent::StreamError {
+                side: StreamSide::Output,
                 kind: StreamErrorKind::DeviceNotAvailable,
             })
             .expect("an empty ring should accept an event");
         producer
             .push(EngineEvent::StreamError {
+                side: StreamSide::Input,
                 kind: StreamErrorKind::Xrun,
             })
             .expect("an empty ring should accept a second event");
@@ -120,9 +164,11 @@ mod tests {
             drain_engine_events(&mut consumer),
             vec![
                 EngineEvent::StreamError {
+                    side: StreamSide::Output,
                     kind: StreamErrorKind::DeviceNotAvailable
                 },
                 EngineEvent::StreamError {
+                    side: StreamSide::Input,
                     kind: StreamErrorKind::Xrun
                 },
             ]
@@ -134,6 +180,7 @@ mod tests {
     fn a_full_ring_refuses_further_pushes_instead_of_blocking_the_audio_side() {
         let (mut producer, mut consumer) = engine_event_channel();
         let event = EngineEvent::StreamError {
+            side: StreamSide::Output,
             kind: StreamErrorKind::BackendSpecific,
         };
 
@@ -211,5 +258,24 @@ mod tests {
             StreamErrorKind::from(&error),
             StreamErrorKind::DeviceNotAvailable
         );
+    }
+
+    /// `from_slot` is the inverse of `capture_side`'s `kind as u8 + 1`
+    /// encoding, over every variant, and zero — the slot's "no refusal"
+    /// state — decodes to `None` rather than to a variant.
+    #[test]
+    fn from_slot_round_trips_every_stream_error_kind() {
+        for kind in [
+            StreamErrorKind::DeviceNotAvailable,
+            StreamErrorKind::DeviceBusy,
+            StreamErrorKind::DeviceChanged,
+            StreamErrorKind::StreamInvalidated,
+            StreamErrorKind::Xrun,
+            StreamErrorKind::BackendSpecific,
+        ] {
+            assert_eq!(StreamErrorKind::from_slot(kind as u8 + 1), Some(kind));
+        }
+
+        assert_eq!(StreamErrorKind::from_slot(0), None);
     }
 }

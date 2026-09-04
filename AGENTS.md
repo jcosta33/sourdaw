@@ -51,7 +51,13 @@ Assign reviewers a model different from the author's when that set offers one; o
 author's.
 
 Every dispatch carries the objective, lane, branch, scope, exclusions, dependencies, acceptance
-conditions, and checks. Require back only status, changed paths, decisive evidence, and blockers.
+conditions, and checks. An acceptance condition names an observable — an event, a counter, a
+figure a caller reads — traced to the line that produces it before the dispatch is written, and
+a prescribed mechanism is traced to every code route it has to cover: a spec that asserts an
+observable nothing emits, or a mechanism that reaches only one of the routes it has to cover, is
+an orchestrator defect the author will faithfully implement. Specify the whole design before
+dispatching, never one review finding at a time. Require back only status, changed paths, decisive
+evidence, and blockers.
 
 Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
 and overlapping files.
@@ -176,24 +182,25 @@ and returns an answer the pipeline was going to give anyway.
 
 ## Checks
 
-| Need                  | Command                                      |
-| --------------------- | -------------------------------------------- |
-| Focused tests         | `pnpm test:run <file-or-narrow-directory>`   |
-| Focused E2E           | `pnpm test:e2e <spec>`                       |
-| Focused lint          | `pnpm lint <changed-files>`                  |
-| Focused format        | `pnpm format <changed-files>`                |
-| App types             | `pnpm typecheck`                             |
-| Test types            | `pnpm typecheck:test`                        |
-| Script types          | `pnpm typecheck:scripts`                     |
-| E2E types             | `pnpm typecheck:e2e`                         |
-| Focused Rust tests    | `pnpm cargo:test --package <crate> <filter>` |
-| Focused Rust format   | `pnpm cargo:fmt --package <crate>`           |
-| Module boundaries     | `pnpm deps:validate`                         |
-| Barrel mocks          | `pnpm test:barrel-mocks`                     |
-| Rebuild one wasm pkg  | that package's own `wasm:*` script           |
-| Rebuild every wasm    | `pnpm wasm:all`                              |
-| Rewrite wasm manifest | `pnpm wasm:manifest`                         |
-| Prove wasm freshness  | `pnpm wasm:verify`                           |
+| Need                      | Command                                      |
+| ------------------------- | -------------------------------------------- |
+| Focused tests             | `pnpm test:run <file-or-narrow-directory>`   |
+| Focused E2E               | `pnpm test:e2e <spec>`                       |
+| Focused lint              | `pnpm lint <changed-files>`                  |
+| Focused format            | `pnpm format <changed-files>`                |
+| App types                 | `pnpm typecheck`                             |
+| Test types                | `pnpm typecheck:test`                        |
+| Script types              | `pnpm typecheck:scripts`                     |
+| E2E types                 | `pnpm typecheck:e2e`                         |
+| Focused Rust tests        | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format       | `pnpm cargo:fmt --package <crate>`           |
+| Module boundaries         | `pnpm deps:validate`                         |
+| Barrel mocks              | `pnpm test:barrel-mocks`                     |
+| Rebuild one wasm pkg      | that package's own `wasm:*` script           |
+| Rebuild every wasm        | `pnpm wasm:all`                              |
+| Rewrite wasm manifest     | `pnpm wasm:manifest`                         |
+| Prove wasm freshness      | `pnpm wasm:verify`                           |
+| Restamp a dependency bump | `pnpm release:restamp`                       |
 
 Tests use at most two workers. Playwright uses one. See [testing](./docs/06-testing.md).
 
@@ -328,7 +335,9 @@ operator's own account rather than to a mint, and so reads as the operator actin
 is why the exception stops at issue metadata one later command puts back: identity for a
 script-covered write is the App that script mints, never a persona. `git push` has no exception at
 all: lane tooling owns every push, because a push from anywhere else destroys the review anchor and
-can strand a lane. Read-only `gh` stays unrestricted and is how you check live tracker state.
+can strand a lane. Remote branch deletion is likewise script-covered: `branch:prune` removes only
+branches whose every pull request is merged or closed, and a dry run is its default. Read-only `gh`
+stays unrestricted and is how you check live tracker state.
 
 | Need                        | Command                                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -338,7 +347,9 @@ can strand a lane. Read-only `gh` stays unrestricted and is how you check live t
 | Post `review.json`          | `pnpm review:publish <pr>`                                                                                       |
 | Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                            |
 | Squash-merge                | `pnpm deliver <pr>`                                                                                              |
+| Recover a crashed delivery  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                 |
 | Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
+| Prune spent remote branches | `pnpm branch:prune [--apply] [--limit <n>]`                                                                      |
 | Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
 | Strand an abandoned lane    | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
 | Prune lane artifacts        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |
@@ -355,8 +366,12 @@ The ref points to a strict owner blob; acquisition is a zero-ref Git compare-and
 requires the acquired object ID. Delivery holds that ownership from before authentication through
 merge or already-merged recovery and tracker completion. Any existing owner is validated and then
 refused without waiting or automatic takeover, regardless of process liveness. A crashed delivery
-leaves its ref in place: recovery requires separate remote reconciliation and fencing before that
-ref is cleared.
+leaves its ref in place, and `deliver --recover-lock` is the only route that clears one: it refuses
+while the owner's recorded process fence still probes live, adopts the lock under its own fence
+before reading anything, and then reads the remote twice and requires the two observations to
+agree. Recovery never merges, retargets, posts, or closes, and it refuses a pull request merged by
+any actor other than the author App. Clearing the ref records a receipt keyed by the dead owner, so
+repeating the recovery replays that receipt instead of reaching GitHub again.
 
 Already-merged recovery proceeds only when GitHub's immutable merged-by actor is the author App.
 Same-head delivery receipts retain the issue-comment REST endpoint's ascending comment-ID order;
@@ -401,10 +416,14 @@ is the list, and it names each package's build script because that name is not d
 crate — guess it and you run a script that does not exist. A non-test edit anywhere in such a
 package's path-dependency closure, a comment included, changes its hash: rebuild that package,
 rewrite the manifest, stage the artifacts, and verify after staging rather than after building.
-Rebuilding the wrong package is worse than rebuilding nothing, because `wasm:manifest` preserves the
-recorded hash of every package the run has no evidence it rebuilt — the manifest agrees and the
-artifact is stale; `pnpm wasm:all` covers all of them when in doubt. A rebase can merge cleanly and
-still leave wasm stale, so `pnpm wasm:verify` is the only proof of freshness.
+The workspace-root `Cargo.toml` is the one exception: it contributes only its profile tables, its
+workspace package table, its patch and replace tables, the resolver line, and the workspace
+dependency entries the closure resolves, rendered canonically, so a new member, a comment, or an
+unrelated workspace dependency there does not move the hash. Rebuilding the wrong package is worse
+than rebuilding nothing, because `wasm:manifest` preserves the recorded hash of every package the
+run has no evidence it rebuilt — the manifest agrees and the artifact is stale; `pnpm wasm:all`
+covers all of them when in doubt. A rebase can merge cleanly and still leave wasm stale, so
+`pnpm wasm:verify` is the only proof of freshness.
 
 `lane:publish` pushes without `--force`, and refuses any lane with uncommitted changes: commit the
 work yourself with a conventional subject first. An issue number resolves its lane by branch prefix;
@@ -500,8 +519,12 @@ both validation points, the pull request is non-draft and structurally mergeable
 thread is resolved at both points. Head, head branch, base branch, body, canonical closing target,
 and stacked dependents must remain stable between those reads. CI admission is snapshot-backed and
 currently advisory: successful, failed, pending, absent, cancelled, malformed, and unavailable CI
-evidence do not block an otherwise valid delivery. The dormant required-CI path retains the pinned
-workflow-derived gate and complete-rollup rules the trusted launcher reads from the pinned
+evidence do not block an otherwise valid delivery. The live `main` ruleset's required `Gate` check is
+enforced by GitHub itself regardless of this script's own CI admission mode, so `deliver` reads a
+`BLOCKED` merge state and refuses before any remote write — never posting the receipt or attempting
+the merge — rather than discovering that refusal from the merge endpoint after mutating. The dormant
+required-CI path retains the pinned workflow-derived gate and complete-rollup rules the trusted
+launcher reads from the pinned
 `origin/main` workflow copy for a future authority change; a lane cannot select it or reshape it.
 Delivery merges into `main` and nothing else: `lane:publish` opens every pull request there, so any
 other base is a retarget the delivery scripts did not make, and `deliver` refuses it rather than

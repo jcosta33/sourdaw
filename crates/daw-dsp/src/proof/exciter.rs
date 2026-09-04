@@ -147,8 +147,6 @@ impl BandExciter {
 pub struct HarmonicExciter {
     splitter: FourBandSplitter,
     bands: [BandExciter; NUM_BANDS],
-    crossover_freqs: [f64; 3],
-    sample_rate: f64,
     bypassed: bool,
 }
 
@@ -158,8 +156,6 @@ impl HarmonicExciter {
         Self {
             splitter: FourBandSplitter::new(freqs[0], freqs[1], freqs[2], sr),
             bands: core::array::from_fn(|_| BandExciter::new(sr)),
-            crossover_freqs: freqs,
-            sample_rate: sr,
             bypassed: false,
         }
     }

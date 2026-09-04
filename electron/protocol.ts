@@ -29,13 +29,24 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
 /**
  * The Content-Security-Policy every `app://` response carries.
  *
- * The document-level directives — `script-src`, `style-src`, `worker-src`,
- * `object-src`, `base-uri`, `frame-src`, `form-action` — are held identical to
- * the ones the Tauri-era config shipped, on purpose: the renderer is the same
- * web build across the shell change, so a difference there is a behavioural
- * difference inside one application. The origin-level and connection-level
- * directives are this shell's own decision, because the two shells did not
- * have the same origins and did not make the same requests.
+ * The document-level directives are the renderer's constraints rather than this
+ * shell's: the same web build runs here and on the hosted deployment, so a
+ * bundle that loads under one policy and not the other is one application
+ * behaving two ways. `script-src` is therefore held identical to the one
+ * `vercel.json` ships, and the rest were carried unchanged from the Tauri-era
+ * config for the same reason. The origin-level and connection-level directives
+ * are this shell's own decision, because the shells did not have the same
+ * origins and did not make the same requests.
+ *
+ * `script-src` admits `blob:` because `@grame/faustwasm` imports its compiler
+ * module from a `URL.createObjectURL` blob and registers every Faust processor
+ * through `audioWorklet.addModule(blobUrl)`. A worklet module load is governed
+ * by `script-src`, and `'self'` never matches a blob URL, so without it the
+ * desktop Faust path fails — silently, in a packaged build only, because the
+ * dev server's policy is not this one. `worker-src` stays `'self'` alongside
+ * it: no `new Worker` in this build takes a blob URL, so there is nothing for a
+ * `blob:` source there to admit, and admitting one anyway would hand an
+ * injected script a worker Chromium would otherwise refuse.
  *
  * `ipc:` / `http://ipc.localhost` named Tauri's IPC transport and `asset:` /
  * `http://asset.localhost` named its asset protocol. Neither exists in the
@@ -57,10 +68,9 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
  * - Loopback HTTP, for a user-run OpenAI-compatible LLM server. That is the
  *   only provider the renderer requests itself: a hosted `https:` provider is
  *   bound to a compiled adapter and streamed by the native provider gateway
- *   over IPC, a transport no CSP directive governs. `configureCloudProvider`
- *   accepts a third loopback spelling, `[::1]`, that this policy cannot express
- *   for the reason above, so such a base URL passes application validation and
- *   is then refused here.
+ *   over IPC, a transport no CSP directive governs. Application validation
+ *   admits only `localhost` and `127.0.0.1` for loopback HTTP, the same two
+ *   spellings this policy carries, so no admitted base URL is refused here.
  * - Hugging Face and its CDN redirect hosts, for Kokoro and WebLLM model
  *   artifacts.
  * - `raw.githubusercontent.com`, for the MLC wasm runtime. It is as
@@ -83,7 +93,7 @@ export const PRODUCTION_CSP = [
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
     "style-src 'self' 'unsafe-inline'",
-    "script-src 'self' 'wasm-unsafe-eval'",
+    "script-src 'self' 'wasm-unsafe-eval' blob:",
     "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

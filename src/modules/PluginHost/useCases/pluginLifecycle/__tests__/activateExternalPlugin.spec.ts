@@ -153,7 +153,12 @@ describe('activateExternalPlugin', () => {
     // Regression (F14): loading with no engine running returns success with a
     // null engine id, and that used to reach the app as an ordinary active
     // plugin — one that silently processes nothing.
-    it('records the degraded state when the plugin loaded with no engine attached', async () => {
+    //
+    // It is a pending attachment, not a failure: the engine starts on the first
+    // graph batch and takes the instance over there. Reporting it as failed made
+    // the committed action that loaded the plugin raise, on the ordinary order a
+    // project opens in.
+    it('reports a pending attachment when the plugin loaded with no engine running', async () => {
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',
             parameters: [],
@@ -162,21 +167,24 @@ describe('activateExternalPlugin', () => {
             engine_plugin_id: null,
         });
 
-        activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' });
+        const activation = activateExternalPlugin({
+            engineSampleRate: ENGINE_SAMPLE_RATE,
+            pluginId: 'p',
+            instanceId: 'inst-1',
+        });
 
-        await vi.waitFor(() =>
-            expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
-                status: 'active',
-                message: 'Loaded without a running native engine — this plugin processes no audio yet.',
-            })
-        );
-        // Degraded, not failed: the instance stays live so the legitimate
-        // load-before-engine-start flow is not retried into a duplicate load.
+        await expect(activation).resolves.toEqual({ status: 'active', attachment: 'pending' });
+        expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
+            status: 'active',
+            message: 'Loaded without a running native engine — this plugin processes no audio yet.',
+        });
+        // The instance stays live so the legitimate load-before-engine-start
+        // flow is not retried into a duplicate load.
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
         expect(mocks.warn).toHaveBeenCalledTimes(1);
     });
 
-    it('repairs a retained attach failure by unloading and reusing the stable project instance identity', async () => {
+    it('retains the pending attachment across repeat activations and reloads only on a graph rebuild', async () => {
         mocks.loadPluginRepo
             .mockResolvedValueOnce({
                 instance_id: 'inst-1',
@@ -196,16 +204,10 @@ describe('activateExternalPlugin', () => {
 
         await expect(
             activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' })
-        ).resolves.toMatchObject({
-            status: 'failed',
-            stage: 'attach',
-        });
+        ).resolves.toEqual({ status: 'active', attachment: 'pending' });
         await expect(
             activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' })
-        ).resolves.toMatchObject({
-            status: 'failed',
-            stage: 'attach',
-        });
+        ).resolves.toEqual({ status: 'active', attachment: 'pending' });
         expect(mocks.loadPluginRepo).toHaveBeenCalledOnce();
 
         await resetExternalPluginRuntimeForGraphRebuild();
@@ -217,7 +219,7 @@ describe('activateExternalPlugin', () => {
         });
         expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(1, 'p', 'inst-1', ENGINE_SAMPLE_RATE);
         expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(2, 'p', 'inst-1', ENGINE_SAMPLE_RATE);
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith(undefined);
     });
 
     it('leaves the activation entry unqualified when the plugin is engine-attached', async () => {

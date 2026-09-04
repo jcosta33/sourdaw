@@ -14,6 +14,8 @@ export { toggleAiHistoryPanel } from './toggleAiHistoryPanel';
 export { recordAiActionGroup } from './recordAiActionGroup';
 
 export { WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
+export { listHostedAnthropicModels } from './aiRuntimeQueries/listHostedAnthropicModels';
+export { getDefaultHostedAnthropicModel } from './aiRuntimeQueries/getDefaultHostedAnthropicModel';
 export { isComplexPrompt } from './aiRuntimeQueries/isComplexPrompt';
 export { getActiveModelId } from './aiRuntimeQueries/getActiveModelId';
 export { streamCloudChatCompletion } from './aiRuntimeQueries/streamCloudChatCompletion';

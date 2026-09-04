@@ -25,6 +25,7 @@ const NATIVE_APPLIED = {
     tempoSegments: 1,
     timeSignatureSegments: 1,
     loopEnabled: true,
+    admittedBatch: 4,
 };
 
 describe('setEngineTransportMaps', () => {
@@ -50,6 +51,20 @@ describe('setEngineTransportMaps', () => {
         // successful install: the caller would believe the arrangement's tempo
         // reached an engine still counting at its own default.
         vi.mocked(desktopInvoke).mockResolvedValue({ sampleRate: 48_000, tempoSegments: 'one' });
+
+        await expect(setEngineTransportMaps(MAPS)).resolves.toEqual({
+            outcome: 'declined',
+            reason: 'the engine did not report what it applied',
+        });
+    });
+
+    it('declines a response that omits only the admitted batch fence', async () => {
+        // A stale desktop build answering the shape from before the fence
+        // existed passes every other field. Read as a success, its missing
+        // `admittedBatch` would be stored as the pass's provenAfterBatch, and
+        // the snapshot-dating gate would never engage for maps re-arms.
+        const { admittedBatch: _omitted, ...staleAnswer } = NATIVE_APPLIED;
+        vi.mocked(desktopInvoke).mockResolvedValue(staleAnswer);
 
         await expect(setEngineTransportMaps(MAPS)).resolves.toEqual({
             outcome: 'declined',

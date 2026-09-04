@@ -93,12 +93,14 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
+import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
+import { useProjectMutationRefusal } from '../hooks/useProjectMutationRefusal';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
@@ -223,6 +225,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     const project = useProjectState();
     const projectLoadFailure = useProjectLoadFailure();
+    const projectMutationRefusal = useProjectMutationRefusal();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const isAudioClipSelected =
@@ -645,6 +648,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 )}
                 <TransportBar />
 
+                {/* Non-modal on purpose: it explains a refusal, and every route out
+                    of one — the assistant panel, the production brief, undo —
+                    lives in the workspace it sits above. It is deliberately absent
+                    from `anyDialogOpen` and from the `inert` set. */}
+                {project.initialized && projectMutationRefusal !== null ? (
+                    <ProjectMutationRefusedBanner refusal={projectMutationRefusal} />
+                ) : null}
+
                 {/* ─── Main horizontal layout ─── */}
                 <Row align="stretch" grow className="overflow-hidden">
                     {/* Left dynamically placed panels */}
@@ -699,8 +710,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {levainDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Levain"
-                                labelColor="text-amber-400"
-                                borderColor="border-amber-500/20"
+                                labelColor="text-[var(--color-accent-amber)]"
+                                borderColor="border-[var(--color-accent-amber)]/20"
                                 height={levainHeight}
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
@@ -744,8 +755,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {bacteriaDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Bacteria"
-                                labelColor="text-rose-400"
-                                borderColor="border-rose-500/20"
+                                labelColor="text-[var(--color-accent-rose)]"
+                                borderColor="border-[var(--color-accent-rose)]/20"
                                 height={bacteriaHeight}
                                 onResize={setBacteriaHeight}
                                 onClose={closeActivePanel}
@@ -759,8 +770,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {grinderDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Grinder"
-                                labelColor="text-amber-500"
-                                borderColor="border-amber-600/20"
+                                labelColor="text-[var(--color-accent-copper)]"
+                                borderColor="border-[var(--color-accent-copper)]/20"
                                 height={grinderHeight}
                                 onResize={setGrinderHeight}
                                 onClose={closeActivePanel}
@@ -849,8 +860,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {grandBouleDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Grand Boule"
-                                labelColor="text-amber-400"
-                                borderColor="border-amber-500/20"
+                                labelColor="text-[var(--color-accent-amber)]"
+                                borderColor="border-[var(--color-accent-amber)]/20"
                                 height={grandBouleHeight}
                                 onResize={setGrandBouleHeight}
                                 onClose={closeActivePanel}

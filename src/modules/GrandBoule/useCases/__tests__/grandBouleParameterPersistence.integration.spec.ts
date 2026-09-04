@@ -48,6 +48,49 @@ import { setGrandBouleSympatheticSend } from '../setGrandBouleSympatheticSend';
 
 const engineWrites: { paramId: string; value: number }[] = [];
 
+// Non-spread listing of getArrangementHandlers and getPluginById — spec registers the handler map and reads GRAND_BOULE_DESCRIPTOR; clampDeviceParameterValue and quantiseDeviceParameterValue — normalizeGrandBoulePersistedParamValue via hydrateGrandBouleConfigFromProject.
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        getArrangementHandlers: actual.getArrangementHandlers,
+        getPluginById: actual.getPluginById,
+        clampDeviceParameterValue: actual.clampDeviceParameterValue,
+        quantiseDeviceParameterValue: actual.quantiseDeviceParameterValue,
+    };
+});
+
+// Non-spread listing of hydrateYeastCrdtProjection — projectSlotProjections imports it for the yeast slot.
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Yeast/useCases')>();
+    return {
+        hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
+    };
+});
+
+// Non-spread listing of hydrateKneadFromTrackStore — projectSlotProjections imports it for the knead slot.
+vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Knead/useCases')>();
+    return {
+        hydrateKneadFromTrackStore: actual.hydrateKneadFromTrackStore,
+    };
+});
+
+// Non-spread listing of projectDrumPreviewCandidateNotes — prepareDrumPreviewBranches imports it for drum preview branches.
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+    };
+});
+
+// Non-spread listing of hydrateSidechainRoutes — projectSlotProjections imports it for the sidechainRoutes slot.
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
+    return {
+        hydrateSidechainRoutes: actual.hydrateSidechainRoutes,
+    };
+});
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: (_trackId: string, _deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ paramId, value });

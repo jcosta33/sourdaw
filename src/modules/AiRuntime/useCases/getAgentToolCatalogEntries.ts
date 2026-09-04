@@ -1,4 +1,8 @@
-import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+import {
+    getExecutableAppActionIntentCatalog,
+    getExecutableAppActionToolSchemas,
+    getMidiTransformToolSchemas,
+} from '#/modules/Command/useCases';
 
 import { type ToolSchema } from '../models/ToolDefinitions';
 
@@ -19,6 +23,7 @@ type CatalogCategory =
     | 'capability'
     | 'catalog'
     | 'preview'
+    | 'command-index'
     | 'command'
     | 'commit'
     | 'history'
@@ -27,6 +32,20 @@ type CatalogCategory =
     | 'approval';
 
 type CatalogPage = { cursor?: string; limit?: number };
+
+type AgentToolCatalogEntriesInput =
+    | {
+          category: 'command-index';
+          intent: string;
+          names?: never;
+          page?: CatalogPage;
+      }
+    | {
+          category: Exclude<CatalogCategory, 'command-index'>;
+          names: readonly string[];
+          intent?: never;
+          page?: CatalogPage;
+      };
 
 type CatalogCursor = {
     schemaVersion: 1;
@@ -75,9 +94,9 @@ const lifecycleAvailability: readonly LifecycleAvailability[] = [
     },
 ] as const;
 
-function getCategoryEntries(category: CatalogCategory) {
+function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>) {
     if (category === 'command') {
-        return getExecutableAppActionToolSchemas();
+        return [...getExecutableAppActionToolSchemas(), ...getMidiTransformToolSchemas()];
     }
     if (category === 'preview') {
         return lifecycleAvailability.filter((entry) => entry.name === 'command.batch.preview');
@@ -205,11 +224,10 @@ function getCatalogEntryName(entry: ToolSchema | LifecycleAvailability): string 
     return 'function' in entry ? entry.function.name : entry.name;
 }
 
-export function getAgentToolCatalogEntries(input: {
-    category: CatalogCategory;
-    names: readonly string[];
-    page?: CatalogPage;
-}) {
+export function getAgentToolCatalogEntries(input: AgentToolCatalogEntriesInput) {
+    if (input.category === 'command-index') {
+        return getExecutableAppActionIntentCatalog({ intent: input.intent, page: input.page });
+    }
     requireExactNames(input.names);
     const entries = getCategoryEntries(input.category);
     const entriesByName = new Map(entries.map((entry) => [getCatalogEntryName(entry), entry]));

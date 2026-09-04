@@ -30,9 +30,11 @@ import { setGlutenParamWithAudio } from '../setGlutenParamWithAudio';
  * the real thing: the real Arrangement handler map, the real `executeAppAction`,
  * a real Automerge document, the real undo stack.
  *
- * Only `updateDeviceParam` is stubbed, because it addresses a live AudioContext
- * that does not exist under Vitest. Stubbing it is also what lets the drag guard
- * count engine writes and prove the transient half still reaches audio.
+ * Only `updateDeviceParam` is stubbed as the engineWrites recorder, because it
+ * addresses a live AudioContext that does not exist under Vitest. Stubbing it is
+ * also what lets the drag guard count engine writes and prove the transient half
+ * still reaches audio. The other listed AudioEngine keys are unread graph-coverage
+ * stubs (`vi.fn()` and `audioEngine: {}`), not live barrel exports.
  */
 
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
@@ -41,6 +43,53 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ trackId, deviceId, paramId, value });
     },
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    audioEngine: {},
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getAudioContext: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(),
+    removeBusStrip: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    removeSend: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 
 const noActionHistoryMetadataPort = {

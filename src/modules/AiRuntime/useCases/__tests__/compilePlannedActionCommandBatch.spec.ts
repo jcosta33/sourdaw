@@ -8,6 +8,7 @@ import {
     parseVersionedCommandBatchEnvelope,
     parseVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -115,16 +116,23 @@ describe('compilePlannedActionCommandBatch', () => {
         ).toThrow('Dynamic command effects target protected objects: track-solo-a');
     });
 
-    it('binds the command batch project identity to the full active document revision', () => {
+    it('binds the command batch project identity independently of the revision it commits against', () => {
         const result = compile([{ type: 'clearSolos' }], {
             ...baseContext,
             tracks: [track('track-solo', true)],
         });
 
+        // The identity answers "same project"; it must stay stable across ordinary mutations even
+        // though the revision it is compiled against (`projectRevision: 'revision-1'` in `compile`)
+        // changes on every one. Comparing against a fresh capture, rather than a literal, proves the
+        // two are no longer the same value while still pinning the identity's shape.
+        const identity = captureProjectIdentity();
         expect(JSON.parse(result.commandBatch.serialized)).toMatchObject({
-            projectId: 'revision-1',
+            projectId: identity,
+            baseRevision: 'revision-1',
         });
-        expect(result.commandBatch.authority.projectId).toBe('revision-1');
+        expect(result.commandBatch.authority.projectId).toBe(identity);
+        expect(result.commandBatch.authority.baseRevision).toBe('revision-1');
     });
 
     it('compiles preview authority without a commit grant or approval binding', () => {

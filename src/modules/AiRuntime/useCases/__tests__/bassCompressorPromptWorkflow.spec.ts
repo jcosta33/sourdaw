@@ -45,6 +45,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -1045,13 +1048,8 @@ describe('bass compressor prompt workflow', () => {
         expect(getConfirmation()?.protectedUnchanged).toEqual([{ id: 'track-bass-frozen', name: 'Bass Frozen' }]);
     });
 
-    // The edit below changes the exact target chain this proposal names, but
-    // the status, reason and receipt asserted here are what *any* project
-    // change after approval produces — a collaborator edit elsewhere reaches
-    // the same terminal state through the same code path. This test therefore
-    // pins the project-changed disposition, not target-conflict detection;
-    // that the two are indistinguishable is the production defect filed as
-    // #2894.
+    // The edit below changes the exact target chain this proposal names, and the refusal names that
+    // chain: the divergence port classifies the conflict rather than reporting that anything moved.
     it('invalidates the stale proposal when a later target chain changed after approval', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getConfirmation();
@@ -1079,7 +1077,8 @@ describe('bass compressor prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-bass-amp']),
         });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual(BASS_DI_DEVICE_IDS);
         expect(getTrack('track-bass-amp').devices.map((device) => device.id)).toEqual([
@@ -1095,9 +1094,7 @@ describe('bass compressor prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-bass-amp']));
     });
 
     it('applies no project, runtime, or undo change when the stale proposal is rejected before execution', async () => {

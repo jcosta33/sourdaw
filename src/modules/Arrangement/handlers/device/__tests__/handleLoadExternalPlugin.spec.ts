@@ -266,6 +266,40 @@ describe('handleLoadExternalPlugin', () => {
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
+    // The ordinary order a project opens in: no engine is running until the
+    // first play, so the plugin loads with its attachment pending. Reporting
+    // that as a failed activation raised out of the committed action that added
+    // the device, on nothing having gone wrong.
+    it('commits a plugin whose engine attachment is still pending', async () => {
+        const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
+        const device = {
+            id: 'device-1',
+            name: 'Compressor',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+            externalPluginId: 'plugin-1',
+            externalInstanceId: 'instance-1',
+        };
+        mocks.getTrackStoreState
+            .mockReturnValueOnce({ tracks: [before] })
+            .mockReturnValue({ tracks: [{ ...before, devices: [device] }] });
+        mocks.addExternalDevice.mockReturnValue(device);
+        mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
+        mocks.activateExternalPlugin.mockResolvedValue({ status: 'active', attachment: 'pending' });
+
+        const result = await handleLoadExternalPlugin.execute({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'plugin-1', trackId: 'audio-1' },
+        });
+        if (!result || result.status !== 'written' || !result.afterCommit) {
+            throw new Error('Expected a deferred external-plugin runtime effect');
+        }
+
+        await expect(result.afterCommit()).resolves.toBeUndefined();
+        await expect(result.afterAmbiguousCommit?.()).resolves.toBeUndefined();
+    });
+
     it('classifies a retained native attach failure for whole-graph repair', async () => {
         const before = { id: 'audio-1', kind: 'audio' as const, devices: [] };
         const device = {

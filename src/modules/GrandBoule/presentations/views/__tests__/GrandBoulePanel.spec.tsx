@@ -29,19 +29,24 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...actual,
-        trackStore: {
-            ...actual.trackStore,
-            get value() {
-                return projectTrackState.current;
-            },
+// Non-spread listing of defaultTrackState and trackStore — GrandBoulePanel imports both; helpers.ts and commitGrandBouleDeviceState.ts import trackStore for Mix knob commits.
+vi.mock('#/modules/Arrangement/stores', () => ({
+    defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
+    trackStore: {
+        get value() {
+            return projectTrackState.current;
         },
-    };
-});
+    },
+}));
 
+// Non-spread listing of clampDeviceParameterValue, getAllTracks, and quantiseDeviceParameterValue — normalizeGrandBoulePersistedParamValue imports the first and third for micPosition commits; resolveGrandBouleEngine imports getAllTracks for the engine readiness tile.
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    clampDeviceParameterValue: ({ value }: { value: number }) => value,
+    getAllTracks: () => [],
+    quantiseDeviceParameterValue: ({ value }: { value: number }) => value,
+}));
+
+// Non-spread listing of ensureTrackStrip and getAudioSampleRate — resolveGrandBouleEngine imports both for the engine readiness tile.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
     getAudioSampleRate: () => 44100,
@@ -78,6 +83,7 @@ const executeAppAction = vi.hoisted(() =>
     })
 );
 
+// Non-spread listing of executeAppAction — helpers.ts and commitGrandBouleDeviceState.ts import it for authoritative parameter and morph commits.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -175,5 +181,13 @@ describe('GrandBoulePanel', () => {
     it('renders the panel for a different deviceId without error', () => {
         render(<GrandBoulePanel deviceId="grand-boule-2" />);
         expect(screen.getByText('idle')).toBeInTheDocument();
+    });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
+        const { container } = render(<GrandBoulePanel deviceId="dev-1" />);
+        const faceplate = container.querySelector<HTMLElement>('.grand-boule-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-hidden');
     });
 });

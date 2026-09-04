@@ -1,20 +1,28 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import {
+    DeliveryMergeRejectedError,
     deliverPullRequest as deliverPullRequestWithTracker,
     deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
+    expectedAbsentDeliveryReceiptAuthority,
     gateRequiredCheckNames,
     parseCliArgs,
     readGateRequiredCheckNames,
+    runDeliverCli,
     shellPort,
+    withPullRequestDeliveryLock,
+    type DeliveryReceiptAuthorityExpectation,
+    type DeliveryReceiptProof,
     type DeliveryPort,
     type HeadCheckRun,
+    type PersistedDeliveryReceiptAuthority,
     type PullRequestSnapshot,
     type ReviewState,
     type ShellRunner,
@@ -27,6 +35,7 @@ import {
     REQUIRED_BASE_BRANCH,
     REVIEWER_BOT_NODE_ID,
 } from '../githubAppIdentity.ts';
+import { composeDeliveryReceipt } from '../prContract.ts';
 import { summarizeGateWorkflow } from '../trustedGithubWriteBootstrap.ts';
 
 const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -80,7 +89,26 @@ None.
 ${relationship}`;
 }
 
+function persistedPostMergeValidation(
+    headRefOid: string,
+    pullRequestBody: string,
+    trackerTarget: number,
+    options: { headRefName?: string; baseRefName?: string; title?: string } = {}
+) {
+    return {
+        headRefOid,
+        headRefName: options.headRefName ?? 'feat/gate',
+        baseRefName: options.baseRefName ?? 'main',
+        title: options.title ?? 'feat(delivery): add gate',
+        bodySha256: createHash('sha256').update(pullRequestBody).digest('hex'),
+        trackerTarget,
+    };
+}
+
 const body = relationshipBody('None.');
+const ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT =
+    'comments(first:100,after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}';
+const ORDERED_RECEIPT_PROOF_QUERY = `query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT}}}}`;
 
 type MergeSettings = {
     allow_merge_commit: boolean;
@@ -116,6 +144,20 @@ function mergePolicyPort(settings: string | Error, markRemoteMutationAttempt: ()
 
 function mergeSettings(settings: MergeSettings): string {
     return JSON.stringify(settings);
+}
+
+function annotatedBlobTagOid(primaryRoot: string, targetOid: string, name: string): string {
+    return execFileSync('git', ['mktag'], {
+        cwd: primaryRoot,
+        encoding: 'utf8',
+        input: `object ${targetOid}
+type blob
+tag ${name}
+tagger Test User <test@example.com> 1704067200 +0000
+
+delivery receipt authority tag
+`,
+    }).trim();
 }
 
 type ReviewPageFixture = {
@@ -196,6 +238,20 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
             if (joined.includes('mergedBy{__typename')) {
                 return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
             }
+            if (joined.includes('comments(last:1){totalCount nodes{id}}')) {
+                return JSON.stringify({
+                    data: {
+                        repository: {
+                            pullRequest: {
+                                comments: {
+                                    totalCount: deliveryReceipt === undefined ? 0 : 1,
+                                    nodes: deliveryReceipt === undefined ? [] : [{ id: deliveryReceipt.id }],
+                                },
+                            },
+                        },
+                    },
+                });
+            }
             if (joined.includes('query=')) {
                 return JSON.stringify({
                     data: {
@@ -241,7 +297,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 ]);
             }
             if (joined.includes('.delete_branch_on_merge')) {
-                return 'false';
+                return String(finalSettings.delete_branch_on_merge);
             }
             if (joined.includes('issues/42/comments?per_page=100')) {
                 return JSON.stringify([
@@ -420,8 +476,47 @@ function rollupResponse(page: RollupPageFixture): string {
     });
 }
 
-function rollupNodes(checkRuns: HeadCheckRun[]): unknown[] {
-    return checkRuns.map((check) => ({ __typename: 'CheckRun', ...check }));
+function rollupNodes(checkRuns: HeadCheckRun[], prefix = 'CR'): unknown[] {
+    return checkRuns.map((check, index) => ({ __typename: 'CheckRun', id: `${prefix}_${index + 1}`, ...check }));
+}
+
+function deliveryReceiptProofForIds(commentIds: string[], editedCommentIds: string[] = []): DeliveryReceiptProof {
+    return {
+        totalCount: commentIds.length,
+        latestCommentId: commentIds.at(-1),
+        commentIds,
+        editedCommentIds,
+    };
+}
+
+function shellDeliveryReceiptProofResponse(
+    commentIds: string[],
+    options?: {
+        hasNextPage?: boolean;
+        endCursor?: string | null;
+        totalCount?: number;
+        editedCommentIds?: string[];
+    }
+) {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    comments: {
+                        totalCount: options?.totalCount ?? commentIds.length,
+                        pageInfo: {
+                            hasNextPage: options?.hasNextPage ?? false,
+                            endCursor: options?.endCursor ?? null,
+                        },
+                        nodes: commentIds.map((id) => ({
+                            id,
+                            lastEditedAt: options?.editedCommentIds?.includes(id) ? '2026-08-21T00:00:00Z' : null,
+                        })),
+                    },
+                },
+            },
+        },
+    });
 }
 
 function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullRequest {
@@ -436,13 +531,15 @@ function stacked(overrides: Partial<StackedPullRequest> = {}): StackedPullReques
 }
 
 type FakeInput = {
-    primary?: PullRequestSnapshot[];
+    primary?: Array<PullRequestSnapshot | Error>;
     review?: ReviewState;
     reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
     headCheckRuns?: HeadCheckRun[] | Error;
+    headCheckRunReads?: Array<HeadCheckRun[] | Error>;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
+    requiredStatusCheckContexts?: string[] | Error;
     deletesMergedBranches?: boolean;
     failAddReceiptOnce?: boolean;
     failRetargetOnce?: number;
@@ -451,6 +548,8 @@ type FakeInput = {
     primaryBodyOnReceiptRead?: string;
     reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
+    persistedReceiptAuthority?: PersistedDeliveryReceiptAuthority;
+    deliveryReceiptProof?: DeliveryReceiptProof;
     mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
 };
 
@@ -481,11 +580,77 @@ function deliveryReceiptBody(
     ].join('\n');
 }
 
+function visibleDeliveryReceiptBody(
+    pullRequestNumber: number,
+    head: string,
+    pullRequestBody: string,
+    closingIssue: number | undefined,
+    observedCiState:
+        | 'successful'
+        | 'failed'
+        | 'pending'
+        | 'absent'
+        | 'skipped'
+        | 'cancelled'
+        | 'unstable'
+        | 'malformed'
+        | 'unavailable'
+): string {
+    return composeDeliveryReceipt({
+        pullRequest: pullRequestNumber,
+        head,
+        bodySha256: createHash('sha256').update(pullRequestBody).digest('hex'),
+        closingIssue,
+        ciAdmissionMode: 'advisory',
+        observedCiState,
+    });
+}
+
+function requiredDeliveryReceiptBody(
+    pullRequestNumber: number,
+    head: string,
+    pullRequestBody: string,
+    closingIssue: number | undefined
+): string {
+    return composeDeliveryReceipt({
+        pullRequest: pullRequestNumber,
+        head,
+        bodySha256: createHash('sha256').update(pullRequestBody).digest('hex'),
+        closingIssue,
+        ciAdmissionMode: 'required',
+    });
+}
+
+function authorityTrace(authority: PersistedDeliveryReceiptAuthority | undefined): string {
+    if (authority === undefined) {
+        return 'none';
+    }
+    return `${authority.phase}:${authority.receiptId}`;
+}
+
+function sameReceiptAuthority(
+    left: PersistedDeliveryReceiptAuthority | undefined,
+    right: PersistedDeliveryReceiptAuthority | undefined
+): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sameReceiptAuthorityExpectation(
+    current: PersistedDeliveryReceiptAuthority | undefined,
+    expected: DeliveryReceiptAuthorityExpectation
+): boolean {
+    if (expected.mode === 'absent') {
+        return current === undefined;
+    }
+    return sameReceiptAuthority(current, expected.authority);
+}
+
 function fakePort(input: FakeInput = {}) {
     const calls: string[] = [];
     const primary = [...(input.primary ?? [pullRequest(), pullRequest()])];
     const reviewStates = [...(input.reviewStates ?? [])];
     const dependentSets = input.dependentSets?.map((set) => [...set]) ?? [[stacked()], [stacked()]];
+    const headCheckRunReads = input.headCheckRunReads?.map((entry) => (entry instanceof Error ? entry : [...entry]));
     const pullRequests = new Map<number, PullRequestSnapshot>();
     for (const set of dependentSets) {
         for (const dependent of set) {
@@ -506,6 +671,7 @@ function fakePort(input: FakeInput = {}) {
     let reviewStateAfterReceipt: ReviewState | undefined;
     let lastPrimary: PullRequestSnapshot | undefined;
     let mergedPrimary: PullRequestSnapshot | undefined;
+    let persistedReceiptAuthority = input.persistedReceiptAuthority;
     const receipts = [...(input.receipts ?? [])];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
@@ -517,6 +683,9 @@ function fakePort(input: FakeInput = {}) {
                 const next = primary.shift() ?? mergedPrimary;
                 if (next === undefined) {
                     throw new Error('missing primary fixture');
+                }
+                if (next instanceof Error) {
+                    throw next;
                 }
                 const snapshot = {
                     ...next,
@@ -540,21 +709,30 @@ function fakePort(input: FakeInput = {}) {
             }
             return required;
         },
+        requiredStatusCheckContexts: () => {
+            calls.push('required-status-check-contexts');
+            const required = input.requiredStatusCheckContexts ?? ['Gate'];
+            if (required instanceof Error) {
+                throw required;
+            }
+            return required;
+        },
         /**
-         * Unreadable unless the case under test supplies the head's own check runs, so a delivery
-         * that reads check evidence it has no business reading — a dependent's, or an already-merged
-         * pull request's — throws instead of quietly passing.
+         * The primary head defaults to one successful Gate run so advisory delivery cases that do not
+         * care about CI observation still exercise a complete snapshot. Cases that need an unreadable
+         * or non-success snapshot supply it explicitly, and any non-primary read still throws.
          */
         headCheckRuns: (number, headRefOid) => {
             calls.push(`checks:${number}:${headRefOid}`);
-            const runs = number === 42 ? input.headCheckRuns : undefined;
+            const runs =
+                number === 42 ? (headCheckRunReads?.shift() ?? input.headCheckRuns ?? [checkRun()]) : undefined;
             if (runs === undefined) {
                 throw new Error(`PR #${number} check rollup is unreadable`);
             }
             if (runs instanceof Error) {
                 throw runs;
             }
-            return runs;
+            return structuredClone(runs);
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
@@ -572,8 +750,9 @@ function fakePort(input: FakeInput = {}) {
             return [...lastDependents];
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        merge: (number, head) => {
+        merge: (number, head, _hasDependents, expectedTitle) => {
             calls.push(`merge:${number}:${head}`);
+            calls.push(`merge-title:${expectedTitle ?? 'none'}`);
             if (lastPrimary === undefined) {
                 throw new Error('merge requires a primary snapshot');
             }
@@ -606,6 +785,17 @@ function fakePort(input: FakeInput = {}) {
             reviewStateAfterReceipt = input.reviewStateOnReceiptRead ?? reviewStateAfterReceipt;
             return structuredClone(receipts);
         },
+        deliveryReceiptProof: (number) => {
+            const proof =
+                input.deliveryReceiptProof ?? deliveryReceiptProofForIds(receipts.map((receipt) => receipt.id));
+            const normalizedProof = {
+                ...proof,
+                commentIds: proof.commentIds ?? receipts.map((receipt) => receipt.id),
+                editedCommentIds: proof.editedCommentIds ?? [],
+            };
+            calls.push(`receipt-proof:${number}:${proof.totalCount}:${proof.latestCommentId ?? 'none'}`);
+            return normalizedProof;
+        },
         addDeliveryReceipt: (number, receiptBody) => {
             calls.push(`add-receipt:${number}`);
             const createdAt = new Date(Date.UTC(2026, 7, 21, 0, 0, receipts.length)).toISOString();
@@ -625,6 +815,30 @@ function fakePort(input: FakeInput = {}) {
             }
             return structuredClone(receipt);
         },
+        readDeliveryReceiptAuthority: () => {
+            calls.push(`receipt-authority:read:${authorityTrace(persistedReceiptAuthority)}`);
+            return persistedReceiptAuthority;
+        },
+        writeDeliveryReceiptAuthority: (number, authority, expectedCurrent) => {
+            if (
+                expectedCurrent !== undefined &&
+                !sameReceiptAuthorityExpectation(persistedReceiptAuthority, expectedCurrent)
+            ) {
+                throw new Error(`PR #${number} delivery receipt authority could not be stored`);
+            }
+            calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
+            persistedReceiptAuthority = authority;
+        },
+        clearDeliveryReceiptAuthority: (number, expectedCurrent) => {
+            if (
+                expectedCurrent !== undefined &&
+                !sameReceiptAuthorityExpectation(persistedReceiptAuthority, expectedCurrent)
+            ) {
+                throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
+            }
+            calls.push(`receipt-authority:clear:${authorityTrace(persistedReceiptAuthority)}`);
+            persistedReceiptAuthority = undefined;
+        },
         log: (message) => calls.push(message),
     };
     const tracker: TrackerCompletionPort = {
@@ -632,7 +846,13 @@ function fakePort(input: FakeInput = {}) {
             calls.push(`complete:${issueNumber}`);
         },
     };
-    return { port, calls, tracker, receipts };
+    return {
+        port,
+        calls,
+        tracker,
+        receipts,
+        persistedReceiptAuthority: () => persistedReceiptAuthority,
+    };
 }
 
 function deliverPullRequest(
@@ -640,9 +860,10 @@ function deliverPullRequest(
     port: DeliveryPort,
     tracker: TrackerCompletionPort = {
         complete: (issueNumber: number) => expect.fail(`unexpected issue completion: ${issueNumber}`),
-    }
+    },
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
-    deliverPullRequestWithTracker(number, port, tracker);
+    deliverPullRequestWithTracker(number, port, tracker, markRemoteMutationKnownAbsent);
 }
 
 function deliverPullRequestWithRequiredCi(
@@ -655,7 +876,171 @@ function deliverPullRequestWithRequiredCi(
     deliverPullRequestWithRequiredCiAndTracker(number, port, tracker);
 }
 
+function initializeDeliveryLockRepository(root: string): void {
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+}
+
+/**
+ * Acquiring a delivery lock records the owner's process fence, which the lock module reads through
+ * the launcher-resolved `ps`. These cases run outside that launcher, so they supply their own.
+ */
+function writeTrustedPsFixture(root: string): () => void {
+    const executable = join(root, 'ps');
+    const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+    writeFileSync(
+        executable,
+        '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "owner-process-start"; fi\n'
+    );
+    chmodSync(executable, 0o700);
+    process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+    return () => {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_TRUSTED_PS_PATH;
+        } else {
+            process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+        }
+    };
+}
+
+function readDeliveryLockOid(root: string, number: number): string {
+    return execFileSync('git', ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${number}`], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
+}
+
+function readDeliveryLockOwner(root: string, number: number): Record<string, unknown> {
+    const blob = execFileSync('git', ['cat-file', 'blob', readDeliveryLockOid(root, number)], {
+        cwd: root,
+        encoding: 'utf8',
+    });
+    return JSON.parse(blob) as Record<string, unknown>;
+}
+
+/**
+ * A `git init`-backed temp repository can leave file handles closing asynchronously on some
+ * platforms, so a bare `rmSync` on its directory can race an in-flight close and throw `ENOTEMPTY`.
+ * Retrying, as the rest of the suite already does for its own temp-dir cleanups, absorbs that race
+ * instead of flaking.
+ */
+function removeTemporaryGitRepository(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
+function deliveryLockExists(root: string, number: number): boolean {
+    try {
+        execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/sourdaw/delivery/pr-${number}`], {
+            cwd: root,
+            stdio: 'ignore',
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError {
+    const shell: ShellRunner = {
+        capture: (_command, args) => {
+            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                return mergeSettings({
+                    allow_merge_commit: false,
+                    allow_rebase_merge: false,
+                    allow_squash_merge: true,
+                    delete_branch_on_merge: false,
+                });
+            }
+            if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                throw new Error(`gh: HTTP ${status}: merge refused`);
+            }
+            throw new Error(`unexpected capture: ${args.join(' ')}`);
+        },
+        run: () => undefined,
+    };
+
+    try {
+        shellPort('jcosta33/sourdaw', shell).merge(42, 'head', false);
+    } catch (error) {
+        if (error instanceof DeliveryMergeRejectedError) {
+            return error;
+        }
+        throw error;
+    }
+    return expect.fail('expected merge rejection');
+}
+
 describe('pull-request delivery', () => {
+    it('journals a fenced delivery owner and records the first remote mutation attempt', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-owner-journal-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+
+        try {
+            await withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationAttempt }) => {
+                const prepared = readDeliveryLockOid(root, 42);
+                expect(readDeliveryLockOwner(root, 42)).toMatchObject({
+                    version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
+                    mutation: { phase: 'prepared', epoch: 0 },
+                });
+
+                markRemoteMutationAttempt();
+
+                expect(readDeliveryLockOid(root, 42)).not.toBe(prepared);
+                expect(readDeliveryLockOwner(root, 42)).toMatchObject({
+                    version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
+                    mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+                });
+            });
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it.each([
+        ['releases the lock after definitive HTTP 422', '422', false],
+        ['retains the lock and refuses reacquisition after ambiguous HTTP 409', '409', true],
+    ] as const)('%s', async (_label, status, retainsLock) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, tracker } = fakePort({ dependentSets: [[], []] });
+        const rejection = shellMergeRejection(status);
+        port.merge = () => {
+            throw rejection;
+        };
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(
+                    root,
+                    42,
+                    async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
+                        markRemoteMutationAttempt();
+                        deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                    }
+                )
+            ).rejects.toBe(rejection);
+            expect(deliveryLockExists(root, 42)).toBe(retainsLock);
+            if (retainsLock) {
+                await expect(withPullRequestDeliveryLock(root, 42, async () => undefined)).rejects.toThrow(
+                    /already being delivered/
+                );
+            }
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
     it('queries bot review author IDs through a Bot fragment', () => {
         const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
@@ -723,7 +1108,9 @@ describe('pull-request delivery', () => {
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
-        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', bodyY, 2373)]);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+        ]);
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
@@ -744,7 +1131,7 @@ describe('pull-request delivery', () => {
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(5);
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
         expect(calls).not.toContain('merge:42:head');
         expect(calls).toContain('retarget:43:main');
@@ -756,11 +1143,6 @@ describe('pull-request delivery', () => {
             label: 'head OID drift',
             mergedPrimaryAfterMerge: { headRefOid: 'moved-head' },
             error: /headRefOid changed during delivery/,
-        },
-        {
-            label: 'head branch drift',
-            mergedPrimaryAfterMerge: { headRefName: 'feat/rewritten-head' },
-            error: /headRefName changed during delivery/,
         },
         {
             label: 'base branch drift',
@@ -776,10 +1158,9 @@ describe('pull-request delivery', () => {
             label: 'closing target drift',
             mergedPrimaryAfterMerge: {
                 body: relationshipBody('Closes #9999'),
-                title: 'feat(delivery): post-merge retarget race',
             },
             authorizedBody: relationshipBody('Related #2372'),
-            error: /closing target changed during delivery/,
+            error: /body changed during delivery/,
         },
     ])(
         'detects post-merge $label before retarget or tracker completion',
@@ -797,7 +1178,51 @@ describe('pull-request delivery', () => {
         }
     );
 
-    it('recovers an UNKNOWN initial refresh that becomes a merged author-App head', () => {
+    it('detects post-merge headRefName drift before retarget or tracker completion when all other validated inputs stay stable', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            mergedPrimaryAfterMerge: {
+                headRefName: 'feat/rewritten-head',
+            },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/headRefName changed during delivery/);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+    });
+
+    it('refuses to merge when the reviewed title drifts before the final open snapshot', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, title: 'feat(delivery): renamed gate' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/title changed during delivery/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('merges with the stability-checked pull-request title in the default squash shape', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes, title: 'feat(delivery): retitled in UI' }),
+                pullRequest({ body: closes, title: 'feat(delivery): retitled in UI' }),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
+    });
+
+    it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const seededReceipt: DeliveryReceiptComment = {
@@ -823,14 +1248,16 @@ describe('pull-request delivery', () => {
             receipts: [seededReceipt],
         });
 
-        deliverPullRequest(42, port, tracker);
-
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(0);
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(0);
+        expect(calls).not.toContain('receipt-proof:42:1:IC_seeded_x');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_seeded_x');
         expect(calls).not.toContain('merge:42:head');
-        expect(calls).toContain('retarget:43:main');
-        expect(calls).toContain('complete:2372');
-        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_seeded_x');
+        expect(calls).not.toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
         expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
     });
 
@@ -854,11 +1281,64 @@ describe('pull-request delivery', () => {
         deliverPullRequest(42, port, tracker);
 
         expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
-        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(5);
         expect(calls).not.toContain('merge:42:head');
         expect(calls).toContain('retarget:43:main');
         expect(calls).toContain('complete:2372');
         expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
+    });
+
+    it('fails closed when the final refresh is already merged on a different closing target than the armed receipt', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closesY,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /body changed during delivery|closing target changed during delivery/i
+        );
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('fails closed when the final merged refresh only has a stale exact receipt listing and proof says a newer receipt exists', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+        });
+        let proofReads = 0;
+        port.deliveryReceiptProof = (number) => {
+            proofReads += 1;
+            const proof =
+                proofReads <= 2
+                    ? deliveryReceiptProofForIds(['IC_delivery_42_1'])
+                    : deliveryReceiptProofForIds(['IC_delivery_42_1', 'IC_hidden_newer']);
+            calls.push(`receipt-proof:${number}:${proof.totalCount}:${proof.latestCommentId ?? 'none'}`);
+            return proof;
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('retarget:43:main');
     });
 
     it.each([
@@ -874,64 +1354,2548 @@ describe('pull-request delivery', () => {
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
-    it('accepts X to Y to X receipt lineage and recovers the newest successful X receipt after merge', () => {
+    it('appends a new X receipt after newer Y, then fails closed on merged body drift before recovery can reuse it', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
-        const seededX: DeliveryReceiptComment = {
-            id: 'IC_seeded_x',
-            body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
             authorNodeId: AUTHOR_BOT_NODE_ID,
             authorLogin: 'renamed-author[bot]',
             authorType: 'Bot',
-            createdAt: '2026-08-21T00:00:00.000Z',
-            updatedAt: '2026-08-21T00:00:00.000Z',
-        };
+            createdAt,
+            updatedAt: createdAt,
+        });
         const { port, calls, receipts, tracker } = fakePort({
             primary: [
-                pullRequest({ body: bodyY }),
-                pullRequest({ body: bodyY }),
-                pullRequest({ body: bodyY }),
-                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyX }),
                 pullRequest({ state: 'MERGED', body: bodyX }),
                 pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
-            primaryBodyOnReceiptRead: bodyX,
             dependentSets: [[], []],
-            receipts: [seededX],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_historical_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
         });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/);
-        expect(calls).not.toContain('merge:42:head');
-        expect(receipts.map((receipt) => receipt.body)).toEqual([
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(receipts.map((entry) => entry.body)).toEqual([
             deliveryReceiptBody(42, 'head', bodyX, 2372),
             deliveryReceiptBody(42, 'head', bodyY, 2373),
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
         ]);
+        expect(calls.indexOf('receipt-authority:write:prepared:IC_delivery_42_3')).toBeLessThan(
+            calls.indexOf('receipt-authority:write:merge-authorized:IC_delivery_42_3')
+        );
+        expect(calls.indexOf('receipt-authority:write:merge-authorized:IC_delivery_42_3')).toBeLessThan(
+            calls.indexOf('complete:2372')
+        );
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_delivery_42_3');
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_3')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed after clearing the persisted authority even when a newer exact X still survives behind older public Y after merge', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: visibleDeliveryReceiptBody(42, 'head', body, closingIssue, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ state: 'MERGED', body: bodyX }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], []],
+            receipts: [
+                receipt('IC_visible_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_visible_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_visible_x', 'IC_visible_y', 'IC_delivery_42_3']);
+        expect(receipts.map(({ body }) => body)).toEqual([
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+            visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+        ]);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'merge-authorized',
+            receiptId: 'IC_delivery_42_3',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', bodyX, 2372),
+        });
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+
+        port.clearDeliveryReceiptAuthority(42);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).not.toContain('complete:2373');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(
+            calls.filter((call) => call === 'receipt-authority:write:merge-authorized:IC_delivery_42_3')
+        ).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_3')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed after clearing the persisted authority even when a canonical v2 remains newer than a trailing same-key legacy v1 after merge', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentVisible = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, receipts, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], []],
+            receipts: [
+                {
+                    id: 'IC_visible_v2',
+                    body: currentVisible,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00.000Z',
+                    updatedAt: '2026-08-21T00:00:00.000Z',
+                },
+                {
+                    id: 'IC_trailing_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01.000Z',
+                    updatedAt: '2026-08-21T00:00:01.000Z',
+                },
+            ],
+        });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_visible_v2', 'IC_trailing_v1', 'IC_delivery_42_3']);
+        expect(receipts.map(({ body }) => body)).toEqual([
+            currentVisible,
+            deliveryReceiptBody(42, 'head', closes, 2372),
+            currentVisible,
+        ]);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'merge-authorized',
+            receiptId: 'IC_delivery_42_3',
+            receiptBody: currentVisible,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        port.clearDeliveryReceiptAuthority(42);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(
+            calls.filter((call) => call === 'receipt-authority:write:merge-authorized:IC_delivery_42_3')
+        ).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_3')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('stops merged recovery on post-merge body drift before stale receipt lineage can matter', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ state: 'MERGED', body: bodyX }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], [], []],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+        let staleMergedRecovery = false;
+        let receiptReadCount = 0;
+        let staleMergedRecoveryReadCount = 0;
+        const originalDeliveryReceipts = port.deliveryReceipts;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            receiptReadCount += 1;
+            if (staleMergedRecovery) {
+                staleMergedRecoveryReadCount += 1;
+            }
+            if (staleMergedRecovery && staleMergedRecoveryReadCount <= 5) {
+                return structuredClone(receipts.slice(0, 2));
+            }
+            return originalDeliveryReceipts(number);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+
+        staleMergedRecovery = true;
+        staleMergedRecoveryReadCount = 0;
+        const receiptReadsBeforeRecovery = calls.filter((call) => call === 'receipts:42').length;
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(receiptReadsBeforeRecovery);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+
+        staleMergedRecovery = false;
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed when legacy merged recovery sees the same stale X prefix twice while actual history is X then Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts.slice(0, 1));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt authority cannot be proven|delivery receipt changed during recovery/i
+        );
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_historical_x');
+    });
+
+    it('fails closed when legacy merged recovery reads disagree from stale Y back to X with no persisted authority', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let readCount = 0;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            readCount += 1;
+            return structuredClone(readCount === 1 ? receipts.slice(0, 2) : receipts.slice(0, 1));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('fails closed when duplicate legacy v1 receipts remain after merge with no persisted authority anchor', () => {
+        const closes = relationshipBody('Closes #2372');
+        const duplicate = (id: string, createdAt: string): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [duplicate('IC_v1_a', '2026-08-21T00:00:00Z'), duplicate('IC_v1_b', '2026-08-21T00:00:01Z')],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_v1_b' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('fails closed when compatible legacy v1 then visible v2 receipts remain after merge with no persisted authority anchor', () => {
+        const closes = relationshipBody('Closes #2372');
+        const legacyReceipt = {
+            id: 'IC_v1_legacy',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const visibleReceipt = {
+            id: 'IC_v2_visible',
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:01Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [legacyReceipt, visibleReceipt],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_v2_visible' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('fails closed when merged legacy recovery sees two complete raw v1 keys with no persisted authority anchor', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_historical_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_historical_y' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('fails closed when a merged head shows one visible receipt but no persisted authority anchors it against deleted newer comments', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID })],
+            dependentSets: [[]],
+            receipts: [
+                {
+                    id: 'IC_v2_only',
+                    body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_v2_only' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-proof:42:1:IC_v2_only');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed when comments once held A then B but merged recovery can only see surviving A with no persisted authority', () => {
+        const closesA = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [
+                {
+                    id: 'IC_historical_a',
+                    body: deliveryReceiptBody(42, 'head', closesA, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_historical_a' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt authority cannot be proven|delivery receipt changed during recovery/i
+        );
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('recovers the exact legacy persisted receipt id instead of switching to a newer different-key receipt', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: bodyX })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'legacy', receiptId: 'IC_legacy_a' },
+            receipts: [
+                receipt('IC_legacy_a', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_legacy_b', bodyY, 2373, '2026-08-21T00:00:01Z'),
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_legacy_b' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_legacy_a');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_legacy_a');
+    });
+
+    it('persists merged-snapshot validation when legacy recovery promotes to merge-authorized, then resumes after a dependent-repair crash', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[child], [child], []],
+            persistedReceiptAuthority: { phase: 'legacy', receiptId: 'IC_legacy_a' },
+            receipts: [
+                {
+                    id: 'IC_legacy_a',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_legacy_a' },
+        });
+        let dependentsReadCount = 0;
+        const originalDependents = port.dependents;
+        port.dependents = (baseBranch) => {
+            dependentsReadCount += 1;
+            if (dependentsReadCount === 1) {
+                throw new Error('dependent listing unavailable');
+            }
+            return originalDependents(baseBranch);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/dependent listing unavailable/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'merge-authorized',
+            receiptId: 'IC_legacy_a',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_legacy_a');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_legacy_a');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_legacy_a',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('fails closed when the exact legacy persisted receipt id points at a different closing issue than the merged pull request body', () => {
+        const oldBody = relationshipBody('Closes #2372');
+        const mergedBody = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: mergedBody })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'legacy', receiptId: 'IC_legacy_a' },
+            receipts: [
+                receipt('IC_legacy_a', oldBody, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_legacy_b', mergedBody, 2373, '2026-08-21T00:00:01Z'),
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_legacy_b' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:merge-authorized:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:terminal:'))).toHaveLength(0);
+    });
+
+    it('fails closed when the exact legacy persisted receipt id is missing from a later complete stable read', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = (id: string): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: closes })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'legacy', receiptId: 'IC_legacy_a' },
+            receipts: [receipt('IC_legacy_a')],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_legacy_a' },
+        });
+        let readCount = 0;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            readCount += 1;
+            return structuredClone(readCount === 1 ? [receipt('IC_legacy_a')] : [receipt('IC_legacy_b')]);
+        };
+        port.deliveryReceiptProof = (number) => {
+            const latestCommentId = readCount === 1 ? 'IC_legacy_a' : 'IC_legacy_b';
+            calls.push(`receipt-proof:${number}:1:${latestCommentId}`);
+            return deliveryReceiptProofForIds([latestCommentId]);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+    });
+
+    it('fails closed when a proven merged lineage contains an edited author-App comment whose receipt marker was erased', () => {
+        const closes = relationshipBody('Closes #2372');
+        const validReceipt = {
+            id: 'IC_valid_receipt',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const editedErasedReceipt = {
+            id: 'IC_edited_erased_receipt',
+            body: 'ordinary follow-up text after an edit',
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:02Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            receipts: [validReceipt, editedErasedReceipt],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_edited_erased_receipt' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('receipt-authority:write:'))).toHaveLength(0);
+    });
+
+    it('publishes a fresh X when two pre-merge stale listings both hide newer Y, then fails closed on merged body drift', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ state: 'MERGED', body: bodyX }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], []],
+            receipts: [
+                {
+                    id: 'IC_historical_x',
+                    body: visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00.000Z',
+                    updatedAt: '2026-08-21T00:00:00.000Z',
+                },
+                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let receiptReadCount = 0;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            receiptReadCount += 1;
+            if (receiptReadCount <= 2) {
+                return structuredClone(receipts.slice(0, 1));
+            }
+            return structuredClone(receipts);
+        };
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(receipts.map((entry) => entry.body)).toEqual([
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+            deliveryReceiptBody(42, 'head', bodyY, 2373),
+            visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+        ]);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('re-runs prepared merged validation and keeps rejecting body drift after merge succeeded', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: bodyX }),
+                pullRequest({ body: bodyX }),
+                pullRequest({ state: 'MERGED', body: bodyY }),
+                pullRequest({ state: 'MERGED', body: bodyY }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+    });
+
+    it('persists merge-authorized recovery before a final-refresh merged dependent read fails, then resumes from that authority', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[child], [child], []],
+        });
+        let dependentsReadCount = 0;
+        const originalDependents = port.dependents;
+        port.dependents = (baseBranch) => {
+            dependentsReadCount += 1;
+            if (dependentsReadCount === 2) {
+                throw new Error('dependent listing unavailable');
+            }
+            return originalDependents(baseBranch);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/dependent listing unavailable/i);
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_1')).toHaveLength(1);
+        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+    });
+
+    it.each([
+        {
+            label: 'head branch',
+            mergedPrimaryAfterRecovery: { headRefName: 'feat/rewritten-head' },
+            error: /headRefName changed during delivery/,
+        },
+        {
+            label: 'base branch',
+            mergedPrimaryAfterRecovery: { baseRefName: 'release/1.0' },
+            error: /targets release\/1.0, not main|baseRefName changed during delivery/,
+        },
+        {
+            label: 'body and closing target',
+            mergedPrimaryAfterRecovery: { body: `${relationshipBody('Closes #9999')}\nChanged note.` },
+            error: /body changed during delivery/,
+        },
+    ])(
+        'persists merge-authorized post-merge validation and refuses already-merged recovery when the $label drifts after a crash',
+        ({ mergedPrimaryAfterRecovery, error }) => {
+            const closes = relationshipBody('Closes #2372');
+            const child = stacked();
+            const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+                primary: [
+                    pullRequest({ body: closes }),
+                    pullRequest({ state: 'MERGED', body: closes }),
+                    pullRequest({
+                        state: 'MERGED',
+                        body: closes,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        ...mergedPrimaryAfterRecovery,
+                    }),
+                ],
+                dependentSets: [[child], [child], []],
+            });
+            let dependentsReadCount = 0;
+            const originalDependents = port.dependents;
+            port.dependents = (baseBranch) => {
+                dependentsReadCount += 1;
+                if (dependentsReadCount === 2) {
+                    throw new Error('dependent listing unavailable');
+                }
+                return originalDependents(baseBranch);
+            };
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(/dependent listing unavailable/i);
+            expect(persistedReceiptAuthority()).toEqual({
+                phase: 'merge-authorized',
+                receiptId: 'IC_delivery_42_1',
+                receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            });
+            expect(calls.filter((call) => call === 'retarget:43:main')).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(error);
+            expect(calls.filter((call) => call === 'retarget:43:main')).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        }
+    );
+
+    it('persists terminal post-merge validation and refuses already-merged headRefName drift before any effect', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const receiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    headRefName: 'feat/rewritten-head',
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[child]],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_terminal_validated',
+                receiptBody,
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_terminal_validated',
+                    body: receiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_terminal_validated' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/headRefName changed during delivery/);
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_terminal_validated',
+            receiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('persists merged prepared authority before a transient receipt read failure, then recovers on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        let receiptReads = 0;
+        const originalDeliveryReceipts = port.deliveryReceipts;
+        port.deliveryReceipts = (number) => {
+            receiptReads += 1;
+            if (receiptReads === 4) {
+                throw new Error('transient receipt read failure');
+            }
+            return originalDeliveryReceipts(number);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/transient receipt read failure/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+    });
+
+    it('re-arms to the current open receipt on a stale retry and then refuses merged recovery if the merged body reverts', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful');
+        const receiptBodyY = visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closesY }),
+                pullRequest({ state: 'MERGED', body: closesX }),
+                pullRequest({ state: 'MERGED', body: closesX }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_frozen_x',
+                receiptBody: receiptBodyX,
+                postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_frozen_x',
+                    body: receiptBodyX,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_stale_y',
+                    body: visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_stale_y' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_stale_y',
+            receiptBody: receiptBodyY,
+            postMergeValidation: persistedPostMergeValidation('head', closesY, 2373),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls).toContain('receipt-authority:write:released:IC_frozen_x');
+        expect(calls).toContain('receipt-authority:write:prepared:IC_stale_y');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_frozen_x');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_frozen_x');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_stale_y');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_stale_y');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+    });
+
+    it('recovers from a late-merged merge-authorized write failure using prepared post-merge validation', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+            ],
+            dependentSets: [[child], [child], []],
+        });
+        const originalWriteDeliveryReceiptAuthority = port.writeDeliveryReceiptAuthority;
+        let failMergeAuthorizedWrite = true;
+        port.writeDeliveryReceiptAuthority = (number, authority) => {
+            if (authority.phase === 'merge-authorized' && failMergeAuthorizedWrite) {
+                failMergeAuthorizedWrite = false;
+                throw new Error('authority persistence unavailable');
+            }
+            originalWriteDeliveryReceiptAuthority(number, authority);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/authority persistence unavailable/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+    });
+
+    it('persists prepared post-merge validation before a second fetch throws after merge, then recovers on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[child], [child], []],
+        });
+        const originalFetch = port.fetch;
+        let fetchCount = 0;
+        port.fetch = () => {
+            fetchCount += 1;
+            originalFetch();
+            if (fetchCount === 2) {
+                throw new Error('fetch interrupted after merge');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/fetch interrupted after merge/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+    });
+
+    it('retains a failed open final-refresh validation until remote evidence proves its mutation absent', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesY }),
+                pullRequest({ body: closesY }),
+                pullRequest({ body: closesY }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/i);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+        });
 
         deliverPullRequest(42, port, tracker);
 
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
         expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
-        expect(receipts.map((receipt) => receipt.body)).toEqual([
-            deliveryReceiptBody(42, 'head', bodyX, 2372),
-            deliveryReceiptBody(42, 'head', bodyY, 2373),
-            deliveryReceiptBody(42, 'head', bodyX, 2372),
-        ]);
-        expect(receipts.map((receipt) => Date.parse(receipt.createdAt))).toEqual([
-            Date.parse('2026-08-21T00:00:00.000Z'),
-            Date.parse('2026-08-21T00:00:01.000Z'),
-            Date.parse('2026-08-21T00:00:02.000Z'),
-        ]);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closesY, 2373),
+        });
+    });
+
+    it('disarms a failed merge attempt that left the PR open so a later body-drift retry can deliver the current receipt', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesY }),
+                pullRequest({ body: closesY }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let failMergeOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (failMergeOnce) {
+                failMergeOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: merge unavailable');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+        let knownAbsent = 0;
+
+        expect(() =>
+            deliverPullRequest(42, port, tracker, () => {
+                knownAbsent += 1;
+            })
+        ).toThrow(/was not merged: merge unavailable/i);
+        expect(knownAbsent).toBe(0);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
-        expect(calls).not.toContain('complete:2373');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesY, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closesY, 2373),
+        });
     });
 
-    it('completes the receipt issue after a single-receipt merged body drift', () => {
+    it('disarms a proven merge rejection after head drift leaves the PR open, so the new head can deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'rewritten-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: head SHA changed');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: head SHA changed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('disarms a merge rejection when the follow-up refresh observes a corrected OPEN head before drift aborts the read, then lets that head deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'rewritten-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ headRefOid: nextHead, body: closes, mergeable: 'MERGEABLE' }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: head SHA changed');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: head SHA changed/i);
+        expect(calls).toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', `merge:42:${nextHead}`]);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('disarms a proven merge rejection after the PR closes unmerged, then lets a reopened new head deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ state: 'CLOSED', headRefOid: 'head', body: closes }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: closed without merge');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: closed without merge/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('disarms a definitive CLOSED unmerged rejection before an UNKNOWN refresh can reopen on a new head', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ state: 'CLOSED', headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: closed without merge');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: closed without merge/i);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('restores the pre-final-fetch prepared authority when the final fetch resolves to OPEN CONFLICTING, then lets a corrected head deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'corrected-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'CONFLICTING' }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/conflicting changes/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('releases retained authority when an OPEN UNKNOWN retry resolves to CLOSED before validation, then lets a reopened head and body deliver', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'CLOSED', headRefOid: nextHead, body: closesY, mergeable: 'UNKNOWN' }),
+                pullRequest({ headRefOid: nextHead, body: closesY }),
+                pullRequest({ headRefOid: nextHead, body: closesY }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closesY, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closesY, 2373),
+        });
+    });
+
+    it('releases legacy authority after a definitive CLOSED result, then refuses merged recovery until a later OPEN delivery re-arms it', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', headRefOid: 'head', body: closes }),
+                pullRequest({ state: 'MERGED', headRefOid: nextHead, body: closes }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+            persistedReceiptAuthority: { phase: 'legacy', receiptId: 'IC_legacy_v1' },
+            receipts: [
+                {
+                    id: 'IC_legacy_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_legacy_v1',
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_legacy_v1']);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_legacy_v1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('fails closed when merged recovery only has a trailing same-key legacy v1 comment after the persisted authority is gone', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentVisible = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                {
+                    id: 'IC_visible_v2',
+                    body: currentVisible,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00.000Z',
+                    updatedAt: '2026-08-21T00:00:00.000Z',
+                },
+                {
+                    id: 'IC_trailing_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01.000Z',
+                    updatedAt: '2026-08-21T00:00:01.000Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_trailing_v1' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-proof:42:2:IC_trailing_v1');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_trailing_v1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_trailing_v1');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls).not.toContain('add-receipt:42');
+    });
+
+    it('restores the pre-final-fetch prepared authority when an UNKNOWN refresh discovers a corrected OPEN MERGEABLE head, then lets that head deliver on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'corrected-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ headRefOid: nextHead, body: closes, mergeable: 'MERGEABLE' }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/headRefOid changed during delivery/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual([`merge:42:${nextHead}`]);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('retains the final-fetch armed authority when an UNKNOWN refresh becomes unreadable before it can disprove a merge, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes }),
+                pullRequest({ headRefOid: 'head', body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 final refresh became unreadable'),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/final refresh became unreadable/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it.each([
+        {
+            label: 'head drift',
+            retryHead: 'next-head',
+            retryBody: relationshipBody('Closes #2372'),
+            retryMergeStateStatus: 'CLEAN',
+            expectedIssue: 2372,
+            expectedCiState: 'successful',
+        },
+        {
+            label: 'body drift',
+            retryHead: 'head',
+            retryBody: relationshipBody('Closes #2373'),
+            retryMergeStateStatus: 'CLEAN',
+            expectedIssue: 2373,
+            expectedCiState: 'successful',
+        },
+        {
+            label: 'CI drift',
+            retryHead: 'head',
+            retryBody: relationshipBody('Closes #2372'),
+            retryMergeStateStatus: 'UNSTABLE',
+            expectedIssue: 2372,
+            expectedCiState: 'unstable',
+        },
+    ] satisfies Array<{
+        label: string;
+        retryHead: string;
+        retryBody: string;
+        retryMergeStateStatus: 'CLEAN' | 'UNSTABLE';
+        expectedIssue: number;
+        expectedCiState: 'successful' | 'unstable';
+    }>)(
+        'restores the pre-final-fetch prepared authority when the final fetch throws before any snapshot, so a later $label retry can deliver',
+        ({ retryHead, retryBody, retryMergeStateStatus, expectedIssue, expectedCiState }) => {
+            const closes = relationshipBody('Closes #2372');
+            const retryHeadCheckRuns =
+                retryMergeStateStatus === 'UNSTABLE'
+                    ? supersededRunCheckRuns()
+                    : ([checkRun()] satisfies HeadCheckRun[]);
+            const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+                primary: [
+                    pullRequest({ headRefOid: 'head', body: closes, mergeStateStatus: 'CLEAN' }),
+                    new Error('PR #42 final fetch failed before any snapshot'),
+                    pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
+                    pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
+                    pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
+                ],
+                dependentSets: [[], []],
+                headCheckRunReads:
+                    retryMergeStateStatus === 'UNSTABLE'
+                        ? [[checkRun()], retryHeadCheckRuns, retryHeadCheckRuns]
+                        : undefined,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(/final fetch failed before any snapshot/i);
+            expect(calls).not.toContain('merge:42:head');
+            expect(persistedReceiptAuthority()).toEqual({
+                phase: 'prepared',
+                receiptId: 'IC_delivery_42_1',
+                receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            });
+
+            deliverPullRequest(42, port, tracker);
+
+            expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+            expect(calls).toContain(`merge:42:${retryHead}`);
+            expect(calls).toContain(`complete:${expectedIssue}`);
+            expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+            expect(persistedReceiptAuthority()).toEqual({
+                phase: 'terminal',
+                receiptId: 'IC_delivery_42_2',
+                receiptBody: visibleDeliveryReceiptBody(42, retryHead, retryBody, expectedIssue, expectedCiState),
+                postMergeValidation: persistedPostMergeValidation(retryHead, retryBody, expectedIssue),
+            });
+        }
+    );
+
+    it('retains the final-fetch armed authority when fetch succeeds but the final snapshot read fails before any observation, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes, mergeStateStatus: 'CLEAN' }),
+                new Error('PR #42 final snapshot read failed'),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/final snapshot read failed/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('retains the armed receipt authority after an OPEN UNKNOWN merge-rejection refresh resolves to an unrecognized state, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'UNRECOGNIZED', body: closes, mergeable: 'MERGEABLE' }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+        });
+        let rejectOnce = true;
+        port.merge = (number, head) => {
+            calls.push(`merge:${number}:${head}`);
+            if (rejectOnce) {
+                rejectOnce = false;
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('receipt-authority:clear:prepared:IC_delivery_42_1');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('retains the armed receipt authority after an OPEN UNKNOWN merge-rejection follow-up becomes unreadable, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+        });
+        let rejectOnce = true;
+        port.merge = (number, head) => {
+            calls.push(`merge:${number}:${head}`);
+            if (rejectOnce) {
+                rejectOnce = false;
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('receipt-authority:clear:prepared:IC_delivery_42_1');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('retains the armed receipt authority after a merge rejection when every recovery read stays OPEN UNKNOWN, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+        });
+        let rejectOnce = true;
+        port.merge = (number, head) => {
+            calls.push(`merge:${number}:${head}`);
+            if (rejectOnce) {
+                rejectOnce = false;
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('receipt-authority:clear:prepared:IC_delivery_42_1');
+        expect(calls).not.toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('restores the pre-armed authority after a merge rejection when recovery proves OPEN CONFLICTING, then lets a corrected head deliver', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'corrected-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ body: closes, mergeable: 'CONFLICTING' }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', `merge:42:${nextHead}`]);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('retains the armed receipt authority after an ambiguous merge error even when one follow-up read still looks open, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        const originalPullRequest = port.pullRequest;
+        let failMergeOnce = true;
+        let staleOpenRead = true;
+        port.merge = (number, head, hasDependents) => {
+            originalMerge(number, head, hasDependents);
+            if (failMergeOnce) {
+                failMergeOnce = false;
+                throw new Error('merge response lost');
+            }
+        };
+        port.pullRequest = (number) => {
+            if (staleOpenRead) {
+                staleOpenRead = false;
+                return pullRequest({ body: closes });
+            }
+            return originalPullRequest(number);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/merge response lost/i);
+        expect(calls).toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it('releases retained ambiguous merge authority when a later retry stays OPEN on a new head, then lets that head deliver', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'rewritten-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', `merge:42:${nextHead}`]);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('fails closed when stale ambiguous authority changes before an OPEN new-head retry can release it', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'rewritten-head';
+        const hostileHead = 'hostile-head';
+        const { port, calls, tracker, receipts, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+
+        const hostileAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, hostileHead, closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: hostileHead,
+                headRefName: 'feat/hostile',
+                baseRefName: 'main',
+                title: 'feat(delivery): add gate',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        receipts.push({
+            id: 'IC_hostile',
+            body: visibleDeliveryReceiptBody(42, hostileHead, closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:01Z',
+        });
+        let currentAuthority = persistedReceiptAuthority();
+        let swapAfterRead = true;
+        port.readDeliveryReceiptAuthority = () => {
+            calls.push(`receipt-authority:read:${authorityTrace(currentAuthority)}`);
+            const observed = currentAuthority;
+            if (swapAfterRead && observed?.phase === 'prepared' && observed.receiptId === 'IC_delivery_42_1') {
+                swapAfterRead = false;
+                currentAuthority = hostileAuthority;
+            }
+            return observed;
+        };
+        port.writeDeliveryReceiptAuthority = (number, authority, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be stored`);
+            }
+            calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
+            currentAuthority = authority;
+        };
+        port.clearDeliveryReceiptAuthority = (number, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
+            }
+            calls.push(`receipt-authority:clear:${authorityTrace(currentAuthority)}`);
+            currentAuthority = undefined;
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority could not be stored/i);
+        expect(calls).not.toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === `merge:42:${nextHead}`)).toHaveLength(0);
+        expect(currentAuthority).toEqual(hostileAuthority);
+    });
+
+    it('reuses retained ambiguous merge authority when a later definitive OPEN retry keeps the same immutable delivery inputs', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).not.toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', 'merge:42:head']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('releases retained ambiguous merge authority when a later retry keeps the same head but the PR body digest changes, then posts a fresh receipt', () => {
+        const staleBody = relationshipBody('Closes #2372\nOld note.');
+        const currentBody = relationshipBody('Closes #2372\nCurrent note.');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: currentBody }),
+                pullRequest({ body: currentBody }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', staleBody, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', staleBody, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', 'merge:42:head']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', currentBody, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', currentBody, 2372),
+        });
+    });
+
+    it('releases retained ambiguous merge authority when a later retry keeps the same head but the closing target changes, then posts a fresh receipt', () => {
+        const staleBody = relationshipBody('Closes #2372');
+        const currentBody = relationshipBody('Closes #2373');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody }),
+                pullRequest({ body: staleBody, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ body: currentBody }),
+                pullRequest({ body: currentBody }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', staleBody, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', staleBody, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-authority:write:released:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls.filter((call) => call.startsWith('merge:42:'))).toEqual(['merge:42:head', 'merge:42:head']);
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).toContain('complete:2373');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', currentBody, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', currentBody, 2373),
+        });
+    });
+
+    it('fails closed when an absent authority observation goes stale before the first write', () => {
+        const closes = relationshipBody('Closes #2372');
+        const hostileAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        };
+        const { port, calls, tracker, receipts, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[], []],
+        });
+        let currentAuthority = persistedReceiptAuthority();
+        let swapBeforeFirstWrite = true;
+        port.readDeliveryReceiptAuthority = () => {
+            calls.push(`receipt-authority:read:${authorityTrace(currentAuthority)}`);
+            return currentAuthority;
+        };
+        port.writeDeliveryReceiptAuthority = (number, authority, expectedCurrent) => {
+            if (swapBeforeFirstWrite) {
+                swapBeforeFirstWrite = false;
+                currentAuthority = hostileAuthority;
+            }
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be stored`);
+            }
+            calls.push(`receipt-authority:write:${authorityTrace(authority)}`);
+            currentAuthority = authority;
+        };
+        port.clearDeliveryReceiptAuthority = (number, expectedCurrent) => {
+            if (expectedCurrent !== undefined && !sameReceiptAuthorityExpectation(currentAuthority, expectedCurrent)) {
+                throw new Error(`PR #${number} delivery receipt authority could not be cleared`);
+            }
+            calls.push(`receipt-authority:clear:${authorityTrace(currentAuthority)}`);
+            currentAuthority = undefined;
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority could not be stored/i);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
+        expect(currentAuthority).toEqual(hostileAuthority);
+    });
+
+    it('disarms a retained ambiguous merge authority when a later retry sees the PR closed, then lets a reopened head and body deliver', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ state: 'CLOSED', body: closesX }),
+                pullRequest({ headRefOid: nextHead, body: closesY }),
+                pullRequest({ headRefOid: nextHead, body: closesY }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(calls).not.toContain(`merge:42:${nextHead}`);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closesY, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closesY, 2373),
+        });
+    });
+
+    it('disarms retained authority from a raw CLOSED UNKNOWN retry before a reopened new head can appear, then lets that head deliver', () => {
+        const closes = relationshipBody('Closes #2372');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ state: 'CLOSED', body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes, mergeable: 'MERGEABLE' }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closes }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(calls).not.toContain(`merge:42:${nextHead}`);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closes, 2372),
+        });
+    });
+
+    it('disarms retained authority from a raw CLOSED UNKNOWN retry without trusting an unreadable refresh, so a later new head can deliver', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const nextHead = 'reopened-head';
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX }),
+                pullRequest({ body: closesX, mergeable: 'UNKNOWN' }),
+                new Error('PR #42 merge recovery became unreadable'),
+                pullRequest({ state: 'CLOSED', body: closesX, mergeable: 'UNKNOWN' }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closesY }),
+                pullRequest({ state: 'OPEN', headRefOid: nextHead, body: closesY }),
+            ],
+            dependentSets: [[], [], []],
+        });
+        const originalMerge = port.merge;
+        let rejectOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            if (rejectOnce) {
+                rejectOnce = false;
+                calls.push(`merge:${number}:${head}`);
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: merge result ambiguous');
+            }
+            originalMerge(number, head, hasDependents);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: merge result ambiguous/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closesX, 2372),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closesX, 2372, 'successful'),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, closesY, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, closesY, 2373),
+        });
+    });
+
+    it('retains the armed receipt authority when merge throws after the PR already became merged, then recovers on retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[], []],
+        });
+        const originalMerge = port.merge;
+        let failMergeOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            originalMerge(number, head, hasDependents);
+            if (failMergeOnce) {
+                failMergeOnce = false;
+                throw new Error('merge response lost');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/merge response lost/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed when a single current v2 merged receipt lacks retained validation after body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_delivery_42',
+                receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+            },
             receipts: [
                 {
                     id: 'IC_delivery_42',
@@ -945,14 +3909,269 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('retarget:43:main');
-        expect(calls).toContain('complete:2372');
-        expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls).not.toContain('complete:2372');
     });
 
-    it('recovers the newest X to Y receipt after merge', () => {
+    it('fails closed when bodyful persisted merged recovery only sees a stale exact receipt listing and proof says a newer receipt exists', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_delivery_42',
+                receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_delivery_42',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42');
+    });
+
+    it('fails closed when bodyful persisted merged recovery sees a stale middle receipt even though count and newest still match', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesStale = relationshipBody('Closes #2373');
+        const closesNewest = relationshipBody('Closes #2375');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: closesStale })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_z',
+                receiptBody: deliveryReceiptBody(42, 'head', closesStale, 2373),
+                postMergeValidation: persistedPostMergeValidation('head', closesStale, 2373),
+            },
+            receipts: [
+                {
+                    id: 'IC_x',
+                    body: deliveryReceiptBody(42, 'head', closesX, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_z',
+                    body: deliveryReceiptBody(42, 'head', closesStale, 2373),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+                {
+                    id: 'IC_n',
+                    body: deliveryReceiptBody(42, 'head', closesNewest, 2375),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:02Z',
+                    updatedAt: '2026-08-21T00:00:02Z',
+                },
+            ],
+            deliveryReceiptProof: deliveryReceiptProofForIds(['IC_x', 'IC_y', 'IC_n']),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).toContain('receipt-proof:42:3:IC_n');
+        expect(calls).not.toContain('complete:2373');
+        expect(calls).not.toContain('retarget:43:main');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_z');
+    });
+
+    it('fails closed when already-merged current visible v2 recovery holds a bodyless terminal authority without retained validation', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    mergeable: 'UNKNOWN',
+                    mergeStateStatus: 'UNKNOWN',
+                    body: relationshipBody('None.'),
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'terminal', receiptId: 'IC_visible_success' },
+            receipts: [
+                {
+                    id: 'IC_visible_success',
+                    body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('checks:'))).toHaveLength(0);
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('fails closed when prepared merged recovery sees a title-only edit after receipt arming', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    title: 'feat(delivery): renamed gate',
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared',
+                receiptBody,
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    title: 'feat(delivery): add gate',
+                    bodySha256: createHash('sha256').update(closes).digest('hex'),
+                    trackerTarget: 2372,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared',
+                    body: receiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/title changed during delivery/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_prepared');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_prepared');
+    });
+
+    it('fails closed when a prepared authority receipt body names X but its stored post-merge validation belongs to Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: bodyY,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_x',
+                receiptBody: receiptBodyX,
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(bodyY).digest('hex'),
+                    trackerTarget: 2373,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_x',
+                    body: receiptBodyX,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_x' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt changed during recovery|delivery receipt authority cannot be proven/i
+        );
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('fails closed when a released bodyful authority sees the same PR merged before any later OPEN delivery re-arms it', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_bodyful',
+                receiptBody: storedReceiptBody,
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    bodySha256: createHash('sha256').update(closes).digest('hex'),
+                    trackerTarget: 2372,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_bodyful',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared_bodyful' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_prepared_bodyful',
+            receiptBody: storedReceiptBody,
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_prepared_bodyful');
+    });
+
+    it('fails closed when a bodyless current v2 authority points at an older wrong-issue receipt', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const receipt = (
@@ -971,19 +4190,598 @@ describe('pull-request delivery', () => {
         });
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'terminal', receiptId: 'IC_x' },
+            receipts: [
+                receipt('IC_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_y' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt authority cannot be proven|delivery receipt changed during recovery/i
+        );
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('releases a bodyless prepared authority after CLOSED, then lets a reopened new head and body deliver', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const nextHead = 'reopened-head';
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', body: bodyX }),
+                pullRequest({ headRefOid: nextHead, body: bodyY }),
+                pullRequest({ headRefOid: nextHead, body: bodyY }),
+            ],
+            dependentSets: [[], []],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_bodyless',
+                postMergeValidation: persistedPostMergeValidation('head', bodyX, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_bodyless',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_prepared_bodyless',
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_prepared_bodyless', 'IC_delivery_42_2']);
+        expect(calls).toContain(`merge:42:${nextHead}`);
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, nextHead, bodyY, 2373, 'successful'),
+            postMergeValidation: persistedPostMergeValidation(nextHead, bodyY, 2373),
+        });
+    });
+
+    it('fails closed when a released bodyless authority sees the same PR merged before any later OPEN delivery re-arms it', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_bodyless',
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_bodyless',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared_bodyless' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_prepared_bodyless',
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_prepared_bodyless');
+    });
+
+    it('fails closed when a bodyless prepared authority names X but its stored post-merge validation belongs to Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: bodyY,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_x',
+                postMergeValidation: {
+                    headRefOid: 'head',
+                    headRefName: 'feat/gate',
+                    baseRefName: 'main',
+                    title: 'feat(delivery): add gate',
+                    bodySha256: createHash('sha256').update(bodyY).digest('hex'),
+                    trackerTarget: 2373,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_x',
+                    body: receiptBodyX,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_x' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt changed during recovery|delivery receipt authority cannot be proven/i
+        );
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it.each([
+        ['merge-authorized', 'IC_bodyless_merge_authorized'],
+        ['terminal', 'IC_bodyless_terminal'],
+    ] as const)(
+        'fails closed when a bodyless %s authority names X but its retained post-merge validation belongs to Y',
+        (phase, receiptId) => {
+            const bodyX = relationshipBody('Closes #2372');
+            const bodyY = relationshipBody('Closes #2373');
+            const receiptBodyX = visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful');
+            const { port, calls, tracker } = fakePort({
+                primary: [
+                    pullRequest({
+                        state: 'MERGED',
+                        body: bodyY,
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                    }),
+                ],
+                dependentSets: [[]],
+                persistedReceiptAuthority: {
+                    phase,
+                    receiptId,
+                    postMergeValidation: {
+                        headRefOid: 'head',
+                        headRefName: 'feat/gate',
+                        baseRefName: 'main',
+                        title: 'feat(delivery): add gate',
+                        bodySha256: createHash('sha256').update(bodyY).digest('hex'),
+                        trackerTarget: 2373,
+                    },
+                },
+                receipts: [
+                    {
+                        id: receiptId,
+                        body: receiptBodyX,
+                        authorNodeId: AUTHOR_BOT_NODE_ID,
+                        authorLogin: 'renamed-author[bot]',
+                        authorType: 'Bot',
+                        createdAt: '2026-08-21T00:00:00Z',
+                        updatedAt: '2026-08-21T00:00:00Z',
+                    },
+                ],
+                deliveryReceiptProof: { totalCount: 1, latestCommentId: receiptId },
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during recovery/i);
+            expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+            expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+            expect(calls).not.toContain(`receipt-authority:write:terminal:${receiptId}`);
+        }
+    );
+
+    it('re-arms a released bodyful authority during a later OPEN delivery, then recovers from merged state with fresh post-merge validation', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], [], []],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_rearm_bodyful',
+                receiptBody: storedReceiptBody,
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_rearm_bodyful',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_rearm_bodyful' },
+        });
+        const originalWriteDeliveryReceiptAuthority = port.writeDeliveryReceiptAuthority;
+        let failMergeAuthorizedWrite = true;
+        port.writeDeliveryReceiptAuthority = (number, authority) => {
+            if (authority.phase === 'merge-authorized' && failMergeAuthorizedWrite) {
+                failMergeAuthorizedWrite = false;
+                throw new Error('authority persistence unavailable');
+            }
+            originalWriteDeliveryReceiptAuthority(number, authority);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_rearm_bodyful',
+            receiptBody: storedReceiptBody,
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/authority persistence unavailable/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_rearm_bodyful',
+            receiptBody: storedReceiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+        expect(calls).toContain('receipt-authority:write:prepared:IC_rearm_bodyful');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_rearm_bodyful');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_rearm_bodyful');
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_rearm_bodyful',
+            receiptBody: storedReceiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('appends a fresh visible v2 before re-arming when a released stored v2 is trailed by a legacy v1 on the reopened same head', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ state: 'CLOSED', body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+            ],
+            dependentSets: [[], []],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_released_v2',
+                receiptBody: storedReceiptBody,
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_released_v2',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_trailing_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/PR #42 is closed/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'released',
+            receiptId: 'IC_released_v2',
+            receiptBody: storedReceiptBody,
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_released_v2', 'IC_trailing_v1', 'IC_delivery_42_3']);
+        expect(receipts.at(-1)?.body).toBe(storedReceiptBody);
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_3');
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_3');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_3');
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_3',
+            receiptBody: storedReceiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('preserves bodyless prepared merged recovery when the PR is already merged', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_bodyless',
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_bodyless',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared_bodyless' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-proof:42:1:IC_prepared_bodyless');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_prepared_bodyless');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_prepared_bodyless');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('add-receipt:42');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_prepared_bodyless',
+            receiptBody: storedReceiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('preserves bodyless prepared merged recovery when the stored advisory receipt only recorded skipped evidence', () => {
+        const closes = relationshipBody('Closes #2372');
+        const storedReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'skipped');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared_skipped',
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared_skipped',
+                    body: storedReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared_skipped' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('receipt-proof:42:1:IC_prepared_skipped');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_prepared_skipped');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_prepared_skipped');
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('add-receipt:42');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_prepared_skipped',
+            receiptBody: storedReceiptBody,
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+    });
+
+    it('fails closed when prepared merged recovery only differs on receipt closingIssue versus stored trackerTarget', () => {
+        const related = relationshipBody('Related #2372');
+        const receiptBody = visibleDeliveryReceiptBody(42, 'head', related, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({
+                    state: 'MERGED',
+                    body: related,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_prepared',
+                receiptBody,
+                postMergeValidation: {
+                    ...persistedPostMergeValidation('head', related, 2372),
+                    trackerTarget: null,
+                },
+            },
+            receipts: [
+                {
+                    id: 'IC_prepared',
+                    body: receiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_prepared' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /delivery receipt changed during recovery|delivery receipt authority cannot be proven/i
+        );
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('fails closed when a bodyless current v2 authority lacks retained validation even if a newer same-key advisory receipt only changes observed CI state', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receiptA = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const receiptB = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'failed');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'terminal', receiptId: 'IC_a' },
+            receipts: [
+                {
+                    id: 'IC_a',
+                    body: receiptA,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_b',
+                    body: receiptB,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_b' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({ phase: 'terminal', receiptId: 'IC_a' });
+    });
+
+    it('fails closed when a bodyless current v2 authority points at an older same-key receipt with a conflicting admission mode', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: { phase: 'terminal', receiptId: 'IC_advisory' },
+            receipts: [
+                {
+                    id: 'IC_advisory',
+                    body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_required',
+                    body: composeDeliveryReceipt({
+                        pullRequest: 42,
+                        head: 'head',
+                        bodySha256: createHash('sha256').update(closes).digest('hex'),
+                        closingIssue: 2372,
+                        ciAdmissionMode: 'required',
+                    }),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_required' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
+    });
+
+    it('fails closed when bodyless current v2 merged recovery lacks retained validation for the newest X to Y receipt', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_y',
+                receiptBody: deliveryReceiptBody(42, 'head', bodyY, 2373),
+            },
             receipts: [
                 receipt('IC_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
                 receipt('IC_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
             ],
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('complete:2373');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('complete:2373');
         expect(calls).not.toContain('complete:2372');
     });
 
-    it('recovers a unique newer X after tied historical X and Y receipts', () => {
+    it('fails closed when bodyless current v2 merged recovery lacks retained validation for a unique newer X after tied historical X and Y receipts', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const receipt = (
@@ -1002,6 +4800,11 @@ describe('pull-request delivery', () => {
         });
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_newest_x',
+                receiptBody: deliveryReceiptBody(42, 'head', bodyX, 2372),
+            },
             receipts: [
                 receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
                 receipt('IC_historical_y', bodyY, 2373, '2026-08-21T00:00:00Z'),
@@ -1009,13 +4812,12 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('complete:2372');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('complete:2372');
         expect(calls).not.toContain('complete:2373');
     });
 
-    it('uses REST comment order to recover Y after equal-timestamp X then Y receipts', () => {
+    it('fails closed instead of using REST comment order to recover Y after equal-timestamp X then Y receipts when retained validation is unavailable', () => {
         const staleBody = relationshipBody('Closes #2372');
         const currentBody = relationshipBody('Closes #2373');
         const receipt = (id: string, body: string, closingIssue: number): DeliveryReceiptComment => ({
@@ -1029,16 +4831,91 @@ describe('pull-request delivery', () => {
         });
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            persistedReceiptAuthority: {
+                phase: 'terminal',
+                receiptId: 'IC_second',
+                receiptBody: deliveryReceiptBody(42, 'head', currentBody, 2373),
+            },
             receipts: [receipt('IC_first', staleBody, 2372), receipt('IC_second', currentBody, 2373)],
         });
 
-        deliverPullRequest(42, port, tracker);
-
-        expect(calls).toContain('complete:2373');
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('complete:2373');
         expect(calls).not.toContain('complete:2372');
     });
 
-    it('writes the immutable delivery receipt before merge and uses it after mutable-body drift', () => {
+    it('fails closed instead of trusting REST comment order alone when timestamps disagree and no persisted authority anchor remains', () => {
+        const staleBody = relationshipBody('Closes #2372');
+        const currentBody = relationshipBody('Closes #2373');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                {
+                    id: 'IC_first',
+                    body: deliveryReceiptBody(42, 'head', staleBody, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:02Z',
+                    updatedAt: '2026-08-21T00:00:02Z',
+                },
+                {
+                    id: 'IC_second',
+                    body: deliveryReceiptBody(42, 'head', currentBody, 2373),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_second' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(calls).not.toContain('receipt-proof:42:2:IC_second');
+        expect(calls).not.toContain('receipt-authority:write:merge-authorized:IC_second');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_second');
+        expect(calls).not.toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+    });
+
+    it('refuses to replace merge-authorized authority with a different stale open receipt id', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentReceiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'merge-authorized',
+                receiptId: 'IC_authorized_r1',
+                receiptBody: currentReceiptBody,
+            },
+            receipts: [
+                {
+                    id: 'IC_stale_open_r2',
+                    body: currentReceiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_stale_open_r2' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt changed during delivery/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'merge-authorized',
+            receiptId: 'IC_authorized_r1',
+            receiptBody: currentReceiptBody,
+        });
+    });
+
+    it('writes the immutable delivery receipt before merge and then fails closed after mutable-body drift on merged recovery', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
         const { port, calls, tracker } = fakePort({
@@ -1064,13 +4941,259 @@ describe('pull-request delivery', () => {
         );
         expect(calls).toContain('merge:42:head');
         expect(calls.indexOf('add-receipt:42')).toBeLessThan(calls.indexOf('merge:42:head'));
+        expect(calls.indexOf('receipt-authority:write:prepared:IC_delivery_42_1')).toBeLessThan(
+            calls.indexOf('merge:42:head')
+        );
+        expect(calls.indexOf('merge:42:head')).toBeLessThan(
+            calls.indexOf('receipt-authority:write:merge-authorized:IC_delivery_42_1')
+        );
+        expect(calls.indexOf('receipt-authority:write:merge-authorized:IC_delivery_42_1')).toBeLessThan(
+            calls.indexOf('complete:2372')
+        );
         expect(calls).not.toContainEqual(expect.stringMatching(/delivered|success/i));
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'receipt-authority:write:terminal:IC_delivery_42_1')).toHaveLength(0);
+    });
+
+    it('does not downgrade merge-authorized authority during a same-receipt open retry before late merged recovery', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+            ],
+            reviewStates: [
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 },
+                { latestReviewerStateOnHead: 'CHANGES_REQUESTED', unresolvedThreads: 0 },
+            ],
+            dependentSets: [[], [], [], []],
+        });
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/tracker unavailable/i);
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_1');
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not approved/i);
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_delivery_42_1');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
         expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('publishes one current v2 receipt, then fails closed on retry instead of reusing it after merged body drift', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            dependentSets: [[], []],
+            receipts: [
+                {
+                    id: 'IC_legacy_v1',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+        let failOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failOnce) {
+                failOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/body changed during delivery/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(1);
+    });
+
+    it('reuses a stable current visible v2 receipt when proof shows the historical authority is complete and current', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentReceipt = {
+            id: 'IC_current_visible_v2',
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            receipts: [currentReceipt],
+            deliveryReceiptProof: { totalCount: 1, latestCommentId: 'IC_current_visible_v2' },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it('appends a new current receipt instead of reusing a stale X when proof shows a hidden newer Y', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: bodyX }), pullRequest({ body: bodyX })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00.000Z'),
+                receipt('IC_hidden_y', bodyY, 2373, '2026-08-21T00:00:01.000Z'),
+            ],
+        });
+        let receiptReads = 0;
+        const originalDeliveryReceipts = port.deliveryReceipts;
+        port.deliveryReceipts = (number) => {
+            receiptReads += 1;
+            calls.push(`receipts:${number}`);
+            if (receiptReads <= 2) {
+                return structuredClone(receipts.slice(0, 1));
+            }
+            return originalDeliveryReceipts(number);
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.at(-1)?.id).toBe('IC_delivery_42_3');
+        expect(receipts.at(-1)?.body).toBe(visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'));
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+    });
+
+    it('fails safely when proof never establishes a complete current authority for an open historical receipt', () => {
+        const closes = relationshipBody('Closes #2372');
+        const currentReceipt = {
+            id: 'IC_current_visible_v2',
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            receipts: [currentReceipt],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts.slice(0, 1));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+    });
+
+    it('keeps a returned receipt id across repeated proof failures so retries never post a second copy', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+            ],
+            dependentSets: [[], []],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+    });
+
+    it('fails closed when a proof-failed bodyful prepared authority later sees the PR already merged', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, receipts, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts.slice(0, 1));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
     });
 
     it('ignores foreign comments before parsing delivery receipts', () => {
@@ -1159,7 +5282,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
-    it('rejects adjacent byte-identical receipt payloads instead of choosing authority', () => {
+    it('accepts adjacent byte-identical receipt payloads and chooses the newest authority', () => {
         const closes = relationshipBody('Closes #2372');
         const receipt = {
             id: 'IC_delivery_42',
@@ -1183,8 +5306,350 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/duplicate delivery receipts/);
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+    });
+
+    it('accepts adjacent legacy and visible receipts carrying the same immutable delivery identity', () => {
+        const closes = relationshipBody('Closes #2372');
+        const legacyReceipt = {
+            id: 'IC_delivery_42_v1',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const visibleReceipt = {
+            ...legacyReceipt,
+            id: 'IC_delivery_42_v2',
+            body: composeDeliveryReceipt({
+                pullRequest: 42,
+                head: 'head',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                closingIssue: 2372,
+                ciAdmissionMode: 'advisory',
+                observedCiState: 'successful',
+            }),
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:01Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [legacyReceipt, visibleReceipt],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+    });
+
+    it('posts a fresh current v2 receipt when the newest same-key v2 state no longer exactly matches the expected state', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = (
+            id: string,
+            observedCiState: 'successful' | 'failed',
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, observedCiState),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[]],
+            receipts: [
+                receipt('IC_delivery_42_v2_success', 'successful', '2026-08-21T00:00:00Z'),
+                receipt('IC_delivery_42_v2_failed', 'failed', '2026-08-21T00:00:01Z'),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts.map(({ id }) => id)).toEqual([
+            'IC_delivery_42_v2_success',
+            'IC_delivery_42_v2_failed',
+            'IC_delivery_42_3',
+        ]);
+        expect(receipts[2]?.body).toBe(visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'));
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it('appends current v2 authority after mixed failed v2 and trailing v1 lineage', () => {
+        const closes = relationshipBody('Closes #2372');
+        const failedVisibleReceipt = {
+            id: 'IC_delivery_42_v2_failed',
+            body: composeDeliveryReceipt({
+                pullRequest: 42,
+                head: 'head',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                closingIssue: 2372,
+                ciAdmissionMode: 'advisory',
+                observedCiState: 'failed',
+            }),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const trailingLegacyReceipt = {
+            id: 'IC_delivery_42_v1_trailing',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:01Z',
+            updatedAt: '2026-08-21T00:00:01Z',
+        };
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [failedVisibleReceipt, trailingLegacyReceipt],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+    });
+
+    it('appends a successful advisory retry after a failed observation for the same immutable delivery key', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = (id: string, observedCiState: 'successful' | 'failed'): DeliveryReceiptComment => ({
+            id,
+            body: visibleDeliveryReceiptBody(42, 'head', closes, 2372, observedCiState),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [receipt('IC_failed', 'failed')],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+    });
+
+    it('reuses a frozen successful advisory receipt across a later failed observation without posting a replacement', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
+            ],
+            dependentSets: [[]],
+            persistedReceiptAuthority: {
+                phase: 'prepared',
+                receiptId: 'IC_frozen_success',
+                receiptBody,
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            receipts: [
+                {
+                    id: 'IC_frozen_success',
+                    body: receiptBody,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(0);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_frozen_success');
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it('rejects same-key v2 receipts that disagree on admission mode', () => {
+        const closes = relationshipBody('Closes #2372');
+        const receipt = (id: string, body: string): DeliveryReceiptComment => ({
+            id,
+            body,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [
+                receipt(
+                    'IC_required',
+                    composeDeliveryReceipt({
+                        pullRequest: 42,
+                        head: 'head',
+                        bodySha256: createHash('sha256').update(closes).digest('hex'),
+                        closingIssue: 2372,
+                        ciAdmissionMode: 'required',
+                    })
+                ),
+                receipt('IC_advisory', visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful')),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/invalid delivery receipt lineage|duplicate/);
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rethrows a failed receipt POST when no new receipt ID appeared after stale pre-reads hid newer authority', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (id: string, body: string, createdAt: string): DeliveryReceiptComment => ({
+            id,
+            body,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: bodyX }), pullRequest({ body: bodyX })],
+            receipts: [
+                receipt(
+                    'IC_preexisting_v2_x',
+                    visibleDeliveryReceiptBody(42, 'head', bodyX, 2372, 'successful'),
+                    '2026-08-21T00:00:00Z'
+                ),
+                receipt(
+                    'IC_hidden_y',
+                    visibleDeliveryReceiptBody(42, 'head', bodyY, 2373, 'successful'),
+                    '2026-08-21T00:00:01Z'
+                ),
+            ],
+        });
+        let receiptReadCount = 0;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            receiptReadCount += 1;
+            if (receiptReadCount <= 2) {
+                return structuredClone(receipts.slice(0, 1));
+            }
+            return structuredClone(receipts);
+        };
+        port.addDeliveryReceipt = (number, _body) => {
+            calls.push(`add-receipt:${number}`);
+            throw new Error('delivery receipt post failed before write');
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt post failed before write/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'complete:2373')).toHaveLength(0);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_preexisting_v2_x', 'IC_hidden_y']);
+    });
+
+    it('converges stale retry receipts and finishes already-merged recovery without deleting either comment', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker, receipts } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes }), pullRequest({ body: closes })],
+            dependentSets: [[child], [child], [child], []],
+        });
+        const addReceipt = port.addDeliveryReceipt;
+        let loseFirstResponse = true;
+        port.addDeliveryReceipt = (number, body) => {
+            const receipt = addReceipt(number, body);
+            if (loseFirstResponse) {
+                loseFirstResponse = false;
+                throw new Error('delivery receipt response was lost');
+            }
+            return receipt;
+        };
+        let receiptReadCount = 0;
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            receiptReadCount += 1;
+            if (receiptReadCount <= 3) {
+                return [];
+            }
+            return structuredClone(receipts);
+        };
+        let failTrackerOnce = true;
+        tracker.complete = (issueNumber) => {
+            calls.push(`complete:${issueNumber}`);
+            if (failTrackerOnce) {
+                failTrackerOnce = false;
+                throw new Error('tracker unavailable');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt response was lost/);
+        expect(receipts).toHaveLength(1);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(
+            /PR #42.*merged.*issue #2372.*tracker unavailable/i
+        );
+        expect(receipts).toHaveLength(2);
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(calls).toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(receipts.map((receipt) => receipt.id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(receipts[0]?.body).toBe(receipts[1]?.body);
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+    });
+
+    it('posts and persists a current-body v2 receipt instead of reusing a stale body-digest receipt on the same head and issue', () => {
+        const staleBody = relationshipBody('Closes #2372\nOld note.');
+        const currentBody = relationshipBody('Closes #2372\nCurrent note.');
+        const staleDigestReceipt = {
+            id: 'IC_stale_digest',
+            body: composeDeliveryReceipt({
+                pullRequest: 42,
+                head: 'head',
+                bodySha256: createHash('sha256').update(staleBody).digest('hex'),
+                closingIssue: 2372,
+                ciAdmissionMode: 'advisory',
+                observedCiState: 'successful',
+            }),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        };
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [pullRequest({ body: currentBody }), pullRequest({ body: currentBody })],
+            dependentSets: [[]],
+            receipts: [staleDigestReceipt],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_2');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_2');
+        expect(receipts[1]?.body).toBe(visibleDeliveryReceiptBody(42, 'head', currentBody, 2372, 'successful'));
     });
 
     it('recovers a lost add-comment response from the unique newest canonical receipt', () => {
@@ -1442,26 +5907,383 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'CLEAN' },
-        { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
-        { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
-        { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'cancelled', mergeStateStatus: 'UNSTABLE' },
-        { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
-        { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
-    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus }) => {
-        const forbiddenCiRead = new Error('advisory delivery must not read CI evidence');
+        { ciState: 'successful', mergeStateStatus: 'UNSTABLE', headCheckRuns: [checkRun()] },
+        { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
+        {
+            ciState: 'pending',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+        },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', headCheckRuns: [] as HeadCheckRun[] },
+        {
+            ciState: 'skipped',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' })],
+        },
+        {
+            ciState: 'cancelled',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
+        },
+        { ciState: 'unstable', mergeStateStatus: 'CLEAN', headCheckRuns: supersededRunCheckRuns() },
+        {
+            ciState: 'malformed',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: null })],
+        },
+        { ciState: 'unavailable', mergeStateStatus: 'CLEAN', headCheckRuns: new Error('check rollup offline') },
+    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus, headCheckRuns }) => {
+        const forbiddenGateRead = new Error('advisory delivery must not read gated workflow evidence');
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
-            gateRequiredCheckNames: forbiddenCiRead,
-            headCheckRuns: forbiddenCiRead,
+            gateRequiredCheckNames: forbiddenGateRead,
+            headCheckRuns,
         });
 
         deliverPullRequest(42, port);
 
         expect(calls).toContain('merge:42:head');
         expect(calls).not.toContain('gate-required-check-names');
-        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('checks:'))).not.toEqual([]);
+    });
+
+    it('refuses a BLOCKED head before any remote write, naming the pending required check, and releases the lock', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            // The lock module only retains the ref once `markRemoteMutationAttempt` has fired; its
+            // absence here is what proves the refusal happened before any remote mutation.
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: 'SUCCESS' })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            requiredStatusCheckContexts: new Error('ruleset endpoint offline'),
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(
+            'PR #42 merge state is BLOCKED and the required checks could not be listed'
+        );
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('merges an UNSTABLE head with a failed advisory Gate check, because CI admission stays advisory outside BLOCKED', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [checkRun({ conclusion: 'FAILURE' })],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('add-receipt:42');
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it.each([
+        { ciState: 'successful', mergeStateStatus: 'UNSTABLE', headCheckRuns: [checkRun()] },
+        { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
+        {
+            ciState: 'pending',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+        },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', headCheckRuns: [] as HeadCheckRun[] },
+        {
+            ciState: 'skipped',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' })],
+        },
+        {
+            ciState: 'cancelled',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()],
+        },
+        { ciState: 'unstable', mergeStateStatus: 'CLEAN', headCheckRuns: supersededRunCheckRuns() },
+        {
+            ciState: 'malformed',
+            mergeStateStatus: 'CLEAN',
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: null })],
+        },
+        { ciState: 'unavailable', mergeStateStatus: 'CLEAN', headCheckRuns: new Error('check rollup offline') },
+    ])(
+        'writes advisory delivery receipts with the normalized $ciState CI state from head-check evidence',
+        ({ ciState, mergeStateStatus, headCheckRuns }) => {
+            const { port, receipts } = fakePort({
+                primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
+                headCheckRuns,
+            });
+
+            deliverPullRequest(42, port);
+
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.body).toContain('Delivery receipt for PR #42.');
+            expect(receipts[0]?.body).toContain('- CI admission: advisory');
+            expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
+        }
+    );
+
+    it.each([
+        {
+            headCheckRuns: [
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: '', status: 'COMPLETED', conclusion: 'SUCCESS' }),
+            ],
+        },
+    ] satisfies Array<{ headCheckRuns: HeadCheckRun[] }>)(
+        'writes malformed advisory evidence for the same mixed pending, failed, and malformed head in any order %#',
+        ({ headCheckRuns }) => {
+            const { port, receipts } = fakePort({
+                primary: [pullRequest(), pullRequest()],
+                headCheckRuns,
+            });
+
+            deliverPullRequest(42, port);
+
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.body).toContain('- Observed CI state: malformed');
+        }
+    );
+
+    it.each([
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+            ],
+        },
+        {
+            headCheckRuns: [
+                checkRun({ name: 'Unit suite 1/4', conclusion: 'FAILURE' }),
+                checkRun({ name: 'Lint', status: 'IN_PROGRESS', conclusion: null }),
+            ],
+        },
+    ] satisfies Array<{ headCheckRuns: HeadCheckRun[] }>)(
+        'writes failed advisory evidence for the same mixed pending and failed head in any order %#',
+        ({ headCheckRuns }) => {
+            const { port, receipts } = fakePort({
+                primary: [pullRequest(), pullRequest()],
+                headCheckRuns,
+            });
+
+            deliverPullRequest(42, port);
+
+            expect(receipts).toHaveLength(1);
+            expect(receipts[0]?.body).toContain('- Observed CI state: failed');
+        }
+    );
+
+    it('restores required-CI authority after a final unreadable rollup so a changed receipt body can deliver on retry', () => {
+        const closesX = relationshipBody('Closes #2372');
+        const closesY = relationshipBody('Closes #2373');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ body: closesX, mergeStateStatus: 'CLEAN' }),
+                pullRequest({ body: closesX, mergeStateStatus: 'UNSTABLE' }),
+                pullRequest({ body: closesY, mergeStateStatus: 'CLEAN' }),
+                pullRequest({ body: closesY, mergeStateStatus: 'CLEAN' }),
+            ],
+            dependentSets: [[], []],
+            headCheckRunReads: [new Error('PR #42 check rollup is unreadable')],
+        });
+
+        expect(() => deliverPullRequestWithRequiredCi(42, port, tracker)).toThrow(/check rollup is unreadable/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: requiredDeliveryReceiptBody(42, 'head', closesX, 2372),
+        });
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+
+        deliverPullRequestWithRequiredCi(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1', 'IC_delivery_42_2']);
+        expect(receipts[1]?.body).toBe(requiredDeliveryReceiptBody(42, 'head', closesY, 2373));
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('complete:2372');
+        expect(calls).toContain('complete:2373');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: requiredDeliveryReceiptBody(42, 'head', closesY, 2373),
+            postMergeValidation: persistedPostMergeValidation('head', closesY, 2373),
+        });
+    });
+
+    it.each([
+        { finalMergeStateStatus: 'UNSTABLE', observedCiState: 'unstable' },
+        { finalMergeStateStatus: 'DIRTY', observedCiState: 'failed' },
+    ] satisfies Array<{
+        finalMergeStateStatus: 'UNSTABLE' | 'DIRTY';
+        observedCiState: 'unstable' | 'failed';
+    }>)(
+        'replaces the staged advisory receipt when the final same-head snapshot drifts to $finalMergeStateStatus',
+        ({ finalMergeStateStatus, observedCiState }) => {
+            const closes = relationshipBody('Closes #2372');
+            const finalHeadCheckRuns =
+                finalMergeStateStatus === 'UNSTABLE'
+                    ? supersededRunCheckRuns()
+                    : ([checkRun({ conclusion: 'FAILURE' })] satisfies HeadCheckRun[]);
+            const { port, calls, receipts, persistedReceiptAuthority, tracker } = fakePort({
+                primary: [
+                    pullRequest({ body: closes, mergeStateStatus: 'CLEAN' }),
+                    pullRequest({ body: closes, mergeStateStatus: finalMergeStateStatus }),
+                ],
+                dependentSets: [[], []],
+                headCheckRunReads: [[checkRun()], finalHeadCheckRuns],
+            });
+
+            deliverPullRequest(42, port, tracker);
+
+            expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+            expect(calls.lastIndexOf('add-receipt:42')).toBeLessThan(calls.indexOf('merge:42:head'));
+            expect(receipts.map((receipt) => receipt.body)).toEqual([
+                visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                visibleDeliveryReceiptBody(42, 'head', closes, 2372, observedCiState),
+            ]);
+            expect(persistedReceiptAuthority()).toEqual({
+                phase: 'terminal',
+                receiptId: 'IC_delivery_42_2',
+                receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, observedCiState),
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            });
+        }
+    );
+
+    it('recovers the replacement advisory receipt after a final CI-drift restaging merge response is lost, without posting a third receipt', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, receipts, persistedReceiptAuthority, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes, mergeStateStatus: 'CLEAN' }),
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
+            ],
+            dependentSets: [[], []],
+            headCheckRunReads: [[checkRun()], supersededRunCheckRuns()],
+        });
+        const originalMerge = port.merge;
+        let failMergeOnce = true;
+        port.merge = (number, head, hasDependents) => {
+            originalMerge(number, head, hasDependents);
+            if (failMergeOnce) {
+                failMergeOnce = false;
+                throw new Error('merge response lost');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/merge response lost/i);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'unstable'),
+        ]);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'unstable'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
+        expect(calls).not.toContain('complete:2372');
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(calls).toContain('receipt-authority:read:prepared:IC_delivery_42_2');
+        expect(calls).toContain('receipt-authority:write:merge-authorized:IC_delivery_42_2');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_2');
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_2',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'unstable'),
+            postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+        });
     });
 
     it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(
@@ -1862,6 +6684,87 @@ describe('pull-request delivery', () => {
     });
 
     /**
+     * The promotion issue #2924 anticipates: `unit` joins the gate's `needs`, and GitHub reports one
+     * check per shard under the substituted name. The literal name this gate used to derive matched
+     * none of those four, so a shard cancelled with no success beside it merged with no verdict.
+     */
+    const unitMatrixWorkflow = [
+        'name: Health gates',
+        'jobs:',
+        '  unit:',
+        '    name: Unit suite ${{ matrix.shard }}/4',
+        '    strategy:',
+        '      matrix:',
+        '        shard: [1, 2, 3, 4]',
+        '  gate:',
+        '    name: Gate',
+        '    needs: unit',
+    ].join('\n');
+
+    function passingUnitShards(shards: number[]): HeadCheckRun[] {
+        return shards.map((shard) => checkRun({ name: `Unit suite ${shard}/4`, startedAt: REVIEW_RUN_START }));
+    }
+
+    it('refuses a head whose one matrix shard was cancelled and never succeeded', async () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...passingUnitShards([1, 2, 3]),
+                checkRun({ name: 'Unit suite 4/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Unit suite 4/4 was cancelled and never succeeded on head'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('merges a head carrying a success under every matrix shard name', async () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...passingUnitShards([1, 2, 3, 4]),
+                checkRun({ name: 'Unit suite 4/4', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+                checkRun(),
+            ],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * Absence is tolerated, and this pins that rather than endorsing it: the rule keys on a name
+     * cancelled with no success beside it, so a required shard that never reported at all leaves
+     * the head with no verdict for that shard and merges anyway.
+     */
+    it('merges a head from which a required matrix shard name is absent altogether', async () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [...passingUnitShards([1, 2, 3]), checkRun()],
+            gateRequiredCheckNames: await gatingNamesFor(unitMatrixWorkflow),
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
      * The rule keys on a cancellation, not on the absence of a success: a job the workflow simply
      * never ran on this head has nothing to supersede and nothing to prove.
      */
@@ -1969,7 +6872,7 @@ describe('pull-request delivery', () => {
 
         expect(calls.filter((call) => call === 'retarget:44:main')).toHaveLength(2);
         expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
-        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual(['checks:42:head', 'checks:42:head']);
     });
 
     it.each([
@@ -2225,10 +7128,11 @@ describe('gating check names', () => {
 
     /**
      * `unit` and `e2e` are one line away from joining the gate, and GitHub reports one check per
-     * shard with the expression substituted. The declared name matches none of them, so promoting
-     * such a job silently adds an entry that can never fire. Recorded as issue #2924.
+     * shard with the expression substituted. The gating set is those four names and nothing else:
+     * a name too many matches nothing on the head and tolerates the cancellation it was added to
+     * catch, so the whole set is asserted rather than its membership. Recorded as issue #2924.
      */
-    it('refuses a matrix job promoted into the gate rather than gating on a name GitHub never reports', async () => {
+    it('expands a matrix job into the check name GitHub reports for each shard', async () => {
         const unit = [
             '  unit:',
             '    name: Unit suite ${{ matrix.shard }}/4',
@@ -2237,9 +7141,126 @@ describe('gating check names', () => {
             '        shard: [1, 2, 3, 4]',
         ].join('\n');
 
-        expect(await refusalFor(workflow(unit, gateNeeding('unit')))).toBe(
-            `Error: the unit job in ${WORKFLOW_PATH} names its check Unit suite \${{ matrix.shard }}/4, ` +
-                'which GitHub substitutes per matrix job before reporting it'
+        const names = await gatingNamesFor(workflow(unit, gateNeeding('unit')));
+
+        expect(names).toEqual(new Set(['Unit suite 1/4', 'Unit suite 2/4', 'Unit suite 3/4', 'Unit suite 4/4']));
+        expect(names.size).toBe(4);
+    });
+
+    /** An excluded combination is a job GitHub never runs, so no check ever reports under its name. */
+    it('leaves an excluded combination out of the gating set', async () => {
+        const test = [
+            '  test:',
+            '    name: Test ${{ matrix.os }} ${{matrix.node}}',
+            '    strategy:',
+            '      matrix:',
+            '        os: [ubuntu, macos]',
+            '        node: [20, 22]',
+            '        exclude:',
+            '          - os: macos',
+            '            node: 20',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(test, gateNeeding('test')))).toEqual(
+            new Set(['Test ubuntu 20', 'Test ubuntu 22', 'Test macos 22'])
+        );
+    });
+
+    /**
+     * An include entry naming an axis value the matrix never declared is a job of its own, so the
+     * gate owes it a name.
+     */
+    it('adds a combination for an include entry naming an axis value the matrix does not declare', async () => {
+        const build = [
+            '  build:',
+            '    name: Build ${{ matrix.os }}',
+            '    strategy:',
+            '      matrix:',
+            '        os: [ubuntu]',
+            '        include:',
+            '          - os: windows',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(build, gateNeeding('build')))).toEqual(
+            new Set(['Build ubuntu', 'Build windows'])
+        );
+    });
+
+    /**
+     * An include entry that matches a combination adds its keys to that job rather than adding a
+     * job, so the set stays the size the axes produced.
+     */
+    it('adds keys rather than a combination for an include entry a declared combination matches', async () => {
+        const build = [
+            '  build:',
+            '    name: Build ${{ matrix.os }}',
+            '    strategy:',
+            '      matrix:',
+            '        os: [ubuntu, macos]',
+            '        include:',
+            '          - os: ubuntu',
+            '            experimental: true',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(build, gateNeeding('build')))).toEqual(
+            new Set(['Build ubuntu', 'Build macos'])
+        );
+    });
+
+    /**
+     * The first three include entries of the example on GitHub's "Running variations of jobs in a
+     * workflow": an entry with no axis key reaches every combination, a later entry overwrites what
+     * an earlier one added, and an axis key filters which combinations an entry reaches.
+     */
+    it('applies the documented include entries to the combinations their axis keys match', async () => {
+        const example = [
+            '  example:',
+            '    name: Example ${{ matrix.fruit }} ${{ matrix.animal }} ${{ matrix.color }}',
+            '    strategy:',
+            '      matrix:',
+            '        fruit: [apple, pear]',
+            '        animal: [cat, dog]',
+            '        include:',
+            '          - color: green',
+            '          - color: pink',
+            '            animal: cat',
+            '          - fruit: apple',
+            '            shape: circle',
+        ].join('\n');
+
+        expect(await gatingNamesFor(workflow(example, gateNeeding('example')))).toEqual(
+            new Set([
+                'Example apple cat pink',
+                'Example apple dog green',
+                'Example pear cat pink',
+                'Example pear dog green',
+            ])
+        );
+    });
+
+    /**
+     * The last two include entries of that same example. `banana` matches no combination the axes
+     * produced, so each entry is a job of its own and the second never merges into the first — which
+     * is observable here as two jobs reporting under one name. Merging them would leave two distinct
+     * names and no refusal at all.
+     */
+    it('keeps two include entries naming an undeclared axis value as two matrix jobs', async () => {
+        const example = [
+            '  example:',
+            '    name: Example ${{ matrix.fruit }}',
+            '    strategy:',
+            '      matrix:',
+            '        fruit: [apple]',
+            '        animal: [cat]',
+            '        include:',
+            '          - fruit: banana',
+            '          - fruit: banana',
+            '            animal: cat',
+        ].join('\n');
+
+        expect(await refusalFor(workflow(example, gateNeeding('example')))).toBe(
+            `Error: the example job in ${WORKFLOW_PATH} gives more than one matrix job the check name ` +
+                'Example banana, which GitHub reports as one check name this gate cannot tell apart'
         );
     });
 
@@ -2296,6 +7317,225 @@ describe('gating check names', () => {
             message:
                 `Error: the lint job in ${WORKFLOW_PATH} declares a name that is not text, ` +
                 'which cannot be the name GitHub reports',
+        },
+        {
+            label: 'a gated job whose matrix GitHub builds at run time',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares its matrix as the expression ` +
+                '${{ fromJSON(needs.plan.outputs.matrix) }}, so the names GitHub reports for its jobs ' +
+                'cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix is not a mapping of variations',
+            source: workflow(
+                ['  shard:', '    name: Suite', '    strategy:', '      matrix: [1, 2]'].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares its matrix as something other than ` +
+                'a mapping of variations, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose strategy is not a mapping',
+            source: workflow(['  shard:', '    name: Suite', '    strategy: 4'].join('\n'), gateNeeding('shard')),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares a strategy that is not a mapping, ` +
+                'so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix axis is not a list of plain values',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard:',
+                    '          from: 1',
+                    '          to: 4',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares matrix shard as something other than ` +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix axis value is itself an expression',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: ["${{ github.run_id }}"]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares matrix shard as something other than ` +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose include is not a list of variations',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                    '        include: 7',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares matrix include as something other than ` +
+                'a list of plain values, so the names GitHub reports for its jobs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job excluding a matrix key it does not declare',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1, 2]',
+                    '        exclude:',
+                    '          - os: macos',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} excludes matrix os, which its matrix does not declare, ` +
+                'so which jobs GitHub runs cannot be derived from the workflow',
+        },
+        {
+            label: 'a gated job whose matrix excludes every combination it declares',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                    '        exclude:',
+                    '          - shard: 1',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} declares a matrix that runs no job, ` +
+                'so no check of that job can be proven to gate the merge',
+        },
+        {
+            label: 'a gated matrix job whose name carries an expression that is not a matrix value',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}/${{ github.run_id }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} names its check ` +
+                'Suite ${{ matrix.shard }}/${{ github.run_id }}, ' +
+                'which GitHub substitutes per matrix job before reporting it',
+        },
+        {
+            label: 'a gated matrix job naming a matrix key its matrix does not declare',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.missing }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} names its check with matrix.missing, ` +
+                'which its matrix does not declare for every job it runs',
+        },
+        {
+            label: 'a gated matrix job whose name distinguishes no shard',
+            source: workflow(
+                ['  shard:', '    name: Unit', '    strategy:', '      matrix:', '        shard: [1, 2]'].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} gives more than one matrix job the check name Unit, ` +
+                'which GitHub reports as one check name this gate cannot tell apart',
+        },
+        {
+            label: 'a gated matrix job that declares no name',
+            source: workflow(
+                ['  target:', '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose name is declared empty',
+            source: workflow(
+                ['  target:', "    name: ''", '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose name is declared null',
+            source: workflow(
+                ['  target:', '    name: ~', '    strategy:', '      matrix:', '        os: [ubuntu]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job running several combinations under no name',
+            source: workflow(
+                ['  target:', '    strategy:', '      matrix:', '        os: [ubuntu, macos]'].join('\n'),
+                gateNeeding('target')
+            ),
+            message:
+                `Error: the target job in ${WORKFLOW_PATH} declares a matrix and no name, ` +
+                'so GitHub labels its checks with values this gate does not render',
+        },
+        {
+            label: 'a gated matrix job whose shards render one name',
+            source: workflow(
+                [
+                    '  shard:',
+                    '    name: Suite ${{ matrix.shard }}',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1, "1"]',
+                ].join('\n'),
+                gateNeeding('shard')
+            ),
+            message:
+                `Error: the shard job in ${WORKFLOW_PATH} gives more than one matrix job the check name Suite 1, ` +
+                'which GitHub reports as one check name this gate cannot tell apart',
         },
     ])('refuses $label', async ({ source, message }) => {
         expect(await refusalFor(source)).toBe(message);
@@ -2424,6 +7664,29 @@ describe('delivery CLI', () => {
         expect(parseCliArgs(['42'])).toEqual({ number: 42, help: false });
     });
 
+    it('parses the exact retained-lock recovery route', () => {
+        expect(parseCliArgs(['--recover-lock', '3344', '--owner', '9f9c875746e69d6282e4233b32dfb1d07f418724'])).toEqual(
+            {
+                help: false,
+                recoverLockArgs: ['3344', '--owner', '9f9c875746e69d6282e4233b32dfb1d07f418724'],
+            }
+        );
+    });
+
+    it('prints both supported top-level delivery forms', async () => {
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        await expect(runDeliverCli(['--help'])).resolves.toBe(0);
+
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+            [
+                'Usage:',
+                '  pnpm deliver <pr-number>',
+                '  pnpm deliver --recover-lock <pr-number> --owner <owner-oid>',
+            ].join('\n')
+        );
+    });
+
     it.each([
         [['42', '--unknown'], /unknown option/],
         [['0'], /usage/],
@@ -2473,6 +7736,7 @@ describe('delivery shell boundary', () => {
                 nodes: [
                     {
                         __typename: 'CheckRun',
+                        id: 'CR_1',
                         name: 'Gate',
                         status: 'COMPLETED',
                         conclusion: 'SUCCESS',
@@ -2480,6 +7744,7 @@ describe('delivery shell boundary', () => {
                     },
                     {
                         __typename: 'CheckRun',
+                        id: 'CR_2',
                         name: 'Lint',
                         status: 'COMPLETED',
                         conclusion: 'CANCELLED',
@@ -2487,6 +7752,7 @@ describe('delivery shell boundary', () => {
                     },
                     {
                         __typename: 'CheckRun',
+                        id: 'CR_3',
                         name: 'End-to-end 1/12',
                         status: 'IN_PROGRESS',
                         conclusion: '',
@@ -2494,11 +7760,18 @@ describe('delivery shell boundary', () => {
                     },
                     {
                         __typename: 'StatusContext',
+                        id: 'SC_1',
                         context: 'coverage/external',
                         state: 'FAILURE',
                         createdAt: PUSH_RUN_START,
                     },
-                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING', createdAt: null },
+                    {
+                        __typename: 'StatusContext',
+                        id: 'SC_2',
+                        context: 'deploy/preview',
+                        state: 'PENDING',
+                        createdAt: null,
+                    },
                 ],
             },
         ]);
@@ -2527,8 +7800,8 @@ describe('delivery shell boundary', () => {
         port.headCheckRuns(42, 'head');
 
         const query = rollupCaptures(captures)[0] ?? '';
-        expect(query).toContain('on CheckRun{name status conclusion startedAt}');
-        expect(query).toContain('on StatusContext{context state createdAt}');
+        expect(query).toContain('on CheckRun{id name status conclusion startedAt}');
+        expect(query).toContain('on StatusContext{id context state createdAt}');
     });
 
     /**
@@ -2601,19 +7874,31 @@ describe('delivery shell boundary', () => {
 
     it('preserves paginated REST issue-comment response order for receipt authority', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
-        const comment = (id: string, receiptBody: string) => ({
+        const comment = (id: string, receiptBody: string, createdAt: string) => ({
             node_id: id,
             body: receiptBody,
             user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-            created_at: '2026-08-21T00:00:00Z',
-            updated_at: '2026-08-21T00:00:00Z',
+            created_at: createdAt,
+            updated_at: createdAt,
         });
         const port = shellPort('jcosta33/sourdaw', {
             capture: (command, args) => {
                 captures.push({ command, args });
                 return JSON.stringify([
-                    [comment('IC_x', deliveryReceiptBody(42, 'head', relationshipBody('Closes #2372'), 2372))],
-                    [comment('IC_y', deliveryReceiptBody(42, 'head', relationshipBody('Closes #2373'), 2373))],
+                    [
+                        comment(
+                            'IC_x',
+                            deliveryReceiptBody(42, 'head', relationshipBody('Closes #2372'), 2372),
+                            '2026-08-21T00:00:01Z'
+                        ),
+                    ],
+                    [
+                        comment(
+                            'IC_y',
+                            deliveryReceiptBody(42, 'head', relationshipBody('Closes #2373'), 2373),
+                            '2026-08-21T00:00:00Z'
+                        ),
+                    ],
                 ]);
             },
             run: () => undefined,
@@ -2626,6 +7911,484 @@ describe('delivery shell boundary', () => {
             '--slurp',
             'repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
         ]);
+    });
+
+    it('reads complete shellPort receipt comments in ascending issue-comment order and proves the full immutable sequence with GraphQL', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const comment = (
+            id: string,
+            receiptBody: string,
+            author: { nodeId: string | null; login: string; type: string }
+        ) => ({
+            node_id: id,
+            body: receiptBody,
+            user: { node_id: author.nodeId, login: author.login, type: author.type },
+            created_at: '2026-08-21T00:00:00Z',
+            updated_at: '2026-08-21T00:00:00Z',
+        });
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                captures.push({ command: 'gh', args });
+                const joined = args.join(' ');
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [
+                            comment('IC_author_note', 'ordinary note', {
+                                nodeId: AUTHOR_BOT_NODE_ID,
+                                login: 'renamed-author[bot]',
+                                type: 'Bot',
+                            }),
+                            comment(
+                                'IC_foreign_copy',
+                                deliveryReceiptBody(42, 'head', relationshipBody('Closes #2372'), 2372),
+                                {
+                                    nodeId: null,
+                                    login: 'jcosta33',
+                                    type: 'User',
+                                }
+                            ),
+                        ],
+                        [
+                            comment(
+                                'IC_receipt_older',
+                                visibleDeliveryReceiptBody(
+                                    42,
+                                    'head',
+                                    relationshipBody('Closes #2372'),
+                                    2372,
+                                    'successful'
+                                ),
+                                {
+                                    nodeId: AUTHOR_BOT_NODE_ID,
+                                    login: 'renamed-author[bot]',
+                                    type: 'Bot',
+                                }
+                            ),
+                            comment(
+                                'IC_receipt_newest',
+                                visibleDeliveryReceiptBody(
+                                    42,
+                                    'head',
+                                    relationshipBody('Closes #2373'),
+                                    2373,
+                                    'successful'
+                                ),
+                                {
+                                    nodeId: AUTHOR_BOT_NODE_ID,
+                                    login: 'renamed-author[bot]',
+                                    type: 'Bot',
+                                }
+                            ),
+                        ],
+                    ]);
+                }
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    return shellDeliveryReceiptProofResponse([
+                        'IC_author_note',
+                        'IC_foreign_copy',
+                        'IC_receipt_older',
+                        'IC_receipt_newest',
+                    ]);
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceipts(42).map(({ id }) => id)).toEqual([
+            'IC_author_note',
+            'IC_foreign_copy',
+            'IC_receipt_older',
+            'IC_receipt_newest',
+        ]);
+        expect(port.deliveryReceiptProof(42)).toEqual(
+            deliveryReceiptProofForIds(['IC_author_note', 'IC_foreign_copy', 'IC_receipt_older', 'IC_receipt_newest'])
+        );
+        expect(captures).toEqual([
+            {
+                command: 'gh',
+                args: ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/issues/42/comments?per_page=100'],
+            },
+            {
+                command: 'gh',
+                args: [
+                    'api',
+                    'graphql',
+                    '-f',
+                    ORDERED_RECEIPT_PROOF_QUERY,
+                    '-f',
+                    'owner=jcosta33',
+                    '-f',
+                    'name=sourdaw',
+                    '-F',
+                    'number=42',
+                ],
+            },
+        ]);
+    });
+
+    it('reads a stable multi-page GraphQL receipt proof to the final page before trusting the sequence', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                captures.push({ command: 'gh', args });
+                const joined = args.join(' ');
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse(['IC_receipt_older', 'IC_receipt_newest'], {
+                            totalCount: 4,
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_author_note', 'IC_foreign_copy'], {
+                        totalCount: 4,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceiptProof(42)).toEqual(
+            deliveryReceiptProofForIds(['IC_author_note', 'IC_foreign_copy', 'IC_receipt_older', 'IC_receipt_newest'])
+        );
+        expect(captures).toEqual([
+            {
+                command: 'gh',
+                args: [
+                    'api',
+                    'graphql',
+                    '-f',
+                    ORDERED_RECEIPT_PROOF_QUERY,
+                    '-f',
+                    'owner=jcosta33',
+                    '-f',
+                    'name=sourdaw',
+                    '-F',
+                    'number=42',
+                ],
+            },
+            {
+                command: 'gh',
+                args: [
+                    'api',
+                    'graphql',
+                    '-f',
+                    ORDERED_RECEIPT_PROOF_QUERY,
+                    '-f',
+                    'owner=jcosta33',
+                    '-f',
+                    'name=sourdaw',
+                    '-F',
+                    'number=42',
+                    '-f',
+                    'cursor=cursor-1',
+                ],
+            },
+        ]);
+    });
+
+    it('requests GraphQL receipt proof in updated-at ascending order', () => {
+        const captures: string[] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                captures.push(joined);
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    return shellDeliveryReceiptProofResponse([]);
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceiptProof(42)).toEqual(deliveryReceiptProofForIds([]));
+        expect(captures).toEqual([
+            `api graphql -f ${ORDERED_RECEIPT_PROOF_QUERY} -f owner=jcosta33 -f name=sourdaw -F number=42`,
+        ]);
+    });
+
+    it('keeps the receipt proof query on the live-supported UPDATED_AT enum path', () => {
+        expect(ORDERED_RECEIPT_PROOF_QUERY).toContain('field:UPDATED_AT');
+        expect(ORDERED_RECEIPT_PROOF_QUERY).not.toContain('field:CREATED_AT');
+    });
+
+    it('accepts a reordered GraphQL receipt proof when the REST comment lineage is complete and unedited', () => {
+        const closes = relationshipBody('Closes #2372');
+        const visibleReceipt = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID })],
+            dependentSets: [[]],
+            receipts: [
+                {
+                    id: 'IC_author_note',
+                    body: 'ordinary author note',
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:00Z',
+                    updatedAt: '2026-08-21T00:00:00Z',
+                },
+                {
+                    id: 'IC_visible_receipt',
+                    body: visibleReceipt,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
+            persistedReceiptAuthority: {
+                phase: 'merge-authorized',
+                receiptId: 'IC_visible_receipt',
+                receiptBody: visibleReceipt,
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            },
+            deliveryReceiptProof: {
+                totalCount: 2,
+                latestCommentId: 'IC_visible_receipt',
+                commentIds: ['IC_visible_receipt', 'IC_author_note'],
+                editedCommentIds: [],
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('receipt-authority:read:merge-authorized:IC_visible_receipt');
+        expect(calls).toContain('receipt-authority:write:terminal:IC_visible_receipt');
+    });
+
+    it('fails shellPort receipt proof when GraphQL cursors cycle across later pages even if the final count could still be reached', () => {
+        let cursorOneReads = 0;
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    if (joined.includes('cursor=cursor-2')) {
+                        return shellDeliveryReceiptProofResponse(['IC_c'], {
+                            totalCount: 4,
+                            hasNextPage: true,
+                            endCursor: 'cursor-1',
+                        });
+                    }
+                    if (joined.includes('cursor=cursor-1')) {
+                        cursorOneReads += 1;
+                        return cursorOneReads === 1
+                            ? shellDeliveryReceiptProofResponse(['IC_b'], {
+                                  totalCount: 4,
+                                  hasNextPage: true,
+                                  endCursor: 'cursor-2',
+                              })
+                            : shellDeliveryReceiptProofResponse(['IC_d'], {
+                                  totalCount: 4,
+                              });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_a'], {
+                        totalCount: 4,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('fails shellPort receipt proof when a continuing GraphQL page adds no unseen comment ids even if a later page would finish the count', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    if (joined.includes('cursor=cursor-2')) {
+                        return shellDeliveryReceiptProofResponse(['IC_b', 'IC_c'], {
+                            totalCount: 3,
+                        });
+                    }
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse([], {
+                            totalCount: 3,
+                            hasNextPage: true,
+                            endCursor: 'cursor-2',
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_a'], {
+                        totalCount: 3,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('fails shellPort receipt proof when GraphQL pages repeat a comment id across pages', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    if (joined.includes('cursor=cursor-2')) {
+                        return shellDeliveryReceiptProofResponse(['IC_b'], {
+                            totalCount: 3,
+                        });
+                    }
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse(['IC_a'], {
+                            totalCount: 3,
+                            hasNextPage: true,
+                            endCursor: 'cursor-2',
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_a'], {
+                        totalCount: 3,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('fails merged shellPort recovery without a persisted authority anchor even when GraphQL proves the same-timestamp author receipt stayed unedited', () => {
+        const closes = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_same_timestamp',
+                                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp']);
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
+            },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
+        expect(effects).toEqual([]);
+    });
+
+    it('fails merged shellPort recovery when GraphQL marks a same-timestamp author receipt as edited', () => {
+        const closes = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const captures: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 1, receiptId: 'IC_same_timestamp' }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    captures.push(joined);
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_same_timestamp',
+                                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp'], {
+                            editedCommentIds: ['IC_same_timestamp'],
+                        });
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
+            },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+        expect(captures).toEqual([
+            expect.stringContaining('pr view 42'),
+            expect.stringContaining('mergedBy{__typename'),
+            'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
+            expect.stringContaining(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT),
+        ]);
+        expect(effects).toEqual([]);
     });
 
     it.each([
@@ -2680,11 +8443,26 @@ describe('delivery shell boundary', () => {
         }
     );
 
-    it('uses REST response order, not created_at order, for shellPort merged recovery', () => {
+    it('fails closed for shellPort merged recovery when current visible v2 authority lacks retained validation, even if REST order would choose Y', () => {
         const bodyX = relationshipBody('Closes #2372');
         const bodyY = relationshipBody('Closes #2373');
         const effects: string[] = [];
         const captures: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({
+                version: 2,
+                phase: 'terminal',
+                receiptId: 'IC_y',
+                receiptBody: deliveryReceiptBody(42, 'head', bodyY, 2373),
+            }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
         const comment = (id: string, receiptBody: string, createdAt: string) => ({
             node_id: id,
             body: receiptBody,
@@ -2692,40 +8470,1196 @@ describe('delivery shell boundary', () => {
             created_at: createdAt,
             updated_at: createdAt,
         });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    captures.push(joined);
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [comment('IC_x', deliveryReceiptBody(42, 'head', bodyX, 2372), '2026-08-21T00:00:02Z')],
+                            [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_x', 'IC_y']);
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
+            },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven/i);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
+        expect(captures[0]).toContain('pr view 42');
+        expect(captures[1]).toContain('mergedBy{__typename');
+        expect(effects).toEqual([]);
+    });
+
+    it('ignores legacy v1 persisted authority until shellPort proves the complete stable merged lineage', () => {
+        const closes = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 1, receiptId: 'IC_legacy_v1' }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view 42')) {
+                        return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_legacy_v1',
+                                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                        return shellDeliveryReceiptProofResponse(['IC_legacy_v1']);
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
+            },
+            { primaryRoot }
+        );
+
+        try {
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            });
+            const freshPort = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected read'), run: () => undefined },
+                { primaryRoot }
+            );
+            expect(freshPort.readDeliveryReceiptAuthority(42)).toEqual({
+                phase: 'terminal',
+                receiptId: 'IC_legacy_v1',
+                receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+                postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
+            });
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+
+        expect(effects).toEqual(['complete:2372']);
+    });
+
+    it('round-trips prepared shellPort authority with a skipped advisory receiptBody and post-merge validation across fresh instances', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const authority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'skipped'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, authority);
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(authority);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('fails shellPort authority CAS when the ref changes before the expected-old update', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const currentAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const nextAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'released',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        };
+        const hostileAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        };
+        const currentOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...currentAuthority }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', currentOid], { cwd: primaryRoot });
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify('refs/sourdaw/delivery-receipt/pr-42')}`,
+                `replacement=${JSON.stringify(hostileOid)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'stale-old-swapped'))}`,
+                'if [[ "${1:-}" == "update-ref" && "${2:-}" == "--no-deref" && "${3:-}" == "$ref" && ! -e "$marker" ]]; then',
+                '  : > "$marker"',
+                '  "$real_git" update-ref "$ref" "$replacement"',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            expect(() =>
+                port.writeDeliveryReceiptAuthority(42, nextAuthority, {
+                    mode: 'present',
+                    authority: currentAuthority,
+                })
+            ).toThrow(/delivery receipt authority could not be stored/i);
+            expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
+        } finally {
+            process.env.PATH = previousPath;
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
+        }
+    });
+
+    it('fails shellPort adapter writes when expectedCurrent mismatches the newer stored authority', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const staleExpectedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_stale',
+            receiptBody: visibleDeliveryReceiptBody(42, 'older-head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'older-head',
+                headRefName: 'feat/older',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const nextAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'released',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        };
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
+
+            expect(() =>
+                secondPort.writeDeliveryReceiptAuthority(42, nextAuthority, {
+                    mode: 'present',
+                    authority: staleExpectedAuthority,
+                })
+            ).toThrow(/delivery receipt authority could not be stored/i);
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('fails shellPort adapter writes when expected authority must still be absent and a newer authority already exists', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const nextAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'released',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        };
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
+
+            expect(() =>
+                secondPort.writeDeliveryReceiptAuthority(42, nextAuthority, expectedAbsentDeliveryReceiptAuthority())
+            ).toThrow(/delivery receipt authority could not be stored/i);
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('fails shellPort adapter clears when expectedCurrent mismatches the newer stored authority', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const staleExpectedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_stale',
+            receiptBody: visibleDeliveryReceiptBody(42, 'older-head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'older-head',
+                headRefName: 'feat/older',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
+
+            expect(() =>
+                secondPort.clearDeliveryReceiptAuthority(42, {
+                    mode: 'present',
+                    authority: staleExpectedAuthority,
+                })
+            ).toThrow(/delivery receipt authority could not be cleared/i);
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('fails shellPort clear when a hostile authority is recreated after the delete succeeds but before readback', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const hostileAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const storedOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...storedAuthority }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', storedOid], { cwd: primaryRoot });
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify('refs/sourdaw/delivery-receipt/pr-42')}`,
+                `replacement=${JSON.stringify(hostileOid)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'post-delete-recreated'))}`,
+                'if [[ "${1:-}" == "update-ref" && "${2:-}" == "--no-deref" && "${3:-}" == "-d" && "${4:-}" == "$ref" && ! -e "$marker" ]]; then',
+                '  "$real_git" "$@"',
+                '  status=$?',
+                '  if [[ "$status" -eq 0 ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" update-ref "$ref" "$replacement"',
+                '  fi',
+                '  exit "$status"',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            expect(() =>
+                port.clearDeliveryReceiptAuthority(42, { mode: 'present', authority: storedAuthority })
+            ).toThrow(/delivery receipt authority could not be verified/i);
+            expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
+        } finally {
+            process.env.PATH = previousPath;
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
+        }
+    });
+
+    it('fails before merge when a shellPort authority ref changes immediately after the prepared-authority CAS succeeds', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const hostileAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: visibleDeliveryReceiptBody(42, 'hostile-head', closes, 2372, 'successful'),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify('refs/sourdaw/delivery-receipt/pr-42')}`,
+                `zero=${JSON.stringify('0'.repeat(40))}`,
+                `replacement=${JSON.stringify(hostileOid)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'post-cas-swapped'))}`,
+                'if [[ "${1:-}" == "update-ref" && "${2:-}" == "--no-deref" && "${3:-}" == "$ref" && "${5:-}" == "$zero" && ! -e "$marker" ]]; then',
+                '  "$real_git" "$@"',
+                '  status=$?',
+                '  if [[ "$status" -eq 0 ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" update-ref "$ref" "$replacement"',
+                '  fi',
+                '  exit "$status"',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+        const captures: string[] = [];
+        const receipts: DeliveryReceiptComment[] = [];
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                {
+                    capture: (_command, args) => {
+                        const joined = args.join(' ');
+                        captures.push(joined);
+                        if (joined.includes('pr view 42')) {
+                            return JSON.stringify(shellPullRequest(pullRequest({ body: closes })));
+                        }
+                        if (joined.includes('$reviewsBefore:String,$threadsAfter:String')) {
+                            return reviewStateResponse(
+                                {
+                                    nodes: [
+                                        {
+                                            id: 'PRR_delivery_42_review',
+                                            state: 'APPROVED',
+                                            submittedAt: '2026-08-21T00:00:00Z',
+                                            author: {
+                                                id: REVIEWER_BOT_NODE_ID,
+                                                login: 'renamed-reviewer[bot]',
+                                                __typename: 'Bot',
+                                            },
+                                            commit: { oid: 'head' },
+                                        },
+                                    ],
+                                    hasPreviousPage: false,
+                                    startCursor: null,
+                                },
+                                { nodes: [], hasNextPage: false, endCursor: null }
+                            );
+                        }
+                        if (joined.includes('pulls?state=open')) {
+                            return JSON.stringify([[]]);
+                        }
+                        if (joined === 'api repos/jcosta33/sourdaw --jq .delete_branch_on_merge') {
+                            return 'false';
+                        }
+                        if (joined.includes('issues/42/comments?per_page=100')) {
+                            return JSON.stringify([
+                                receipts.map((receipt) => ({
+                                    node_id: receipt.id,
+                                    body: receipt.body,
+                                    user: {
+                                        node_id: receipt.authorNodeId,
+                                        login: receipt.authorLogin,
+                                        type: receipt.authorType,
+                                    },
+                                    created_at: receipt.createdAt,
+                                    updated_at: receipt.updatedAt,
+                                })),
+                            ]);
+                        }
+                        if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                            return shellDeliveryReceiptProofResponse(receipts.map((receipt) => receipt.id));
+                        }
+                        if (joined.includes('POST repos/jcosta33/sourdaw/issues/42/comments')) {
+                            const body =
+                                args.find((argument) => argument.startsWith('body='))?.slice('body='.length) ?? '';
+                            const receipt = {
+                                id: 'IC_delivery_42_1',
+                                body,
+                                authorNodeId: AUTHOR_BOT_NODE_ID,
+                                authorLogin: 'renamed-author[bot]',
+                                authorType: 'Bot',
+                                createdAt: '2026-08-21T00:00:00Z',
+                                updatedAt: '2026-08-21T00:00:00Z',
+                            };
+                            receipts.push(receipt);
+                            return JSON.stringify({
+                                node_id: receipt.id,
+                                body: receipt.body,
+                                user: {
+                                    node_id: receipt.authorNodeId,
+                                    login: receipt.authorLogin,
+                                    type: receipt.authorType,
+                                },
+                                created_at: receipt.createdAt,
+                                updated_at: receipt.updatedAt,
+                            });
+                        }
+                        if (joined === 'api repos/jcosta33/sourdaw') {
+                            return mergeSettings({
+                                allow_merge_commit: false,
+                                allow_rebase_merge: false,
+                                allow_squash_merge: true,
+                                delete_branch_on_merge: false,
+                            });
+                        }
+                        if (joined.includes('/merge')) {
+                            captures.push('merge-attempted');
+                            return JSON.stringify({ merged: true, message: 'merged' });
+                        }
+                        throw new Error(`unexpected capture: ${joined}`);
+                    },
+                    run: () => undefined,
+                },
+                { primaryRoot }
+            );
+
+            expect(() => deliverPullRequest(42, port)).toThrow(/delivery receipt authority could not be verified/i);
+            expect(captures).not.toContain('merge-attempted');
+        } finally {
+            process.env.PATH = previousPath;
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
+        }
+    });
+
+    it.each([
+        {
+            label: 'empty headRefOid',
+            postMergeValidation: {
+                headRefOid: '',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: 'a'.repeat(64),
+                trackerTarget: 2372,
+            },
+        },
+        {
+            label: 'invalid bodySha256',
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: 'not-a-digest',
+                trackerTarget: 2372,
+            },
+        },
+        {
+            label: 'nonsafe trackerTarget',
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: 'a'.repeat(64),
+                trackerTarget: 0,
+            },
+        },
+        {
+            label: 'extra nested key',
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: 'a'.repeat(64),
+                trackerTarget: 2372,
+                unexpected: true,
+            },
+        },
+    ])(
+        'rejects a raw v2 authority ref with malformed nested postMergeValidation: $label',
+        ({ postMergeValidation }) => {
+            const closes = relationshipBody('Closes #2372');
+            const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+            execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+            const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+                cwd: primaryRoot,
+                encoding: 'utf8',
+                input: JSON.stringify({
+                    version: 2,
+                    phase: 'prepared',
+                    receiptId: 'IC_malformed_nested',
+                    receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+                    postMergeValidation,
+                }),
+            }).trim();
+            execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+                cwd: primaryRoot,
+            });
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            try {
+                expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(/delivery receipt authority is malformed/i);
+            } finally {
+                removeTemporaryGitRepository(primaryRoot);
+            }
+        }
+    );
+
+    it('rejects a raw v2 authority ref with duplicate top-level receiptId members before JSON.parse collapses them', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: `{"version":2,"phase":"prepared","receiptId":"IC_first","receiptId":"IC_second","receiptBody":${JSON.stringify(visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'))},"postMergeValidation":{"headRefOid":"head","headRefName":"feat/gate","baseRefName":"main","bodySha256":"${createHash('sha256').update(closes).digest('hex')}","trackerTarget":2372}}`,
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /duplicate key|delivery receipt authority is malformed/i
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('rejects a raw v2 authority ref with duplicate nested postMergeValidation members before JSON.parse collapses them', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: `{"version":2,"phase":"prepared","receiptId":"IC_nested_duplicate","receiptBody":${JSON.stringify(visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'))},"postMergeValidation":{"headRefOid":"head","headRefOid":"rewritten-head","headRefName":"feat/gate","baseRefName":"main","bodySha256":"${createHash('sha256').update(closes).digest('hex')}","trackerTarget":2372}}`,
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /duplicate key|delivery receipt authority is malformed/i
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('rejects an exact symlink delivery receipt authority ref path', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        const exactRefPath = join(primaryRoot, refPath);
+        const targetPath = join(primaryRoot, 'symlink-target');
+        mkdirSync(dirname(exactRefPath), { recursive: true });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({
+                version: 2,
+                phase: 'terminal',
+                receiptId: 'IC_symlink',
+                receiptBody: deliveryReceiptBody(42, 'head', relationshipBody('Closes #2372'), 2372),
+            }),
+        }).trim();
+        writeFileSync(targetPath, `${authorityOid}\n`);
+        symlinkSync(targetPath, exactRefPath);
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('rejects a delivery receipt authority ref that becomes symbolic after the path check but before the bound git read', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const hostileTarget = 'refs/sourdaw/hostile-authority';
+        const legitimateAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_legitimate',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const hostileAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: deliveryReceiptBody(42, 'hostile-head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const legitimateOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...legitimateAuthority }),
+        }).trim();
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        execFileSync('git', ['update-ref', ref, legitimateOid], { cwd: primaryRoot });
+        execFileSync('git', ['update-ref', hostileTarget, hostileOid], { cwd: primaryRoot });
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify(ref)}`,
+                `target=${JSON.stringify(hostileTarget)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'authority-became-symbolic'))}`,
+                'if [[ ! -e "$marker" ]]; then',
+                '  if [[ "${1:-}" == "show-ref" && "${2:-}" == "--verify" && "${3:-}" == "--hash" && "${4:-}" == "--" && "${5:-}" == "$ref" ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" symbolic-ref "$ref" "$target"',
+                '  elif [[ "${1:-}" == "for-each-ref" && "${@: -1}" == "$ref" ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" symbolic-ref "$ref" "$target"',
+                '  fi',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            process.env.PATH = previousPath;
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
+        }
+    });
+
+    it('reads an exact packed delivery receipt authority ref when no loose ref path exists', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authority = {
+            phase: 'terminal',
+            receiptId: 'IC_packed',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...authority }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
+        execFileSync('git', ['pack-refs', '--all', '--prune'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(port.readDeliveryReceiptAuthority(42)).toEqual(authority);
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('never accepts a packed descendant delivery receipt authority ref when the exact ref does not exist', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const authority = {
+            phase: 'terminal',
+            receiptId: 'IC_packed_child',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...authority }),
+        }).trim();
+        execFileSync('git', [`update-ref`, `${ref}/child`, authorityOid], {
+            cwd: primaryRoot,
+        });
+        execFileSync('git', ['pack-refs', '--all', '--prune'], { cwd: primaryRoot });
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        rmSync(join(primaryRoot, refPath), { recursive: true, force: true });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            try {
+                expect(port.readDeliveryReceiptAuthority(42)).toBeUndefined();
+            } catch (error) {
+                expect(error).toBeInstanceOf(Error);
+                expect(String(error)).toMatch(
+                    /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+                );
+            }
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('rejects an exact loose directory that conflicts with a packed delivery receipt authority ref', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({
+                version: 2,
+                phase: 'terminal',
+                receiptId: 'IC_packed_conflict',
+                receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+            }),
+        }).trim();
+        execFileSync('git', ['update-ref', ref, authorityOid], { cwd: primaryRoot });
+        execFileSync('git', ['pack-refs', '--all', '--prune'], { cwd: primaryRoot });
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        mkdirSync(join(primaryRoot, refPath, 'child'), { recursive: true });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it.each([
+        { label: 'loose', pack: false },
+        { label: 'packed', pack: true },
+    ])('rejects a $label annotated-tag delivery receipt authority ref', ({ pack }) => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({
+                version: 2,
+                phase: 'terminal',
+                receiptId: 'IC_tagged',
+                receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+            }),
+        }).trim();
+        const tagOid = annotatedBlobTagOid(primaryRoot, authorityOid, pack ? 'delivery-packed' : 'delivery-loose');
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', tagOid], { cwd: primaryRoot });
+        if (pack) {
+            execFileSync('git', ['pack-refs', '--all', '--prune'], { cwd: primaryRoot });
+        }
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('rejects an exact broken symlink delivery receipt authority ref path', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        const exactRefPath = join(primaryRoot, refPath);
+        const targetPath = join(primaryRoot, 'missing-target');
+        mkdirSync(dirname(exactRefPath), { recursive: true });
+        symlinkSync(targetPath, exactRefPath);
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('treats an exact delivery receipt authority child-prefix directory as absent', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const refPath = execFileSync('git', ['rev-parse', '--git-path', ref], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+        }).trim();
+        const exactRefPath = join(primaryRoot, refPath);
+        mkdirSync(join(exactRefPath, 'child'), { recursive: true });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(port.readDeliveryReceiptAuthority(42)).toBeUndefined();
+        } finally {
+            removeTemporaryGitRepository(primaryRoot);
+        }
+    });
+
+    it('fails shellPort merged recovery when proof count exceeds the complete REST lineage even if the latest id matches', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const effects: string[] = [];
         const port = shellPort('jcosta33/sourdaw', {
             capture: (_command, args) => {
                 const joined = args.join(' ');
-                captures.push(joined);
                 if (joined.includes('pr view')) {
-                    return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                    );
                 }
                 if (joined.includes('mergedBy{__typename')) {
                     return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
                 }
                 if (joined.includes('issues/42/comments?per_page=100')) {
                     return JSON.stringify([
-                        [comment('IC_x', deliveryReceiptBody(42, 'head', bodyX, 2372), '2026-08-21T00:00:02Z')],
-                        [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
+                        [
+                            {
+                                node_id: 'IC_x',
+                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                created_at: '2026-08-21T00:00:00Z',
+                                updated_at: '2026-08-21T00:00:00Z',
+                            },
+                        ],
                     ]);
                 }
-                if (joined.includes('pulls?state=open')) {
-                    return JSON.stringify([[]]);
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
+                }
+                effects.push(`capture:${joined}`);
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() =>
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            })
+        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        expect(effects).toEqual([]);
+    });
+
+    it('fails shellPort merged recovery when proof latest id differs despite an equal comment count', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                    );
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                }
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [
+                            {
+                                node_id: 'IC_x',
+                                body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                created_at: '2026-08-21T00:00:00Z',
+                                updated_at: '2026-08-21T00:00:00Z',
+                            },
+                        ],
+                    ]);
+                }
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
+                }
+                effects.push(`capture:${joined}`);
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(() =>
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            })
+        ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
+        expect(effects).toEqual([]);
+    });
+
+    it('fails shellPort receipt proof when the first GraphQL page already reaches totalCount but still claims another page', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    return shellDeliveryReceiptProofResponse(['IC_x'], {
+                        totalCount: 1,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
                 }
                 throw new Error(`unexpected capture: ${joined}`);
             },
             run: () => undefined,
         });
 
-        deliverPullRequest(42, port, {
-            complete: (issue) => effects.push(`complete:${issue}`),
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('fails shellPort receipt proof when a later GraphQL page changes totalCount', () => {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                if (joined.includes(ORDERED_RECEIPT_PROOF_QUERY_FRAGMENT)) {
+                    if (joined.includes('cursor=cursor-1')) {
+                        return shellDeliveryReceiptProofResponse(['IC_y'], {
+                            totalCount: 3,
+                        });
+                    }
+                    return shellDeliveryReceiptProofResponse(['IC_x'], {
+                        totalCount: 2,
+                        hasNextPage: true,
+                        endCursor: 'cursor-1',
+                    });
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
         });
 
-        expect(captures.slice(0, 3)).toEqual([
-            expect.stringContaining('pr view 42'),
-            expect.stringContaining('mergedBy{__typename'),
-            'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
-        ]);
-        expect(effects).toEqual(['complete:2373']);
+        expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
     });
 
     /**
@@ -2781,12 +9715,12 @@ describe('delivery shell boundary', () => {
     it('pages the rollup to completion and keeps every context in order', () => {
         const { captures, port } = rollupPort([
             {
-                nodes: rollupNodes([checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()]),
+                nodes: rollupNodes([checkRun({ name: 'Lint', conclusion: 'CANCELLED' }), checkRun()], 'PAGE_1'),
                 totalCount: 3,
                 hasNextPage: true,
                 endCursor: 'Y3Vyc29yOjI=',
             },
-            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })], 'PAGE_2'), totalCount: 3 },
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
@@ -2804,9 +9738,19 @@ describe('delivery shell boundary', () => {
      * actually has. Merging on it would treat absent checks as absent problems.
      */
     it.each([
-        { label: 'a page that silently stops short of totalCount', hasNextPage: false, endCursor: null },
-        { label: 'a page that claims more contexts but hands back no cursor', hasNextPage: true, endCursor: null },
-    ])('refuses $label', ({ hasNextPage, endCursor }) => {
+        {
+            label: 'a page that silently stops short of totalCount',
+            hasNextPage: false,
+            endCursor: null,
+            expected: 'Error: cannot read all 19 checks on PR #42: got 1',
+        },
+        {
+            label: 'a page that claims more contexts but hands back no cursor',
+            hasNextPage: true,
+            endCursor: null,
+            expected: 'Error: cannot read all 19 checks on PR #42: cursor did not advance',
+        },
+    ])('refuses $label', ({ hasNextPage, endCursor, expected }) => {
         const { port } = rollupPort([{ nodes: rollupNodes([checkRun()]), totalCount: 19, hasNextPage, endCursor }]);
 
         let thrown: unknown;
@@ -2816,7 +9760,18 @@ describe('delivery shell boundary', () => {
             thrown = error;
         }
 
-        expect(String(thrown)).toBe('Error: cannot read all 19 checks on PR #42: got 1');
+        expect(String(thrown)).toBe(expected);
+    });
+
+    it('refuses a continuing page that drifts totalCount away from the first declaration', () => {
+        const { port } = rollupPort([
+            { nodes: rollupNodes([checkRun()]), totalCount: 2, hasNextPage: true, endCursor: 'cursor-1' },
+            { nodes: rollupNodes([checkRun({ name: 'Lint' })]), totalCount: 3 },
+        ]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow(
+            'cannot read all 2 checks on PR #42: rollup totalCount drifted'
+        );
     });
 
     /**
@@ -2844,12 +9799,11 @@ describe('delivery shell boundary', () => {
     });
 
     /**
-     * `nodes.length < totalCount` is what stops the paging once the head is fully accounted for.
-     * GitHub can report `hasNextPage` true beside a cursor on a connection whose `totalCount` the
-     * first page already satisfies; without this arm the reader fetches again, overshoots the total,
-     * and the completeness check then refuses a rollup that was complete on arrival.
+     * A continuing page has to be consumed even when the first page already accounts for the head.
+     * Stopping early would let a contradicted or drifting connection hide later evidence from the
+     * exact-head receipt.
      */
-    it('stops paging once the nodes account for the total even while a further page is offered', () => {
+    it('consumes a terminal empty page even when the first page already accounts for the declared total', () => {
         const { captures, port } = rollupPort([
             {
                 nodes: rollupNodes([checkRun(), checkRun({ name: 'Lint' })]),
@@ -2857,14 +9811,59 @@ describe('delivery shell boundary', () => {
                 hasNextPage: true,
                 endCursor: 'Y3Vyc29yOjI=',
             },
-            { nodes: rollupNodes([checkRun({ name: 'Secret scan' })]), totalCount: 2 },
+            { nodes: [], totalCount: 2 },
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
             { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
             { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
         ]);
-        expect(rollupCaptures(captures)).toHaveLength(1);
+        expect(rollupCaptures(captures)).toHaveLength(2);
+    });
+
+    it('refuses a later page that repeats a previously seen rollup node', () => {
+        const { port } = rollupPort([
+            {
+                nodes: [{ __typename: 'CheckRun', id: 'CR_1', ...checkRun() }],
+                totalCount: 2,
+                hasNextPage: true,
+                endCursor: 'cursor-1',
+            },
+            { nodes: [{ __typename: 'CheckRun', id: 'CR_1', ...checkRun({ name: 'Lint' }) }], totalCount: 2 },
+        ]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow(
+            'cannot read all 2 checks on PR #42: rollup repeated a node'
+        );
+    });
+
+    it('refuses a continuing page whose cursor repeats instead of advancing', () => {
+        const { port } = rollupPort([
+            { nodes: rollupNodes([checkRun()]), totalCount: 3, hasNextPage: true, endCursor: 'cursor-1' },
+            {
+                nodes: rollupNodes([checkRun({ name: 'Lint' })], 'PAGE_2'),
+                totalCount: 3,
+                hasNextPage: true,
+                endCursor: 'cursor-1',
+            },
+        ]);
+
+        expect(() => port.headCheckRuns(42, 'head')).toThrow(
+            'cannot read all 3 checks on PR #42: cursor did not advance'
+        );
+    });
+
+    it('records unavailable advisory CI evidence when the rollup connection contradicts its own total', () => {
+        const { port, receipts } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'CLEAN' }), pullRequest({ mergeStateStatus: 'CLEAN' })],
+            headCheckRuns: new Error('cannot read all 2 checks on PR #42: rollup totalCount drifted'),
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(receipts).toHaveLength(1);
+        expect(receipts[0]?.body).toContain('- CI admission: advisory');
+        expect(receipts[0]?.body).toContain('- Observed CI state: unavailable');
     });
 
     it('refuses to guess at an entry matching neither arm', () => {
@@ -2982,7 +9981,7 @@ describe('delivery shell boundary', () => {
         expect(port.reviewState(42, 'head')).toEqual({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 });
         expect(port.dependents('feat/gate')).toEqual([stacked()]);
         expect(port.repositoryDeletesMergedBranches()).toBe(false);
-        port.merge(42, 'head', false);
+        port.merge(42, 'head', false, 'feat(delivery): committed subject');
         port.retarget(43, 'main');
 
         expect(
@@ -3001,6 +10000,8 @@ describe('delivery shell boundary', () => {
                 'sha=head',
                 '-f',
                 'merge_method=squash',
+                '-f',
+                'commit_title=feat(delivery): committed subject',
             ],
         });
         expect(runs).toContainEqual({
@@ -3052,6 +10053,70 @@ describe('delivery shell boundary', () => {
                 `merge_method=${expectedMethod}`,
             ],
         });
+    });
+
+    it.each([
+        ['403', 'gh: HTTP 403: Resource not accessible by integration'],
+        ['404', 'gh: HTTP 404: Pull request not found'],
+        ['405', 'gh: HTTP 405: Base branch policy rejected the merge'],
+        ['409', 'gh: HTTP 409: Head SHA changed before merge'],
+        ['422', 'gh: HTTP 422: Pull Request is not mergeable'],
+    ])('classifies a shell merge HTTP %s refusal as a definitive rejection', (_code, message) => {
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                    return mergeSettings({
+                        allow_merge_commit: false,
+                        allow_rebase_merge: false,
+                        allow_squash_merge: true,
+                        delete_branch_on_merge: false,
+                    });
+                }
+                if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                    throw new Error(message);
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort('jcosta33/sourdaw', shell);
+
+        try {
+            port.merge(42, 'head', false);
+            expect.unreachable();
+        } catch (error) {
+            expect(error).toBeInstanceOf(DeliveryMergeRejectedError);
+            expect(String(error)).toContain(message);
+        }
+    });
+
+    it('keeps shell merge transport ambiguity as a non-definitive error', () => {
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                    return mergeSettings({
+                        allow_merge_commit: false,
+                        allow_rebase_merge: false,
+                        allow_squash_merge: true,
+                        delete_branch_on_merge: false,
+                    });
+                }
+                if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                    throw new Error('network timeout');
+                }
+                throw new Error(`unexpected capture: ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        };
+        const port = shellPort('jcosta33/sourdaw', shell);
+
+        try {
+            port.merge(42, 'head', false);
+            expect.unreachable();
+        } catch (error) {
+            expect(error).not.toBeInstanceOf(DeliveryMergeRejectedError);
+            expect(String(error)).toContain('network timeout');
+        }
     });
 
     it('rejects merging when no repository merge method is enabled', () => {
@@ -3765,5 +10830,77 @@ describe('delivery shell boundary', () => {
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
+    });
+
+    function rulesetPort(response: string) {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw/rules/branches/main') {
+                    return response;
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        });
+        return port;
+    }
+
+    /**
+     * The caller reads an empty list as "every required check the ruleset names already succeeded",
+     * which is only true when the ruleset itself explicitly names zero required checks. A rule that
+     * never parsed has said nothing, so it must not be mistaken for that explicit, empty requirement.
+     */
+    it('refuses to read required status check contexts from a ruleset with no required_status_checks rule', () => {
+        const port = rulesetPort(JSON.stringify([{ type: 'pull_request' }]));
+
+        expect(() => port.requiredStatusCheckContexts()).toThrow(
+            'branch ruleset for jcosta33/sourdaw carries no required_status_checks rule with a parameters array'
+        );
+    });
+
+    it('reads an explicit, empty required_status_checks rule as no required contexts', () => {
+        const port = rulesetPort(
+            JSON.stringify([{ type: 'required_status_checks', parameters: { required_status_checks: [] } }])
+        );
+
+        expect(port.requiredStatusCheckContexts()).toEqual([]);
+    });
+
+    /**
+     * `rules/branches/main` aggregates every ruleset that applies to the branch, so two separate
+     * `required_status_checks` rules can each name their own contexts. Keeping only the first, as
+     * `find` would, silently drops the second rule's requirement.
+     */
+    it('unions required status check contexts across every required_status_checks rule', () => {
+        const port = rulesetPort(
+            JSON.stringify([
+                { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Gate' }] } },
+                { type: 'pull_request' },
+                {
+                    type: 'required_status_checks',
+                    parameters: { required_status_checks: [{ context: 'License' }] },
+                },
+            ])
+        );
+
+        expect(port.requiredStatusCheckContexts()).toEqual(['Gate', 'License']);
+    });
+
+    /**
+     * A rule that parsed sitting beside one that did not must not let the parsed rule's contexts
+     * stand in for the whole read: the union would come back short of the unparsed rule's own
+     * contexts while reading as complete, hiding the real reason a BLOCKED head is still waiting.
+     */
+    it('refuses a union across required_status_checks rules when any one of them has no parameters array', () => {
+        const port = rulesetPort(
+            JSON.stringify([
+                { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Gate' }] } },
+                { type: 'required_status_checks' },
+            ])
+        );
+
+        expect(() => port.requiredStatusCheckContexts()).toThrow(
+            'branch ruleset for jcosta33/sourdaw carries a required_status_checks rule with no parameters array'
+        );
     });
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
     accessSync,
     constants,
@@ -15,7 +15,7 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve' | 'review:resolve:recover';
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:publish:recover' | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -28,8 +28,6 @@ export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
 export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
-
-const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;
@@ -45,7 +43,7 @@ export type TrustedLauncherBinding = {
  * whatever the workflow declares — absent, null, a string, or something that is not a name at all —
  * because deciding what a declaration means is the gate's rule to apply, not the launcher's.
  */
-export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
 
 export type TrustedGateWorkflow = { jobs: Record<string, TrustedWorkflowJob> } | { unreadable: string };
 
@@ -70,13 +68,59 @@ type SnapshotRunner = (
     entryPath: string,
     runner: string,
     args: string[],
-    snapshot: TrustedSourceSnapshot
+    snapshot: TrustedSourceSnapshot,
+    command: TrustedGithubWriteCommand
 ) => Promise<number>;
+
+/**
+ * These commands fence their lock owner on the process identity that holds it, so the launcher must
+ * put the whole command tree in one process group: a surviving child is then what keeps the fence
+ * live, and recovery can prove the crashed owner gone.
+ */
+function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefined): boolean {
+    return command === 'deliver' || command === 'review:publish' || command === 'review:publish:recover';
+}
+
+export function trustedSnapshotRunsDetached(
+    command: TrustedGithubWriteCommand,
+    platform: NodeJS.Platform = process.platform
+): boolean {
+    return platform !== 'win32' && commandFencesItsLockOwner(command);
+}
+
+export function trustedSnapshotSignalTarget(
+    pid: number,
+    detached: boolean,
+    platform: NodeJS.Platform = process.platform
+): number {
+    return detached && platform !== 'win32' ? -pid : pid;
+}
+
+export function forwardTrustedSnapshotSignal(
+    pid: number,
+    detached: boolean,
+    platform: NodeJS.Platform,
+    signal: NodeJS.Signals,
+    send: (target: number, signal: NodeJS.Signals) => void = (target, forwardedSignal) =>
+        process.kill(target, forwardedSignal)
+): void {
+    try {
+        send(trustedSnapshotSignalTarget(pid, detached, platform), signal);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return;
+        }
+        throw error;
+    }
+}
 
 const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
+        'scripts/recoverDeliveryLock.ts',
+        'scripts/deliveryLockLegacyIncidents.ts',
+        'scripts/deliveryRemoteInspection.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/reconcileTrackerIssue.ts',
         'scripts/trackerIssueReconciliation.ts',
@@ -99,6 +143,20 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
+        'scripts/prepareReview.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:publish:recover': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverPublishReviewLock.ts',
+        'scripts/publishReview.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
+        'scripts/reviewPublicationLegacyIncidents.ts',
+        'scripts/reviewPublicationRecoveryReceipt.ts',
+        'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -106,16 +164,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/resolveReviewThread.ts',
-        'scripts/pullRequestMutationLock.ts',
-        'scripts/githubAppIdentity.ts',
-        'scripts/prContract.ts',
-    ],
-    'review:resolve:recover': [
-        'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/recoverReviewResolutionLock.ts',
-        'scripts/resolveReviewThread.ts',
-        'scripts/pullRequestMutationLock.ts',
+        'scripts/resolveThread.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -126,11 +175,8 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
-    'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
-    'review:resolve:recover': {
-        path: 'scripts/recoverReviewResolutionLock.ts',
-        runner: 'runRecoverReviewResolutionLockCli',
-    },
+    'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
+    'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -192,14 +238,16 @@ function assertSnapshotResolvableImports(path: string, source: string, pathSet: 
 const LOADER_EXEMPT_SPECIFIER = 'yaml';
 
 /**
- * Every shape that names a module: a `from` clause, a side-effect statement that binds nothing, and
- * a dynamic call. Both rules below read the same three, because a list that saw only `from` accepted
- * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
- * rule passed vacuously on the very file it was written to hold.
+ * Every shape that names a module: a `from '...'` clause, a side-effect `import '...'` statement,
+ * dynamic `import(...)` (including static template literals and parenthesized specifiers),
+ * `import.meta.resolve(...)`, `require(...)` / `require.resolve(...)`, and chained
+ * `createRequire(...)('...')`. Both rules below read these shapes, because a list that saw only `from`
+ * accepted the others — and the dynamic call is the shape this loader itself uses, so the
+ * bare-specifier rule passed vacuously on the very file it was written to hold.
  *
  * Specifiers are collected by walking syntax, not by regex over raw source. Comments and the contents
- * of string and template literals cannot contribute; only a real `from` / `import` / `import()` form
- * at code depth can. That keeps an example in this comment from being refused as a dependency.
+ * of string and template literals cannot contribute; only real import/require forms at code depth can.
+ * That keeps an example in this comment from being refused as a dependency.
  */
 export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
@@ -271,11 +319,80 @@ function scanImportSpecifiers(
             const dynamic = readDynamicImportSpecifier(source, afterKeyword);
             if (dynamic !== undefined) {
                 const before = index === 0 ? undefined : source[index - 1];
-                if (before !== '.') {
+                if (
+                    before !== '.' &&
+                    (index < 2 || source.slice(index - 2, index) !== '?.') &&
+                    !isPrecededByDotAccess(source, index)
+                ) {
                     specifiers.add(dynamic.value);
                 }
                 index = dynamic.end;
                 continue;
+            }
+            const metaResolve = readImportMetaResolveSpecifier(source, index);
+            if (metaResolve !== undefined) {
+                specifiers.add(metaResolve.value);
+                index = metaResolve.end;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, index, 'require')) {
+            const before = index === 0 ? undefined : source[index - 1];
+            if (
+                before !== '.' &&
+                (index < 2 || source.slice(index - 2, index) !== '?.') &&
+                !isPrecededByDotAccess(source, index)
+            ) {
+                let cursor = skipWhitespace(source, index + 7);
+                if (source[cursor] === '.') {
+                    const afterDot = skipWhitespace(source, cursor + 1);
+                    if (isKeywordAt(source, afterDot, 'resolve')) {
+                        cursor = afterDot + 7;
+                    }
+                } else if (source.startsWith('?.', cursor)) {
+                    const afterDot = skipWhitespace(source, cursor + 2);
+                    if (isKeywordAt(source, afterDot, 'resolve')) {
+                        cursor = afterDot + 7;
+                    }
+                }
+                cursor = skipWhitespace(source, cursor);
+                if (source.startsWith('?.', cursor) && source[skipWhitespace(source, cursor + 2)] === '(') {
+                    cursor = skipWhitespace(source, cursor + 2);
+                }
+                const spec = readDynamicImportSpecifier(source, cursor);
+                if (spec !== undefined) {
+                    specifiers.add(spec.value);
+                    index = spec.end;
+                    continue;
+                }
+            }
+        }
+        if (isKeywordAt(source, index, 'createRequire')) {
+            const before = index === 0 ? undefined : source[index - 1];
+            if (
+                before !== '.' &&
+                (index < 2 || source.slice(index - 2, index) !== '?.') &&
+                !isPrecededByDotAccess(source, index)
+            ) {
+                const afterKeyword = skipWhitespace(source, index + 13);
+                if (source[afterKeyword] === '(') {
+                    const afterFirstCall = skipBalancedParens(source, afterKeyword);
+                    if (afterFirstCall !== undefined) {
+                        let secondCallCursor = skipWhitespace(source, afterFirstCall);
+                        if (
+                            source.startsWith('?.', secondCallCursor) &&
+                            source[skipWhitespace(source, secondCallCursor + 2)] === '('
+                        ) {
+                            secondCallCursor = skipWhitespace(source, secondCallCursor + 2);
+                        }
+                        const spec = readDynamicImportSpecifier(source, secondCallCursor);
+                        if (spec !== undefined) {
+                            specifiers.add(spec.value);
+                            index = spec.end;
+                            continue;
+                        }
+                    }
+                }
             }
         }
         index += 1;
@@ -483,6 +600,108 @@ function readDynamicImportSpecifier(source: string, index: number): ReadSpecifie
     return readModuleStringAfter(source, cursor);
 }
 
+function skipBalancedParens(source: string, index: number): number | undefined {
+    if (source[index] !== '(') {
+        return undefined;
+    }
+    let cursor = index;
+    let depth = 0;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character === "'" || character === '"') {
+            cursor = skipQuoted(source, cursor, character);
+            continue;
+        }
+        if (character === '`') {
+            cursor = scanTemplate(source, cursor, source.length, new Set());
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, cursor);
+        if (regexEnd !== undefined) {
+            cursor = regexEnd;
+            continue;
+        }
+        if (character === '(') {
+            depth += 1;
+            cursor += 1;
+            continue;
+        }
+        if (character === ')') {
+            depth -= 1;
+            cursor += 1;
+            if (depth === 0) {
+                return cursor;
+            }
+            continue;
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function readImportMetaResolveSpecifier(source: string, index: number): ReadSpecifier | undefined {
+    if (!isKeywordAt(source, index, 'import') || isPrecededByDotAccess(source, index)) {
+        return undefined;
+    }
+    let cursor = skipWhitespace(source, index + 6);
+    if (source.startsWith('?.', cursor)) {
+        cursor = skipWhitespace(source, cursor + 2);
+    } else if (source[cursor] === '.') {
+        cursor = skipWhitespace(source, cursor + 1);
+    } else {
+        return undefined;
+    }
+    if (!isKeywordAt(source, cursor, 'meta')) {
+        return undefined;
+    }
+    cursor = skipWhitespace(source, cursor + 4);
+    if (source.startsWith('?.', cursor)) {
+        cursor = skipWhitespace(source, cursor + 2);
+    } else if (source[cursor] === '.') {
+        cursor = skipWhitespace(source, cursor + 1);
+    } else {
+        return undefined;
+    }
+    if (!isKeywordAt(source, cursor, 'resolve')) {
+        return undefined;
+    }
+    let afterResolve = skipWhitespace(source, cursor + 7);
+    if (source.startsWith('?.', afterResolve) && source[skipWhitespace(source, afterResolve + 2)] === '(') {
+        afterResolve = skipWhitespace(source, afterResolve + 2);
+    }
+    return readDynamicImportSpecifier(source, afterResolve);
+}
+
+function isPrecededByDotAccess(source: string, index: number): boolean {
+    const before = index === 0 ? undefined : source[index - 1];
+    if (before === '.' || (index >= 2 && source.slice(index - 2, index) === '?.')) {
+        return true;
+    }
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor]!;
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                break;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        return character === '.';
+    }
+    return false;
+}
+
 function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
     let cursor = index + 1;
     let value = '';
@@ -681,7 +900,9 @@ export async function summarizeGateWorkflow(source: string): Promise<TrustedGate
     // the workflow declares. A prototype-free map has no such key to hit.
     const summary: Record<string, TrustedWorkflowJob> = Object.create(null) as Record<string, TrustedWorkflowJob>;
     for (const [jobId, job] of Object.entries(jobs)) {
-        summary[jobId] = isRecord(job) ? { name: carriedName(job.name), needs: job.needs, uses: job.uses } : {};
+        summary[jobId] = isRecord(job)
+            ? { name: carriedName(job.name), needs: job.needs, uses: job.uses, strategy: job.strategy }
+            : {};
     }
     return { jobs: summary };
 }
@@ -721,7 +942,7 @@ export async function executeTrustedSnapshot(
             writeFileSync(target, source, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
         }
         const entry = commandEntries[command];
-        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot);
+        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot, command);
         if (!Number.isSafeInteger(result)) {
             throw new TypeError(`trusted ${command} snapshot returned an invalid exit code`);
         }
@@ -735,7 +956,8 @@ async function runSnapshotModule(
     entryPath: string,
     runner: string,
     args: string[],
-    snapshot: TrustedSourceSnapshot
+    snapshot: TrustedSourceSnapshot,
+    command: TrustedGithubWriteCommand
 ): Promise<number> {
     const source = [
         "import { pathToFileURL } from 'node:url';",
@@ -744,12 +966,13 @@ async function runSnapshotModule(
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
         'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
-        'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
+        'const dependencies = runner === "runDeliverCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
-    const result = spawnSync(
+    const detached = trustedSnapshotRunsDetached(command);
+    const child = spawn(
         process.execPath,
         ['--input-type=module', '--eval', source, 'trusted-snapshot-runner', entryPath, runner, ...args],
         {
@@ -757,18 +980,43 @@ async function runSnapshotModule(
             env: trustedSnapshotEnv(snapshot),
             stdio: 'inherit',
             shell: false,
+            detached,
         }
     );
-    if (result.error !== undefined) {
-        throw result.error;
+    if (child.pid === undefined) {
+        throw new Error('trusted snapshot launcher could not determine the child process');
     }
-    if (result.status === null) {
-        throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+    const restoreSignalHandlers = detached ? forwardSnapshotSignals(child.pid, process.platform) : () => undefined;
+    try {
+        const result = await new Promise<{ status: number | null; signal: NodeJS.Signals | null }>(
+            (resolve, reject) => {
+                child.once('error', reject);
+                child.once('close', (status, signal) => resolve({ status, signal }));
+            }
+        );
+        if (result.status === null) {
+            throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+        }
+        if (result.status !== 0) {
+            throw new Error(`trusted snapshot failed with exit ${result.status}`);
+        }
+        return result.status;
+    } finally {
+        restoreSignalHandlers();
     }
-    if (result.status !== 0) {
-        throw new Error(`trusted snapshot failed with exit ${result.status}`);
+}
+
+function forwardSnapshotSignals(pid: number, platform: NodeJS.Platform): () => void {
+    const forward = (signal: NodeJS.Signals) => forwardTrustedSnapshotSignal(pid, true, platform, signal);
+    const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+    for (const signal of signals) {
+        process.on(signal, forward);
     }
-    return result.status;
+    return () => {
+        for (const signal of signals) {
+            process.off(signal, forward);
+        }
+    };
 }
 
 export function trustedSnapshotEnv(
@@ -776,11 +1024,6 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
-    for (const key of Object.keys(env)) {
-        if (key.toUpperCase() === REVIEW_RESOLUTION_CHILD_ENV) {
-            delete env[key];
-        }
-    }
     if (snapshot.gateWorkflow !== undefined) {
         env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
     }
@@ -848,6 +1091,7 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
     }
     env.GIT_CONFIG_GLOBAL = '/dev/null';
     env.GIT_CONFIG_SYSTEM = '/dev/null';
+    env.GIT_NO_REPLACE_OBJECTS = '1';
     env.GIT_TERMINAL_PROMPT = '0';
     env.GIT_SSH_COMMAND = '/usr/bin/false';
     env.GIT_SSH = '/usr/bin/false';
@@ -930,14 +1174,14 @@ export function resolveTrustedLauncherBinding(
 }
 
 function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
-    return platform !== 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
+    return platform !== 'win32' && commandFencesItsLockOwner(command);
 }
 
 function commandRequiresTrustedPowerShell(
     command: TrustedGithubWriteCommand | undefined,
     platform: NodeJS.Platform
 ): boolean {
-    return platform === 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
+    return platform === 'win32' && commandFencesItsLockOwner(command);
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
@@ -961,13 +1205,13 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'review:publish' ||
-        value === 'review:resolve' ||
-        value === 'review:resolve:recover'
+        value === 'review:publish:recover' ||
+        value === 'review:resolve'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve|review:resolve:recover> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:publish:recover|review:resolve> [args...]'
     );
 }
 

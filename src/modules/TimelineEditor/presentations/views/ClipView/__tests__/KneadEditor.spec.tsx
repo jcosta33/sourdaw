@@ -348,12 +348,16 @@ describe('KneadEditor', () => {
 
             it('key and scale selects write the project settings', () => {
                 render(<KneadEditor {...defaultProps} />);
-                const selects = screen.getAllByRole('combobox');
+                const rootSelect = screen.getByRole('combobox', { name: 'Root note' });
+                const scaleSelect = screen.getByRole('combobox', { name: 'Scale' });
 
-                fireEvent.change(selects[0]!, { target: { value: '2' } });
+                expect(rootSelect).toBeInTheDocument();
+                expect(scaleSelect).toBeInTheDocument();
+
+                fireEvent.change(rootSelect, { target: { value: '2' } });
                 expect(setProjectKeyRoot).toHaveBeenCalledWith(2);
 
-                fireEvent.change(selects[1]!, { target: { value: 'minor' } });
+                fireEvent.change(scaleSelect, { target: { value: 'minor' } });
                 expect(setProjectScaleName).toHaveBeenCalledWith('minor');
             });
 

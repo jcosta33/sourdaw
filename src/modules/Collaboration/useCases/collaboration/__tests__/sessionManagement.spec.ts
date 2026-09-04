@@ -121,6 +121,7 @@ const crdtMock = vi.hoisted(() => {
         preserveBranchStateForSession: vi.fn(),
         replaceBranchState: vi.fn(),
         restoreBranchStateAfterSession: vi.fn(),
+        replaceCrdtDocInLineage: vi.fn(),
     };
 });
 
@@ -271,6 +272,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     preserveBranchStateForSession: crdtMock.preserveBranchStateForSession,
     replaceBranchState: crdtMock.replaceBranchState,
     restoreBranchStateAfterSession: crdtMock.restoreBranchStateAfterSession,
+    replaceCrdtDocInLineage: crdtMock.replaceCrdtDocInLineage,
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
@@ -348,10 +350,22 @@ describe('sessionRuntimePrimitives', () => {
     });
 
     describe('generateSessionId', () => {
-        it('returns the first 8 hex characters of a UUID', () => {
+        it('returns a whole UUID rather than a truncated prefix of one', () => {
             const id = sessionRuntimePrimitives.generateSessionId();
-            expect(id).toHaveLength(8);
-            expect(id).toMatch(/^[0-9a-f]{8}$/i);
+            expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+        });
+    });
+
+    describe('generateSessionSecret', () => {
+        it('returns 128 bits of base64url with no padding', () => {
+            const secret = sessionRuntimePrimitives.generateSessionSecret();
+            expect(secret).toMatch(/^[A-Za-z0-9_-]{22}$/);
+        });
+
+        it('does not repeat a secret across sessions', () => {
+            const first = sessionRuntimePrimitives.generateSessionSecret();
+            const second = sessionRuntimePrimitives.generateSessionSecret();
+            expect(first).not.toBe(second);
         });
     });
 
@@ -799,6 +813,17 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
             expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        });
+
+        // The secret authorises relay room membership, so a session that has
+        // been torn down must not leave one behind for the next join to reuse.
+        it('clears the room secret so a torn-down session cannot authorise a join', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            sessionRuntimePrimitives.state.sessionSecret = 'room-secret-1';
+
+            sessionRuntimePrimitives.cleanup();
+
+            expect(sessionRuntimePrimitives.state.sessionSecret).toBeNull();
         });
 
         // Dropping the reference alone leaves in-flight transfers holding

@@ -8,6 +8,7 @@ import {
     generateSyncMessage,
     getChanges,
     getHeads,
+    getMissingDeps,
     load,
     receiveSyncMessage,
     save,
@@ -21,7 +22,7 @@ import {
     subscribeToCrdtChanges,
     getCrdtDoc,
     createCrdtDoc,
-    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     removeCrdtDoc,
     sanitizeIncomingCrdtDocument,
     hasCrdtDoc,
@@ -61,7 +62,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     getCrdtDoc: vi.fn(),
     createCrdtDoc: vi.fn(),
-    replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
     removeCrdtDoc: vi.fn(),
     hasCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
@@ -87,7 +88,7 @@ function makePeerManager() {
 }
 
 /** A real base64 Automerge sync message for the `root` doc (so receiveSync's
- *  receiveSyncMessage decode succeeds and we reach replaceCrdtDoc). */
+ *  receiveSyncMessage decode succeeds and we reach replaceCrdtDocInLineage). */
 function makeRealSyncMessage(): string {
     const doc = createAmDoc();
     const [, message] = generateSyncMessage(doc, initSyncState());
@@ -159,7 +160,7 @@ describe('AutomergeSync', () => {
             .mockReturnValue(() => {});
         vi.mocked(getCrdtDoc).mockReset();
         vi.mocked(createCrdtDoc).mockReset();
-        vi.mocked(replaceCrdtDoc).mockReset();
+        vi.mocked(replaceCrdtDocInLineage).mockReset();
         vi.mocked(removeCrdtDoc).mockReset();
         vi.mocked(hasCrdtDoc).mockReset().mockReturnValue(false);
         vi.mocked(getCrdtDocIds).mockReset().mockReturnValue([]);
@@ -194,7 +195,7 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'p1', docId: 'evil-doc', syncMessageBase64: makeRealSyncMessage() });
 
         expect(createCrdtDoc).not.toHaveBeenCalled();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('§fix-5 accepts a sync for a known docId (root)', () => {
@@ -203,7 +204,7 @@ describe('AutomergeSync', () => {
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
     it.each([
@@ -215,7 +216,7 @@ describe('AutomergeSync', () => {
             const { live: initialLive, remoteSeed } = forkPeerDocs();
             let live: Doc<unknown> = initialLive;
             vi.mocked(getCrdtDoc).mockImplementation(() => live);
-            vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
                 live = doc;
             });
             const onSyncApplied = vi.fn();
@@ -247,7 +248,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
             order.push('publish-root');
         });
@@ -284,7 +285,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const peer = makePeerManager() as unknown as PeerConnectionManager;
@@ -344,7 +345,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
         const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const commitHandoff = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -370,7 +371,7 @@ describe('AutomergeSync', () => {
             senderIsHost: true,
         });
         expect(commitHandoff).toHaveBeenCalledOnce();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
         expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith([...getHeads(canonical)].map(String).toSorted());
     });
 
@@ -442,7 +443,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = initialLive;
         let handoffPrepared = false;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         vi.mocked(persistCrdtProject).mockImplementation(async () => {
@@ -480,7 +481,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const peer = makePeerManager() as unknown as PeerConnectionManager;
@@ -593,7 +594,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const prepareSyncPersistence = vi.fn().mockResolvedValue(undefined);
@@ -632,7 +633,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         let releasePrepare: (() => void) | undefined;
@@ -693,7 +694,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         let releasePrepare: (() => void) | undefined;
@@ -725,7 +726,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         let prepareCount = 0;
@@ -767,7 +768,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const peer = makePeerManager() as unknown as PeerConnectionManager;
@@ -845,7 +846,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
         const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const sync = new AutomergeSync(makePeerManager(), {
@@ -876,7 +877,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
         const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const sync = new AutomergeSync(makePeerManager(), {
@@ -916,12 +917,12 @@ describe('AutomergeSync', () => {
             syncMessageBase64: makeRealSyncMessage(),
         });
 
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
         releaseTransition?.('committed');
         await transition;
         await Promise.resolve();
 
-        expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'branch_candidate' }));
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith(expect.objectContaining({ id: 'branch_candidate' }));
     });
 
     it('drops a deferred branch-document sync when its owning transition aborts', async () => {
@@ -944,7 +945,7 @@ describe('AutomergeSync', () => {
         await Promise.resolve();
 
         expect(createCrdtDoc).not.toHaveBeenCalled();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it.each(['root', 'branch_feature'])('sanitizes and persists an authorized peer document: %s', async (doc_id) => {
@@ -958,7 +959,7 @@ describe('AutomergeSync', () => {
         await sync.flushPersistence();
 
         expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
-        expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
         expect(persistCrdtProject).toHaveBeenCalledTimes(1);
     });
 
@@ -974,7 +975,7 @@ describe('AutomergeSync', () => {
         const { live: initial_live, remoteSeed } = forkPeerDocs();
         let live = initial_live;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             order.push('replace-document');
             live = doc;
         });
@@ -1062,8 +1063,8 @@ describe('AutomergeSync', () => {
      * `receiveSyncMessage` outdates the document it is handed, so the peer's
      * copy is reloaded from bytes and never aliases a document under test.
      */
-    function makePeerEndpoint(doc: Doc<unknown>) {
-        let peer_doc = load<unknown>(save(doc));
+    function makePeerEndpoint(doc: Doc<SeededDoc>) {
+        let peer_doc = load<SeededDoc>(save(doc));
         let peer_state: SyncState = initSyncState();
         return {
             /** The next payload this peer wants to send, or null once settled. */
@@ -1075,14 +1076,15 @@ describe('AutomergeSync', () => {
             receive(message: Uint8Array): void {
                 [peer_doc, peer_state] = receiveSyncMessage(peer_doc, peer_state, message);
             },
+            applyPeerEdit(): void {
+                peer_doc = change(peer_doc, (draft) => {
+                    draft.peerProbe = PEER_EDIT;
+                });
+            },
+            document(): Doc<SeededDoc> {
+                return peer_doc;
+            },
         };
-    }
-
-    /** Let the per-(peer, doc) send queues drain; they settle off the microtask queue. */
-    async function settleSends(): Promise<void> {
-        await new Promise((resolve) => {
-            setTimeout(resolve, 0);
-        });
     }
 
     const PEER_EDIT = 'peer edit';
@@ -1091,6 +1093,16 @@ describe('AutomergeSync', () => {
         docId?: string;
         /** Start with no local document under `docId`, so `createCrdtDoc` runs. */
         absentLocally?: boolean;
+        /**
+         * Wire `prepareSyncPersistence` so a documentChanged root delivery
+         * takes `receiveAcceptedSync`'s `holdsRootPersistenceBarrier` route
+         * and defers `publish()` — and with it `onSyncApplied` — behind a
+         * persistence barrier that only resolves on a later macrotask.
+         * Exercises the same deferred-application timing production takes
+         * when a persistence barrier or a pending
+         * `waitForCrdtDocumentTransition` is already held.
+         */
+        deferApplicationBehindPersistenceBarrier?: boolean;
     };
 
     /**
@@ -1120,7 +1132,7 @@ describe('AutomergeSync', () => {
         vi.mocked(createCrdtDoc).mockImplementation(() => {
             live = automergeInit();
         });
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
             // The real repository notifies subscribers on a replace; the
             // isApplyingRemoteSync guard is what keeps that from echoing.
@@ -1131,17 +1143,51 @@ describe('AutomergeSync', () => {
             change_cb?.(doc_id);
         });
 
-        const peer_document = change(remoteSeed, (draft) => {
-            draft.peerProbe = PEER_EDIT;
-        });
-        const peer = makePeerEndpoint(peer_document);
+        const peer = makePeerEndpoint(remoteSeed);
+        let next_outbound = Promise.withResolvers<void>();
+        let initial_handshake_pending = false;
+        const protocol_sequence: string[] = [];
+
+        function waitForOutbound(): Promise<void> {
+            return next_outbound.promise;
+        }
+
+        /**
+         * The generation job is enqueued before this marker. Once its promise
+         * reaction starts, both quarantine guards and transport entry run
+         * synchronously, before `sendDocSyncToPeer` reaches an await. Call
+         * this only after a fixture delivery has settled every prior reply.
+         */
+        function waitForQueuedGenerationStart(): Promise<void> {
+            return new Promise((resolve) => {
+                queueMicrotask(resolve);
+            });
+        }
 
         const sendCrdtSync = vi.fn((input: { peerId: PeerId; message: PeerMessage }): void => {
             const { message } = input;
             if (message.type !== 'crdt-sync' || message.docId !== doc_id) {
                 return;
             }
+            const is_initial_handshake = initial_handshake_pending;
+            initial_handshake_pending = false;
+            if (is_initial_handshake) {
+                protocol_sequence.push('outbound-handshake');
+            }
             peer.receive(base64ToBytes(message.data));
+            // `sendDocSyncToPeer` commits its SyncState in the continuation
+            // after this transport call. Queue this signal after that
+            // continuation, so a peer reply cannot overwrite the committed
+            // state with the old in-flight handshake state.
+            queueMicrotask(() => {
+                queueMicrotask(() => {
+                    if (is_initial_handshake) {
+                        protocol_sequence.push('outbound-handshake-committed');
+                    }
+                    next_outbound.resolve();
+                    next_outbound = Promise.withResolvers<void>();
+                });
+            });
         });
         const peerManager = {
             getConnectedPeerIds: vi.fn<() => PeerId[]>().mockReturnValue(['editor']),
@@ -1149,39 +1195,249 @@ describe('AutomergeSync', () => {
         };
         const onSyncQuarantine = vi.fn();
         const onSyncQuarantineLifted = vi.fn();
-        const sync = new AutomergeSync(peerManager, { onSyncQuarantine, onSyncQuarantineLifted });
+
+        /**
+         * Resolvers waiting on the next `onSyncApplied` for `doc_id`.
+         *
+         * Registering one before a message is handed to `receiveSync` also
+         * catches a synchronous application: `onSyncApplied` fires inside
+         * `publish()`, and a resolver already queued at that point still
+         * resolves, whether `publish()` runs in this call stack or on a
+         * later microtask/macrotask behind a persistence barrier.
+         */
+        let pending_applied_resolvers: Array<() => void> = [];
+
+        function waitForNextAppliedSync(): Promise<void> {
+            return new Promise((resolve) => {
+                pending_applied_resolvers.push(resolve);
+            });
+        }
+
+        function onSyncApplied({ docId: applied_doc_id }: { peerId: PeerId; docId: string }): void {
+            if (applied_doc_id !== doc_id) {
+                return;
+            }
+            protocol_sequence.push('peer-edit-applied');
+            const resolvers = pending_applied_resolvers;
+            pending_applied_resolvers = [];
+            for (const resolve of resolvers) {
+                resolve();
+            }
+        }
+
+        /**
+         * Holds a persistence barrier open across a real macrotask before
+         * resolving, so `receiveAcceptedSync` takes the deferred
+         * `holdsRootPersistenceBarrier` route instead of publishing inline.
+         */
+        function deferredPrepareSyncPersistence(): Promise<{
+            commit: () => Promise<void>;
+            abort: () => Promise<void>;
+        }> {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve({ commit: async () => {}, abort: async () => {} });
+                }, 0);
+            });
+        }
+
+        const sync = new AutomergeSync(peerManager, {
+            onSyncQuarantine,
+            onSyncQuarantineLifted,
+            onSyncApplied,
+            prepareSyncPersistence: options.deferApplicationBehindPersistenceBarrier
+                ? deferredPrepareSyncPersistence
+                : undefined,
+        });
         sync.start();
+
+        /** Deliver the bidirectional handshake before either side makes an edit. */
+        async function completeHandshake(): Promise<void> {
+            const handshake = waitForOutbound();
+            initial_handshake_pending = true;
+            sync.addPeer('editor');
+            // `addPeer` queues its initial send. Awaiting the transport call
+            // after its state commit proves the peer received that handshake
+            // before this fixture consumes the peer's change-free reply.
+            await handshake;
+            if (!(await deliverOne('peer-handshake-delivered'))) {
+                throw new Error('the peer produced no handshake message');
+            }
+            await sync.flushPersistence();
+            vi.mocked(sanitizeIncomingCrdtDocument).mockClear();
+            vi.mocked(persistCrdtProject).mockClear();
+            command_mocks.sync_action_replay_metadata.mockClear();
+        }
 
         /** Announce this node to the peer, the way handlePeerConnected does. */
         async function connect(): Promise<void> {
-            sync.addPeer('editor');
-            await settleSends();
+            if (live === undefined) {
+                sync.addPeer('editor');
+                peer.applyPeerEdit();
+                return;
+            }
+            await completeHandshake();
+            // `onSyncApplied` records `'peer-edit-applied'` once this edit is
+            // actually delivered and installed — not here, where the peer
+            // only prepares it locally.
+            peer.applyPeerEdit();
+        }
+
+        /**
+         * Whether this side's document is still missing content the peer's
+         * document already carries.
+         */
+        function isMissingPeerContent(): boolean {
+            if (live === undefined) {
+                return getHeads(peer.document()).length > 0;
+            }
+            return getMissingDeps(live, getHeads(peer.document())).length > 0;
+        }
+
+        /**
+         * Deliver the peer's current message, merge it, and wait for this
+         * side's own reply to reach the peer before returning. Returns the
+         * decoded payload, or null once the peer has nothing to send.
+         */
+        async function deliverRound(protocol_event?: string): Promise<ReturnType<typeof decodeSyncMessage> | null> {
+            const message = peer.send();
+            if (!message) {
+                return null;
+            }
+            if (protocol_event !== undefined) {
+                protocol_sequence.push(protocol_event);
+            }
+            const decoded = decodeSyncMessage(message);
+            sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
+            // A live session keeps editing while it syncs, and it is the
+            // repository's change notification that generates the reply.
+            // `sendDocSyncToPeer` sends nothing when it has nothing new to
+            // offer, so this waits for that generation attempt to reach its
+            // synchronous send (or its synchronous decision not to), not for
+            // an outbound message that may never come.
+            change_cb?.(doc_id);
+            await waitForQueuedGenerationStart();
+            return decoded;
+        }
+
+        /**
+         * Redeliver while this side is still behind and the round that left
+         * it there carried nothing: Automerge's sync `have` message is a
+         * Bloom filter with a small false-positive rate, and a hit makes the
+         * sender omit a change it wrongly believes the other side already
+         * has, so the next round (informed by this side's reply) carries it
+         * instead. A round that *did* carry changes and still left this side
+         * behind failed for a real reason — sanitation rejected it, a merge
+         * was rolled back — and chasing that is not this fixture's call to
+         * make; the caller decides whether and when to try again.
+         */
+        async function chaseConvergenceAfterEmptyRound(
+            lastDecoded: ReturnType<typeof decodeSyncMessage>
+        ): Promise<ReturnType<typeof decodeSyncMessage>> {
+            let decoded = lastDecoded;
+            while (decoded.changes.length === 0 && isMissingPeerContent()) {
+                const next = await deliverRound();
+                if (next === null) {
+                    return decoded;
+                }
+                decoded = next;
+            }
+            return decoded;
         }
 
         /**
          * Deliver one payload from the peer and let this node's own outbound
-         * generation reach it. Returns false once the peer has nothing to send.
+         * generation reach it. Returns false once the peer has nothing to
+         * send. Chases convergence (see `chaseConvergenceAfterEmptyRound`)
+         * so a Bloom-filter miss on this round does not read as delivery.
          */
-        async function deliverOne(): Promise<boolean> {
-            const message = peer.send();
-            if (!message) {
+        async function deliverOne(protocol_event?: string): Promise<boolean> {
+            const first = await deliverRound(protocol_event);
+            if (first === null) {
                 return false;
             }
-            sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
-            // A live session keeps editing while it syncs, and it is the
-            // repository's change notification that generates the reply.
-            change_cb?.(doc_id);
-            await settleSends();
+            await chaseConvergenceAfterEmptyRound(first);
             return true;
         }
 
         async function deliver(rounds: number): Promise<void> {
             for (let round = 0; round < rounds; round++) {
-                const delivered = await deliverOne();
-                if (!delivered) {
+                if (!(await deliverOne())) {
                     return;
                 }
             }
+        }
+
+        /**
+         * Report the sync state a delivery left behind instead of a bare
+         * vitest timeout, so a future non-apply names its own cause: what
+         * the peer's message actually carried, what this side ended up
+         * holding, and how many times each install/uninstall mock ran.
+         */
+        function describeUnappliedDelivery(decoded: ReturnType<typeof decodeSyncMessage>): string {
+            const liveHeads = live === undefined ? 'no live document' : getHeads(live).join(',');
+            const missingDeps = live === undefined ? [] : getMissingDeps(live, getHeads(peer.document()));
+            return [
+                'deliverPeerEdit: the peer edit never applied within the diagnostic bound',
+                `decoded changes=${decoded.changes.length} heads=${decoded.heads.join(',')}`,
+                `live heads=${liveHeads}`,
+                `missing deps=${missingDeps.join(',')}`,
+                `replace=${vi.mocked(replaceCrdtDocInLineage).mock.calls.length} remove=${vi.mocked(removeCrdtDoc).mock.calls.length} create=${vi.mocked(createCrdtDoc).mock.calls.length}`,
+                `onSyncQuarantine=${onSyncQuarantine.mock.calls.length}`,
+                `protocol_sequence=${JSON.stringify(protocol_sequence)}`,
+            ].join('\n');
+        }
+
+        /**
+         * Wait for the peer edit to actually apply, bounded by a real timer
+         * so a delivery that never applies fails with the sync state that
+         * produced that instead of a generic vitest timeout. The bound only
+         * ever settles the race when the apply genuinely never arrives — the
+         * happy path still resolves off `applied` alone, with no macrotask
+         * on that route.
+         */
+        function raceAppliedOrDiagnose(
+            applied: Promise<void>,
+            decoded: ReturnType<typeof decodeSyncMessage>
+        ): Promise<void> {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error(describeUnappliedDelivery(decoded)));
+                }, 2000);
+                applied.then(() => {
+                    clearTimeout(timer);
+                    resolve();
+                });
+            });
+        }
+
+        /**
+         * Deliver the peer's edit and wait for `onSyncApplied` to actually
+         * fire for `doc_id`, not just for `receiveSync` to return — that
+         * call returns `void` and, behind a persistence barrier or a
+         * pending document transition, `receiveAcceptedSync` defers
+         * `publish()` past this call stack. `'peer-edit-delivered'` is
+         * pushed only after the applied wait resolves, so the recorded
+         * order — `'peer-edit-applied'` then `'peer-edit-delivered'` — is
+         * produced by the actual apply, not by push order alone.
+         *
+         * `applied` is registered once, before the first round, and chasing
+         * convergence (see `chaseConvergenceAfterEmptyRound`) redelivers on
+         * the same waiter: a Bloom-filter miss on the first round never
+         * fires `onSyncApplied`, but a later round that actually carries the
+         * edit still resolves it, because the resolver stayed queued across
+         * every round.
+         */
+        async function deliverPeerEdit(): Promise<boolean> {
+            const applied = waitForNextAppliedSync();
+            const first = await deliverRound();
+            if (first === null) {
+                return false;
+            }
+            const decoded = await chaseConvergenceAfterEmptyRound(first);
+            await raceAppliedOrDiagnose(applied, decoded);
+            protocol_sequence.push('peer-edit-delivered');
+            return true;
         }
 
         /**
@@ -1191,34 +1447,65 @@ describe('AutomergeSync', () => {
          * whatever the receiver did with the last one.
          */
         function resendFromPeer(): string {
-            const resend = makePeerEndpoint(peer_document);
+            const resend = makePeerEndpoint(peer.document());
             return bytesToBase64(resend.send()!);
         }
 
-        function deliverResend(): void {
+        /**
+         * Deliver a from-scratch renegotiation. Deliberately not chased:
+         * `resendFromPeer` builds a brand-new `SyncState` every call, and
+         * Automerge's first message off an uninitialized state is always
+         * exploratory — a heads-and-bloom announcement with zero changes —
+         * regardless of what the peer holds. That is not the Bloom-filter
+         * false positive `deliverOne` chases past; it is the protocol's
+         * ordinary first hop, and callers that need the content hop already
+         * call `deliverResend` again for it (see the sanitation-retry
+         * tests, which pace one call per delivery attempt on purpose).
+         */
+        async function deliverResend(): Promise<void> {
             sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: resendFromPeer() });
+            await waitForQueuedGenerationStart();
+        }
+
+        async function deliverOneAndWaitForReply(): Promise<void> {
+            if (!(await deliverOne())) {
+                throw new Error('the peer produced no sync message');
+            }
+        }
+
+        async function deliverResendAndWaitForReply(): Promise<void> {
+            await deliverResend();
         }
 
         /** The repository announcing a local edit, and the sends it triggers. */
         async function notifyLocalChange(): Promise<void> {
             change_cb?.(doc_id);
-            await settleSends();
+            await waitForQueuedGenerationStart();
         }
 
         return {
             sync,
             peer,
-            peerDocument: peer_document,
+            get peerDocument(): Doc<SeededDoc> {
+                return peer.document();
+            },
             docId: doc_id,
             onSyncQuarantine,
             onSyncQuarantineLifted,
             peerManager,
             connect,
+            completeHandshake,
             deliverOne,
             deliver,
+            deliverPeerEdit,
             resendFromPeer,
             deliverResend,
+            deliverOneAndWaitForReply,
+            deliverResendAndWaitForReply,
+            waitForOutbound,
+            waitForQueuedGenerationStart,
             notifyLocalChange,
+            protocolSequence: (): readonly string[] => protocol_sequence,
             currentDoc: (): Doc<unknown> | undefined => live,
             currentHeads: (): Heads => {
                 if (live === undefined) {
@@ -1243,6 +1530,64 @@ describe('AutomergeSync', () => {
         };
     }
 
+    it('commits the outbound handshake before delivering the peer edit', async () => {
+        const exchange = setupLiveExchange();
+        await exchange.connect();
+
+        expect(await exchange.deliverPeerEdit()).toBe(true);
+
+        expect(exchange.probeValue()).toBe(PEER_EDIT);
+        expect(exchange.protocolSequence()).toEqual([
+            'outbound-handshake',
+            'outbound-handshake-committed',
+            'peer-handshake-delivered',
+            'peer-edit-applied',
+            'peer-edit-delivered',
+        ]);
+    });
+
+    /**
+     * A witness, not a reproduction: `receiveAcceptedSync` takes the
+     * `holdsRootPersistenceBarrier` route whenever a persistence barrier
+     * holds the delivery, and `publish()` — the only place `onSyncApplied`
+     * fires and the live document is replaced — does not run until that
+     * barrier resolves on a later macrotask. This proves `deliverPeerEdit()`
+     * observes that real apply rather than just `receiveSync` returning. It
+     * does not exercise the route the hosted escape actually took — the
+     * escaped case never wires `prepareSyncPersistence`, so it never enters
+     * this barrier at all.
+     */
+    it('reports peer-edit delivery only after the live document carries the edit when application is deferred', async () => {
+        const exchange = setupLiveExchange({ deferApplicationBehindPersistenceBarrier: true });
+        await exchange.connect();
+
+        expect(await exchange.deliverPeerEdit()).toBe(true);
+
+        expect(exchange.probeValue()).toBe(PEER_EDIT);
+        expect(exchange.protocolSequence()).toEqual([
+            'outbound-handshake',
+            'outbound-handshake-committed',
+            'peer-handshake-delivered',
+            'peer-edit-applied',
+            'peer-edit-delivered',
+        ]);
+    });
+
+    it('sends a local edit after committing the initial handshake state', async () => {
+        const exchange = setupLiveExchange();
+        await exchange.completeHandshake();
+
+        exchange.applyLocalEdit('post-handshake local edit');
+        await exchange.notifyLocalChange();
+
+        expect(exchange.peerDocument.peerProbe).toBe('post-handshake local edit');
+        expect(exchange.protocolSequence()).toEqual([
+            'outbound-handshake',
+            'outbound-handshake-committed',
+            'peer-handshake-delivered',
+        ]);
+    });
+
     /**
      * Drive a channel past {@link MAX_SANITATION_FAILURES} failed deliveries.
      *
@@ -1251,13 +1596,17 @@ describe('AutomergeSync', () => {
      * own send is in flight and would otherwise decide when this stops.
      */
     async function driveToQuarantine(exchange: ReturnType<typeof setupLiveExchange>): Promise<void> {
-        await exchange.deliverOne();
-        exchange.deliverResend();
-        exchange.deliverResend();
+        await exchange.deliverOneAndWaitForReply();
+        await exchange.deliverResendAndWaitForReply();
+        await exchange.deliverResend();
+        // The final failed delivery quarantines the channel. This local
+        // notification proves the closed-channel generation has reached its
+        // guard before the next test action reopens that channel.
+        await exchange.notifyLocalChange();
     }
 
     /**
-     * Turns red on: the `replaceCrdtDoc({ id: docId, doc: restored_doc })`
+     * Turns red on: the `replaceCrdtDocInLineage({ id: docId, doc: restored_doc })`
      * rollback in `rollBackSyncedDocument`. Without it the repository keeps
      * the document `receiveSyncMessage` merged the peer's changes into and
      * then outdated, so it is no longer at its pre-sync heads.
@@ -1270,8 +1619,10 @@ describe('AutomergeSync', () => {
         // Recorded inside the sanitizer, so the test can say what the merge
         // had actually done by the time it failed.
         let merged_heads: Heads | null = null;
+        let merged_probe: string | undefined;
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => {
             merged_heads = getHeads(document);
+            merged_probe = (document as Doc<SeededDoc>).peerProbe;
             throw new Error('sanitation failed');
         });
 
@@ -1280,6 +1631,7 @@ describe('AutomergeSync', () => {
         // The delivery genuinely merged the peer's edit — this is not an
         // empty handshake round that never moved the document.
         expect(merged_heads).not.toEqual(heads_before_failure);
+        expect(merged_probe).toBe(PEER_EDIT);
         expect(command_mocks.sync_action_replay_metadata).not.toHaveBeenCalled();
         expect(persistCrdtProject).not.toHaveBeenCalled();
         // ...and that merge never becomes project truth: the document is back
@@ -1305,13 +1657,25 @@ describe('AutomergeSync', () => {
     it('retries sanitation on the merged document in hand instead of dropping the delivery', async () => {
         const exchange = setupLiveExchange();
         await exchange.connect();
-        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementationOnce(() => {
-            throw new Error('transient allocation fault');
+        // Aimed only at the round that carries the peer edit, so a chased
+        // empty round (see `chaseConvergenceAfterEmptyRound`) cannot absorb
+        // the scripted failure and leave the retry this test targets
+        // unexercised.
+        let peer_edit_sanitized_once = false;
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => {
+            if ((document as Doc<SeededDoc>).peerProbe === PEER_EDIT && !peer_edit_sanitized_once) {
+                peer_edit_sanitized_once = true;
+                throw new Error('transient allocation fault');
+            }
+            return document;
         });
 
         await exchange.deliverOne();
 
-        expect(vi.mocked(sanitizeIncomingCrdtDocument).mock.calls.length).toBe(2);
+        const peerEditSanitizeCalls = vi
+            .mocked(sanitizeIncomingCrdtDocument)
+            .mock.calls.filter(([document]) => (document as Doc<SeededDoc>).peerProbe === PEER_EDIT).length;
+        expect(peerEditSanitizeCalls).toBe(2);
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.probeValue()).toBe(PEER_EDIT);
     });
@@ -1325,23 +1689,29 @@ describe('AutomergeSync', () => {
     it('clears the failure streak after a delivery that sanitizes', async () => {
         const exchange = setupLiveExchange();
         await exchange.connect();
-        // Two failed deliveries — one short of the bound.
+        // Two failed deliveries — one short of the bound. Both go through
+        // `deliverResend`, not `deliverOne`: this test paces exactly one
+        // sanitize-failure round per call, and `deliverOne`'s chase past a
+        // Bloom-filter miss (see `chaseConvergenceAfterEmptyRound`) would
+        // occasionally spend this delivery's single round on two, since
+        // sanitation runs — and can fail — on every round regardless of
+        // whether it carried a change.
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
             throw new Error('sanitation failed');
         });
-        await exchange.deliverOne();
-        exchange.deliverResend();
+        await exchange.deliverResend();
+        await exchange.deliverResend();
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
 
         // One that works, then two more failures. Without the reset the
         // second of those would be the third in a row and close the channel.
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation((document) => document);
-        exchange.deliverResend();
+        await exchange.deliverResend();
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
             throw new Error('sanitation failed');
         });
-        exchange.deliverResend();
-        exchange.deliverResend();
+        await exchange.deliverResend();
+        await exchange.deliverResend();
 
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
     });
@@ -1361,13 +1731,19 @@ describe('AutomergeSync', () => {
             throw new Error('sanitation failed');
         });
 
-        await exchange.deliverOne();
+        // All three deliveries go through `deliverResend`, not `deliverOne`:
+        // this test paces exactly one sanitize-failure round per call, and
+        // `deliverOne`'s chase past a Bloom-filter miss (see
+        // `chaseConvergenceAfterEmptyRound`) would occasionally spend a
+        // single delivery's round on two, since sanitation runs — and can
+        // fail — on every round regardless of whether it carried a change.
+        await exchange.deliverResend();
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.currentHeads()).toEqual(pre_sync_heads);
-        exchange.deliverResend();
+        await exchange.deliverResend();
         expect(exchange.onSyncQuarantine).not.toHaveBeenCalled();
         expect(exchange.currentHeads()).toEqual(pre_sync_heads);
-        exchange.deliverResend();
+        await exchange.deliverResend();
 
         expect(exchange.onSyncQuarantine).toHaveBeenCalledTimes(1);
         // Three deliveries, each given its two in-hand attempts.
@@ -1436,7 +1812,7 @@ describe('AutomergeSync', () => {
      * so this asserts the outcome, not which guard produced it. The test below
      * separates them.
      */
-    it('generates no further sync for a quarantined channel', async () => {
+    it('does not retain a local edit queued while the channel is quarantined', async () => {
         const exchange = setupLiveExchange();
         await exchange.connect();
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
@@ -1448,6 +1824,7 @@ describe('AutomergeSync', () => {
         exchange.applyLocalEdit('work continues');
         exchange.peerManager.sendCrdtSync.mockClear();
         await exchange.notifyLocalChange();
+        exchange.sync.forgetPeer('editor');
 
         expect(exchange.peerManager.sendCrdtSync).not.toHaveBeenCalled();
     });
@@ -1494,9 +1871,9 @@ describe('AutomergeSync', () => {
         // An ICE flap reconnects the peer while the channel is still closed.
         exchange.sync.addPeer('editor');
         // ...and the peer then really goes away, which lifts the quarantine,
-        // before the turn a queued generation would have run on.
+        // before the queued generation reaches transport.
         exchange.sync.forgetPeer('editor');
-        await settleSends();
+        await exchange.waitForQueuedGenerationStart();
 
         expect(exchange.onSyncQuarantineLifted).toHaveBeenCalledWith({ peerId: 'editor' });
         expect(exchange.peerManager.sendCrdtSync).not.toHaveBeenCalled();
@@ -1523,7 +1900,6 @@ describe('AutomergeSync', () => {
         // ICE drops and recovers without the peer ever going away.
         exchange.sync.removePeer('editor');
         exchange.sync.addPeer('editor');
-        await settleSends();
         exchange.sync.receiveSync({
             peerId: 'editor',
             docId: 'root',
@@ -1573,7 +1949,7 @@ describe('AutomergeSync', () => {
      * `RangeError: Attempting to change an outdated document`. One failed
      * message from one peer would stop the user editing their own project.
      *
-     * Turns red on: the `replaceCrdtDoc` rollback in `rollBackSyncedDocument`.
+     * Turns red on: the `replaceCrdtDocInLineage` rollback in `rollBackSyncedDocument`.
      */
     it('keeps the document writable after a peer fails sanitation', async () => {
         const exchange = setupLiveExchange();
@@ -1594,7 +1970,7 @@ describe('AutomergeSync', () => {
      * An outdated handle left in the repository kills every later sync for
      * that document, from any peer, inside `receiveSyncMessage`.
      *
-     * Turns red on: the `replaceCrdtDoc` rollback in `rollBackSyncedDocument`.
+     * Turns red on: the `replaceCrdtDocInLineage` rollback in `rollBackSyncedDocument`.
      */
     it('keeps the document syncable by other peers after one peer fails sanitation', async () => {
         const exchange = setupLiveExchange();
@@ -1634,15 +2010,18 @@ describe('AutomergeSync', () => {
         await exchange.connect();
         // The handshake round mints the document; the round that carries the
         // peer's content is the one that fails.
+        let rejected_probe: string | undefined;
         vi.mocked(sanitizeIncomingCrdtDocument)
             .mockImplementationOnce((document) => document)
-            .mockImplementation(() => {
+            .mockImplementation((document) => {
+                rejected_probe = (document as Doc<SeededDoc>).peerProbe;
                 throw new Error('sanitation failed');
             });
 
         await exchange.deliver(4);
 
         expect(createCrdtDoc).toHaveBeenCalledWith('branch_feature');
+        expect(rejected_probe).toBe(PEER_EDIT);
         expect(removeCrdtDoc).toHaveBeenCalledWith('branch_feature');
         expect(exchange.currentDoc()).toBeUndefined();
     });
@@ -1655,7 +2034,7 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(canApplySync).toHaveBeenCalledWith('peer-1', 'root');
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('applies a sync the canApplySync hook accepts', () => {
@@ -1665,7 +2044,7 @@ describe('AutomergeSync', () => {
 
         sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(replaceCrdtDoc).toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).toHaveBeenCalled();
     });
 
     it('§fix-4 does not re-broadcast the repository change triggered while applying a remote sync', () => {
@@ -1676,9 +2055,9 @@ describe('AutomergeSync', () => {
             return () => {};
         });
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
-        // replaceCrdtDoc re-enters the change subscription synchronously, the
+        // replaceCrdtDocInLineage re-enters the change subscription synchronously, the
         // way the real repository does on a doc replace.
-        vi.mocked(replaceCrdtDoc).mockImplementation(() => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(() => {
             changeCb?.('root');
         });
 
@@ -1730,7 +2109,7 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(createCrdtDoc).toHaveBeenCalledWith('root');
-        expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: 'root', doc });
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith({ id: 'root', doc });
     });
 
     it('drops a malformed sync message from a peer without throwing', () => {
@@ -1739,7 +2118,7 @@ describe('AutomergeSync', () => {
         const garbage = bytesToBase64(new Uint8Array([1, 2, 3]));
 
         expect(() => sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: garbage })).not.toThrow();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('handlePeerMessage forwards a crdt-sync message to receiveSync', () => {
@@ -1751,7 +2130,7 @@ describe('AutomergeSync', () => {
             message: { type: 'crdt-sync', docId: 'root', data: makeRealSyncMessage() },
         });
 
-        expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
     it('handlePeerMessage ignores non crdt-sync message types', () => {
@@ -1760,7 +2139,7 @@ describe('AutomergeSync', () => {
         expect(() =>
             sync.handlePeerMessage({ peerId: 'p2', message: { type: 'peer-leave', peerId: 'p2' } })
         ).not.toThrow();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('addPeer sends the initial sync for the root doc to the new peer', async () => {

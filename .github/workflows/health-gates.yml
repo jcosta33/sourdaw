@@ -2,7 +2,8 @@ name: Health gates
 
 # Pull-request validation. Types, boundaries, lint, format, artifact freshness,
 # the inventory scripts, the unit suite, the production build, the Rust
-# workspace, the collaboration server, and both native platform legs. Measured,
+# workspace, the collaboration server, both native platform legs, and the
+# native addon parity proof. Measured,
 # that lane settles in about ten minutes, bounded by the unit shards.
 #
 # This workflow answers `pull_request` only. Nightly validation, the end-to-end
@@ -226,6 +227,16 @@ jobs:
 
       - name: Barrel mock coverage
         run: pnpm test:barrel-mocks
+
+      # The census walks production sources and is isolated from the unit
+      # shards so it never inherits their accumulated jsdom/module load debt.
+      - name: Device write boundary census
+        run: pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+
+      # Every case assembles a full release candidate, so the file is isolated
+      # from the unit shards rather than paying that cost under their load.
+      - name: Release proof
+        run: pnpm test:run scripts/__tests__/releaseProof.spec.ts
 
       - name: Health gate infrastructure
         run: pnpm test:health-gates
@@ -488,6 +499,75 @@ jobs:
       - name: Compile-verify the device layer
         run: cargo check --package daw-engine
 
+  native-parity:
+    name: Native parity (macOS)
+    needs: decide
+    # `projectLiveGraphProgrammeParity.spec.ts` is the bit-exact live-vs-export
+    # proof for #3068, and it — like the two offline-render legs beside it —
+    # loads the napi addon from `crates/sourdaw-native/sourdaw-native.node` and
+    # skips observably when that artifact is absent. Nothing else here builds
+    # it, so without this job the proof runs on developer machines only. macOS
+    # is the one platform the crate compiles on, for the reason `native-macos`
+    # records above. A TypeScript producer can break parity exactly as a Rust
+    # consumer can, so this leg answers to both scopes rather than to `rust`.
+    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The same builder `desktop:build` runs, so the artifact this leg proves
+      # against cannot drift from the one the packaged app loads.
+      - name: Build the native addon
+        run: node scripts/buildNativeAddon.ts
+
+      # The specs decide between running and skipping on `existsSync` of this
+      # exact path, so requiring it here is requiring that the parity legs run.
+      # The specs close the other half themselves: an always-run guard proves
+      # the probed path sits beside the crate's own Cargo.toml, a second proves
+      # the host was constructed exactly when the artifact exists, and the host
+      # is built at module scope so a present-but-broken addon fails the file
+      # instead of quietly skipping the leg.
+      - name: Require the built addon the parity specs probe for
+        run: |
+          set -euo pipefail
+          addon=crates/sourdaw-native/sourdaw-native.node
+          if [ ! -f "$addon" ]; then
+            printf 'the parity specs probe %s and would skip: the build step left nothing there\n' "$addon" >&2
+            exit 1
+          fi
+
+      # Not softened, unlike the unit shards: a leg that cannot fail proves
+      # nothing, and this one exists to make the parity proof decide a merge.
+      # Three spec files, so a fourth worker would idle.
+      - name: Run the addon parity specs
+        env:
+          VITEST_MAX_WORKERS: 3
+        run: >-
+          pnpm run test:run
+          src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+          src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+          src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+
   dependency-review:
     name: Dependency review
     needs: decide
@@ -697,6 +777,7 @@ jobs:
       - rust
       - native-macos
       - native-windows
+      - native-parity
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

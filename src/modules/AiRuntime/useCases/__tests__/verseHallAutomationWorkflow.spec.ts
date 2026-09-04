@@ -42,6 +42,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -679,12 +682,8 @@ describe('verse Hall send automation workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    // The edit below changes the exact send level this proposal names, but the
-    // status, reason and receipt asserted here are what *any* project change
-    // after the proposal produces — a collaborator edit elsewhere reaches the
-    // same terminal state through the same code path. This test therefore pins
-    // the project-changed disposition, not target-conflict detection; that the
-    // two are indistinguishable is the production defect filed as #2894.
+    // The edit below changes the exact send level this proposal names, and the refusal names that
+    // track: the divergence port classifies the conflict against the target the batch writes.
     it('leaves no automation or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -705,7 +704,8 @@ describe('verse Hall send automation workflow', () => {
 
         expect(await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-backing-vocal']),
         });
 
         expect(getSendLanes()).toEqual([]);
@@ -718,14 +718,11 @@ describe('verse Hall send automation workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-backing-vocal']));
     });
 
-    // The edit below turns off automation for a track this proposal names, but
-    // the status, reason and receipt asserted here are what *any* project
-    // change after the proposal produces — see #2894, as above.
+    // Turning automation off on a track this proposal names is a change to one of its targets, so
+    // the refusal names that track rather than reporting a bare "the project changed".
     it('leaves no automation or history residue when the project changes before confirmation via automation mode', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -739,7 +736,8 @@ describe('verse Hall send automation workflow', () => {
 
         expect(await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-backing-vocal']),
         });
 
         expect(getSendLanes()).toEqual([]);
@@ -751,9 +749,7 @@ describe('verse Hall send automation workflow', () => {
         const proposal = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(proposal?.content).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        expect(proposal?.content).toBe(ambiguousSameObjectDivergenceMessage(['track-backing-vocal']));
     });
 
     it('aborts the automation write without receipt or undo when its store write fails', async () => {

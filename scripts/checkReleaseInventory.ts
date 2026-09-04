@@ -21,6 +21,10 @@ import { extname, posix, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
 
+import {
+    GRAND_BOULE_MEASUREMENT_SOURCE_FILES,
+    grandBouleMeasurementSourcePaths,
+} from '../crates/daw-dsp/benches/wasm/measurementCensus.mjs';
 import { assertGeneratedRegionMatches } from '../crates/daw-dsp/benches/wasm/renderTable.mjs';
 import { DDSP_ARTIFACTS, DDSP_CHECKPOINT_VERSION } from '../src/modules/BrowserAi/models/DdspArtifactManifest.ts';
 
@@ -113,7 +117,7 @@ export const ADAPTED_ORIGINAL_UPSTREAM_PROOF_PATH = 'release/upstream-proofs/mut
 export const ADAPTED_MIT_UPSTREAM_SOURCE_SHA256 = 'f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949';
 export const ADAPTED_MIT_LICENSE_SHA256 = 'b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c';
 
-const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
+export const SNAPSHOT_DIGEST_SURFACES: Readonly<Record<string, readonly string[]>> = {
     'pnpm-lock.yaml': ['javascript-dependencies'],
     'server/package-lock.json': ['javascript-dependencies', 'collaboration-server'],
     'Cargo.lock': ['rust-dependencies'],
@@ -335,7 +339,7 @@ function sortedUnique(values: string[]): string[] {
     return [...new Set(values)].sort();
 }
 
-function fileSha256(path: string): string {
+export function fileSha256(path: string): string {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
@@ -355,7 +359,7 @@ function isWindowsPathLikeDigestLabel(value: string): boolean {
     return value.includes('\\') || win32.isAbsolute(value) || /^[A-Za-z]:/u.test(value);
 }
 
-function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
+export function pathAddressedSha256(value: string): { path: string; sha256: string } | undefined {
     const match = /^sha256:([0-9a-f]{64}):(.+)$/u.exec(value);
     const sha256 = match?.[1];
     const path = match?.[2];
@@ -1273,12 +1277,6 @@ export function assertGrandBouleReleasedInWasm(root: string): void {
     }
 }
 
-const GRAND_BOULE_MEASUREMENT_SOURCE_PATHS = [
-    'crates/daw-dsp/benches/quantum.rs',
-    'crates/daw-dsp/benches/wasm/deviceRecipes.js',
-    'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
-    'public/wasm/daw-dsp/daw_dsp_bg.wasm',
-] as const;
 const FULL_HEXADECIMAL_GIT_REVISION = /^[0-9a-f]{40}$/u;
 
 function assertGrandBouleRevisionIsCommit(root: string, revision: string): void {
@@ -1321,6 +1319,24 @@ function ensureGrandBouleRevisionFetched(root: string, revision: string): void {
     assertGrandBouleRevisionIsCommit(root, revision);
 }
 
+function assertGrandBouleMeasurementPopulation(data: {
+    options?: { measureQuanta?: number };
+    rows?: Array<{ id?: string; stats?: { n?: number }; sampleCount?: number }>;
+}): void {
+    const measureQuanta = data.options?.measureQuanta;
+    if (typeof measureQuanta !== 'number' || !Number.isInteger(measureQuanta) || measureQuanta < 1) {
+        throw new Error('Grand Boule measurement options.measureQuanta must be a positive integer');
+    }
+    for (const row of data.rows ?? []) {
+        if (row.stats?.n === measureQuanta && row.sampleCount === measureQuanta) {
+            continue;
+        }
+        throw new Error(
+            `Grand Boule measurement populations disagree for row ${row.id}: stats.n ${row.stats?.n}, sampleCount ${row.sampleCount}, options.measureQuanta ${measureQuanta}`
+        );
+    }
+}
+
 export function assertGrandBouleMeasurementAdmission(root: string): void {
     const jsonPath = 'crates/daw-dsp/benches/quantum-cost-table.json';
     const markdownPath = 'crates/daw-dsp/benches/quantum-cost-table.md';
@@ -1328,13 +1344,14 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         sourceRevision?: string;
         sourceDigests?: Record<string, string>;
         machine?: { gitSha?: string; workingTree?: string };
-        budgetMs?: number;
-        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+        options?: { measureQuanta?: number };
         rows?: Array<{
             id?: string;
             costSite?: string;
             warmVerify?: { ok?: boolean; detail?: string };
             lateVerify?: { ok?: boolean; detail?: string };
+            stats?: { n?: number };
+            sampleCount?: number;
         }>;
     };
     const revision = data.sourceRevision;
@@ -1344,18 +1361,22 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     if (revision !== data.machine?.gitSha || data.machine?.workingTree !== 'clean') {
         throw new Error('Grand Boule measurement must name one clean implementation source revision');
     }
+    const censusPaths = grandBouleMeasurementSourcePaths(root);
     const digestPaths = Object.keys(data.sourceDigests ?? {}).sort();
-    if (JSON.stringify(digestPaths) !== JSON.stringify([...GRAND_BOULE_MEASUREMENT_SOURCE_PATHS].sort())) {
-        throw new Error('Grand Boule measurement source-digest census is incomplete');
+    if (JSON.stringify(digestPaths) !== JSON.stringify(censusPaths)) {
+        throw new Error(
+            'Grand Boule measurement source-digest census disagrees with the compile-time closure census (#3005); ' +
+                'regenerate quantum-cost-table.json by reference-machine re-measurement'
+        );
     }
     try {
         ensureGrandBouleRevisionFetched(root, revision);
     } catch {
         throw new Error(
-            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_PATHS[0]}`
+            `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_FILES[0]}`
         );
     }
-    for (const path of GRAND_BOULE_MEASUREMENT_SOURCE_PATHS) {
+    for (const path of censusPaths) {
         let sourceAtRevision: Buffer;
         try {
             sourceAtRevision = execFileSync('git', ['show', `${revision}:${path}`], { cwd: root });
@@ -1387,15 +1408,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     ) {
         throw new Error('Grand Boule measured row must prove exactly 64 active voices before and after timing');
     }
-    if (
-        typeof data.budgetMs !== 'number' ||
-        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
-        typeof data.referenceProject.workerMedianMs !== 'number' ||
-        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
-        data.referenceProject.workerMedianMs >= data.budgetMs
-    ) {
-        throw new Error('Grand Boule measured reference project exceeds its render budget');
-    }
+    assertGrandBouleMeasurementPopulation(data);
     const markdown = readFileSync(resolve(root, markdownPath), 'utf8');
     assertGeneratedRegionMatches(markdown, data);
     for (const required of [revision, row.warmVerify.detail!, row.lateVerify.detail!]) {
@@ -1407,6 +1420,28 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
         if (!markdown.includes(path) || !markdown.includes(`sha256:${digest}`)) {
             throw new Error(`Grand Boule Markdown measurement provenance omits ${path}`);
         }
+    }
+}
+
+/**
+ * The measured reference project is an eleven-device audio-thread mix, so its
+ * render budget is a whole-engine capability gate, never grand-boule-specific
+ * (ADR 0038). Kept out of the Grand Boule admission so no surviving assertion
+ * there claims provenance over bytes the narrowed census no longer pins.
+ */
+export function assertWholeEngineQuantumCapability(root: string): void {
+    const data = JSON.parse(readFileSync(resolve(root, 'crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')) as {
+        budgetMs?: number;
+        referenceProject?: { audioWorstQuantumUpperMs?: number; workerMedianMs?: number };
+    };
+    if (
+        typeof data.budgetMs !== 'number' ||
+        typeof data.referenceProject?.audioWorstQuantumUpperMs !== 'number' ||
+        typeof data.referenceProject.workerMedianMs !== 'number' ||
+        data.referenceProject.audioWorstQuantumUpperMs >= data.budgetMs ||
+        data.referenceProject.workerMedianMs >= data.budgetMs
+    ) {
+        throw new Error('Whole-engine measured reference project exceeds its render budget');
     }
 }
 
@@ -1604,13 +1639,22 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             ],
             digestLabel: 'grand-boule-live-runtime',
         },
+        // `paths` states surface membership for licensing; `gitPathspecs` states what
+        // a released Grand Boule project is read back through, so it hashes only what
+        // this surface distributes. The shared files outside the module stay pinned
+        // whole because they are the registration and argument-versioning contracts
+        // that decide how a stored Grand Boule command is resolved and dispatched: a
+        // change to any of them can change what an already-released project does, and
+        // no per-declaration hashing exists to narrow them. Module specs and the module
+        // AGENTS.md are excluded because nothing in them reaches a distributed
+        // artifact — the line `isScannedSource` already draws for scanned source.
         {
             paths: [
                 'src/modules/GrandBoule/**',
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-                'src/app/bootstrap.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
@@ -1618,10 +1662,12 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
             gitPathspecs: [
                 'src/modules/GrandBoule',
                 ...GRAND_BOULE_PROVIDER_POLICY_SYMLINK_PATHS.map((path) => `:(exclude)${path}`),
+                ':(exclude,glob)src/modules/GrandBoule/**/__tests__/**',
+                ':(exclude)src/modules/GrandBoule/AGENTS.md',
                 'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
                 'src/modules/Arrangement/useCases/index.ts',
                 'src/modules/Arrangement/useCases/device/setDeviceState.ts',
-                'src/app/bootstrap.ts',
+                'src/app/composeGrandBoule.ts',
                 'src/app/getProductionCommandHandlerMaps.ts',
                 'src/utils/handlerContract.ts',
             ],
@@ -1646,6 +1692,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -1658,6 +1706,8 @@ export const GRAND_BOULE_RELEASE_REGISTRY = {
                 'crates/daw-dsp/benches/wasm/deviceRecipes.js',
                 'crates/daw-dsp/benches/wasm/quantumCostProcessor.js',
                 'crates/daw-dsp/benches/wasm/run.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.mjs',
+                'crates/daw-dsp/benches/wasm/measurementCensus.d.mts',
                 'crates/daw-dsp/benches/wasm/renderTable.mjs',
                 'crates/daw-dsp/benches/wasm/renderTable.d.mts',
                 'crates/daw-dsp/benches/quantum-cost-table.json',
@@ -2387,15 +2437,119 @@ export function wasmReleaseInventoryContract(root: string, manifest: WasmManifes
     };
 }
 
+function digestEntryLabel(entry: string): string {
+    return entry.slice(entry.lastIndexOf(':') + 1);
+}
+
+// Only Grand Boule's boundaries currently produce `tracked-set-sha256:` digests,
+// so this is the one place a differing label can resolve to a tracked set of
+// paths worth printing; every other surface's digests stay unannotated.
+function grandBouleTrackedSetPathspecsForLabel(digestLabel: string): readonly string[] | undefined {
+    return GRAND_BOULE_RELEASE_REGISTRY.boundaries.find((boundary) => boundary.digestLabel === digestLabel)
+        ?.gitPathspecs;
+}
+
+// `recorded` comes straight from parsed JSON, so an element can be anything;
+// a typeof guard keeps a non-string entry out of digestEntryLabel instead of
+// laundering it through a cast.
+function labelableRecordedEntries(recorded: unknown): { entries: string[]; invalidIndexes: number[] } {
+    const entries: string[] = [];
+    const invalidIndexes: number[] = [];
+    if (!Array.isArray(recorded)) {
+        return { entries, invalidIndexes };
+    }
+    for (const [index, entry] of (recorded as unknown[]).entries()) {
+        if (typeof entry === 'string') {
+            entries.push(entry);
+        } else {
+            invalidIndexes.push(index);
+        }
+    }
+    return { entries, invalidIndexes };
+}
+
+// Folding entries into a Map by label is lossy: a duplicated label keeps only
+// its last write, and a pure reordering produces the same Map either way. So
+// when assertSurfaceContract has already decided the two arrays differ but no
+// per-label line was emitted, the difference is one of those two shapes —
+// name it directly rather than leaving a bare header and remedy with nothing
+// between them.
+function describeUnlabeledDigestsDifference(recordedEntries: readonly string[], current: readonly string[]): string[] {
+    const recordedLabels = recordedEntries.map(digestEntryLabel);
+    const duplicateLabels = [
+        ...new Set(recordedLabels.filter((digestLabel, index) => recordedLabels.indexOf(digestLabel) !== index)),
+    ];
+    if (duplicateLabels.length > 0) {
+        return duplicateLabels.map((digestLabel) => {
+            const count = recordedLabels.filter((candidate) => candidate === digestLabel).length;
+            return `  ${digestLabel}: recorded ${count} entries where one is expected`;
+        });
+    }
+    return [
+        `  recorded order differs from the tree; recorded: [${recordedLabels.join(', ')}] current: [${current
+            .map(digestEntryLabel)
+            .join(', ')}]`,
+    ];
+}
+
+// A `digests` mismatch on its own names neither the offending boundary nor the
+// remedy, and a `tracked-set-sha256` value differs from an unrelated file's
+// `sha256` digest by nothing a caller can eyeball, so `field does not match
+// provenance` alone leaves whoever hits it grepping the boundary registry by
+// hand. Pairing recorded and current entries by their trailing label instead
+// names exactly what drifted and where to fix it.
+function formatDigestsMismatch(recorded: unknown, current: readonly string[], label: string): string {
+    const { entries: recordedEntries, invalidIndexes } = labelableRecordedEntries(recorded);
+    const recordedByLabel = new Map(recordedEntries.map((entry) => [digestEntryLabel(entry), entry]));
+    const currentByLabel = new Map(current.map((entry) => [digestEntryLabel(entry), entry]));
+    const orderedLabels = [
+        ...currentByLabel.keys(),
+        ...[...recordedByLabel.keys()].filter((digestLabel) => !currentByLabel.has(digestLabel)),
+    ];
+
+    const lines = [`${label} release inventory digests does not match provenance`];
+    for (const index of invalidIndexes) {
+        lines.push(`  ${index}: recorded entry is not a string`);
+    }
+    let namedADifference = invalidIndexes.length > 0;
+    for (const digestLabel of orderedLabels) {
+        const recordedEntry = recordedByLabel.get(digestLabel);
+        const currentEntry = currentByLabel.get(digestLabel);
+        if (recordedEntry === currentEntry) {
+            continue;
+        }
+        namedADifference = true;
+        lines.push(
+            `  ${digestLabel}: recorded ${recordedEntry ?? 'nothing'} but the tree now yields ${currentEntry ?? 'nothing'}`
+        );
+        const trackedSetPathspecs = grandBouleTrackedSetPathspecsForLabel(digestLabel);
+        if (trackedSetPathspecs !== undefined) {
+            lines.push(`    tracked set: ${trackedSetPathspecs.join(', ')}`);
+        }
+    }
+    if (!namedADifference) {
+        lines.push(...describeUnlabeledDigestsDifference(recordedEntries, current));
+    }
+    lines.push(
+        `Replace the recorded entries above in release/open-source-inventory.json (surface "${label}") if the change is intended; a tracked-set digest changes when any file in that boundary's tracked set changes.`
+    );
+    return lines.join('\n');
+}
+
 function assertSurfaceContract(
     surface: Partial<ReleaseSurface> | undefined,
     expected: Partial<ReleaseSurface>,
     label: string
 ): void {
     for (const [field, value] of Object.entries(expected)) {
-        if (JSON.stringify(surface?.[field as keyof ReleaseSurface]) !== JSON.stringify(value)) {
-            throw new Error(`${label} release inventory ${field} does not match provenance`);
+        const recorded = surface?.[field as keyof ReleaseSurface];
+        if (JSON.stringify(recorded) === JSON.stringify(value)) {
+            continue;
         }
+        if (field === 'digests' && Array.isArray(value)) {
+            throw new Error(formatDigestsMismatch(recorded, value, label));
+        }
+        throw new Error(`${label} release inventory ${field} does not match provenance`);
     }
 }
 
@@ -2953,6 +3107,7 @@ export function checkReleaseInventory(
     assertGrandBouleDesignAroundSource(root);
     assertGrandBouleReleasedInWasm(root);
     assertGrandBouleMeasurementAdmission(root);
+    assertWholeEngineQuantumCapability(root);
     const wasmSurface = currentInventory.surfaces.find((surface) => surface.id === 'project-wasm');
     validateSurface('project-wasm', () =>
         assertSurfaceContract(wasmSurface, wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()), 'WASM')

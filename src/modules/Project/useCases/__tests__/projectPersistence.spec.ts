@@ -34,10 +34,12 @@ const mocks = vi.hoisted(() => ({
     loadCrdtProject: vi.fn<(input?: { shouldCommit?: () => boolean }) => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
-    clearUndoHistory: vi.fn<() => void>(),
+    reconcileSessionUndoForProject:
+        vi.fn<(target: { projectId: string | undefined; captureWitness: () => string }) => void>(),
     resetActionReplayAuthority: vi.fn<() => void>(),
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     captureProjectRevision: vi.fn<() => string>(() => 'saved-revision'),
+    captureDurableDocumentWitness: vi.fn<() => string>(() => 'document-witness'),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock('../../stores/projectStore', () => ({
 // Vitest mocks should use the same path as the import in the source file.
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: mocks.captureProjectRevision,
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
@@ -81,6 +84,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     removeCrdtDoc: vi.fn(),
     replaceBranchState: vi.fn(),
     replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
     restoreBranchStateAfterSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
@@ -92,7 +96,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
-    clearUndoHistory: mocks.clearUndoHistory,
+    reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
@@ -102,6 +106,49 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    appendMidiNotes: vi.fn(),
+    arpeggiate: vi.fn(),
+    canPrepareMidiClipGlueState: vi.fn(),
+    downloadMidiFile: vi.fn(),
+    duplicateClipNotes: vi.fn(),
+    duplicateMidiClipData: vi.fn(),
+    getChordAtBeat: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getMidiInputTrack: vi.fn(),
+    getMidiInputTrackOwnerId: vi.fn(),
+    getMidiInputTrackRevision: vi.fn(),
+    getMidiStoreState: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    hasActiveStepRecordingDependency: vi.fn(),
+    hydrateGrooveTemplates: vi.fn(),
+    mergeImportedMidiClipNotes: vi.fn(),
+    midiClipGlueStateMatches: vi.fn(),
+    midiClipSplitStateMatches: vi.fn(),
+    panicLiveNotes: vi.fn(),
+    prepareMidiClipGlueState: vi.fn(),
+    prepareMidiClipSplit: vi.fn(),
+    projectClipMidiEvents: vi.fn(),
+    projectCommittedGroove: vi.fn(),
+    projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),
+    readMidiFile: vi.fn(),
+    removeMidiClipData: vi.fn(),
+    resetMidiState: vi.fn(),
+    resetMidiStoreForProject: vi.fn(),
+    resolveMidiNoteArticulationId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+    restoreMidiClipData: vi.fn(),
+    restoreMidiClipGlueState: vi.fn(),
+    restoreMidiClipNotes: vi.fn(),
+    restoreMidiClipSplitState: vi.fn(),
+    serializeMidiStateForClips: vi.fn(),
+    setMidiInputTrack: vi.fn(),
+    setNotesForClip: vi.fn(),
+    shouldPlayMidiEvent: vi.fn(),
+    splitMidiNotesAtBeat: vi.fn(),
+    transposeForChordTrack: vi.fn(),
 }));
 vi.mock('../getDurableProjectOwnerId', () => ({
     getDurableProjectOwnerId: mocks.getDurableProjectOwnerId,
@@ -207,7 +254,10 @@ describe('Project Persistence Use Cases', () => {
                 mocks.projectCrdtToStores.mock.invocationCallOrder[0]!
             );
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
-            expect(mocks.clearUndoHistory).toHaveBeenCalled();
+            expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith({
+                projectId: mocks.projectStoreValue.value.projectId,
+                captureWitness: mocks.captureDurableDocumentWitness,
+            });
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
         });
 
@@ -222,7 +272,7 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
             expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
             expect(mocks.prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-            expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+            expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
         });
 

@@ -1,6 +1,6 @@
 import { modulationStore } from '#/modules/Automation/stores';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
+import { type projectMidiNotesByClipIdThroughRestores, serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 
@@ -17,6 +17,7 @@ type IsGeneratedMidiStateCurrentInput = {
     entityType: 'clip' | 'track';
     guard: GeneratedMidiStateGuard;
     allowedReferencingTrackIds?: readonly string[];
+    projectedMidiNotesByClipId?: ReturnType<typeof projectMidiNotesByClipIdThroughRestores>;
 };
 
 function hasEnvelopeOrWarpState(clipIds: readonly string[]): boolean {
@@ -71,6 +72,7 @@ export function isGeneratedMidiStateCurrent({
     entityType,
     guard,
     allowedReferencingTrackIds = [],
+    projectedMidiNotesByClipId,
 }: IsGeneratedMidiStateCurrentInput): boolean {
     const state = getTrackStoreState();
     if (!state) {
@@ -99,7 +101,10 @@ export function isGeneratedMidiStateCurrent({
     if (JSON.stringify(entity) !== guard.entityJson) {
         return false;
     }
-    if (serializeMidiStateForClips(clipIds) !== guard.midiByClipIdJson || !clipSatelliteStateMatches(clipIds, guard)) {
+    if (
+        serializeMidiStateForClips(clipIds, projectedMidiNotesByClipId) !== guard.midiByClipIdJson ||
+        !clipSatelliteStateMatches(clipIds, guard)
+    ) {
         return false;
     }
 

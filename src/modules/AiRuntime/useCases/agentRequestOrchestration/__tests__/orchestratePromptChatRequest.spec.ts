@@ -38,8 +38,34 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-fixture'),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    compactProject: vi.fn(),
+    createCrdtDoc: vi.fn(),
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    loadCrdtProject: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
+    resetCrdtProjectAuthority: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    startCrdtAutoSave: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('../../../repositories/cloudLlm/getCloudProviderInfo', () => ({
@@ -494,6 +520,96 @@ describe('orchestratePromptChatRequest', () => {
             })
         );
         expect(releaseProviderCancellation).toHaveBeenCalledOnce();
+    });
+
+    // The case above carries no outcome at all, and the fallback above is what an absent decision
+    // reads as. A run that searched and matched nothing did decide, so it must not borrow that text.
+    it('distinguishes a decided no-match from a plan that reported no outcome', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: { actions: [], planningOutcome: { kind: 'no-match' } },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'create a blues song with this chord progression',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'No command matched the request.',
+                error: 'No command matched the request.',
+            })
+        );
+    });
+
+    it('writes the provider clarify questions into the chat instead of the generic no-match message', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                planningOutcome: {
+                    kind: 'clarify',
+                    reason: 'The request does not say which part of the mix to change.',
+                    questions: ['Which tracks should change?'],
+                },
+            },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'make it sound better',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'The request does not say which part of the mix to change. 1. Which tracks should change?',
+            })
+        );
+    });
+
+    it('writes an unsupported outcome into the chat instead of the generic no-match message', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                planningOutcome: {
+                    kind: 'unsupported',
+                    reason: 'No command in this project masters for vinyl.',
+                    searchedIntents: ['master for vinyl'],
+                },
+            },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'master this for vinyl',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
+                error: 'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
+            })
+        );
     });
 
     it('rejects a non-claimed provider lease before planning or cancellation registration', async () => {

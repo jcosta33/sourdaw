@@ -6,10 +6,10 @@ status: accepted
 date: 2026-08-01
 owner: The Sourdaw team
 sources:
-  - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md
+    - .agents/artifacts/sourdaw/SURVEY-ultracode-scope.md
 ---
 
-# 0012 — Neither target may be degraded to accommodate the other
+# 0012 — Neither target may be degraded to accommodate the other; share only at full quality
 
 ## Context
 
@@ -81,12 +81,12 @@ the two targets relate, not which shell the desktop build uses.
 
 ## Alternatives considered
 
-| Alternative | Why rejected |
-|---|---|
-| Treat the shipped webviews as the capability ceiling | Holds the web build to the weakest engine — the cause of the capability fork and the silent downgrades already found. |
-| Declare web authoritative, let desktop degrade | Buys speed by writing off a target. Rejected explicitly: quality on one side is not currency for the other. |
-| Delete every non-Chromium branch now | Forecloses packaging options that are deliberately open, and spends effort on removal that carries no product value. The cap is the defect, not the existence of the code. |
-| Defer until packaging is decided | Blocks sixteen findings indefinitely, several of which harm users on both targets today. |
+| Alternative                                          | Why rejected                                                                                                                                                               |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Treat the shipped webviews as the capability ceiling | Holds the web build to the weakest engine — the cause of the capability fork and the silent downgrades already found.                                                      |
+| Declare web authoritative, let desktop degrade       | Buys speed by writing off a target. Rejected explicitly: quality on one side is not currency for the other.                                                                |
+| Delete every non-Chromium branch now                 | Forecloses packaging options that are deliberately open, and spends effort on removal that carries no product value. The cap is the defect, not the existence of the code. |
+| Defer until packaging is decided                     | Blocks sixteen findings indefinitely, several of which harm users on both targets today.                                                                                   |
 
 ## Status
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } from '#/modules/Command/stores';
+
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -96,6 +98,7 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    captureProjectIdentityMock,
     captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
@@ -107,6 +110,9 @@ const {
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
     repairRuntimeGraphFromProjectMock,
+    sessionUndoWitnessStampPortMock,
+    stampSessionUndoWitnessMock,
+    composeGrandBouleMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -162,6 +168,7 @@ const {
         setTrackPanMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
             () => true
@@ -179,6 +186,9 @@ const {
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
+        sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
+        stampSessionUndoWitnessMock: vi.fn(),
+        composeGrandBouleMock: vi.fn(),
     };
 });
 
@@ -187,6 +197,9 @@ vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     getGenerationHandlers: sentinelHandlers('AiGeneration'),
     getAiMidiHandlers: sentinelHandlers('AiMidi'),
+    // One stub per published descriptor: the registry refuses a map that does not cover the
+    // contract, so this stands in for the real generators without pulling their graph in.
+    MIDI_TRANSFORM_IMPLEMENTATIONS: Object.fromEntries(getMidiTransformNames().map((name) => [name, () => []])),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -317,6 +330,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
     captureCommandTargetFingerprints: noop,
+    stampSessionUndoWitness: stampSessionUndoWitnessMock,
 }));
 
 vi.mock('#/modules/ControlRoom/useCases', () => ({
@@ -336,6 +350,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
+    captureProjectIdentity: captureProjectIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
@@ -346,8 +361,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     inspectAgentProjectDivergence: noop,
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
+    recordActionHistoryEntries: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
+    sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -368,8 +385,6 @@ vi.mock('#/modules/Gluten/stores', () => ({
 
 vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
-    initGrandBouleSubscribers: () => noop,
-    setGrandBouleEventBus: noop,
     prepareOfflineGrandBoule: noop,
 }));
 
@@ -522,6 +537,10 @@ vi.mock('../registerDependencies', () => ({
 
 vi.mock('../registerGlobalErrorHandlers', () => ({
     registerGlobalErrorHandlers: registerGlobalErrorHandlersMock,
+}));
+
+vi.mock('../composeGrandBoule', () => ({
+    composeGrandBoule: composeGrandBouleMock,
 }));
 
 // Side-effect import: this is what runs the composition root under test.
@@ -755,6 +774,19 @@ describe('bootstrap', () => {
         );
     });
 
+    it('wires the undo session witness stamp port to the real production stamp (#3331)', () => {
+        expect(sessionUndoWitnessStampPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
+            stampSessionUndoWitnessMock
+        );
+    });
+
+    it('composes Grand Boule with the shared event bus and logger', () => {
+        expect(composeGrandBouleMock).toHaveBeenCalledExactlyOnceWith({
+            eventBus: eventBusMock,
+            logger: loggerMock,
+        });
+    });
+
     it('wires Automation lane ranges to Arrangement descriptor truth', () => {
         expect(setAutomationParameterRangeResolverMock).toHaveBeenCalledExactlyOnceWith(
             getAutomationParameterRangeMock
@@ -887,6 +919,15 @@ describe('bootstrap', () => {
         expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({ message: 'Interrupted AI runs could not be recovered during startup' })
         );
+    });
+
+    it('registers a MIDI transform implementation for every published transform descriptor', () => {
+        // A descriptor the planner can discover but nothing can run would reject the batch at
+        // expansion time, after the plan was already proposed.
+        const names = getMidiTransformNames();
+        expect(names.length).toBeGreaterThan(0);
+        expect(getMidiTransformDescriptors().map((descriptor) => descriptor.name)).toEqual([...names]);
+        expect(names.filter((name) => getMidiTransform(name) === undefined)).toEqual([]);
     });
 
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {

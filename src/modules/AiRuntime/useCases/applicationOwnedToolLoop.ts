@@ -1,21 +1,31 @@
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
+import {
+    getExecutableAppActionIntentCatalogUnicodeLength,
+    MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
+} from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
+import { parseCommandBatchDecline } from '../transformers/parseCommandBatchDecline';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
+    AGENT_CATALOG_CURSOR_MAX_LENGTH,
+    AGENT_CATALOG_CURSOR_PATTERN,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
@@ -26,7 +36,7 @@ import {
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 
 const DEFAULT_LIMITS = {
-    maxTurns: 3,
+    maxTurns: 4,
     maxCallsPerTurn: 4,
     maxTotalCalls: 8,
     maxReceiptBytesPerCall: 16_384,
@@ -36,9 +46,8 @@ const DEFAULT_LIMITS = {
 const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 256;
-const MAX_CATALOG_CURSOR_LENGTH = 2048;
 const MAX_REVISION_LENGTH = 65_536;
-const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
+const CATALOG_CURSOR_PATTERN = new RegExp(AGENT_CATALOG_CURSOR_PATTERN, 'u');
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
@@ -52,6 +61,10 @@ export type ApplicationOwnedToolLoopOutcome =
     | {
           status: 'complete';
           toolCalls: ToolCallResult[];
+          /** The parsed decline when the run refused, so no caller parses the arguments again. */
+          decline: CommandBatchDecline | null;
+          /** The intents this run looked up in the command index, in the order it looked them up. */
+          searchedIntents: string[];
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           turns: number;
@@ -511,7 +524,7 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
     };
 }
 
-const catalogCategories = new Set([
+const catalogCategories = [
     'query',
     'resolve',
     'capability',
@@ -523,24 +536,32 @@ const catalogCategories = new Set([
     'render',
     'analysis',
     'approval',
-]);
+] as const;
+
+type CatalogCategory = (typeof catalogCategories)[number];
+
+function isCatalogCategory(value: unknown): value is CatalogCategory {
+    return typeof value === 'string' && catalogCategories.some((category) => category === value);
+}
 
 function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>):
     | {
           status: 'valid';
-          category: Parameters<typeof getAgentToolCatalogEntries>[0]['category'];
-          names: string[];
-          page?: { cursor?: string; limit?: number };
+          input: Parameters<typeof getAgentToolCatalogEntries>[0];
       }
     | { status: 'invalid'; reason: string } {
-    if (Object.keys(argumentsValue).some((key) => key !== 'category' && key !== 'names' && key !== 'page')) {
+    if (
+        Object.keys(argumentsValue).some(
+            (key) => key !== 'category' && key !== 'intent' && key !== 'names' && key !== 'page'
+        )
+    ) {
         return {
             status: 'invalid',
             reason: 'agent.catalog.discover arguments do not match the strict catalog contract',
         };
     }
     const category = argumentsValue.category;
-    if (typeof category !== 'string' || !catalogCategories.has(category)) {
+    if (!isCatalogCategory(category)) {
         return { status: 'invalid', reason: 'agent.catalog.discover category is unavailable' };
     }
     const namesValue = argumentsValue.names;
@@ -551,14 +572,22 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
         };
     }
     const names: string[] = [];
-    for (const name of namesValue) {
-        if (typeof name !== 'string' || name.length === 0 || name.length > 128 || names.includes(name)) {
-            return {
-                status: 'invalid',
-                reason: 'agent.catalog.discover names do not match the strict catalog contract',
-            };
+    if (Array.isArray(namesValue)) {
+        for (const name of namesValue) {
+            if (typeof name !== 'string' || name.length === 0 || name.length > 128 || names.includes(name)) {
+                return {
+                    status: 'invalid',
+                    reason: 'agent.catalog.discover names do not match the strict catalog contract',
+                };
+            }
+            names.push(name);
         }
-        names.push(name);
+    }
+    if (argumentsValue.intent !== undefined) {
+        return {
+            status: 'invalid',
+            reason: 'agent.catalog.discover intent is available only for command-index',
+        };
     }
     const pageValue = argumentsValue.page;
     let page: { cursor?: string; limit?: number } | undefined;
@@ -569,7 +598,7 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
             (pageValue.cursor !== undefined &&
                 (typeof pageValue.cursor !== 'string' ||
                     pageValue.cursor.length === 0 ||
-                    pageValue.cursor.length > MAX_CATALOG_CURSOR_LENGTH ||
+                    pageValue.cursor.length > AGENT_CATALOG_CURSOR_MAX_LENGTH ||
                     !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
             (pageValue.limit !== undefined &&
                 (typeof pageValue.limit !== 'number' ||
@@ -592,18 +621,85 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
     }
     return {
         status: 'valid',
-        category: category as Parameters<typeof getAgentToolCatalogEntries>[0]['category'],
-        names,
-        ...(page === undefined ? {} : { page }),
+        input: {
+            category,
+            names,
+            ...(page === undefined ? {} : { page }),
+        },
+    };
+}
+
+function parseCommandIndexSearchArguments(argumentsValue: Record<string, unknown>):
+    | {
+          status: 'valid';
+          input: Parameters<typeof getAgentToolCatalogEntries>[0];
+      }
+    | { status: 'invalid'; reason: string } {
+    if (Object.keys(argumentsValue).some((key) => key !== 'intent' && key !== 'page')) {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search arguments do not match the strict catalog contract',
+        };
+    }
+    const intent = argumentsValue.intent;
+    if (typeof intent !== 'string') {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search intent does not match the strict catalog contract',
+        };
+    }
+    const intentLength = getExecutableAppActionIntentCatalogUnicodeLength(intent);
+    if (intentLength === 0 || intentLength > MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH) {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search intent does not match the strict catalog contract',
+        };
+    }
+    const pageValue = argumentsValue.page;
+    if (pageValue === undefined) {
+        return { status: 'valid', input: { category: 'command-index', intent } };
+    }
+    if (
+        !isRecord(pageValue) ||
+        Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
+        (pageValue.cursor !== undefined &&
+            (typeof pageValue.cursor !== 'string' ||
+                pageValue.cursor.length === 0 ||
+                pageValue.cursor.length > AGENT_CATALOG_CURSOR_MAX_LENGTH ||
+                !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
+        (pageValue.limit !== undefined &&
+            (typeof pageValue.limit !== 'number' ||
+                !Number.isInteger(pageValue.limit) ||
+                pageValue.limit < 1 ||
+                pageValue.limit > 8))
+    ) {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search page does not match the strict catalog contract',
+        };
+    }
+    return {
+        status: 'valid',
+        input: {
+            category: 'command-index',
+            intent,
+            page: {
+                ...(typeof pageValue.cursor === 'string' ? { cursor: pageValue.cursor } : {}),
+                ...(typeof pageValue.limit === 'number' ? { limit: pageValue.limit } : {}),
+            },
+        },
     };
 }
 
 function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
-    const parsed = parseCatalogDiscoveryArguments(call.arguments);
+    const parsed =
+        call.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME
+            ? parseCommandIndexSearchArguments(call.arguments)
+            : parseCatalogDiscoveryArguments(call.arguments);
     if (parsed.status === 'invalid') {
         return failureReceipt({
             callId,
-            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            toolName: call.name,
             turn,
             code: 'invalid-tool-arguments',
             safeMessage: parsed.reason,
@@ -611,26 +707,33 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
         });
     }
     try {
-        const catalog = getAgentToolCatalogEntries(parsed);
+        const catalog = getAgentToolCatalogEntries(parsed.input);
+        const isCommandIndex = catalog.category === 'command-index';
         return {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
             callId,
-            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            toolName: call.name,
             turn,
             status: 'success',
             revision: null,
             data: catalog,
-            summary: `${catalog.category}: ${String(catalog.items.length)} schema(s)`,
+            summary: isCommandIndex
+                ? `command-index: ${String(catalog.items.length)} command(s)`
+                : `${catalog.category}: ${String(catalog.items.length)} schema(s)`,
             warnings: catalog.truncated
-                ? ['Catalog page is truncated; continue only this exact requested name set.']
+                ? [
+                      isCommandIndex
+                          ? 'Command index page is truncated; continue with the same normalized search intent and cursor.'
+                          : 'Catalog page is truncated; continue only this exact requested name set.',
+                  ]
                 : [],
             error: null,
         };
     } catch {
         return failureReceipt({
             callId,
-            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            toolName: call.name,
             turn,
             code: 'invalid-tool-arguments',
             safeMessage: 'Catalog request was rejected by the application contract.',
@@ -650,6 +753,7 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
         case AGENT_DEVICE_MANIFEST_TOOL_NAME:
             return executeDeviceManifest(call, callId, turn);
         case AGENT_CATALOG_DISCOVERY_TOOL_NAME:
+        case AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME:
             return executeCatalogDiscovery(call, callId, turn);
         case COMMAND_HISTORY_TOOL_NAME:
             return executeCommandHistory(call, callId, turn);
@@ -686,6 +790,28 @@ function recordDisclosedCommandSchemas(
                 continue;
             }
             disclosedCommandSchemas.set(item.function.name, JSON.stringify(item));
+        }
+    }
+}
+
+/**
+ * The intents this run actually looked up. An `unsupported` decline is a claim about the catalog,
+ * and the user is owed what was searched before believing it; the intent lives only on the call, so
+ * it is recorded here rather than re-derived from a receipt that never carried it.
+ */
+function recordSearchedIntents(
+    calls: readonly { call: ToolCallResult }[],
+    receipts: readonly ApplicationToolReceipt[],
+    searchedIntents: string[]
+): void {
+    for (const [index, receipt] of receipts.entries()) {
+        const call = calls[index]?.call;
+        if (call?.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME || receipt.status !== 'success') {
+            continue;
+        }
+        const intent = call.arguments.intent;
+        if (typeof intent === 'string' && intent.length > 0 && !searchedIntents.includes(intent)) {
+            searchedIntents.push(intent);
         }
     }
 }
@@ -748,20 +874,63 @@ function validateCommandBatchProposal(
     return null;
 }
 
+/**
+ * A decline says the run produced no batch, so it may not ride alongside a call that produces one:
+ * admitting both would leave the outcome of the turn ambiguous between refusal and proposal.
+ */
+function validateDeclineIsAlone(calls: readonly { call: ToolCallResult }[]): ValidatedTerminalCalls {
+    const declineCalls = calls.filter(({ call }) => call.name === COMMAND_BATCH_DECLINE_TOOL_NAME);
+    if (declineCalls.length === 0) {
+        return { status: 'accepted', decline: null };
+    }
+    if (calls.length > 1) {
+        return { status: 'rejected', reason: 'Provider combined a decline with another terminal call.' };
+    }
+    const parsed = parseCommandBatchDecline(declineCalls[0]!.call.arguments);
+    return parsed.status === 'rejected'
+        ? { status: 'rejected', reason: parsed.reason }
+        : { status: 'accepted', decline: parsed.decline };
+}
+
+/**
+ * The decline is parsed here and nowhere else. A caller that re-parsed it would own a rejection
+ * branch this validation has already made unreachable, and would have to guess what to do in it.
+ */
+type ValidatedTerminalCalls =
+    { status: 'accepted'; decline: CommandBatchDecline | null } | { status: 'rejected'; reason: string };
+
+/**
+ * One turn proposes one batch. Two proposals leave no answer to which one the run made, and the
+ * compiler downstream reads a single proposal — so a second one would slip past the budget and the
+ * target rules that only ever examine the first. Refusing here says so in a reason the model sees.
+ */
+function validateOneProposalPerTurn(calls: readonly { call: ToolCallResult }[]): string | null {
+    const proposalCount = calls.filter(({ call }) => call.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME).length;
+    return proposalCount > 1 ? 'Provider returned more than one command batch proposal in one turn.' : null;
+}
+
 function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
     disclosedCommandSchemas: ReadonlyMap<string, string>
-): string | null {
+): ValidatedTerminalCalls {
+    const declineValidation = validateDeclineIsAlone(calls);
+    if (declineValidation.status === 'rejected') {
+        return declineValidation;
+    }
+    const proposalCountRejection = validateOneProposalPerTurn(calls);
+    if (proposalCountRejection !== null) {
+        return { status: 'rejected', reason: proposalCountRejection };
+    }
     for (const { call } of calls) {
         if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
             continue;
         }
         const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas);
         if (rejection !== null) {
-            return rejection;
+            return { status: 'rejected', reason: rejection };
         }
     }
-    return null;
+    return declineValidation;
 }
 
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
@@ -803,6 +972,7 @@ export async function runApplicationOwnedToolLoop(
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
+    const searchedIntents: string[] = [];
     let totalCalls = 0;
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
@@ -875,6 +1045,7 @@ export async function runApplicationOwnedToolLoop(
             AGENT_CAPABILITIES_TOOL_NAME,
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
             AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
@@ -897,11 +1068,11 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
-        const terminalRejection = validateCatalogTerminalCalls(terminalCalls, disclosedCommandSchemas);
-        if (terminalRejection !== null) {
+        const terminalValidation = validateCatalogTerminalCalls(terminalCalls, disclosedCommandSchemas);
+        if (terminalValidation.status === 'rejected') {
             return {
                 status: 'rejected',
-                reason: terminalRejection,
+                reason: terminalValidation.reason,
                 receipts,
                 turns: turn,
             };
@@ -910,6 +1081,8 @@ export async function runApplicationOwnedToolLoop(
             return {
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => call),
+                decline: terminalValidation.decline,
+                searchedIntents: [...searchedIntents],
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,
                 turns: turn,
@@ -930,6 +1103,7 @@ export async function runApplicationOwnedToolLoop(
             )
         );
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
+        recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
         const serializedTurn = serializeReceiptContext(turnReceipts, turn);
         const turnBytes = byteLength(serializedTurn);
         if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {

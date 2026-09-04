@@ -12,7 +12,7 @@ import {
     resetActionReplayAuthority,
 } from '#/modules/Command/useCases';
 import {
-    captureProjectRevision,
+    captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
     executionOverride: 'none' as 'ambiguous-before-commit' | 'none',
     obscureCommittedResult: 'none' as 'ambiguous' | 'mismatched' | 'missing' | 'none',
     observedCommandResult: { value: null as null | { status: string; reason?: string } },
+    describePlannedAction: vi.fn(() => 'Prompt action'),
+    getProjectContext: vi.fn(() => ({ tracks: [] })),
+    planPromptActions: vi.fn(),
     prepareDurablePromotionRecovery: vi.fn(),
     commitDurablePromotionRecovery: vi.fn(),
     completeDurablePromotionRecovery: vi.fn(),
@@ -41,10 +44,33 @@ const mocks = vi.hoisted(() => ({
     releaseStagedAsset: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const original = await importOriginal<typeof import('#/modules/Command/useCases')>();
+vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectContext }));
+vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
+vi.mock('../describePlannedAction', () => ({ describePlannedAction: mocks.describePlannedAction }));
+// This spec imports captureProjectRevision, createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc, and resetCrdtProjectAuthority; submitAdmittedPromptRequest imports settlePendingProjectWritesAndCaptureRevision; compilePlannedActionCommandBatch imports captureProjectIdentity.
+vi.mock('#/modules/CrdtDocument/useCases', async () => {
+    const original = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
+        '#/modules/CrdtDocument/useCases'
+    );
     return {
-        ...original,
+        captureProjectIdentity: original.captureProjectIdentity,
+        captureProjectRevision: original.captureProjectRevision,
+        createCrdtDoc: original.createCrdtDoc,
+        getCrdtDoc: original.getCrdtDoc,
+        registerCrdtStorageRuntime: original.registerCrdtStorageRuntime,
+        removeCrdtDoc: original.removeCrdtDoc,
+        resetCrdtProjectAuthority: original.resetCrdtProjectAuthority,
+        settlePendingProjectWritesAndCaptureRevision: original.settlePendingProjectWritesAndCaptureRevision,
+    };
+});
+// submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; compilePlannedActionCommandBatch imports compileVersionedCommandBatchEnvelope and parseVersionedCommandEnvelope; compilePendingActionCommandEnvelopes imports migrateLegacyAppActionToVersionedCommandEnvelope and serializeVersionedCommandEnvelope; compileAgentRiskApproval imports commandBatchPreflightPort, getAgentActionRiskPolicy, getVersionedCommandBatchDivergenceTargetIds, and parseVersionedCommandBatchEnvelope; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; executePromptActionGroup imports generateGroupId, isExecutableAppActionType, and parseVersionedCommandBatchEnvelope; createStemImportConfirmationResourceLease imports getVersionedCommandBatchCommitProof; issueAgentCommandApprovalBinding imports issueCommandApprovalBinding; completeMidiLearn imports executeAppAction when the CrdtDocument useCases barrel loads at runtime.
+vi.mock('#/modules/Command/useCases', async () => {
+    const original = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+    return {
+        commandBatchPreflightPort: original.commandBatchPreflightPort,
+        compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
+        configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
+        executeAppAction: original.executeAppAction,
         executeVersionedCommandBatchEnvelope: async (
             ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>
         ) => {
@@ -78,6 +104,10 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
             }
             return result;
         },
+        generateGroupId: original.generateGroupId,
+        getAgentActionRiskPolicy: original.getAgentActionRiskPolicy,
+        getVersionedCommandBatchCommitProof: original.getVersionedCommandBatchCommitProof,
+        getVersionedCommandBatchDivergenceTargetIds: original.getVersionedCommandBatchDivergenceTargetIds,
         getVersionedCommandBatchIdempotentReplay: async (
             input: Parameters<typeof original.getVersionedCommandBatchIdempotentReplay>[0]
         ) => {
@@ -102,13 +132,21 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
             }
             return original.getVersionedCommandBatchIdempotentReplay(input);
         },
+        isExecutableAppActionType: original.isExecutableAppActionType,
+        issueCommandApprovalBinding: original.issueCommandApprovalBinding,
+        migrateLegacyAppActionToVersionedCommandEnvelope: original.migrateLegacyAppActionToVersionedCommandEnvelope,
+        parseVersionedCommandBatchEnvelope: original.parseVersionedCommandBatchEnvelope,
+        parseVersionedCommandEnvelope: original.parseVersionedCommandEnvelope,
+        resetActionReplayAuthority: original.resetActionReplayAuthority,
+        serializeVersionedCommandEnvelope: original.serializeVersionedCommandEnvelope,
     };
 });
+// discardPreparedStemImportResources imports releasePreviewAudioBuffer.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
 }));
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
+// discardPreparedStemImportResources and createStemImportConfirmationResourceLease import getAssetTransfer.
+vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
         prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
         commitDurablePromotionRecovery: mocks.commitDurablePromotionRecovery,
@@ -246,7 +284,7 @@ describe('prompt stem import recovery', () => {
                 reference.audioBufferId ? [reference.audioBufferId] : []
             ),
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: targetsCreated
                 ? Object.fromEntries(targetIds.map((targetId) => [targetId, targetId]))

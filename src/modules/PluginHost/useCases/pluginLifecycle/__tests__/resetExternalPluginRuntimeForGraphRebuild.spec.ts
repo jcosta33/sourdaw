@@ -264,7 +264,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const reset = resetExternalPluginRuntimeForGraphRebuild();
         keyedUnload.resolve([['plugin-instance-1'], []]);
         await keyed;
-        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith());
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined));
         bulkUnload.resolve([[], []]);
         await reset;
 

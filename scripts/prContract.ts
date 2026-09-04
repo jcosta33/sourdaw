@@ -147,10 +147,22 @@ export type CanonicalIssueReference = {
 };
 
 export type DeliveryReceiptPayload = {
+    schemaVersion?: 1 | 2;
     pullRequest: number;
     head: string;
     bodySha256: string;
     closingIssue?: number;
+    ciAdmissionMode?: 'advisory' | 'required';
+    observedCiState?:
+        | 'successful'
+        | 'failed'
+        | 'pending'
+        | 'absent'
+        | 'skipped'
+        | 'cancelled'
+        | 'unstable'
+        | 'malformed'
+        | 'unavailable';
 };
 
 const CLOSING_REFERENCE_PATTERN =
@@ -159,18 +171,19 @@ const CLOSING_RELATIONSHIP_PATTERN =
     /^(?:close(?:s|d)?|fix(?:es|ed)?|resolve(?:s|d)?):?\s+(?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/i;
 const RELATED_RELATIONSHIP_PATTERN = /^Related #([1-9][0-9]*)$/;
 const CANONICAL_CLOSING_RELATIONSHIP_PATTERN = /^Closes (?:#([1-9][0-9]*)|([\w.-]+\/[\w.-]+)#([1-9][0-9]*))$/;
-const DELIVERY_RECEIPT_PREFIX = '<!-- sourdaw-delivery-receipt:v1';
-const DELIVERY_RECEIPT_PATTERN =
+const DELIVERY_RECEIPT_NAMESPACE = 'sourdaw-delivery-receipt:';
+const DELIVERY_RECEIPT_MARKER_PREFIX = `<!-- ${DELIVERY_RECEIPT_NAMESPACE}`;
+const DELIVERY_RECEIPT_V1_PREFIX = '<!-- sourdaw-delivery-receipt:v1';
+const DELIVERY_RECEIPT_V1_PATTERN =
     /^<!-- sourdaw-delivery-receipt:v1\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)\n-->$/;
+const DELIVERY_RECEIPT_V2_PREFIX = '<!-- sourdaw-delivery-receipt:v2';
+const DELIVERY_RECEIPT_V2_PATTERN =
+    /^<!-- sourdaw-delivery-receipt:v2\npull-request: ([1-9][0-9]*)\nhead: ([A-Za-z0-9._-]{1,128})\nbody-sha256: ([0-9a-f]{64})\nclosing-issue: (none|[1-9][0-9]*)(?:\nci-admission-mode: (advisory|required)(?:\nobserved-ci-state: (successful|failed|pending|absent|skipped|cancelled|unstable|malformed|unavailable))?)?\n-->$/;
 
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
 
-function isExpectedClosingReference(
-    reference: ClosingReference,
-    issue: number,
-    repository: string | undefined
-): boolean {
+function referencesIssue(reference: ClosingReference, issue: number, repository: string | undefined): boolean {
     return (
         reference.issue === String(issue) &&
         (reference.repository === undefined ||
@@ -184,18 +197,29 @@ function assertIssueClosingReferences(
     relationship: IssueRelationship | undefined,
     repository?: string
 ): void {
-    const references = [...body.matchAll(CLOSING_REFERENCE_PATTERN)].map<ClosingReference>((match) =>
-        match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] }
-    );
+    const matches = [...body.matchAll(CLOSING_REFERENCE_PATTERN)];
     const expected = relationship === 'closes' ? issue : undefined;
-    if (
-        expected === undefined
-            ? references.length > 0
-            : references.length !== 1 ||
-              references[0] === undefined ||
-              !isExpectedClosingReference(references[0], expected, repository)
-    ) {
-        fail('pull-request body contains unexpected issue-closing references');
+    const unexpectedPhrases: string[] = [];
+    let matchedExpected = false;
+
+    for (const match of matches) {
+        const reference: ClosingReference =
+            match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] };
+        if (expected !== undefined && !matchedExpected && referencesIssue(reference, expected, repository)) {
+            matchedExpected = true;
+        } else {
+            unexpectedPhrases.push(match[0]);
+        }
+    }
+
+    if (unexpectedPhrases.length > 0 || (expected !== undefined && !matchedExpected)) {
+        const phrases = unexpectedPhrases.map((phrase) => `"${phrase}"`).join(', ');
+        const phraseDetail = phrases.length > 0 ? ` (${phrases})` : '';
+        fail(
+            `pull-request body contains unexpected issue-closing references${phraseDetail}. ` +
+                'GitHub closing keywords (close, fix, resolve #<issue>) in pull-request descriptions auto-close issues on merge; ' +
+                'remove the keyword from prose or rephrase.'
+        );
     }
 }
 
@@ -257,6 +281,7 @@ export function canonicalIssueReferenceFromBody(body: string, repository: string
 }
 
 export function composeDeliveryReceipt(payload: DeliveryReceiptPayload): string {
+    const schemaVersion = payload.schemaVersion ?? 2;
     assertSafeIssueNumber(payload.pullRequest, 'delivery receipt pull request');
     if (!/^[A-Za-z0-9._-]{1,128}$/.test(payload.head)) {
         fail('delivery receipt head is invalid');
@@ -267,21 +292,84 @@ export function composeDeliveryReceipt(payload: DeliveryReceiptPayload): string 
     if (payload.closingIssue !== undefined) {
         assertSafeIssueNumber(payload.closingIssue, 'delivery receipt closing issue');
     }
-    return [
-        DELIVERY_RECEIPT_PREFIX,
+
+    if (schemaVersion === 1) {
+        if (payload.ciAdmissionMode !== undefined || payload.observedCiState !== undefined) {
+            fail('delivery receipt v1 cannot carry CI metadata');
+        }
+        return [
+            DELIVERY_RECEIPT_V1_PREFIX,
+            `pull-request: ${payload.pullRequest}`,
+            `head: ${payload.head}`,
+            `body-sha256: ${payload.bodySha256}`,
+            `closing-issue: ${payload.closingIssue === undefined ? 'none' : String(payload.closingIssue)}`,
+            '-->',
+        ].join('\n');
+    }
+
+    if (payload.ciAdmissionMode === undefined && payload.observedCiState !== undefined) {
+        fail('delivery receipt observed CI state requires an admission mode');
+    }
+    if (payload.ciAdmissionMode === 'advisory' && payload.observedCiState === undefined) {
+        fail('delivery receipt advisory mode requires an observed CI state');
+    }
+    if (payload.ciAdmissionMode === 'required' && payload.observedCiState !== undefined) {
+        fail('delivery receipt required mode cannot carry an advisory CI state');
+    }
+
+    const visibleLines = [
+        `Delivery receipt for PR #${payload.pullRequest}.`,
+        '',
+        `- Head: \`${payload.head}\``,
+        `- Pull request body SHA-256: \`${payload.bodySha256}\``,
+        `- Closing issue: ${payload.closingIssue === undefined ? 'None.' : `#${payload.closingIssue}`}`,
+        ...(payload.ciAdmissionMode === undefined ? [] : [`- CI admission: ${payload.ciAdmissionMode}`]),
+        ...(payload.ciAdmissionMode === 'advisory' ? [`- Observed CI state: ${payload.observedCiState}`] : []),
+        '',
+    ];
+    const hiddenLines = [
+        DELIVERY_RECEIPT_V2_PREFIX,
         `pull-request: ${payload.pullRequest}`,
         `head: ${payload.head}`,
         `body-sha256: ${payload.bodySha256}`,
         `closing-issue: ${payload.closingIssue === undefined ? 'none' : String(payload.closingIssue)}`,
+        ...(payload.ciAdmissionMode === undefined ? [] : [`ci-admission-mode: ${payload.ciAdmissionMode}`]),
+        ...(payload.ciAdmissionMode === 'advisory' ? [`observed-ci-state: ${payload.observedCiState}`] : []),
         '-->',
-    ].join('\n');
+    ];
+    return [...visibleLines, ...hiddenLines].join('\n');
 }
 
 export function parseDeliveryReceipt(body: string): DeliveryReceiptPayload | undefined {
-    if (!body.startsWith('<!-- sourdaw-delivery-receipt:')) {
+    if (body.startsWith(DELIVERY_RECEIPT_V1_PREFIX)) {
+        const match = DELIVERY_RECEIPT_V1_PATTERN.exec(body);
+        if (match === null) {
+            fail('invalid delivery receipt');
+        }
+        const pullRequest = Number(match[1]);
+        const head = match[2] ?? '';
+        const bodySha256 = match[3] ?? '';
+        const rawClosingIssue = match[4];
+        const closingIssue = rawClosingIssue === 'none' ? undefined : Number(rawClosingIssue);
+        const payload = { schemaVersion: 1 as const, pullRequest, head, bodySha256, closingIssue };
+        if (composeDeliveryReceipt(payload) !== body) {
+            fail('non-canonical delivery receipt');
+        }
+        return payload;
+    }
+
+    const reservedNamespaceIndex = body.indexOf(DELIVERY_RECEIPT_NAMESPACE);
+    if (reservedNamespaceIndex < 0) {
         return undefined;
     }
-    const match = DELIVERY_RECEIPT_PATTERN.exec(body);
+
+    const reservedMarkerIndex = body.indexOf(DELIVERY_RECEIPT_MARKER_PREFIX);
+    const receiptIndex = body.indexOf(DELIVERY_RECEIPT_V2_PREFIX);
+    if (receiptIndex < 0 || reservedMarkerIndex !== receiptIndex) {
+        fail('unsupported delivery receipt');
+    }
+    const hiddenReceipt = body.slice(receiptIndex);
+    const match = DELIVERY_RECEIPT_V2_PATTERN.exec(hiddenReceipt);
     if (match === null) {
         fail('invalid delivery receipt');
     }
@@ -289,8 +377,18 @@ export function parseDeliveryReceipt(body: string): DeliveryReceiptPayload | und
     const head = match[2] ?? '';
     const bodySha256 = match[3] ?? '';
     const rawClosingIssue = match[4];
+    const ciAdmissionMode = match[5] as DeliveryReceiptPayload['ciAdmissionMode'];
+    const observedCiState = match[6] as DeliveryReceiptPayload['observedCiState'];
     const closingIssue = rawClosingIssue === 'none' ? undefined : Number(rawClosingIssue);
-    const payload = { pullRequest, head, bodySha256, closingIssue };
+    const payload = {
+        schemaVersion: 2 as const,
+        pullRequest,
+        head,
+        bodySha256,
+        closingIssue,
+        ...(ciAdmissionMode === undefined ? {} : { ciAdmissionMode }),
+        ...(observedCiState === undefined ? {} : { observedCiState }),
+    };
     if (composeDeliveryReceipt(payload) !== body) {
         fail('non-canonical delivery receipt');
     }
@@ -301,6 +399,15 @@ function assertSafeIssueNumber(value: number, label: string): void {
     if (!Number.isSafeInteger(value) || value <= 0) {
         fail(`${label} must be a safe positive integer`);
     }
+}
+
+/** The relationship lines that name `issue`, ignoring lines that relate the body to other issues. */
+function relationshipsForIssue(
+    relationships: IssueReference[],
+    issue: number,
+    repository: string | undefined
+): IssueReference[] {
+    return relationships.filter((reference) => referencesIssue(reference, issue, repository));
 }
 
 export function issueRelationshipFromBody(
@@ -330,15 +437,9 @@ export function issueRelationshipFromBody(
         assertIssueClosingReferences(body, issue, undefined, repository);
         return undefined;
     }
-    const existing = relationships[0];
-    if (
-        relationships.length !== 1 ||
-        existing === undefined ||
-        existing.issue !== String(issue) ||
-        (existing.repository !== undefined &&
-            (repository === undefined || existing.repository.toLowerCase() !== repository.toLowerCase())) ||
-        lines.includes(NO_RELATED_TICKETS)
-    ) {
+    const matching = relationshipsForIssue(relationships, issue, repository);
+    const existing = matching[0];
+    if (matching.length !== 1 || existing === undefined || lines.includes(NO_RELATED_TICKETS)) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
     const relationship = existing.label === 'Closes' ? 'closes' : 'relates';

@@ -8,5 +8,6 @@ export { applyChordProgressionToTrack } from './generateChordProgression/applyTo
 export { applyDrumPatternToTrack } from './generateDrumPattern/applyToTrack';
 export { applyMelodyToTrack } from './generateMelody/applyToTrack';
 export { generateMidiVariations } from './generateMidiVariations';
+export { MIDI_TRANSFORM_IMPLEMENTATIONS } from './midiTransforms/midiTransformImplementations';
 export { getGenerationHandlers } from './getGenerationHandlers';
 export { denoiseAudio } from './nativeAiBridge/denoiseAudio';

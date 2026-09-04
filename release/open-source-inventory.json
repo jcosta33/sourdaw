@@ -18,6 +18,7 @@
                 ".github/**",
                 "crates/**",
                 "docs/**",
+                "measurements/**",
                 "release/desktop-runtime-material.json",
                 "release/open-source-inventory.json",
                 "release/web-artifact-manifest.json",
@@ -56,6 +57,8 @@
                 "ZCODE.md",
                 "components.json",
                 "eslint.config.mjs",
+                "eslint.size-baseline.d.mts",
+                "eslint.size-baseline.mjs",
                 "index.html",
                 "knip.json",
                 "package.json",
@@ -159,8 +162,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:4012bbe87ea147a2ef92707f2b344b9ee6bce252569545720ef4dc0823000574:release/dependency-license-proofs.json"
+                "sha256:94a4c86e120f9d35bce5e2657a4660074977b6613dfae1989992666482f1a794:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:2b3609897595e9bcebb0057d94c6a434a69333eab6fa55900d5c50c6ad624d26:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -270,7 +273,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f",
+                "sha256:08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -393,7 +396,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
+                "sha256:a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -777,7 +780,7 @@
             ],
             "digests": [
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
-                "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
+                "sha256:534ebb2d4919ea10c93745f7ca17039a9302e1f40b8389493128192e7b64ff5e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:61bf6ba1b489e37730605d318698ba64167301cc55cadfc73c8da5ae2b97f90c:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
@@ -1096,7 +1099,7 @@
                 "99432f2bf443219b3eb77e65e1a18583faad422e"
             ],
             "digests": [
-                "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "sha256:f537ba6b1f49b00f2d11b2c64d4335ee73dfa697273570a43710e2cd14f92bb6:crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
@@ -1151,7 +1154,7 @@
                 "src/modules/Command/useCases/versionedCommandArgumentKeys.ts",
                 "src/modules/Arrangement/useCases/index.ts",
                 "src/modules/Arrangement/useCases/device/setDeviceState.ts",
-                "src/app/bootstrap.ts",
+                "src/app/composeGrandBoule.ts",
                 "src/app/getProductionCommandHandlerMaps.ts",
                 "src/utils/handlerContract.ts",
                 "src/app/prepareOfflineDeviceSetup.ts",
@@ -1161,6 +1164,8 @@
                 "crates/daw-dsp/benches/wasm/deviceRecipes.js",
                 "crates/daw-dsp/benches/wasm/quantumCostProcessor.js",
                 "crates/daw-dsp/benches/wasm/run.mjs",
+                "crates/daw-dsp/benches/wasm/measurementCensus.mjs",
+                "crates/daw-dsp/benches/wasm/measurementCensus.d.mts",
                 "crates/daw-dsp/benches/wasm/renderTable.mjs",
                 "crates/daw-dsp/benches/wasm/renderTable.d.mts",
                 "crates/daw-dsp/benches/quantum-cost-table.json",
@@ -1189,10 +1194,10 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:e285a2588b0c9fa7b9c20c7b901d4570814bc9c43d1892e24fe10cdbe1aac6cc:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:d477f7bf64335d9ddd510349a93c2b672571a39cf35f2f1b72acf53352fef2ef:grand-boule-live-runtime",
-                "tracked-set-sha256:a4a9c1cea8980b0f4a8e3afa828d69e74898d3c0781b4fc57508d9de1346e68d:grand-boule-project-state",
+                "tracked-set-sha256:0a082d27ff81cdeaec63073694854c0fc1a65353d9a42cd5f13098b0033b30fb:grand-boule-live-runtime",
+                "tracked-set-sha256:41f17f76ef9725c2a6d9ce2ea7c787f9bd6651c35c1143e86a3310152c349ba7:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:b4066fa5cb288de12cf3e98707bf0d200eb729f98797a3db8ea4abbb0bf06706:grand-boule-release-proof"
+                "tracked-set-sha256:4a905323e4ead734b33a63f20e75935efaf9986063cf792aa7ce8a41fa213e4f:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1323,13 +1328,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:aa95f6b0a9181565a5d321b80c7a2de49d67ea91687f7e366033fbd46e2ca0fd",
-                "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
-                "proof-chamber sha256:a4436f7348cc10aa164109274b475ea95ebf7fc5bdd14f588aa3a400c2032f94",
-                "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
+                "daw-dsp sha256:a69c8acc5baa6b2e5ad6e8a68db324a593fd5e5eabc0a99adea835ccd8a97e07",
+                "daw-wasm-decoder sha256:5b265f5b68d99951d7e6b73ec0f3daf7b52bbdd56971f12d08d4065e51c44dfe",
+                "proof-chamber sha256:58963155c2097b67a0ba353dffed639e1fdde1b7805e004b211cb6a729f02f8b",
+                "scoring sha256:42025a2d92a929504c3593d074d04e0f75e758c1bc42c50d99e6a457bfb78a36"
             ],
             "digests": [
-                "sha256:548dbbb72b226097ffc962717558adc1403d501ebcd3a25317764609731dcb3b:public/wasm/manifest.json"
+                "sha256:2995b39808a5318ffb4f2572141df9c027b8ef80de7d88df1070b740faca32af:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1368,7 +1373,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:69721a5e12449b11e81b9f9916fa6716ea8fc4f039b2552522c72e4c451107e6:public/audio/worklets/native-plugin-bridge-processor.js",
+                "sha256:7dc1d7ec14134e94b8ba7fe997da78e990021ae73a3fefa93dcf3e4af17762c9:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "licenses": [
@@ -1528,7 +1533,6 @@
                 "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/rockBand.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts",
-                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts",
                 "src/modules/Synth/useCases/proSynthInstruments.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
@@ -1686,7 +1690,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "788966c3d89dc8d9fa388e1baaceab14996a563979f5bc35ca929411726e2eb0"
+            "sha256": "3f5021ace70f5d1edb05b3ab21e846a69ef953c7f2ce3005452644dc5e702e39"
         },
         {
             "path": "server/package.json",
@@ -1698,15 +1702,15 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f"
+            "sha256": "08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d"
         },
         {
             "path": "Cargo.toml",
-            "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
+            "sha256": "cbcef1d177ea9d9452c8ad8597290fc1f5ab2c1d0f5d41f7df4b43486e4a59a3"
         },
         {
             "path": "Cargo.lock",
-            "sha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10"
+            "sha256": "a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1714,7 +1718,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "548dbbb72b226097ffc962717558adc1403d501ebcd3a25317764609731dcb3b"
+            "sha256": "2995b39808a5318ffb4f2572141df9c027b8ef80de7d88df1070b740faca32af"
         }
     ],
     "externalReferences": [
@@ -1818,6 +1822,16 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://$alias/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/assert-deployment-isolation.sh",
+            "value": "https://vercel.com/sso-api"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/checkLgplRuntimeProvenance.ts",
             "value": "https://github.com/gideonstele/lamejs"
         },
@@ -1881,12 +1895,6 @@
             "surface": "collaboration-server",
             "file": "server/collab-server.ts",
             "value": "runtime:WebSocketServer"
-        },
-        {
-            "surface": "collaboration-server",
-            "file": "server/collab-server.ts",
-            "value": "ws://${slot}:${slot}",
-            "templateSha256": "1c0fbdf88919ea6414cc31e89cec3e153c8f4084e39ded6cf32addbd40f91f1f"
         },
         {
             "surface": "levain-sample-bank",
@@ -2020,11 +2028,6 @@
         {
             "surface": "project-source",
             "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://github.com/$GITHUB_REPOSITORY.git"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "4639ee5ab8e36f77880dd75717d49cccac4c92c4b919c570f5449d6ea2aec7a8"
         },
@@ -2036,8 +2039,64 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://app.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://moved.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://no-coep.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://popups.sourdaw.studio/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://restricted.vercel.app/"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Falso-restricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/login"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/resolveVercelProductionDeployment.ts",
             "value": "https://api.vercel.com/v7/deployments"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelProductionDeployment.ts",
+            "value": "https://api.github.com/repos/${slot}/compare/${slot}...${slot}",
+            "templateSha256": "7470486018f472ccc4df09937895331e18f6047d895ad2a177b2329ed026c6d5"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/resolveVercelDeploymentAliases.ts",
+            "value": "https://api.vercel.com/v13/deployments"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/linkVercelCliProject.ts",
+            "value": "https://api.vercel.com/v9/projects"
         },
         {
             "surface": "project-source",
@@ -2290,7 +2349,6 @@
                 "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/lofi.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
-                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts",
                 "src/modules/Synth/useCases/proSynthInstruments.ts"
             ]
         },
@@ -2486,8 +2544,7 @@
                 "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/rockBand.ts",
-                "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts",
-                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts"
+                "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts"
             ]
         },
         {

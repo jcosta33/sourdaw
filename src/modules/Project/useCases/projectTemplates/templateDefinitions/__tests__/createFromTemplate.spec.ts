@@ -29,6 +29,23 @@ const mocks = vi.hoisted(() => ({
     runProjectLoadTransaction: vi.fn(),
 }));
 
+// ../helpers is mocked so this spec does not load the template catalog / Nebula Drift demo.
+vi.mock('../helpers', () => ({
+    templates: [
+        {
+            id: 'empty',
+            executionBoundary: 'project-replacement',
+            create: () => mocks.newProject('Untitled'),
+        },
+        {
+            id: 'pop-song',
+            name: 'Pop Song',
+            executionBoundary: 'app-action',
+            create: mocks.createPopSongTemplate,
+        },
+    ],
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: mocks.resetAudioGraph,
 }));
@@ -50,10 +67,29 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: vi.fn(),
     compactProject: mocks.compactProject,
+    createCrdtDoc: vi.fn(),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
     projectActionHistoryToStore: mocks.projectActionHistoryToStore,
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
     resetCrdtProjectAuthority: mocks.resetCrdtProjectAuthority,
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
     startCrdtAutoSave: mocks.startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -90,10 +126,6 @@ vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => (
 
 vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
     stopActiveAutoSave: mocks.stopActiveAutoSave,
-}));
-
-vi.mock('../../templateFiles/popSong', () => ({
-    createPopSongTemplate: mocks.createPopSongTemplate,
 }));
 
 vi.mock('#/modules/Project/stores/projectStore', () => ({

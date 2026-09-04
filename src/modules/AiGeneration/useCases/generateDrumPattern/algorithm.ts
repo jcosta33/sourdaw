@@ -500,6 +500,9 @@ function buildPatternForBar(style: DrumPatternStyle): ProbabilityMap[] {
     }
 }
 
+/** One sixteenth of common time: the grid every drum pattern is written on. */
+const SUBDIVISION_BEATS = 0.25;
+
 function applySwing(beat: number, subdivisionIndex: number, swingAmount: number): number {
     if (swingAmount <= 0 || subdivisionIndex % 2 === 0) {
         return beat;
@@ -524,6 +527,7 @@ export function generateDrumPattern(options: GenerateDrumPatternOptions): {
     const subdivisionsPerBeat = 4;
     const subdivisionsPerBar = beatsPerBar * subdivisionsPerBeat;
     const totalSubdivisions = subdivisionsPerBar * bars;
+    const totalBeats = beatsPerBar * bars;
 
     const baseMaps = buildPatternForBar(style);
     const notes: GeneratedNote[] = [];
@@ -550,7 +554,10 @@ export function generateDrumPattern(options: GenerateDrumPatternOptions): {
             notes.push({
                 pitch: map.pitch,
                 startBeat,
-                duration: 0.25,
+                // Swing pushes an offbeat subdivision late, so the last one would otherwise ring
+                // past the pattern. Shortening the note to the pattern end keeps the swing feel and
+                // keeps every note inside the clip that asked for it.
+                duration: Math.min(SUBDIVISION_BEATS, totalBeats - startBeat),
                 velocity,
             });
         }

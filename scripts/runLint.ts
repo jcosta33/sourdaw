@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -105,6 +106,28 @@ export function buildEslintArgv(
     ];
 }
 
+export function ensureServerDependencies(
+    targets: string[],
+    rootDir: string = process.cwd(),
+    existsSyncFn: typeof existsSync = existsSync,
+    spawnSyncFn: typeof spawnSync = spawnSync
+): boolean {
+    if (targets.some((target) => target === 'server' || target.startsWith('server/'))) {
+        const serverNodeModules = resolve(rootDir, 'server/node_modules');
+        if (!existsSyncFn(serverNodeModules)) {
+            const result = spawnSyncFn('npm', ['--prefix', 'server', 'ci', '--include=dev'], {
+                stdio: 'inherit',
+                cwd: rootDir,
+            });
+            if (result.status !== 0) {
+                throw new Error('failed to install server dependencies for linting');
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
     const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
     if (result.error !== undefined) {
@@ -120,6 +143,7 @@ function main(): number {
         const options = parseArgs(process.argv.slice(2));
         const targets = options.full ? ['src', 'scripts'] : options.files;
         const eslintTargets = options.full ? ['src/**/*.{ts,tsx}', 'scripts/**/*.ts'] : options.files;
+        ensureServerDependencies(targets);
         runStep('oxlint', [
             'exec',
             'oxlint',

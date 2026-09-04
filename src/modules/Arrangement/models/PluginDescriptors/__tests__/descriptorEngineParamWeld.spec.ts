@@ -48,11 +48,11 @@ import { isDeviceParameterAutomatable, isInternalDeviceParameter } from '../../D
  *
  * It is the wrong shape for a device that dispatches *exclusively*: one of
  * several alternatives is live, chosen at runtime, and only that one receives
- * the write. Dutch Oven is that device. `forward_to_engine`
- * (`crates/proof-chamber/src/lib.rs:281-297`) forwards to whichever
- * `ReverbEngine` variant is currently constructed, and the seven variants have
- * seven different arm sets. Unioning them says "some algorithm handles this",
- * which is not the claim a user's knob makes.
+ * the write. Dutch Oven is that device. `ProofChamberInstance::forward_to_engine`
+ * (`crates/proof-chamber/src/lib.rs`) forwards to whichever `ReverbEngine`
+ * variant is currently selected, and the seven variants have seven different
+ * arm sets. Unioning them says "some algorithm handles this", which is not the
+ * claim a user's knob makes.
  *
  * #1481 is what that costs. `early_late` was advertised, automatable, sent
  * correctly by the panel, and dropped by `ProofChamber::set_param`'s `_ => {}`
@@ -487,7 +487,11 @@ function resolveEngineFiles(deviceType: NativeDspDeviceType): {
  *
  * The digit on the left of the arrow is what distinguishes the dispatch from
  * every other `match` over the same enum: `process` and `get_latency` bind a
- * variant on the *left* of `=>`, this one constructs one on the right.
+ * variant on the *left* of `=>`, this one names one on the right. The digit is
+ * the whole of it — the pattern used to require a payload parenthesis too, and
+ * the variants a wire value selects no longer carry one, because the engines
+ * moved out of the enum so that selecting one stops allocating on the render
+ * thread.
  */
 function readSelectorWireValues(deviceType: NativeDspDeviceType): ReadonlyMap<number, string> {
     const config = ENGINE_SOURCES[deviceType];
@@ -495,7 +499,7 @@ function readSelectorWireValues(deviceType: NativeDspDeviceType): ReadonlyMap<nu
         return new Map();
     }
     const source = readSource(config.selector.source).replaceAll(/\s+/g, ' ');
-    const dispatch = new RegExp(String.raw`(\d+) => ${config.selector.enumName}::(\w+)\s*\(`, 'g');
+    const dispatch = new RegExp(String.raw`(\d+) => ${config.selector.enumName}::(\w+)\b`, 'g');
     const byVariant = new Map<string, string>();
     for (const alternative of config.alternatives) {
         for (const variant of alternative.variants) {

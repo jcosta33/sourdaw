@@ -29,8 +29,6 @@ const CLAVE_C2_NOM: f32 = 1e-9; // F
 const CLAVE_DECAY_S: f32 = 0.02; // 20ms natural ring
 
 // Rimshot
-const RIM_FREQ1: f32 = 1667.0;
-const RIM_FREQ2: f32 = 455.0;
 const RIM_DECAY_S: f32 = 0.01; // 10ms
 
 // Maracas

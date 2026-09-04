@@ -1,7 +1,9 @@
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
+export { captureProjectIdentity } from './captureProjectIdentity';
 export { captureProjectRevision } from './captureProjectRevision';
+export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
@@ -20,11 +22,13 @@ export { getPersistenceBackend } from './crdtProjectLifecycle';
 export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
 export { runCrdtPersistenceBarrier } from './runCrdtPersistenceBarrier';
+export { sessionUndoWitnessStampPort } from './sessionUndoWitnessStampPort';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';
 export { markActionHistoryEntryReverted } from './markActionHistoryEntryReverted';
 export { recordActionHistoryEntry } from './recordActionHistoryEntry';
+export { recordActionHistoryEntries } from './recordActionHistoryEntries';
 export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';
@@ -37,6 +41,7 @@ export { setupProjectionBridge } from './projection/setupProjectionBridge';
 export { removeCrdtDoc } from './removeCrdtDoc';
 export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
+export { replaceCrdtDocInLineage } from './replaceCrdtDocInLineage';
 export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
 export { initBranchState } from './initBranchState';
 export { preserveBranchStateForSession } from './preserveBranchStateForSession';

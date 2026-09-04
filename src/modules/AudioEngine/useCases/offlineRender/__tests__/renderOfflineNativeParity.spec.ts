@@ -90,7 +90,23 @@ import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MID
 import { type TransportState } from '#/modules/Transport/stores';
 
 import { NATIVE_ADDON_FILE } from '../../../../../../electron/native';
+import {
+    type AudioGraphApplyResult,
+    type AudioGraphParameterWrite,
+    type AudioGraphStripParameterTarget,
+    type AudioGraphWriteParameterCommand,
+} from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { armNativeLiveAutomationWriter } from '../../livePlayback/armNativeLiveAutomationWriter';
+import { disarmNativeLiveAutomationWriter } from '../../livePlayback/disarmNativeLiveAutomationWriter';
+import {
+    AUTOMATION_WINDOW_SECONDS,
+    nativeLiveAutomationWriter,
+} from '../../livePlayback/nativeLiveAutomationWriterState';
+import { nativeLiveGraphSession } from '../../livePlayback/nativeLiveGraphSessionState';
+import { pumpNativeLiveAutomationWriter } from '../../livePlayback/pumpNativeLiveAutomationWriter';
 import { renderOffline } from '../../renderOffline';
 import { type OfflineRenderContext } from '../resolveRenderContext';
 
@@ -224,6 +240,11 @@ function requireNativeHost(): NativeHostAddon {
     return nativeHost;
 }
 
+/** What the export actually asked the engine to render, kept for the live-writer legs. */
+type CapturedRender = Readonly<{ batch: NativeGraphWireBatch; frames: number; sampleRate: number }>;
+
+const capturedRenders: CapturedRender[] = [];
+
 /**
  * The in-process transport: the same commands the desktop transport carries,
  * minus the wire. `applyGraphCommands` throws because an export must never
@@ -240,6 +261,7 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
             );
         },
         async renderGraphOffline(input) {
+            capturedRenders.push({ batch: input.batch, frames: input.frames, sampleRate: input.sampleRate });
             return host.renderGraphOffline(input.batch, input.frames, input.sampleRate);
         },
         async mapGraphBatch(input) {
@@ -533,6 +555,124 @@ type LegMeasurement = {
     rssBytes: number;
 };
 
+// ── The live automation writer, over the same project ────────────────────
+
+/**
+ * What the live writer sends the engine for the same project the export bakes
+ * into its batch (#3068).
+ *
+ * The writer's own clock is the playhead feed's progress tick; here the pass is
+ * walked by hand on half a window at a time, pumping until a position stops
+ * admitting anything. That is the shape of a run of ticks, not a shortcut past
+ * one: the writer admits on the engine's position, so any cadence fine enough
+ * to see every window produces the same sequence, and one that only pumped once
+ * per position would measure the tick rate rather than the writer.
+ */
+async function runLiveAutomationPass(input: { endSeconds: number }): Promise<AudioGraphWriteParameterCommand[]> {
+    const sent: AudioGraphWriteParameterCommand[] = [];
+    const applied: AudioGraphApplyResult = {
+        acceptance: 'accepted',
+        application: 'applied',
+        runtimeRevision: 1,
+        reports: [],
+    };
+    nativeLiveGraphSession.backend = {
+        backendId: 'live-writer-parity',
+        apply: (batch) => {
+            for (const command of batch.commands) {
+                if (command.kind === 'write-parameter') {
+                    sent.push(command);
+                }
+            }
+            return Promise.resolve(applied);
+        },
+        dispose: () => undefined,
+    };
+    nativeLiveGraphSession.pending = Promise.resolve();
+    nativeLiveGraphSession.loopRegion = null;
+    nativeLiveGraphSession.loopEnabled = false;
+    // The clock the live producer binds to, set to the fixture's own projection
+    // so the two paths place a beat on the same second rather than on two.
+    offlinePpqEndpointProjectorState.project = fixtureRenderContext().projectPpqEndpoints;
+
+    armNativeLiveAutomationWriter({
+        stripTracks: fixtureTracks(),
+        sampleRate: SAMPLE_RATE,
+        programmeEndSeconds: input.endSeconds,
+        positionSeconds: 0,
+        provenAfterBatch: null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let at = 0; at <= input.endSeconds; at += AUTOMATION_WINDOW_SECONDS / 2) {
+        let before = -1;
+        while (before !== sent.length) {
+            before = sent.length;
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: at,
+                loopWraps: 0,
+                batchesApplied: null,
+                writerEpoch: nativeLiveAutomationWriter.epoch,
+            });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+    }
+    return sent;
+}
+
+function targetKey(target: AudioGraphStripParameterTarget): string {
+    if (target.kind === 'track-send-level') {
+        return `${target.kind}:${target.trackId}:${target.busId}`;
+    }
+    return `${target.kind}:${target.trackId}`;
+}
+
+/** Every write each parameter received, in the order it received them. */
+function writesByTarget(commands: readonly AudioGraphWriteParameterCommand[]): Map<string, AudioGraphParameterWrite[]> {
+    const byTarget = new Map<string, AudioGraphParameterWrite[]>();
+    for (const command of commands) {
+        const key = targetKey(command.target);
+        const writes = byTarget.get(key) ?? [];
+        writes.push(command.write);
+        byTarget.set(key, writes);
+    }
+    return byTarget;
+}
+
+function exportWriteCommands(render: CapturedRender): AudioGraphWriteParameterCommand[] {
+    return render.batch.commands.filter(
+        (command): command is AudioGraphWriteParameterCommand => command.kind === 'write-parameter'
+    );
+}
+
+/** The export's batch with its own automation taken out and the writer's put in. */
+function withWriterAutomation(
+    render: CapturedRender,
+    commands: readonly AudioGraphWriteParameterCommand[]
+): NativeGraphWireBatch {
+    const withoutAutomation = render.batch.commands.filter((command) => command.kind !== 'write-parameter');
+    // Appended rather than spliced back where the export had them: every strip
+    // this batch creates is already declared above, which is the only ordering
+    // the engine needs, and a stamped write lands on its own frame whatever
+    // command carried it.
+    return { ...render.batch, commands: [...withoutAutomation, ...commands] };
+}
+
+/** The engine's interleaved f32 answer, as something `nullTest` can read. */
+function toRenderedBuffer(pcm: Uint8Array, render: CapturedRender): StubAudioBuffer {
+    // Copied rather than viewed: a napi buffer carries no alignment guarantee,
+    // and `Float32Array` over an odd byte offset throws.
+    const interleaved = new Float32Array(Uint8Array.from(pcm).buffer);
+    const buffer = new StubAudioBuffer({ length: render.frames, numberOfChannels: 2, sampleRate: render.sampleRate });
+    for (let channel = 0; channel < 2; channel++) {
+        const data = buffer.getChannelData(channel);
+        for (let frame = 0; frame < render.frames; frame++) {
+            data[frame] = interleaved[frame * 2 + channel] ?? 0;
+        }
+    }
+    return buffer;
+}
+
 async function runLeg(leg: 'native' | 'web', renderRate = SAMPLE_RATE): Promise<LegMeasurement> {
     mocks.probe.native = leg === 'native';
     const startedAt = Date.now();
@@ -570,10 +710,16 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         mocks.renderContext = fixtureRenderContext();
         mocks.probe.native = false;
         mocks.probe.transport = null;
+        capturedRenders.length = 0;
     });
 
     afterEach(() => {
         vi.unstubAllGlobals();
+        // Module-level state the live-writer legs install: left standing it
+        // would let one test's pass answer the next test's pump.
+        disarmNativeLiveAutomationWriter();
+        nativeLiveGraphSession.backend = null;
+        offlinePpqEndpointProjectorState.project = null;
     });
 
     /** Skip-law guard 1: the probed path is anchored to the crate that builds the artifact. */
@@ -674,6 +820,95 @@ describe('renderOffline — native/web export parity (#2225)', () => {
             const result = nullTest({ a: web.buffer, b: native.buffer });
             process.stdout.write(
                 `[parity ${name}] null: residual ${result.residualPeakDbfs.toFixed(2)} dBFS, ` +
+                    `signal ${result.signalPeakDbfs.toFixed(2)} dBFS, worst frame ${String(result.worstFrame)}\n`
+            );
+
+            expect(result.signalPeakDbfs).toBeGreaterThan(-30);
+            expect(result.residualPeakDbfs).toBeLessThanOrEqual(-90);
+        },
+        30_000
+    );
+
+    // ── The live writer against the same export (#3068) ───────────────────
+    //
+    // The export bakes the whole pass into one batch; the live writer feeds
+    // the same engine a window at a time off the transport clock. Both read
+    // `projectStripAutomationWrites`, so a divergence here is the *delivery*
+    // — a window that drops a write, a cursor that skips one, an origin the
+    // live side never added back — not the lane law, which has its own specs.
+
+    it.runIf(nativeAddonPresent)(
+        'sends each parameter the same writes the export bakes into its batch, in the same order',
+        async () => {
+            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
+            await runLeg('native');
+            const [render] = capturedRenders;
+            if (!render) {
+                throw new Error('the native leg rendered nothing to compare against');
+            }
+
+            const exported = writesByTarget(exportWriteCommands(render));
+            const written = writesByTarget(await runLiveAutomationPass({ endSeconds: RENDER_SECONDS }));
+
+            // The fixture automates a fader, a send and a pan, which is the
+            // whole of what this writer carries: an empty comparison passes.
+            expect([...exported.keys()].sort()).toEqual([
+                'track-fader:track-a',
+                'track-pan:track-b',
+                'track-send-level:track-a:bus-1',
+            ]);
+            expect([...written.keys()].sort()).toEqual([...exported.keys()].sort());
+            for (const [key, writes] of exported) {
+                expect(written.get(key)).toEqual(writes);
+            }
+        },
+        30_000
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'renders identically whether the export wrote the automation or the live writer did',
+        async () => {
+            // One window holds the whole pass, so the writer's first pump is
+            // the entire delivery: what the engine renders can differ from the
+            // export only if the writer changed the writes themselves.
+            mocks.lanes.length = 0;
+            mocks.lanes.push(
+                lane({
+                    id: 'lane-gain-a',
+                    trackId: 'track-a',
+                    parameterId: 'gain',
+                    minValue: 0,
+                    maxValue: 1,
+                    points: [
+                        { beat: 0, value: 0.7, curve: 'step', tension: 0 },
+                        { beat: 0.1, value: 0.35, curve: 'step', tension: 0 },
+                    ],
+                })
+            );
+            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
+            await runLeg('native');
+            const [render] = capturedRenders;
+            if (!render) {
+                throw new Error('the native leg rendered nothing to compare against');
+            }
+            const sparseEndSeconds = 0.1 * SECONDS_PER_BEAT;
+            expect(sparseEndSeconds).toBeLessThan(AUTOMATION_WINDOW_SECONDS);
+
+            const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
+            const host = requireNativeHost();
+            const fromExport = await host.renderGraphOffline(render.batch, render.frames, render.sampleRate);
+            const fromWriter = await host.renderGraphOffline(
+                withWriterAutomation(render, written),
+                render.frames,
+                render.sampleRate
+            );
+
+            const result = nullTest({
+                a: toRenderedBuffer(fromExport, render),
+                b: toRenderedBuffer(fromWriter, render),
+            });
+            process.stdout.write(
+                `[live writer] null: residual ${result.residualPeakDbfs.toFixed(2)} dBFS, ` +
                     `signal ${result.signalPeakDbfs.toFixed(2)} dBFS, worst frame ${String(result.worstFrame)}\n`
             );
 

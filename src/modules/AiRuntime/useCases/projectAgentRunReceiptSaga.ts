@@ -1,7 +1,11 @@
 import { type compileVersionedCommandBatchEnvelope, type createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { type AgentRunPendingEffectContinuation, type AgentRunSagaStep } from '../models/AgentRun';
+import {
+    type AgentRunPendingEffect,
+    type AgentRunPendingEffectContinuation,
+    type AgentRunSagaStep,
+} from '../models/AgentRun';
 
 import { createAgentRunPendingEffectContinuation } from './createAgentRunPendingEffectContinuation';
 import { createAgentSagaStep } from './createAgentSagaStep';
@@ -36,6 +40,12 @@ export type AgentRunReceiptSagaProjection = {
     completesPendingEffectContinuation: boolean;
     effectsPending: boolean;
 };
+
+// The store admits `sourceRevision` only on continuations whose every effect is a
+// render-project-sections external effect; anything else keeps its honest generic recovery.
+function hasOnlyRenderProjectSectionsEffects(effects: readonly AgentRunPendingEffect[]): boolean {
+    return effects.every((effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections');
+}
 
 /** Pure receipt projection shared by ordinary and recovery-fallback lifecycle writers. */
 export function projectAgentRunReceiptSaga(
@@ -174,9 +184,17 @@ export function projectAgentRunReceiptSaga(
             })
         );
     }
+    const sourceRevision =
+        input.committedRevision !== undefined && hasOnlyRenderProjectSectionsEffects(pendingEffects)
+            ? input.committedRevision
+            : undefined;
     const pendingEffectContinuation =
         pendingEffects.length > 0 && input.commandBatch
-            ? createAgentRunPendingEffectContinuation({ receipt: input.receipt, commandBatch: input.commandBatch })
+            ? createAgentRunPendingEffectContinuation({
+                  receipt: input.receipt,
+                  commandBatch: input.commandBatch,
+                  ...(sourceRevision === undefined ? {} : { sourceRevision }),
+              })
             : null;
     return {
         receiptIdentity,

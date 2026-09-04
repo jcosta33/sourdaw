@@ -5,8 +5,12 @@ import { DeviceInspector } from '../DeviceInspector';
 
 import type { Device } from '../../../../models/TrackViewTypes';
 
-// Mock external dependencies
-vi.mock('../layouts', () => ({})); // Prevent OOM by not loading all layouts
+// Mock external dependencies to prevent loading Faust WASM and effect layouts
+vi.mock('../layouts/BuiltinSynthLayout', () => ({}));
+vi.mock('../layouts/FaustInstrumentLayout', () => ({}));
+vi.mock('../layouts/HammondB3Layout', () => ({}));
+vi.mock('../layouts/LufsMeterLayout', () => ({}));
+vi.mock('../layouts/effects', () => ({}));
 
 const mockGetBuiltinPlugins = vi.fn<() => readonly unknown[]>(() => []);
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();

@@ -96,11 +96,11 @@ Nested UI folders follow the same pattern (e.g. `presentations/views/Mixer/__tes
 
 ## 4. Naming convention
 
-Every `it` block starts with `should` or `should not`, followed by a concise description of the behaviour under test:
+Every `it` block describes the behaviour under test concisely, using direct verb phrases or `should`/`should not`:
 
-- `it('should add the track and emit TrackAddedEvent')`
+- `it('adds the track and emits TrackAddedEvent')`
 - `it('should not emit when the store is empty')`
-- `it('should throw InvalidTempoError when bpm is below 20')`
+- `it('throws InvalidTempoError when bpm is below 20')`
 
 ---
 
@@ -148,6 +148,8 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
     RecentProjectsMenu: () => <div data-testid="recent-projects" />,
 }));
 ```
+
+What decides between them is faithfulness, not preference. A hand-listed stub must behave correctly for every name the tested path can reach: a factory that returns an `Error`, a type guard, a sentinel constant, or a journal write cannot be a bare `vi.fn()` standing in for it. When the spec does not intend to change that behaviour, shape 2 is the correct repair — spreading the real barrel keeps every untouched export faithful for free — rather than transcribing more names by hand to chase the drift.
 
 `pnpm test:barrel-mocks` enforces this for `presentations/views`, `stores`, `events`, and `useCases` barrels: it walks each spec's module graph and fails when a non-spread factory omits a name that graph imports. No spec mocks an `events` contract barrel today — that kind is gated pre-emptively, not because it has been observed clean, so the tree's first `events` mock is caught by this gate the moment it goes stale rather than needing a later change to start checking it. Its focused guard spec covers the checker. The failure names the spec, barrel, missing export, and consuming module, then prints the three remedies, including a reasoned `exemptions` row in `scripts/checkBarrelMockCoverage.ts` — that row mutes only the export names it lists, not the whole (spec, barrel) pair, so a name outside the list still violates. `--all` is the same scan as the default gate now that every contract barrel kind is enforced. Background: PR #1572, issue #1393, #2364.
 

@@ -46,4 +46,11 @@ describe('GlutenPanel', () => {
         const meter = screen.getByLabelText('Init gain reduction meter');
         expect(meter.getAttribute('role')).toBe('meter');
     });
+
+    it('applies minimum height floor and does not clip overflow at root', () => {
+        const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const faceplate = container.querySelector('.gluten-faceplate');
+        expect(faceplate).toHaveClass('min-h-[440px]');
+        expect(faceplate).not.toHaveClass('overflow-hidden');
+    });
 });

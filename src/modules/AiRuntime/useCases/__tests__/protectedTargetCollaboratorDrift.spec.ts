@@ -20,6 +20,7 @@ import {
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -179,7 +180,7 @@ function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protec
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input.id,
         batchId: input.id,
-        projectId: projectRevision,
+        projectId: captureProjectIdentity(),
         baseRevision: projectRevision,
         intent: 'add a syncopated arpeggio without touching the protected track',
         protectedTargetIds: [input.protectedTrackId],

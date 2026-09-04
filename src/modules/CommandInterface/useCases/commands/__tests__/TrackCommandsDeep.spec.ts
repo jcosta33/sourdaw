@@ -16,7 +16,10 @@ const { mockTrackStore, mockGetSelectedTrackId } = vi.hoisted(() => ({
     mockGetSelectedTrackId: vi.fn<() => string | null>(() => 't1'),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction,
+    executeUserAppAction: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: mockDuplicateTrack,
     removeTrack: mockRemoveTrack,

@@ -8,7 +8,7 @@ import {
     parseVersionedCommandBatchEnvelope,
     parseVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { chatStore } from '../../stores/chatStore';
@@ -104,7 +104,7 @@ describe('agent risk approval', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, targetFingerprint])),
         }));

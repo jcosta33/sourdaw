@@ -11,6 +11,7 @@ import {
 } from '#/modules/Synth/useCases';
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
 // is a cycle: importing that barrel here reds `deps:validate` with ~200 no-circular rows.
@@ -40,7 +41,7 @@ import { getCompensationDelay } from '../latencyCompensation/compensation/getCom
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
 
 import { checkCancel } from './checkCancel';
-import { MICRO_FADE_SECONDS, MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
+import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';

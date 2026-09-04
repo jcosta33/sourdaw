@@ -13,6 +13,7 @@ import {
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
+import { agentProjectRepairStateStore, type AgentProjectRepairState } from '#/modules/CrdtDocument/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 import { defaultOnboardingState, onboardingStore } from '#/modules/Onboarding/stores';
 import {
@@ -27,10 +28,15 @@ import { defaultWorkspaceState, type WorkspaceState } from '../../../models/Work
 import { alphaNoticeStore } from '../../../stores/alphaNoticeStore';
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
+import { type ActiveDevicePanel } from '../../hooks/useActiveDevicePanel';
 import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
+const activeDevicePanelStateMock = vi.hoisted(() => ({
+    activePanel: null as ActiveDevicePanel | null,
+    closeActivePanel: vi.fn(),
+}));
 const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
 const dismissAlphaNoticeMock = vi.hoisted(() => vi.fn());
 
@@ -49,6 +55,10 @@ vi.mock('../../hooks/useProjectState', () => ({
 
 vi.mock('../../hooks/useAppEventHandlers', () => ({
     useAppEventHandlers: vi.fn(),
+}));
+
+vi.mock('../../hooks/useActiveDevicePanel', () => ({
+    useActiveDevicePanel: () => activeDevicePanelStateMock,
 }));
 
 // Mock child components
@@ -145,6 +155,26 @@ vi.mock('#/modules/Collaboration/presentations/views', async (importOriginal) =>
 
 vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
     BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
+}));
+
+vi.mock('#/modules/Levain/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Levain/presentations/views')>()),
+    LevainPanel: () => <div data-testid="levain-panel" />,
+}));
+
+vi.mock('#/modules/Bacteria/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Bacteria/presentations/views')>()),
+    BacteriaPanel: () => <div data-testid="bacteria-panel" />,
+}));
+
+vi.mock('#/modules/Grinder/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Grinder/presentations/views')>()),
+    GrinderPanel: () => <div data-testid="grinder-panel" />,
+}));
+
+vi.mock('#/modules/GrandBoule/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/GrandBoule/presentations/views')>()),
+    GrandBoulePanel: () => <div data-testid="grand-boule-panel" />,
 }));
 
 vi.mock('../LaunchScreen', () => ({
@@ -299,6 +329,7 @@ let onboardingState: typeof defaultOnboardingState;
 let trackStoreState: TrackStoreState;
 let selectedClipIdState: string | null;
 let workspaceState: WorkspaceState;
+let agentProjectRepairState: AgentProjectRepairState | null;
 
 describe('AppShell', () => {
     beforeEach(() => {
@@ -308,6 +339,8 @@ describe('AppShell', () => {
         setNotificationEventBus(mockNotificationEventBus);
         setWebMidiRuntimeEventBus({ eventBus: mockWebMidiEventBus });
         vi.clearAllMocks();
+        activeDevicePanelStateMock.activePanel = null;
+        activeDevicePanelStateMock.closeActivePanel.mockClear();
         workspaceStore.set({ ...defaultWorkspaceState });
         elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
@@ -316,6 +349,7 @@ describe('AppShell', () => {
         onboardingState = defaultOnboardingState;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         selectedClipIdState = null;
+        agentProjectRepairState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === trackStore) {
@@ -338,6 +372,9 @@ describe('AppShell', () => {
             }
             if (store === onboardingStore) {
                 return onboardingState;
+            }
+            if (store === agentProjectRepairStateStore) {
+                return agentProjectRepairState;
             }
             return defaultValue;
         });
@@ -994,6 +1031,102 @@ describe('AppShell', () => {
             render(<AppShell>Content</AppShell>);
             fireEvent.click(screen.getByRole('tab', { name: 'Routing' }));
             expect(screen.getByTestId('routing-matrix')).toBeInTheDocument();
+        });
+    });
+
+    // ── Bottom-dock drawer accent color tokens ────────────────────────────────────
+    describe('bottom drawer accent color tokens', () => {
+        const drawerTokenCases: Array<{
+            label: string;
+            kind: ActiveDevicePanel['kind'];
+            expectedLabelColor: string;
+            expectedBorderColor: string;
+            deprecatedLabelColor: string;
+            deprecatedBorderColor: string;
+        }> = [
+            {
+                label: 'Levain',
+                kind: 'levain',
+                expectedLabelColor: 'text-[var(--color-accent-amber)]',
+                expectedBorderColor: 'border-[var(--color-accent-amber)]/20',
+                deprecatedLabelColor: 'text-amber-400',
+                deprecatedBorderColor: 'border-amber-500/20',
+            },
+            {
+                label: 'Bacteria',
+                kind: 'bacteria',
+                expectedLabelColor: 'text-[var(--color-accent-rose)]',
+                expectedBorderColor: 'border-[var(--color-accent-rose)]/20',
+                deprecatedLabelColor: 'text-rose-400',
+                deprecatedBorderColor: 'border-rose-500/20',
+            },
+            {
+                label: 'Grinder',
+                kind: 'grinder',
+                expectedLabelColor: 'text-[var(--color-accent-copper)]',
+                expectedBorderColor: 'border-[var(--color-accent-copper)]/20',
+                deprecatedLabelColor: 'text-amber-500',
+                deprecatedBorderColor: 'border-amber-600/20',
+            },
+            {
+                label: 'Grand Boule',
+                kind: 'grandBoule',
+                expectedLabelColor: 'text-[var(--color-accent-amber)]',
+                expectedBorderColor: 'border-[var(--color-accent-amber)]/20',
+                deprecatedLabelColor: 'text-amber-400',
+                deprecatedBorderColor: 'border-amber-500/20',
+            },
+        ];
+
+        it.each(drawerTokenCases)(
+            'passes tokenized accent classes to $label drawer and omits legacy Tailwind color classes',
+            ({ label, kind, expectedLabelColor, expectedBorderColor, deprecatedLabelColor, deprecatedBorderColor }) => {
+                activeDevicePanelStateMock.activePanel = { kind, deviceId: `device-${kind}`, trackId: null };
+
+                render(<AppShell>Content</AppShell>);
+
+                const closeButton = screen.getByRole('button', { name: `Close ${label}` });
+                const headerRow = closeButton.parentElement;
+                const labelElement = headerRow?.querySelector('span');
+
+                expect(labelElement).not.toBeNull();
+                expect(labelElement).toHaveTextContent(label);
+                expect(labelElement).toHaveClass(expectedLabelColor);
+                expect(labelElement).not.toHaveClass(deprecatedLabelColor);
+
+                const panelContainer = labelElement?.closest('div[class*="border-t"]');
+                expect(panelContainer).not.toBeNull();
+                expect(panelContainer).toHaveClass(expectedBorderColor);
+                expect(panelContainer).not.toHaveClass(deprecatedBorderColor);
+            }
+        );
+    });
+
+    describe('project mutation refusal', () => {
+        it('explains a repair-required project without covering the workspace', () => {
+            agentProjectRepairState = {
+                audioGraphValid: false,
+                detectedRevision: 'revision-1',
+                inspectionAvailable: true,
+                projectInvariantsValid: false,
+                rawProjectRetained: true,
+                repairCandidates: [],
+                status: 'repair-required',
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('project-mutation-refused-banner')).toBeInTheDocument();
+            // The banner is not a dialog: the shell stays reachable, so the
+            // skip-link survives and the shell root never goes `inert`.
+            expect(screen.getByTestId('app-shell')).not.toHaveAttribute('inert');
+            expect(screen.getByText('Skip to content')).toBeInTheDocument();
+        });
+
+        it('shows no banner while the project accepts mutations', () => {
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('project-mutation-refused-banner')).not.toBeInTheDocument();
         });
     });
 });

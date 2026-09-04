@@ -253,6 +253,29 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
+    it('hands a project with a time-stretched clip to the native engine (#3068)', async () => {
+        // The native mapper composes `playbackRate` into `ClipPlayback.playback_rate`
+        // now (varispeed, not stretch), so this is no longer a gate.
+        mocks.availability = { available: true, transport: stubTransport };
+        const track = createTrack({
+            id: 'track-a',
+            name: 'Stretched A',
+            clips: [
+                createClip({
+                    id: 'clip-a',
+                    trackId: 'track-a',
+                    audioBufferId: 'mat-a',
+                    stretchMode: 'repitch',
+                    stretchRatio: 1.5,
+                }),
+            ],
+        });
+
+        const selection = await selectOfflineRenderEngine({ renderableTracks: [track], scheduledTracks: [track] });
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
     describe('content gates — a shape the native engine refuses degrades instead', () => {
         /**
          * One case per clause of `contentGateReason`. The expected text is the
@@ -308,25 +331,6 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
                     return { renderableTracks: [track], scheduledTracks: [track] };
                 },
                 reason: 'track "Keys A" plays MIDI programme',
-            },
-            {
-                name: 'a time-stretched clip',
-                project: () => {
-                    const track = createTrack({
-                        id: 'track-a',
-                        name: 'Stretched A',
-                        clips: [
-                            createClip({
-                                id: 'clip-a',
-                                trackId: 'track-a',
-                                stretchMode: 'repitch',
-                                stretchRatio: 1.5,
-                            }),
-                        ],
-                    });
-                    return { renderableTracks: [track], scheduledTracks: [track] };
-                },
-                reason: 'clip "clip-a" on track "Stretched A" is time-stretched (#2219)',
             },
             {
                 name: 'a bus routed into a track',

@@ -1,5 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { PluginBrowser } from '../PluginBrowser';
 
@@ -33,7 +37,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/utils/platformCapabilities', () => ({
@@ -50,8 +54,12 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 const { useStore } = await import('#/infra/store/useStore');
 const { startPluginScan } = await import('#/modules/PluginHost/useCases');
-const { executeAppAction } = await import('#/modules/Command/useCases');
+const { executeUserAppAction } = await import('#/modules/Command/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
+// The refusal test drives the real wrapper over the real admission gate, so it
+// observes what the user gets rather than the mocked dispatch seam.
+const realCommandUseCases =
+    await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
 
 const mockPlugins = [
     { id: 'p1', name: 'Test VST', vendor: 'TestCorp', category: 'Effect', format: 'vst3', num_parameters: 10 },
@@ -61,9 +69,15 @@ const mockPlugins = [
     { id: 'p5', name: 'Legacy Comp', vendor: 'AudioDev', category: 'Effect', format: 'vst2', num_parameters: 5 },
 ];
 
+const notificationEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
+};
+
 describe('PluginBrowser', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setNotificationEventBus(notificationEventBus);
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             scannedPlugins: [],
             isScanning: false,
@@ -71,6 +85,11 @@ describe('PluginBrowser', () => {
             notices: [],
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasNativePlugins: true });
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        agentProjectRepairStateStore.set(null);
     });
 
     it('should render without crashing', () => {
@@ -215,7 +234,7 @@ describe('PluginBrowser', () => {
         render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
         const plugin = screen.getByText('CLAP Filter');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'loadExternalPlugin',
             payload: { pluginId: 'p3', trackId: 'track1' },
         });
@@ -233,9 +252,46 @@ describe('PluginBrowser', () => {
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const plugin = screen.getByText('CLAP Synth');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'loadExternalPlugin',
             payload: { pluginId: 'p2' },
+        });
+    });
+
+    it('tells the user when the project refuses to load the plugin', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+            notices: [],
+        });
+        registerHandlerMap({
+            loadExternalPlugin: {
+                describe: () => ({ label: 'Load external plugin' }),
+                execute: () => {},
+                undoable: false,
+            },
+        });
+        agentProjectRepairStateStore.set({
+            audioGraphValid: false,
+            detectedRevision: 'revision-1',
+            inspectionAvailable: true,
+            projectInvariantsValid: false,
+            rawProjectRetained: true,
+            repairCandidates: [],
+            status: 'repair-required',
+        });
+        vi.mocked(executeUserAppAction).mockImplementationOnce(realCommandUseCases.executeUserAppAction);
+
+        render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
+        const plugin = screen.getByText('CLAP Filter');
+        fireEvent.click(plugin.closest('[role="button"]') || plugin);
+
+        await waitFor(() => {
+            expect(notificationEventBus.emit).toHaveBeenCalledWith('ui.notify', {
+                message: 'Project repair is required before project actions can execute',
+                level: 'warning',
+            });
         });
     });
 
@@ -249,7 +305,7 @@ describe('PluginBrowser', () => {
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const plugin = screen.getByText('CLAP Filter');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'loadExternalPlugin',
             payload: { pluginId: 'p3' },
         });

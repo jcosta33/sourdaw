@@ -41,12 +41,6 @@
  * play button that starts no engine at all — and one pathological clip must not
  * be able to do that to a project.
  *
- * A stretched clip is refused by the engine, not by taste:
- * `schedule-clip` answers `stretched-clip-unsupported` for any non-unity
- * `playbackRate` (`crates/sourdaw-native/src/commands/graph.rs`). Lifting the
- * exclusion is engine work (the `TimelineClip` has nowhere to carry a rate),
- * never a producer emitting a command the engine refuses.
- *
  * A clip whose material is not in the buffer cache is dropped for the
  * narrower reason that there is nothing to register into the native sample
  * pool, and a `schedule-clip` naming a sample the pool does not hold is
@@ -63,6 +57,7 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import { type AudioGraphClipPlayback } from '../../models/AudioGraphBackend';
 import {
@@ -70,7 +65,6 @@ import {
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from '../offlineRender/admitNativeClipExpansion';
-import { MICRO_FADE_SECONDS } from '../offlineRender/constants';
 import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClipsWithComping';
@@ -280,17 +274,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
             });
 
             // Every gate below is decided over the clip's whole expansion and
-            // costs the whole clip, never the batch and never half a clip. The
-            // rate is one number per clip, so one iteration answering for it
-            // answers for all of them.
-            const stretchedRate = projected.find((playback) => playback.playbackRate !== 1)?.playbackRate;
-            if (stretchedRate !== undefined) {
-                excludeClip(
-                    `clip "${clipLabel}" plays at rate ${String(stretchedRate)}, ` +
-                        `which the native timeline cannot stretch`
-                );
-                continue;
-            }
+            // costs the whole clip, never the batch and never half a clip.
             const expansion = admitNativeClipExpansion({ iterations: projected.length, remainingClipSlots });
             if (!expansion.admitted) {
                 excludeClip(`clip "${clipLabel}" on track "${track.name}": ${expansion.reason}`);

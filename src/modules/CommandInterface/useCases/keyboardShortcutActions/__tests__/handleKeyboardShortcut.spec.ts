@@ -85,6 +85,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     undo: vi.fn(),
     pushUndoEntry: vi.fn(),
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('../../../stores/shortcutStore', () => ({

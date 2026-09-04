@@ -9,6 +9,8 @@ export function restoreMidiClipNotes({
     clipId,
     notes,
     expectedNotes,
+    notesBucketPresent,
+    expectedNotesBucketPresent,
     allowMissingExpectedEmpty = false,
     articulationReplayGuard,
     noteTransformReplayGuard,
@@ -17,6 +19,8 @@ export function restoreMidiClipNotes({
         clipId,
         notes,
         expectedNotes,
+        notesBucketPresent,
+        expectedNotesBucketPresent,
         allowMissingExpectedEmpty,
         articulationReplayGuard,
         noteTransformReplayGuard,
@@ -29,12 +33,15 @@ export function restoreMidiClipNotes({
         return 'conflict';
     }
 
+    const notesByClipId = { ...state.notesByClipId };
+    if (notesBucketPresent === false) {
+        delete notesByClipId[clipId];
+    } else {
+        notesByClipId[clipId] = notes.map((note) => ({ ...note }));
+    }
     midiStore.set({
         ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: notes.map((note) => ({ ...note })),
-        },
+        notesByClipId,
     });
     return 'written';
 }

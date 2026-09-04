@@ -42,6 +42,8 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -623,7 +625,8 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-chords']),
         });
         expect(midiStore.value?.notesByClipId['clip-chords']).toEqual(original);
         expect(undoStore.value?.past).toEqual([]);

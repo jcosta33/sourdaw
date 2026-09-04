@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '../clipFadeScheduleClamp';
+import {
+    MICRO_FADE_SECONDS,
+    clampClipFadeInDurationSeconds,
+    clampClipFadeOutStartSeconds,
+} from '../clipFadeScheduleClamp';
 
 /**
  * The law half of the #2867 clip-fade schedule clamp. Do not delete without
@@ -45,5 +49,20 @@ describe('clip-fade schedule clamp — the shared half-play-duration law', () =>
         expect(
             clampClipFadeOutStartSeconds(requestedFadeOutStartSeconds, playbackStartSeconds, playDurationSeconds)
         ).toBe(playbackStartSeconds + playDurationSeconds * 0.5);
+    });
+
+    it('defaults the fade-in floor to MICRO_FADE_SECONDS when not supplied', () => {
+        const requestedFadeInSeconds = 0.001;
+        const playDurationSeconds = 1;
+
+        const withDefault = clampClipFadeInDurationSeconds(requestedFadeInSeconds, playDurationSeconds);
+        const withExplicit = clampClipFadeInDurationSeconds(
+            requestedFadeInSeconds,
+            playDurationSeconds,
+            MICRO_FADE_SECONDS
+        );
+
+        expect(withDefault).toBe(withExplicit);
+        expect(withDefault).toBe(MICRO_FADE_SECONDS);
     });
 });

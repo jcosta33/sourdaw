@@ -12,7 +12,9 @@
  * has to know what changed while the transport was stopped.
  */
 
+import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
 export type StopNativeLiveGraphSessionInput = Readonly<{
@@ -31,6 +33,12 @@ export function stopNativeLiveGraphSession(
         // feed exists to draw a rolling playhead, and one that keeps polling a
         // transport nobody is watching only burns bridge round trips.
         stopNativeEnginePlayheadFeed();
+        // Disarmed for the same reason and at the same moment: a pass whose
+        // transport is stopping has nothing left to write. What the engine
+        // already holds is the engine's own to resolve — the park applies
+        // `hold_automation`, which freezes every mixer parameter where it
+        // stands rather than letting a ramp keep gliding past the stop.
+        disarmNativeLiveAutomationWriter();
         const backend = nativeLiveGraphSession.backend;
         if (!backend) {
             return { outcome: 'declined', reason: 'no live native graph session' };
@@ -39,6 +47,7 @@ export function stopNativeLiveGraphSession(
             schemaVersion: 1,
             commands: [{ kind: 'set-transport', playing: false, positionSeconds: input.positionSeconds }],
         });
+        reportAttachedPlugins(result);
         if (result.application !== 'applied') {
             // The session stays: a refused stop means the engine did not take
             // the command, not that the graph it holds went away, and dropping

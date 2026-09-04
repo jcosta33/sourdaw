@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
+import { createTrack } from '../../../models/Track';
+import { defaultTrackState } from '../../../stores/trackStore';
+import { setTrackStoreState } from '../../../useCases/setTrackStoreState';
 import { handleAddClip } from '../handleAddClip';
 
 type AddClipInput = {
@@ -15,6 +20,25 @@ const mocks = vi.hoisted(() => ({
     serializeMidiStateForClips: vi.fn(() => '{"notesByClipId":{}}'),
 }));
 
+function validateAddClip(
+    action: Parameters<NonNullable<typeof handleAddClip.validate>>[0],
+    actions: readonly AppAction[] = [action],
+    actionIndex = 0
+): boolean {
+    const validate = handleAddClip.validate;
+    if (!validate) {
+        throw new Error('Expected addClip validation');
+    }
+    return validate(action, { actions, actionIndex });
+}
+
+function setMidiTrack(frozen = false): void {
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [{ ...createTrack({ id: 'track-midi', kind: 'midi', name: 'MIDI' }), frozen }],
+    });
+}
+
 vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
@@ -25,6 +49,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 describe('handleAddClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setTrackStoreState(defaultTrackState);
     });
 
     it('executes addClip with the payload', () => {
@@ -148,5 +173,36 @@ describe('handleAddClip', () => {
     it('is undoable', () => {
         expect(handleAddClip.undoable).toBe(true);
         expect(handleAddClip.requiresAbortCompensation).toBe(false);
+    });
+
+    it('validates a live writable track and its earlier batch-local track producer', () => {
+        const action = {
+            type: 'addClip' as const,
+            payload: { id: 'clip-midi', trackId: 'track-midi', name: 'MIDI clip', startBeat: 0, endBeat: 4 },
+        };
+        setMidiTrack();
+        expect(validateAddClip(action)).toBe(true);
+
+        setTrackStoreState(defaultTrackState);
+        const addTrack = {
+            type: 'addTrack' as const,
+            payload: { id: 'track-midi', kind: 'midi' as const, name: 'MIDI' },
+        };
+        expect(validateAddClip(action, [addTrack, action], 1)).toBe(true);
+    });
+
+    it.each([
+        ['frozen track', { startBeat: 0, endBeat: 4 }, true],
+        ['non-finite endpoint', { startBeat: 0, endBeat: Number.POSITIVE_INFINITY }, false],
+        ['negative start', { startBeat: -1, endBeat: 4 }, false],
+        ['non-positive span', { startBeat: 4, endBeat: 4 }, false],
+    ])('rejects %s', (_description, span, frozen) => {
+        setMidiTrack(frozen);
+        expect(
+            validateAddClip({
+                type: 'addClip',
+                payload: { id: 'clip-midi', trackId: 'track-midi', name: 'MIDI clip', ...span },
+            })
+        ).toBe(false);
     });
 });
