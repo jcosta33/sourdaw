@@ -17,6 +17,16 @@
  * scheduler passes it through and counts it in the meantime. Releasing an
  * instance from a rolling graph needs a command that does not tear the topology
  * down, which is #3575's work; this module deliberately has no route to one.
+ *
+ * ── The mirror is retracted first, not last ───────────────────────────────
+ *
+ * The attachment is cleared *before* the unload is awaited, and the rest of the
+ * instance's record only after it returns. The window between those two is real
+ * — `resetExternalPluginRuntimeForGraphRebuild` unloads every instance while the
+ * tracks keep their devices — and a play landing inside it would read a still
+ * attached instance, claim a native body for that device, and have the mapper
+ * refuse the whole batch when it cannot find the instance. Retracting early
+ * under-reports instead: one strip degrades, and the session stands.
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
@@ -24,7 +34,11 @@ import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
-import { dropExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
+import {
+    dropExternalPluginParameterSnapshot,
+    markEveryExternalPluginParameterSnapshotDetached,
+    markExternalPluginParameterSnapshotDetached,
+} from '../../stores/externalPluginParameterStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
 import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
@@ -75,12 +89,14 @@ function reconcileUnloadResult(
 
 export function unloadPlugin(instanceId?: string): Promise<void> {
     if (instanceId === undefined) {
+        markEveryExternalPluginParameterSnapshotDetached();
         return unloadPluginRepo().then(reconcileUnloadResult);
     }
     return serializePluginLifecycle(instanceId, async () => {
         if (!loadedExternalInstances.has(instanceId)) {
             return;
         }
+        markExternalPluginParameterSnapshotDetached(instanceId);
         reconcileUnloadResult(await unloadPluginRepo(instanceId), instanceId);
     });
 }

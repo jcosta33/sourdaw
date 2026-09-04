@@ -45,6 +45,15 @@
  * instance attached late therefore waits for the next play, and splicing or
  * releasing one mid-roll is #3575's work.
  *
+ * A re-send the engine *refuses* costs the binding and nothing else. `map_batch`
+ * builds its mapping on a clone of the registry and commits it only on success,
+ * so a refused batch leaves the first one's topology installed — and a session
+ * discarded over it would leave the engine parked with the whole project
+ * mirrored while `hasLiveNativeGraphSession` says there is nothing to stop,
+ * reposition or re-map. So a refusal is logged and the session stands on the
+ * first batch. A *partially applied* re-send is the opposite case: the graph is
+ * neither topology, and that one is discarded.
+ *
  * ── Declining is an outcome, not a failure ────────────────────────────────
  *
  * A browser has no bridge, a desktop build whose addon cannot answer has no
@@ -200,14 +209,25 @@ function programmeEndSeconds(programme: LiveGraphProgramme): number {
     return end;
 }
 
-/** An applied whole-topology batch, and the commands it was built from. */
-type AppliedTopologyBatch =
+/**
+ * What one whole-topology batch left behind.
+ *
+ * Three outcomes rather than two, because a caller with a topology already
+ * installed has to know whether this batch touched it. `refused` is a batch the
+ * engine never began: `map_batch` builds the mapping on a clone of the registry
+ * and commits it only on success, so a `rejected` result leaves whatever was
+ * installed exactly as it was — and so does material registration that never
+ * reached an apply at all. `unreconciled` is the half-applied case, where the
+ * graph is neither the batch's nor the one before it.
+ */
+type TopologyBatchOutcome =
     | Readonly<{
           outcome: 'applied';
           result: Extract<AudioGraphApplyResult, { application: 'applied' }>;
           commands: readonly AudioGraphCommand[];
       }>
-    | Readonly<{ outcome: 'declined'; reason: string }>;
+    | Readonly<{ outcome: 'refused'; reason: string }>
+    | Readonly<{ outcome: 'unreconciled'; reason: string }>;
 
 /**
  * Send one whole-topology batch: its material, then the batch that names it,
@@ -229,18 +249,19 @@ async function applyTopologyBatch(input: {
     transport: NativeGraphTransport;
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     commands: readonly AudioGraphCommand[];
-}): Promise<AppliedTopologyBatch> {
+}): Promise<TopologyBatchOutcome> {
     const { transport, backend, commands } = input;
     const material = await registerNativeTimelineSamples({ transport, commands });
     if (material.outcome === 'declined') {
-        return { outcome: 'declined', reason: material.reason };
+        // No batch was sent, so nothing in the graph moved.
+        return { outcome: 'refused', reason: material.reason };
     }
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
+    if (result.acceptance === 'rejected') {
+        return { outcome: 'refused', reason: result.reason };
+    }
     if (result.application !== 'applied') {
-        // Both non-applied outcomes carry a reason: a refusal names the command
-        // it could not hold, a partial application names what it could not
-        // finish. Neither leaves a session worth keeping.
-        return { outcome: 'declined', reason: result.reason };
+        return { outcome: 'unreconciled', reason: result.reason };
     }
     // A batch that starts the engine takes over the plugin instances loaded
     // before there was one — reported to their devices as loaded but processing
@@ -347,16 +368,16 @@ export function startNativeLiveGraphSession(
             backend,
             commands: projectTopology(topology.attachedInstanceIds),
         });
-        if (started.outcome === 'declined') {
+        if (started.outcome !== 'applied') {
             backend.dispose();
-            return started;
+            return { outcome: 'declined', reason: started.reason };
         }
         // The batch that attached those instances was mapped before the engine
         // held them, so their strips went out with no body for the plugin. One
         // more parked batch, built against the attach state the reports above
         // have just written, is what binds them — see the header for why there
         // is never a third.
-        const rebound =
+        const resent =
             (started.result.attachedPlugins ?? []).length > 0
                 ? await applyTopologyBatch({
                       transport: availability.transport,
@@ -364,10 +385,22 @@ export function startNativeLiveGraphSession(
                       commands: projectTopology(readAttachedExternalInstanceIds()),
                   })
                 : started;
-        if (rebound.outcome === 'declined') {
+        if (resent.outcome === 'unreconciled') {
+            // Half of a topology replacement is neither this batch's graph nor
+            // the one the first batch installed, so there is nothing left to
+            // keep.
             backend.dispose();
-            return rebound;
+            return { outcome: 'declined', reason: resent.reason };
         }
+        if (resent.outcome === 'refused') {
+            // Nothing moved: the first batch's topology is still installed and
+            // still a session. Discarding it here would leave the engine parked
+            // with the whole project mirrored while every caller was told there
+            // is no live session to stop, reposition or re-map. What is lost is
+            // the binding, which the next play sends again.
+            logger.warn(`[AudioEngine] native engine refused the plugin-attach re-send: ${resent.reason}`);
+        }
+        const rebound = resent.outcome === 'applied' ? resent : started;
         // The previous session's handle is closed only once its replacement is
         // applied: a decline must leave the engine reachable through the handle
         // that was already working.
@@ -433,9 +466,11 @@ export function startNativeLiveGraphSession(
             });
         }
         startNativeEnginePlayheadFeed();
-        // The last topology batch applied, not the first: a re-send replaced
-        // every strip the first one built, so its reports are the only ones
-        // that describe the graph the engine now holds.
+        // The last topology batch the engine *applied*: a re-send that landed
+        // replaced every strip the first one built, so its reports are the only
+        // ones describing the graph now held — and a re-send the engine refused
+        // built no strips at all, which is why that case reports the first
+        // batch's.
         return { outcome: 'started', runtimeRevision: rebound.result.runtimeRevision, reports: rebound.result.reports };
     });
 }

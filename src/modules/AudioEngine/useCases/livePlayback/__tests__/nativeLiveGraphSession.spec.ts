@@ -555,7 +555,12 @@ describe('startNativeLiveGraphSession', () => {
         ]);
     });
 
-    it('declines with the native reason when the re-send is refused, and keeps no session', async () => {
+    it('keeps the session the first batch installed when the engine refuses the re-send', async () => {
+        // `map_batch` builds its mapping on a clone of the registry and commits
+        // it only on success, so a refused batch left the first one's topology
+        // installed. Discarded here, the engine would be parked with the whole
+        // project mirrored while every caller is told there is no live session
+        // to stop, reposition or re-map.
         attachReportedInstancesInStore();
         mocks.programmeOverride = PLAYING_PROGRAMME;
         trackStore.set({
@@ -563,8 +568,13 @@ describe('startNativeLiveGraphSession', () => {
             selectedTrackId: null,
             ghostClips: [],
         });
+        const firstReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: [] }];
         mocks.applyGraphCommands
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({
+                ...APPLIED,
+                reports: firstReports,
+                attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+            })
             .mockResolvedValueOnce({
                 acceptance: 'rejected',
                 application: 'not-applied',
@@ -577,16 +587,77 @@ describe('startNativeLiveGraphSession', () => {
             sampleRate: SAMPLE_RATE,
         });
 
-        // The refused batch replaced the topology the first one built, so what
-        // the engine holds is not a session — and a half-torn graph must not be
-        // reported as one.
+        // The session is the first batch's: its reports, its revision, and the
+        // handle it opened.
+        expect(result).toEqual({ outcome: 'started', runtimeRevision: 1, reports: firstReports });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([false]);
+        // What the refusal cost is the binding, and a cost nobody states is a
+        // plugin silently missing from the chain for the rest of the session.
+        expect(mocks.warn.mock.calls.map(([message]) => message)).toContainEqual(
+            expect.stringContaining('engine-not-running: no default output device')
+        );
+        // A standing session goes on to install its maps and roll.
+        expect(mocks.setEngineTransportMaps).toHaveBeenCalledWith(FLAT_MAPS);
+    });
+
+    it('discards the session when the re-send is left half applied', async () => {
+        // A partial topology replacement is neither this batch's graph nor the
+        // one before it, so there is nothing left to keep — unlike a refusal,
+        // which changed nothing.
+        attachReportedInstancesInStore();
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({
+                acceptance: 'accepted',
+                application: 'needs-reconcile',
+                compensation: 'not-attempted',
+                reason: 'strip audio-1 was rebuilt without its chain',
+                runtimeRevision: 2,
+                reports: [],
+            });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
         expect(result).toEqual({
             outcome: 'declined',
-            reason: 'engine-not-running: no default output device',
+            reason: 'strip audio-1 was rebuilt without its chain',
         });
         expect(nativeLiveGraphSession.backend).toBeNull();
         expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([true]);
         expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+    });
+
+    it('keeps no session when the very first topology is left half applied', async () => {
+        // The first batch has no predecessor to fall back on, so both non-applied
+        // outcomes cost the session — the refusal case is proven below.
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'accepted',
+            application: 'needs-reconcile',
+            compensation: 'failed',
+            reason: 'the graph could not be restored',
+            runtimeRevision: 1,
+            reports: [],
+        });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toEqual({ outcome: 'declined', reason: 'the graph could not be restored' });
+        expect(nativeLiveGraphSession.backend).toBeNull();
     });
 
     it('starts the engine on desktop by applying the session topology', async () => {

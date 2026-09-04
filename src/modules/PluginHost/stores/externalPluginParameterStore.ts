@@ -120,6 +120,58 @@ export function markExternalPluginParameterSnapshotAttached(instanceId: string):
 }
 
 /**
+ * Retract the attachment of one instance the engine is about to lose.
+ *
+ * The mirror is read to decide whether a live strip may claim a native body for
+ * an external plugin, and the native mapper refuses the *whole batch* over a
+ * device whose instance it cannot find. So the retraction has to lead the
+ * unload rather than follow it: between the native side dropping an instance
+ * and this process hearing about it, a play that still read `engineAttached`
+ * would build a strip the engine cannot map. Under-reporting is the safe
+ * direction — the strip degrades, the session stands.
+ *
+ * Only the attachment fact moves. The parameters stay for the same reason
+ * {@link markExternalPluginParameterSnapshotAttached} leaves them: they describe
+ * the plugin, not the engine behind it, and the unload drops the whole snapshot
+ * anyway once it lands.
+ */
+export function markExternalPluginParameterSnapshotDetached(instanceId: string): void {
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        const snapshot = current.byInstanceId[instanceId];
+        if (!snapshot || !snapshot.engineAttached) {
+            return current;
+        }
+        return {
+            ...current,
+            byInstanceId: { ...current.byInstanceId, [instanceId]: { ...snapshot, engineAttached: false } },
+        };
+    });
+}
+
+/**
+ * Retract every attachment this process is mirroring.
+ *
+ * The unkeyed unload names no instance, so it retires all of them; anything
+ * left claiming an engine after it would be claiming one for an instance that
+ * is gone.
+ */
+export function markEveryExternalPluginParameterSnapshotDetached(): void {
+    externalPluginParameterStore.update((state) => {
+        const current = state ?? defaultExternalPluginParameterState;
+        return {
+            ...current,
+            byInstanceId: Object.fromEntries(
+                Object.entries(current.byInstanceId).map(([instanceId, snapshot]) => [
+                    instanceId,
+                    { ...snapshot, engineAttached: false },
+                ])
+            ),
+        };
+    });
+}
+
+/**
  * Record the setting a plugin reported for one of its own parameters.
  *
  * Only the value moves: a plugin-side edit says what the control is now set to
