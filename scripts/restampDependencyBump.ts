@@ -67,9 +67,13 @@ export type InstalledDependencies = {
     cargoSourceDirectories: Readonly<Record<string, string>>;
 };
 
+export type ReleaseCheck = (root: string) => void;
+
 export type RestampOptions = {
     resolveInstalled?: (root: string) => InstalledDependencies;
     writeArtifacts?: (root: string) => void;
+    checkLicense?: ReleaseCheck;
+    checkInventory?: ReleaseCheck;
     verify?: (root: string) => string[];
     cargoHome?: string;
 };
@@ -464,13 +468,18 @@ function failureMessages(check: () => void): string[] {
     }
 }
 
-function verifyRestampedTree(root: string): string[] {
+/** Both checks run: a refused tree owes every reason it was refused, not the first one found. */
+export function verifyRestampedTree(
+    root: string,
+    checkLicense: ReleaseCheck = checkProjectLicense,
+    checkInventory: ReleaseCheck = checkReleaseInventory
+): string[] {
     return [
         ...failureMessages(() => {
-            checkProjectLicense(root);
+            checkLicense(root);
         }),
         ...failureMessages(() => {
-            checkReleaseInventory(root);
+            checkInventory(root);
         }),
     ];
 }
@@ -497,7 +506,10 @@ export function restampDependencyBump(root: string, options: RestampOptions = {}
     }
     restampReleaseInventory(root);
     const rewritten = [...changedFiles(root, recorded), ...reconciliation.changes];
-    const errors = (options.verify ?? verifyRestampedTree)(root);
+    const verify =
+        options.verify ??
+        ((target: string) => verifyRestampedTree(target, options.checkLicense, options.checkInventory));
+    const errors = verify(root);
     if (errors.length > 0) {
         restoreFiles(root, recorded);
         return refused(errors);

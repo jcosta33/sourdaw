@@ -531,18 +531,26 @@ describe('restamp dependency bump', () => {
         expect(readFileSync(join(root, SERVER_THIRD_PARTY_NOTICES_PATH), 'utf8')).toBe(notices);
     });
 
-    it('refuses on what the real project-license and release-inventory checks report', () => {
+    it('refuses with what both checks report, in the order they run', () => {
         const root = createFixture();
 
         const result = restampDependencyBump(root, {
             resolveInstalled: () => ({ records: [], cargoSourceDirectories: {} }),
             writeArtifacts: () => undefined,
+            checkLicense: () => {
+                throw new Error('LICENSE: project license drifted');
+            },
+            checkInventory: () => {
+                throw new Error('grand-boule: release inventory digests does not match provenance');
+            },
         });
 
         expect(result.ok).toBe(false);
-        expect(
-            result.output.split('\n').filter((line) => line.startsWith('Command failed: cargo metadata'))
-        ).toHaveLength(2);
+        expect(result.output.split('\n').slice(0, 3)).toEqual([
+            UNRESTAMPED_DIGEST_CLASSES,
+            'LICENSE: project license drifted',
+            'grand-boule: release inventory digests does not match provenance',
+        ]);
     });
 
     it('is reachable as pnpm release:restamp', () => {
