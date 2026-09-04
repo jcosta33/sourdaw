@@ -1,0 +1,107 @@
+crates/daw-dsp/src/crumbs/allocator.rs
+  s_28abfd94826e36::t_6857d9b9ed9331 13,135-136,146-156
+crates/daw-dsp/src/crumbs/engine.rs
+  s_28abfd94826e36::t_68ec775b3aa41b 707-708,714-716,723-754,777,1697-1828
+crates/daw-dsp/src/crumbs/voice.rs
+  s_28abfd94826e36::t_6b55332330f578 623-630,669-678
+crates/daw-dsp/tests/crumbs_mode_triggering.rs
+  s_28abfd94826e36::t_2d589d3556b24e 539-540,544-551,553-558,560,591-599,603-638,705-706
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_28abfd94826e36::t_7a5b9a93c1f586 881-899,904-906,912-928
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_4c8df54b7b6eb0 1,878-896,914,977-1012
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_cf3e85feb52436 1,35-53,71,134-169
+public/wasm/manifest.json
+  s_9b530f08172a54::t_99922b5f116985 12,16-18,21
+release/open-source-inventory.json
+  s_28abfd94826e36::t_11ca72ab3b90d1 1195,1200,1331,1337,1463-1464,1466-1467,1469,1721
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_28abfd94826e36::t_a78a373a7088b3 269-289,3708,3712,3716,3724,3726-3733,3747-3763
+scripts/checkReleaseInventory.ts
+  s_28abfd94826e36::t_15366944fa18e7 1793,1796,1827-1836,1839-1844,2066-2080,2098-2162
+src/components/daw/__tests__/MixerStripValue.spec.tsx
+  s_28abfd94826e36::t_be9bb82c98a213 2,7,9-11,14,22-32
+src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx
+  s_28abfd94826e36::t_6a574c2896ff43 51,76-82,90
+src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx
+  s_28abfd94826e36::t_0b5cee874d81d6 24,67-68,74-75
+src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx
+  s_28abfd94826e36::t_6c03ad7abe113f 176,195-196
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_28abfd94826e36::t_2cb00da73a32aa 449,460
+src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx
+  s_28abfd94826e36::t_4cf2f009bd0ae9 100-106
+src/modules/AiRuntime/presentations/views/__tests__/AiActionHistoryPanel.spec.tsx
+  s_28abfd94826e36::t_2482ec5f19b9c2 135-159
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_28abfd94826e36::t_c53f5c6ca069e0 288,294
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx
+  s_28abfd94826e36::t_239ab1d4c2e762 137-138
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_6bb992ce218769 1,878-896,914,977-1012
+src/modules/Collaboration/presentations/components/InviteCodeRow.tsx
+  s_28abfd94826e36::t_f6920c49074702 25-31
+src/modules/Collaboration/presentations/components/__tests__/InviteCodeRow.spec.tsx
+  s_28abfd94826e36::t_ef4f882f2e8884 10,26
+src/modules/ContentBrowser/presentations/components/Sidebar/RailBackBar.tsx
+  s_28abfd94826e36::t_d1b60763e24040 20
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/RailBackBar.spec.tsx
+  s_28abfd94826e36::t_b23d8df27f90e9 12
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/RailBackBarBranches.spec.tsx
+  s_28abfd94826e36::t_7f7623cc88d9e7 15
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_28abfd94826e36::t_a88bb36e23b6ad 548
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_28abfd94826e36::t_89106b9213ff63 535
+src/modules/Fermenter/presentations/components/LayerStack.tsx
+  s_28abfd94826e36::t_6a9a4257e0a3c3 55,65
+src/modules/Fermenter/presentations/components/__tests__/LayerStack.spec.tsx
+  s_28abfd94826e36::t_a5cf77d65bf1d5 25,31,38,46
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_28abfd94826e36::t_5cd8c34fd55cf5 588-594,608,612-618,621-627
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  s_28abfd94826e36::t_4fd26a012510c2 507-508,590-601
+src/modules/MIDI/models/ResolveDeviceNode.ts
+  s_28abfd94826e36::t_dc2d8a1c9d3e17 1-46
+src/modules/MIDI/models/__tests__/ResolveDeviceNode.spec.ts
+  s_28abfd94826e36::t_475e6b5653dc00 3
+src/modules/MIDI/repositories/webMidi/routeYeastNoteOffToInstrument.ts
+  s_28abfd94826e36::t_0a4766927a99ae 1-2,34,44,51
+src/modules/MIDI/useCases/webMidiInput/resolveDeviceNode.ts
+  s_28abfd94826e36::t_5df76face0f76c 1
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_28abfd94826e36::t_0901534650c82e 10
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_28abfd94826e36::t_81a251ef904831 3
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx
+  s_28abfd94826e36::t_940dd48b3a8a2a 7
+src/styles/testing/__tests__/mainStylesheetRules.spec.ts
+  s_28abfd94826e36::t_89549482ed12fa 10,139-146
+src/styles/tokens.css
+  s_28abfd94826e36::t_a68797ea2ee185 240-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "aaebfe0be3153f6e990627d7a12b974b3e63fa38",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
