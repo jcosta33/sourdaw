@@ -584,7 +584,7 @@ export type AudioGraphStripReport = Readonly<{
 }>;
 
 /**
- * One external plugin instance a batch's engine start took over.
+ * One external plugin instance a batch handed to the engine.
  *
  * The bridge round trip is the reason the caller is given anything beyond the
  * id: it is frames the worklet↔plugin bridge adds on top of the plugin's own

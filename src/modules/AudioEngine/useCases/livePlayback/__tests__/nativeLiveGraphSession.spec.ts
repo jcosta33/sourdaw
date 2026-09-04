@@ -892,6 +892,26 @@ describe('stopNativeLiveGraphSession', () => {
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
     });
 
+    // A stop is a batch like any other, and an instance loaded while the
+    // transport was rolling is taken by whichever batch comes next. When that
+    // batch is the stop, nothing else follows it until the next start, so a
+    // correction dropped here leaves the device reporting a plugin that
+    // processes no audio while the engine has been rendering it all along.
+    it('forwards the instances the stop’s batch took over', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.markExternalPluginEngineAttached.mockClear();
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+        });
+
+        await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+        ]);
+    });
+
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         mocks.applyGraphCommands.mockResolvedValue({
