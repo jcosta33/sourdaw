@@ -1,0 +1,29 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipGestureUndoGrouping.integration.spec.ts
+  s_28abfd94826e36::t_5ed9c07f3ee912 9,181-335
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_28abfd94826e36::t_5521ad5b83805b 3,16-21,26-54,60-61
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_28abfd94826e36::t_3649603ca65d52 3,26-53,57
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_28abfd94826e36::t_b03f67ec881bec 446-466
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_28abfd94826e36::t_c8b70ffc1c28d9 65,79,90,986-1002
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_28abfd94826e36::t_e98c0e359278f0 760-784
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6d9b17bb0edfa4dae1f5d2a8c9f35f1653212532",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
