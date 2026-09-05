@@ -1,0 +1,21 @@
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_9b530f08172a54::t_be00202f51428a 431-450
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_9b530f08172a54::t_4c45e4d1cff4d5 148-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "affebdcbeaf8dbf474b7fac97fbc047daaee82f6",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
