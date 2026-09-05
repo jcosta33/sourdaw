@@ -2279,10 +2279,11 @@ impl TimelineGraph {
             }
 
             // This track's own clips start at zero, so they wait the whole
-            // depth of what arrives at its input — and so does an instrument
-            // on its chain, which produces its material here rather than
-            // taking it from a route that already waited. One summing point,
-            // so one clamp however many of its lines the ceiling cut short.
+            // depth of what arrives at its input. An instrument on its chain
+            // waits that depth plus the latency the chain declares ahead of
+            // it, because its material joins where the signal already took
+            // that latency. One summing point, so one clamp however many of
+            // its lines the ceiling cut short.
             let depth = track_summing_depth[index];
             let mut input_clamped = tracks[index].source_delay.set_delay(depth);
             input_clamped |= aim_chain_generators(&tracks[index].chain, depth, devices);
@@ -2305,7 +2306,8 @@ impl TimelineGraph {
 
             // A bus has no clips, so its input hold is the generators on its
             // chain and nothing else — an instrument on a bus is the same
-            // contributor a track's is, at the depth its own input carries.
+            // contributor a track's is: its input depth plus the latency the
+            // chain declares ahead of it.
             let depth = bus_summing_depth[index];
             clamped += usize::from(aim_chain_generators(&buses[index].chain, depth, devices));
 

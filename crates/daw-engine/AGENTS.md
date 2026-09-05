@@ -55,11 +55,13 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   hold's worth of silence. Swapping a fresh ring in would empty the line the graph has been keeping
   current, which is the very thing the rule above exists to prevent.
 - **A detached device's line restarts from silence**: a device can be left holding no placement at
-  all — the strip it sat on removed under it, or a hosted plugin taken off the strip that borrowed
-  it — and nothing then feeds or reads its line. That is the one break in the rule above, so it is
-  the one place a line is cleared, and it stays silent until a chain takes the device again and
-  starts feeding it. The clear is taken on every transition into detachment, bounded by the latency
-  declared then.
+  all — the strip it sat on removed under it, or a hosted plugin taken off the strip that
+  borrowed it — and nothing then feeds or reads its dry line. That is the one break in the rule
+  above, so it is the one place the dry line is cleared, and it stays silent until a chain
+  takes the device again and starts feeding it. The clear is taken on every transition into
+  detachment, bounded by the latency declared then. A generator's input hold is never cleared
+  in place: the splice that places the device ships a fresh silent line and installs it, so
+  the hold a detached generator still owns is replaced, not restarted.
 - **A hold is only as deep as the history behind the write head**: a device goes on declaring while
   it waits, and a figure can also arrive a block after a strip has taken it back but before that
   strip has fed its line. Either way a hold reaching further back than the last restart lands on
