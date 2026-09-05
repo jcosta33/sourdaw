@@ -1,0 +1,27 @@
+crates/daw-plugin-host/src/scanner.rs
+  s_67a9fae9a03847::t_58b553945a5b9f 84-97,122-124,138-140,174-185,676-680,689-691,773-775,1613,1636,2329,2372,2392-2425
+crates/daw-plugin-host/src/vst3_scanner.rs
+  s_67a9fae9a03847::t_0cca4c48e22296 231,235-255,345-361
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_67a9fae9a03847::t_56e68e190beec3 93-101,1453,1458,1472,1489,1741
+src/modules/PluginHost/models/ScannedPlugin.ts
+  s_67a9fae9a03847::t_abd38b1b1362f6 51-54,74-78
+src/modules/PluginHost/useCases/pluginScan/__tests__/resolvePluginEditorCapability.spec.ts
+  s_67a9fae9a03847::t_fc4a7382a23865 29-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "672b512e657ba5cb83647c1dda6ef160480b33d5",
+  "prompts": {},
+  "sessions": {
+    "s_67a9fae9a03847": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49200e7f-c5f8-4fc1-861c-c74fd1a6c90d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
