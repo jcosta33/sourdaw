@@ -1,6 +1,6 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -50,12 +50,17 @@ vi.mock('../TrackHeader', () => ({
     TrackHeader: ({ track, isSelected }: TrackHeaderMockProps): ReactElement => (
         <div data-testid={`track-${track.id}`} data-selected={isSelected}>
             {track.name}
+            {isSelected ? <input data-testid="inline-rename-input" aria-label="Rename track" /> : null}
         </div>
     ),
 }));
 
 vi.mock('../MiniMasterSpectrum', () => ({
-    MiniMasterSpectrum: () => <div data-testid="master-spectrum">Master</div>,
+    MiniMasterSpectrum: () => (
+        <div data-testid="master-spectrum" role="button" tabIndex={0}>
+            Master
+        </div>
+    ),
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
@@ -177,6 +182,14 @@ describe('TrackListView', () => {
                     id: 't2',
                     name: 'Track 2',
                     kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't3',
+                    name: 'Master',
+                    kind: 'master',
                     parentId: null,
                     collapsed: false,
                     height: 64,
@@ -409,6 +422,203 @@ describe('TrackListView', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(removeTrack).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('stops the Delete keydown from reaching window before the confirmation resolves (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Delete' });
+        // Asserted before any await: claiming the key must cut the bubble
+        // path to window synchronously, so the global clip-delete shortcut
+        // cannot fire whatever the confirmation later resolves to.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        // The track deletion itself still runs once the user confirms.
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
+    });
+
+    it('stops the Backspace keydown from reaching window when deletion is cancelled (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        vi.mocked(confirmUser).mockResolvedValue(false);
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Backspace' });
+        // Same synchronous claim as the confirmed flow: cancelling the
+        // confirmation must not free the keydown to reach the global
+        // clip-delete shortcut on window.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('ignores Backspace typed into the inline rename input (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        renderWithTooltip(<TrackListView />);
+        const input = screen.getByTestId('inline-rename-input');
+        const backspaceEvent = createEvent.keyDown(input, { key: 'Backspace' });
+        fireEvent(input, backspaceEvent);
+        await Promise.resolve();
+        await Promise.resolve();
+        // The rename input owns the keystroke: no delete confirmation may
+        // open and no removeTrack action may fire from the bubbled keydown.
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        // Not cancelling matters as much as not acting: the native default
+        // must survive or character deletion breaks inside the input.
+        expect(backspaceEvent.defaultPrevented).toBe(false);
+    });
+
+    it('ignores ArrowDown, Enter, and Delete typed into the inline rename input (#3602)', async () => {
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        renderWithTooltip(<TrackListView />);
+        const input = screen.getByTestId('inline-rename-input');
+        const arrowDownEvent = createEvent.keyDown(input, { key: 'ArrowDown' });
+        fireEvent(input, arrowDownEvent);
+        fireEvent.keyDown(input, { key: 'Enter' });
+        const deleteEvent = createEvent.keyDown(input, { key: 'Delete' });
+        fireEvent(input, deleteEvent);
+        // The rename input owns every keystroke: arrows must not move the
+        // track selection mid-edit, Enter must not enter clip mode, and
+        // Delete must not open the track-delete confirmation.
+        expect(selectTrack).not.toHaveBeenCalled();
+        expect(setWorkspaceMode).not.toHaveBeenCalled();
+        expect(confirmUser).not.toHaveBeenCalled();
+        // Not cancelling matters as much as not acting: the native defaults
+        // must survive or caret movement and character deletion break inside
+        // the input. Enter has no meaningful default in a single-line
+        // input, so it is not asserted.
+        expect(arrowDownEvent.defaultPrevented).toBe(false);
+        expect(deleteEvent.defaultPrevented).toBe(false);
+    });
+
+    it('claims Delete for a selected-but-hidden master track without confirming (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't2',
+                    name: 'Track 2',
+                    kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't3',
+                    name: 'Master',
+                    kind: 'master',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+            ],
+            // The master track never appears in `visibleTracks`, so the
+            // Delete branch finds no track to confirm — but it must still
+            // claim the key.
+            selectedTrackId: 't3',
+        });
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Delete' });
+        // Synchronous: the claim covers the selected-but-hidden case too,
+        // so the bubble path to window is cut and the global layer cannot
+        // delete the selected clips unconfirmed.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('claims Delete pressed on the header-band spectrum for a hidden selection (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't2',
+                    name: 'Track 2',
+                    kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't3',
+                    name: 'Master',
+                    kind: 'master',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+            ],
+            // The spectrum is focusable and sits beside the rows, and the
+            // master track never appears in `visibleTracks` — the claim on
+            // the outermost element must still cut the key from window.
+            selectedTrackId: 't3',
+        });
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByTestId('master-spectrum'), { key: 'Delete' });
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(confirmUser).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
+    it('claims Delete pressed on the header-band spectrum and confirms for a visible selection (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByTestId('master-spectrum'), { key: 'Delete' });
+        // Synchronous: the outermost-element claim cuts the bubble path to
+        // window even though the gesture started in the header band, and
+        // the header-band Delete opens the same confirmed track deletion
+        // as a Delete from the rows.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(confirmUser).toHaveBeenCalledTimes(1);
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
