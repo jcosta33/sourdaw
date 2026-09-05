@@ -22,8 +22,11 @@ import {
     type AudioGraphCommand,
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
+import { stoppedEngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { mirrorDeviceChainDelta } from '../mirrorDeviceChainDelta';
+import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
+import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
 
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn<(message: string, level: string) => void>(),
@@ -37,6 +40,9 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return { ...actual, markExternalPluginEngineAttached: mocks.markExternalPluginEngineAttached };
 });
+vi.mock('../rearmNativeLiveAutomationWriterInPlace', () => ({
+    rearmNativeLiveAutomationWriterInPlace: vi.fn(),
+}));
 
 const APPLIED: AudioGraphApplyResult = {
     acceptance: 'accepted',
@@ -77,6 +83,8 @@ beforeEach(() => {
     nativeLiveGraphSession.lastDeferredChainNotice = null;
     nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'comp']]]);
     nativeLiveGraphSession.pending = Promise.resolve();
+    vi.mocked(rearmNativeLiveAutomationWriterInPlace).mockClear();
+    nativeEnginePlayheadFeed.reading = null;
 });
 
 describe('mirrorDeviceChainDelta', () => {
@@ -263,5 +271,46 @@ describe('mirrorDeviceChainDelta', () => {
             })
         ).rejects.toThrow('unreadable native answer');
         expect(nativeLiveGraphSession.nativeChainByStripId.get('audio-1')).toEqual(['eq', 'comp']);
+    });
+
+    /**
+     * A plugin dropped onto a rolling track is the case (#3568). The pass in
+     * flight was projected before the chain held it, so it describes no writes
+     * for its parameters and the lane would do nothing until the next locate.
+     * The re-read runs from where the engine stands rather than from the pass's
+     * own entry, or the window it produces is behind the playhead.
+     *
+     * A built-in insert must not re-read: the engine stamps hosted plugin
+     * parameters and nothing else's, so the new pass would describe the same
+     * writes as the old one and cost a whole lookahead of admitted stamps.
+     */
+    it('re-reads the pass from the engine position when a hosted plugin joins the chain', async () => {
+        nativeEnginePlayheadFeed.reading = {
+            ...stoppedEngineTransportPosition,
+            running: true,
+            playing: true,
+            positionSeconds: 4.5,
+        };
+        apply.mockResolvedValue({ ...APPLIED, admittedBatch: 12 });
+        const plugin = device('plug', { type: 'external-plugin', externalPluginId: 'clap:com.example.eq' });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('comp')]),
+            after: track([device('eq'), device('comp'), plugin]),
+        });
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).toHaveBeenCalledWith({
+            provenAfterBatch: 12,
+            positionSeconds: 4.5,
+        });
+    });
+
+    it('leaves the pass in flight alone when the device that joined is a built-in', async () => {
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('comp')]),
+            after: track([device('eq'), device('comp'), device('knead')]),
+        });
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
     });
 });

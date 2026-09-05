@@ -413,6 +413,10 @@ beforeEach(() => {
     // The chain record is module state too, and a case inheriting the previous
     // one's would read a strip as built that this session never built.
     nativeLiveGraphSession.nativeChainByStripId = new Map();
+    // The claimed set is module state as well, and the tick path reads it to
+    // decide who drives a device parameter — a case inheriting the previous
+    // one's would silence an IPC write for a strip this session never claimed.
+    nativeLiveGraphSession.carriedStripIds = new Set();
     nativeLiveGraphSession.pending = Promise.resolve();
     // The fader's position is module state too, and every batch below states
     // it, so a case inheriting the previous one's would open a session at a
@@ -1113,6 +1117,23 @@ describe('startNativeLiveGraphSession', () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
         expect(mocks.carriedClaims[0]).toEqual({ ids: ['audio-1'], appliesBefore: 0 });
+    });
+
+    it('records the strips it claimed, and gives them all back at the stop', async () => {
+        // The automation tick asks this set whether the native engine or Web
+        // Audio owns a hosted plugin's parameters (#3568). Never recorded, it
+        // answers no and every moving parameter is written down both routes.
+        // Left standing past the stop, it answers yes for a session that no
+        // longer exists and the parameter stops following its lane.
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect([...nativeLiveGraphSession.carriedStripIds]).toEqual(['audio-1']);
+
+        await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect([...nativeLiveGraphSession.carriedStripIds]).toEqual([]);
     });
 
     it('leaves an armed track on auto monitoring open, because auto is monitoring while it is armed', async () => {

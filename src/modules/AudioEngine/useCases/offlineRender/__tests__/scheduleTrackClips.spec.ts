@@ -1218,6 +1218,11 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         clampValue: ({ value }: { deviceType: string; paramId: string; value: number }) =>
             Math.min(20_000, Math.max(20, value)),
         quantiseValue: ({ value }: { deviceType: string; paramId: string; value: number }) => Math.round(value),
+        // The hosted-plugin half of the same seam (#3568). No device in these
+        // cases is a plugin instance, so the render never asks it anything.
+        acceptsExternalPluginParameter: () => false,
+        clampExternalPluginValue: ({ value }: { externalInstanceId: string; parameterId: string; value: number }) =>
+            value,
     };
 
     beforeEach(() => {
@@ -1229,6 +1234,8 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         offlineDeviceParameterLawState.isAutomatable = null;
         offlineDeviceParameterLawState.clampValue = null;
         offlineDeviceParameterLawState.quantiseValue = null;
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
+        offlineDeviceParameterLawState.clampExternalPluginValue = null;
     });
 
     /**

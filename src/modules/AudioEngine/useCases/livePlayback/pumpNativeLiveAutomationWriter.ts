@@ -38,12 +38,14 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { type AudioGraphApplyResult, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
+import { automationWriteCommand } from '../offlineRender/automationWriteCommand';
 
 import { carryQueuedStamps } from './carryQueuedStamps';
 import {
     AUTOMATION_QUEUE_CAPACITY,
     AUTOMATION_QUEUE_MARGIN,
     AUTOMATION_WINDOW_SECONDS,
+    DEVICE_PARAM_QUEUE_CAPACITY,
     SEAMS_PROVING_A_WHOLE_PASS,
     nativeLiveAutomationWriter,
     writeStartSeconds,
@@ -289,18 +291,61 @@ function anchorStampsAtAdmission(
 }
 
 /**
+ * Which of the engine's queues this slot is charged against.
+ *
+ * A strip parameter owns its own `RampedParam` queue, so it is its own group.
+ * Every parameter of one plugin shares that effect's single `DeviceParamQueue`
+ * (`QueueBudgets::charge_device_param` keys per effect), so all of one
+ * `(trackId, deviceId)`'s slots are one group — charging them separately would
+ * let a pass admit the whole ceiling per parameter and have the engine refuse
+ * the batch whole.
+ */
+function ledgerGroup(slot: LiveAutomationWriterTarget): string {
+    const { target } = slot;
+    if (target.kind === 'device-parameter') {
+        return `device:${target.trackId}:${target.deviceId}`;
+    }
+    if (target.kind === 'track-send-level') {
+        return `${target.kind}:${target.trackId}:${target.busId}`;
+    }
+    return `${target.kind}:${target.trackId}`;
+}
+
+/** How deep the engine's queue for this slot's group is allowed to get. */
+function groupCeiling(slot: LiveAutomationWriterTarget): number {
+    const capacity = slot.target.kind === 'device-parameter' ? DEVICE_PARAM_QUEUE_CAPACITY : AUTOMATION_QUEUE_CAPACITY;
+    return capacity - AUTOMATION_QUEUE_MARGIN;
+}
+
+/** What the mirror believes each ledger group already holds across all of its slots. */
+function queuedByGroup(pass: LiveAutomationWriterPass): Map<string, number> {
+    const depths = new Map<string, number>();
+    for (const slot of pass.targets) {
+        const group = ledgerGroup(slot);
+        depths.set(group, (depths.get(group) ?? 0) + slot.queued.length);
+    }
+    return depths;
+}
+
+/**
  * The writes each target owes inside the lookahead, in curve order.
  *
  * A ramp is admitted on its start, never on its landing, and never split: the
  * engine re-anchors it at the value the parameter holds at that start frame,
  * so the whole trajectory is one write or it is not that trajectory.
+ *
+ * The ceiling is counted per ledger group rather than per slot, so a plugin
+ * whose parameters share one engine queue cannot be over-admitted by handing
+ * each of them the whole capacity.
  */
 function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: number }): readonly Admission[] {
     const { pass } = input;
     const horizon = input.positionSeconds + AUTOMATION_WINDOW_SECONDS;
-    const ceiling = AUTOMATION_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN;
+    const depths = queuedByGroup(pass);
     const admissions: Admission[] = [];
     for (const slot of pass.targets) {
+        const group = ledgerGroup(slot);
+        const ceiling = groupCeiling(slot);
         const writes: AudioGraphParameterWrite[] = [];
         let queued = slot.queued;
         for (const write of slot.writes.slice(slot.cursor)) {
@@ -311,9 +356,13 @@ function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: n
             const surviving = cancelsStale(write)
                 ? queued.filter((pending) => pending.landFrame < stamp.startFrame)
                 : queued;
-            if (surviving.length >= ceiling) {
+            // What the group holds once this slot's own cancellations are
+            // taken: the other slots' depths, plus what survives here.
+            const groupDepth = (depths.get(group) ?? 0) - queued.length + surviving.length;
+            if (groupDepth >= ceiling) {
                 break;
             }
+            depths.set(group, groupDepth + 1);
             queued = [...surviving, stamp];
             writes.push(write);
         }
@@ -374,7 +423,7 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
             return backend.apply({
                 schemaVersion: 1,
                 commands: admissions.flatMap(({ slot, writes }) =>
-                    writes.map((write) => ({ kind: 'write-parameter' as const, target: slot.target, write }))
+                    writes.map((write) => automationWriteCommand(slot.target, write))
                 ),
             });
         });

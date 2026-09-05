@@ -60,6 +60,7 @@ import { getEngineTransportPosition } from '../../repositories/engineTransport/g
 
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
+import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 
 /** The scheduler id this feed registers its per-frame poll under. */
 export const NATIVE_ENGINE_PLAYHEAD_FEED_ID = 'audio-engine/native-engine-playhead';
@@ -81,6 +82,24 @@ export const nativeEnginePlayheadFeed: {
     inFlightEpoch: null,
     reading: null,
 };
+
+/**
+ * Take a re-read the pass owes before sending it, and answer with the epoch the
+ * pump must use.
+ *
+ * A request is dropped when something else re-armed while this reading was in
+ * flight, and dropping it is correct rather than lossy: that arm re-read the
+ * same projection, from a position the musician is nearer to than this one, so
+ * the device the request was about is already in the pass it produced.
+ */
+function takePendingRearm(writerEpoch: number, positionSeconds: number): number {
+    const pending = nativeLiveAutomationWriter.pendingRearm;
+    if (!pending || nativeLiveAutomationWriter.epoch !== writerEpoch) {
+        return writerEpoch;
+    }
+    rearmNativeLiveAutomationWriterInPlace({ provenAfterBatch: pending.provenAfterBatch, positionSeconds });
+    return nativeLiveAutomationWriter.epoch;
+}
 
 /** Ask the engine where it is, unless this run's previous ask is unanswered. */
 export function pollNativeEnginePlayheadOnce(): void {
@@ -118,7 +137,7 @@ export function pollNativeEnginePlayheadOnce(): void {
                 positionSeconds: reading.positionSeconds,
                 loopWraps: reading.loopWraps,
                 batchesApplied: reading.batchesApplied,
-                writerEpoch,
+                writerEpoch: takePendingRearm(writerEpoch, reading.positionSeconds),
             });
         })
         .catch((error: unknown) => {

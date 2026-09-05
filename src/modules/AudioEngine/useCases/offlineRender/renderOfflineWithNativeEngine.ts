@@ -61,8 +61,8 @@ import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
+    type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
-    type AudioGraphStripParameterTarget,
 } from '../../models/AudioGraphBackend';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
@@ -74,6 +74,7 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
+import { automationWriteCommand } from './automationWriteCommand';
 import { checkCancel } from './checkCancel';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
@@ -123,10 +124,10 @@ type ProgrammeConversion =
     | Readonly<{ outcome: 'declined'; reason: string }>;
 
 function writeCommands(
-    target: AudioGraphStripParameterTarget,
+    target: AudioGraphParameterTarget,
     writes: readonly AudioGraphParameterWrite[]
 ): AudioGraphCommand[] {
-    return writes.map((write): AudioGraphCommand => ({ kind: 'write-parameter', target, write }));
+    return writes.map((write) => automationWriteCommand(target, write));
 }
 
 /**

@@ -43,13 +43,23 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphParameterWrite, type AudioGraphStripParameterTarget } from '../../models/AudioGraphBackend';
+import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
 /** How far ahead of the engine's own clock one pump admits writes. */
 export const AUTOMATION_WINDOW_SECONDS = 0.1;
 
 /** `AUTOMATION_QUEUE_CAPACITY` in `crates/daw-engine/src/timeline.rs`. */
 export const AUTOMATION_QUEUE_CAPACITY = 8;
+
+/**
+ * `DEVICE_PARAM_QUEUE_CAPACITY` in `crates/daw-engine/src/timeline.rs`.
+ *
+ * Not a second automation queue: one queue per *effect*, shared by every
+ * parameter of the plugin in it — so the mirror charges every device slot of
+ * one `(trackId, deviceId)` against this one ceiling, not against a ceiling
+ * each (`QueueBudgets::charge_device_param` keys per effect).
+ */
+export const DEVICE_PARAM_QUEUE_CAPACITY = 64;
 
 /**
  * One slot this side never fills. The mirror releases on the echoed playhead,
@@ -114,7 +124,7 @@ export type LiveAutomationQueuedStamp = {
 
 /** One parameter's share of the pass: its curve, how much of it has landed, and what the engine still holds. */
 export type LiveAutomationWriterTarget = {
-    target: AudioGraphStripParameterTarget;
+    target: AudioGraphParameterTarget;
     /** This target's writes for its span, ascending by start time. */
     writes: readonly AudioGraphParameterWrite[];
     /** How many of {@link writes} the engine has accepted. */
@@ -207,11 +217,29 @@ export const nativeLiveAutomationWriter: {
      * recomputed.
      */
     reportedExclusions: string | null;
+    /**
+     * A re-read the pass owes, recorded rather than taken (#3568).
+     *
+     * A plugin the engine takes mid-roll is spliced into its chain by a route
+     * the pump itself can reach — an automation batch reports the attach, and
+     * the splice answers it. The pass must be re-read once that splice lands,
+     * because the projection could not see a device the chain did not hold; but
+     * a splice that armed the writer directly would make the writer's own pump
+     * reach back into the arm that starts it, which is a cycle in the module
+     * graph and a re-entrant arm at runtime.
+     *
+     * So the splice states what it needs and the playhead feed takes it, on the
+     * next reading, immediately before the pump that would have sent the pass.
+     * The engine position that reading carries is fresher than anything the
+     * splice could have supplied, and the pump behind it is the same one.
+     */
+    pendingRearm: Readonly<{ provenAfterBatch: number | null }> | null;
 } = {
     epoch: 0,
     inFlightEpoch: null,
     pass: null,
     reportedExclusions: null,
+    pendingRearm: null,
 };
 
 /** Where a write's trajectory is anchored: a ramp's start, any other shape's own stamp. */

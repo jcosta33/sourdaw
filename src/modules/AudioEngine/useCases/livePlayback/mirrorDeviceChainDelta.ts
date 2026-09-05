@@ -37,10 +37,13 @@ import { type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
 
+import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeInsertIndex } from './nativeChainIndex';
+import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 import { readNativeChain } from './readNativeChain';
+import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { recordNativeChains } from './recordNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
@@ -132,6 +135,19 @@ function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly str
     return commands;
 }
 
+/**
+ * Whether this batch puts a hosted plugin into the engine's chain.
+ *
+ * Only such an insert changes what the automation producer can carry: the
+ * engine stamps a hosted plugin's parameters and nothing else's, so a batch
+ * that only removes devices or only inserts built-ins leaves the pass in flight
+ * describing exactly the same set of writes, and re-arming for it would throw
+ * away a whole lookahead of admitted stamps for nothing.
+ */
+function insertsHostedDevice(commands: readonly AudioGraphCommand[]): boolean {
+    return commands.some((command) => command.kind === 'insert-device' && isHostedPluginDevice(command.device));
+}
+
 function changedDeviceNames(input: MirrorDeviceChainDeltaInput): readonly string[] {
     const { before, after } = input;
     const afterIds = new Set(idsOf(after.devices));
@@ -186,6 +202,15 @@ export function mirrorDeviceChainDelta(input: MirrorDeviceChainDeltaInput): Prom
             return { outcome: 'declined', reason: result.reason };
         }
         recordNativeChains(result.reports);
+        if (insertsHostedDevice(plan.commands)) {
+            // The pass in flight was projected before this plugin was in the
+            // chain, so it describes no writes for its parameters. Re-reading
+            // from where the engine stands is what carries them from here on.
+            rearmNativeLiveAutomationWriterInPlace({
+                provenAfterBatch: result.admittedBatch ?? null,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
+            });
+        }
         return { outcome: 'mirrored' };
     });
 }

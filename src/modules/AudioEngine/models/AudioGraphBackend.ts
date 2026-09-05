@@ -176,7 +176,13 @@ export type AudioGraphStripParameterTarget =
     | Readonly<{ kind: 'track-send-level'; trackId: AudioGraphStripId; busId: AudioGraphStripId }>;
 
 /**
- * A built-in device's own parameter, in the device's units.
+ * A device's own parameter, in the device's units.
+ *
+ * Two families answer to one shape. A built-in names its parameter, and the
+ * backend maps that name onto a closed set it knows. A hosted plugin's
+ * parameters are the plugin's own numeric ids, opaque to the backend and
+ * spelled here as strings; the plugin resolves them when the stamp reaches the
+ * block it is due on.
  *
  * Addressed by its own command ({@link AudioGraphWriteDeviceParameterCommand})
  * rather than sharing `write-parameter`, because it is not a strip position and

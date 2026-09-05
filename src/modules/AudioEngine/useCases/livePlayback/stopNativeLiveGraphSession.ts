@@ -20,8 +20,7 @@
  * for good.
  */
 
-import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
-
+import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
@@ -41,7 +40,7 @@ export function stopNativeLiveGraphSession(
 ): Promise<StopNativeLiveGraphSessionResult> {
     return queueOnNativeLiveGraphSession(async (): Promise<StopNativeLiveGraphSessionResult> => {
         // First, and unconditionally — see the header.
-        setNativeCarriedTracks(new Set());
+        claimCarriedStrips(new Set());
         // Stopped before the command, and whatever the command answers: the
         // feed exists to draw a rolling playhead, and one that keeps polling a
         // transport nobody is watching only burns bridge round trips.

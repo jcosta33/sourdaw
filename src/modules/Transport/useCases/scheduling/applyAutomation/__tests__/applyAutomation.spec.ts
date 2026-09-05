@@ -4,6 +4,7 @@ import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } fro
 import {
     getCompensationDelay,
     getCurrentTime,
+    isDeviceCarriedByNativeSession,
     scheduleSendAutomation,
     scheduleTrackGain,
     scheduleTrackPan,
@@ -74,6 +75,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         scheduleTrackPan: vi.fn(),
         getCurrentTime: vi.fn(() => 5),
         getCompensationDelay: vi.fn(() => 0),
+        isDeviceCarriedByNativeSession: vi.fn(() => false),
         updateDeviceParam: vi.fn(),
         updateMidiFxParam: vi.fn(),
     };
@@ -96,6 +98,7 @@ type SeedDevice = {
     id: string;
     type: string;
     parameterValues: Record<string, number>;
+    bypassed?: boolean;
 };
 
 const EQ_A = { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
@@ -143,6 +146,7 @@ describe('applyAutomation', () => {
         vi.mocked(getCurrentTime).mockReturnValue(5);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(deriveVcaMultiplier).mockReturnValue(1);
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
     });
 
     it('should export applyAutomation', () => {
@@ -517,6 +521,61 @@ describe('applyAutomation', () => {
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
             expect(updateMidiFxParam).not.toHaveBeenCalled();
+        });
+
+        // The native session stamps a carried device's parameters from the
+        // engine's own queue, block-accurately and ahead of the playhead
+        // (#3568). The tick-grid IPC write is then a second, later writer on one
+        // parameter: it lands after the stamp it duplicates and drags the value
+        // back to where the curve was a tick ago.
+        it.each([
+            [true, 0],
+            [false, 1],
+        ])(
+            'writes a moving device parameter over IPC only while the native session is not carrying it (carried: %s)',
+            (carried, expectedWrites) => {
+                seedDeviceLane({
+                    devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                    laneParameterId: 'device-eq1:eq-low-gain',
+                });
+                vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(carried);
+
+                vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+                applyAutomation(0);
+                applyAutomation(1);
+
+                expect(updateDeviceParam).toHaveBeenCalledTimes(expectedWrites);
+            }
+        );
+
+        it('restates a carried device’s parameter once when it comes back from bypass, and not again', () => {
+            // The engine drops a stamp due at a bypassed effect, so a plugin
+            // switched back in holds whatever it held before the bypass — and a
+            // curve sitting still stamps nothing to correct it. This one write
+            // is the exception the carried gate makes; repeating it every tick
+            // afterwards would be the doubled writer the gate exists to stop.
+            const device: SeedDevice = {
+                id: 'device-eq1',
+                type: 'builtin-eq',
+                parameterValues: { 'eq-low-gain': 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-eq1:eq-low-gain' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            applyAutomation(0);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+
+            device.bypassed = false;
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
+
+            applyAutomation(2);
+
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
         });
     });
 

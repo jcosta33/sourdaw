@@ -43,8 +43,15 @@ export type OfflineDeviceAutomationLaw = {
      * a legacy bare lane can resolve to a different device offline.
      */
     acceptsAutomation: (input: { deviceId: string; deviceType: string; parameterId: string }) => boolean;
-    /** `clampDeviceParameterValue`: the declared range, applied to every write. */
-    clampValue: (input: { deviceType: string; paramId: string; value: number }) => number;
+    /**
+     * `clampDeviceParameterValue`: the declared range, applied to every write.
+     *
+     * The device is named as well as its type because a hosted plugin's range
+     * is published by the *instance*: every external plugin device spells one
+     * device type, so a law given only the type could not tell two plugins on
+     * one strip apart and would hold both to whichever it resolved first.
+     */
+    clampValue: (input: { deviceId: string; deviceType: string; paramId: string; value: number }) => number;
     /**
      * `quantiseDeviceParameterValue`: the declared *type*, applied to the value
      * that is emitted — never to the value the slew feeds itself.
@@ -57,7 +64,7 @@ export type OfflineDeviceAutomationLaw = {
      * filter state — 14.4, 13.44, 12.864 for a value the monitor delivers as
      * 14, 13, 12.
      */
-    quantiseValue: (input: { deviceType: string; paramId: string; value: number }) => number;
+    quantiseValue: (input: { deviceId: string; deviceType: string; paramId: string; value: number }) => number;
 };
 
 export type ScheduleTrackAutomationInput = {
@@ -345,14 +352,24 @@ export function scheduleTrackAutomation({
                 continue;
             }
             const clampStep = (value: number): number =>
-                deviceParameterLaw.clampValue({ deviceType: candidate.deviceType, paramId: parameterId, value });
+                deviceParameterLaw.clampValue({
+                    deviceId: candidate.deviceId,
+                    deviceType: candidate.deviceType,
+                    paramId: parameterId,
+                    value,
+                });
             // Deliberately NOT composed into `clampStep`: that function is the
             // recurrence's feedback, and rounding there dead-zones the glide.
             // This one runs on the emitted sample only — the offline analogue of
             // live's `quantiseDeviceParameterValue(smoothed)` just before
             // `updateDeviceParam`.
             const quantiseEmit = (value: number): number =>
-                deviceParameterLaw.quantiseValue({ deviceType: candidate.deviceType, paramId: parameterId, value });
+                deviceParameterLaw.quantiseValue({
+                    deviceId: candidate.deviceId,
+                    deviceType: candidate.deviceType,
+                    paramId: parameterId,
+                    value,
+                });
             if (binding.kind === 'segments') {
                 const segments = compileAutomationSegments(
                     points,

@@ -28,6 +28,7 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
+    type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
     type AudioGraphWriteParameterCommand,
@@ -38,8 +39,12 @@ import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationW
 import { nativeEnginePlayheadFeed, pollNativeEnginePlayheadOnce } from '../nativeEnginePlayheadFeedState';
 import {
     AUTOMATION_QUEUE_CAPACITY,
+    AUTOMATION_QUEUE_MARGIN,
+    DEVICE_PARAM_QUEUE_CAPACITY,
     SEAMS_PROVING_A_WHOLE_PASS,
     nativeLiveAutomationWriter,
+    type LiveAutomationQueuedStamp,
+    type LiveAutomationWriterTarget,
 } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { pumpNativeLiveAutomationWriter } from '../pumpNativeLiveAutomationWriter';
@@ -1243,5 +1248,96 @@ describe('the live automation writer', () => {
             Math.round(0.04 * SAMPLE_RATE),
         ]);
         expect(queuedAfter.every((stamp) => stamp.startFrame < seekFrame)).toBe(true);
+    });
+});
+
+/**
+ * Hosted plugin parameters ride the same pass as strip positions but are
+ * charged and commanded differently (#3568).
+ *
+ * The engine's `DeviceParamQueue` is inline on the *effect*, shared by every
+ * parameter of that plugin (`crates/daw-engine/src/timeline.rs`), while each
+ * strip position has a queue of its own. A window law that charged a device
+ * parameter per slot would hand each of a plugin's lanes the whole capacity and
+ * then have the engine refuse the batch whole — costing every other strip in it
+ * a tick's writes, not just the plugin's.
+ */
+describe('the live automation writer — hosted device parameters', () => {
+    const DEVICE_A: AudioGraphParameterTarget = {
+        kind: 'device-parameter',
+        trackId: 'track-a',
+        deviceId: 'plugin-1',
+        parameterId: '7',
+    };
+    const DEVICE_B: AudioGraphParameterTarget = { ...DEVICE_A, parameterId: '9' };
+
+    /** A stamp the mirror believes the engine holds and cannot yet have released. */
+    function heldStamp(startFrame: number): LiveAutomationQueuedStamp {
+        return { startFrame, landFrame: startFrame, admittedBatch: 999, seamAnchor: null };
+    }
+
+    function slotFor(target: AudioGraphParameterTarget): LiveAutomationWriterTarget | undefined {
+        return nativeLiveAutomationWriter.pass?.targets.find(
+            (slot) => JSON.stringify(slot.target) === JSON.stringify(target)
+        );
+    }
+
+    it('sends a device parameter as write-device-parameter and a fader as write-parameter, in one batch', async () => {
+        mocks.curve = [
+            { target: FADER, writes: [step(0.05, 0.4)] },
+            { target: DEVICE_A, writes: [step(0.05, 0.6)] },
+        ];
+
+        arm(0);
+        await flush();
+
+        const [batch] = mocks.apply.mock.calls[0] ?? [];
+        expect(batch?.commands).toEqual([
+            { kind: 'write-parameter', target: FADER, write: step(0.05, 0.4) },
+            { kind: 'write-device-parameter', target: DEVICE_A, write: step(0.05, 0.6) },
+        ]);
+    });
+
+    it('holds both parameters of one plugin to the queue they share, while the fader still admits', async () => {
+        // Everything the curve owes lands outside the first window, so the arm's
+        // own pump sends nothing and the depths below are the ones this tick
+        // charges against.
+        mocks.curve = [
+            { target: FADER, writes: [step(1, 0.4)] },
+            { target: DEVICE_A, writes: [step(1, 0.6)] },
+            { target: DEVICE_B, writes: [step(1, 0.7)] },
+        ];
+        arm(0);
+        await flush();
+        expect(mocks.apply).not.toHaveBeenCalled();
+
+        // 40 + 23 = 63 stamps on one plugin: the ceiling is
+        // DEVICE_PARAM_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN, so neither
+        // parameter has room, even though neither reaches it alone.
+        slotFor(DEVICE_A)!.queued = Array.from({ length: 40 }, (_unused, index) => heldStamp(index));
+        slotFor(DEVICE_B)!.queued = Array.from({ length: 23 }, (_unused, index) => heldStamp(index));
+        expect(40 + 23).toBe(DEVICE_PARAM_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN);
+
+        await pump(0.95, 0);
+
+        const [batch] = mocks.apply.mock.calls[0] ?? [];
+        expect(batch?.commands).toEqual([{ kind: 'write-parameter', target: FADER, write: step(1, 0.4) }]);
+    });
+
+    it('admits one parameter of a plugin whose shared queue has a slot left', async () => {
+        mocks.curve = [
+            { target: DEVICE_A, writes: [step(1, 0.6)] },
+            { target: DEVICE_B, writes: [step(1, 0.7)] },
+        ];
+        arm(0);
+        await flush();
+
+        slotFor(DEVICE_A)!.queued = Array.from({ length: 40 }, (_unused, index) => heldStamp(index));
+        slotFor(DEVICE_B)!.queued = Array.from({ length: 22 }, (_unused, index) => heldStamp(index));
+
+        await pump(0.95, 0);
+
+        const [batch] = mocks.apply.mock.calls[0] ?? [];
+        expect(batch?.commands).toEqual([{ kind: 'write-device-parameter', target: DEVICE_A, write: step(1, 0.6) }]);
     });
 });

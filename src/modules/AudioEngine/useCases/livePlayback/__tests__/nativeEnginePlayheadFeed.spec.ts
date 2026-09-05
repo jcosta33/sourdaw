@@ -12,6 +12,7 @@ import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { pumpNativeLiveAutomationWriter } from '../pumpNativeLiveAutomationWriter';
 import { readNativeEnginePlayheadSeconds } from '../readNativeEnginePlayheadSeconds';
+import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
 import { startNativeEnginePlayheadFeed } from '../startNativeEnginePlayheadFeed';
 import { stopNativeEnginePlayheadFeed } from '../stopNativeEnginePlayheadFeed';
 
@@ -23,6 +24,9 @@ vi.mock('#/utils/DOM/AnimationScheduler', () => ({
 }));
 vi.mock('../pumpNativeLiveAutomationWriter', () => ({
     pumpNativeLiveAutomationWriter: vi.fn(),
+}));
+vi.mock('../rearmNativeLiveAutomationWriterInPlace', () => ({
+    rearmNativeLiveAutomationWriterInPlace: vi.fn(),
 }));
 
 const rollingAt = (positionSeconds: number) => ({
@@ -47,6 +51,8 @@ describe('the native engine playhead feed', () => {
         vi.mocked(animationScheduler.unregister).mockClear();
         vi.mocked(getEngineTransportPosition).mockReset();
         vi.mocked(pumpNativeLiveAutomationWriter).mockClear();
+        vi.mocked(rearmNativeLiveAutomationWriterInPlace).mockReset();
+        nativeLiveAutomationWriter.pendingRearm = null;
     });
 
     it('polls on the animation frame rather than on a timer of its own', () => {
@@ -100,6 +106,51 @@ describe('the native engine playhead feed', () => {
             batchesApplied: 7,
             writerEpoch: capturedAtPoll,
         });
+    });
+
+    // A plugin the engine took mid-roll is spliced into its chain by a route
+    // the pump itself reaches, so the splice states the re-read instead of
+    // taking it (#3568). This is where it is taken: on the reading, whose
+    // engine position is fresher than anything the splice could have supplied,
+    // and before the pump that would otherwise send a pass projected against a
+    // chain that had no body for that plugin.
+    it('takes the re-read the pass owes before pumping, and pumps the pass it produced', async () => {
+        vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
+        vi.mocked(rearmNativeLiveAutomationWriterInPlace).mockImplementation(() => {
+            nativeLiveAutomationWriter.pendingRearm = null;
+            nativeLiveAutomationWriter.epoch += 1;
+        });
+        nativeLiveAutomationWriter.pendingRearm = { provenAfterBatch: 42 };
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalled());
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).toHaveBeenCalledWith({
+            provenAfterBatch: 42,
+            positionSeconds: 3.25,
+        });
+        // The pump must send the pass the re-arm just produced. Stamped with
+        // the epoch captured before it, every write it sends would be discarded
+        // as belonging to a pass that had ended.
+        expect(vi.mocked(pumpNativeLiveAutomationWriter).mock.calls[0]?.[0].writerEpoch).toBe(
+            nativeLiveAutomationWriter.epoch
+        );
+    });
+
+    it('drops a re-read request that a newer arm already answered', async () => {
+        vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        // Between the poll and its answer, a locate re-armed the writer. That
+        // arm read the same chain from a position the musician is nearer to, so
+        // re-reading again here would throw away a newer pass for an older one.
+        nativeLiveAutomationWriter.pendingRearm = { provenAfterBatch: 42 };
+        nativeLiveAutomationWriter.epoch += 1;
+        await vi.waitFor(() => expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalled());
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
     });
 
     it('does not stack a second request behind an unanswered one', () => {

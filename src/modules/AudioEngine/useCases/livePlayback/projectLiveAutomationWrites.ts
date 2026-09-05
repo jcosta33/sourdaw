@@ -33,14 +33,25 @@
  * commands: a send the topology dropped gets no target here either, or the
  * automation would name a path the graph never built.
  *
- * A device-parameter lane (#3124) is detected here, not by the extraction:
- * `projectStripAutomationWrites` resolves it against an empty device chain
- * and silently drops it, matching what main did for an orphan lane left
- * behind by `prepareRemoveDevice.ts` (which deletes the device, never its
- * lanes). Live has an exclusion channel the export does not, so this producer
- * names each such lane on its own — one exclusion per lane, keyed to that
- * lane — while still emitting the strip's converted fader/pan/send entries:
- * one lane the writer cannot carry must not silence the rest of the strip.
+ * A device-parameter lane is decided here, not by the extraction, because only
+ * this producer knows which devices the native session is actually sounding.
+ * Three outcomes, and the difference between the last two is the whole point:
+ *
+ *   - The lane resolves to a device this session carries, under the same
+ *     `resolveDeviceAutomationTargetIndex` + law the tick path resolves on.
+ *     It is handed to the extraction and comes back as a `device-parameter`
+ *     entry the engine stamps (#3568).
+ *   - The lane names a hosted plugin this session does *not* carry — a
+ *     web-carried strip, or a device no splice has placed in the native chain
+ *     yet. Omitted with no exclusion: Web Audio is still driving it over IPC,
+ *     so it is carried elsewhere rather than dropped, and saying otherwise
+ *     would report a fault that does not exist.
+ *   - Anything else — a built-in device lane, or an orphan lane left behind by
+ *     `prepareRemoveDevice.ts`, which deletes the device and never its lanes.
+ *     `projectStripAutomationWrites` silently drops it; live has an exclusion
+ *     channel the export does not, so this producer names each one (#3124),
+ *     while still emitting the strip's converted fader/pan/send entries: one
+ *     lane the writer cannot carry must not silence the rest of the strip.
  *
  * A strip the extraction declines outright — today, only a malformed
  * recorded event stream — is excluded whole, keyed to the strip itself: the
@@ -50,13 +61,16 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
-import { type AudioGraphParameterWrite, type AudioGraphStripParameterTarget } from '../../models/AudioGraphBackend';
+import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
+import { type OfflineDeviceAutomationLaw } from '../../repositories/offlineScheduler/automationScheduling';
 import { clipBoundsById } from '../offlineRender/clipBoundsById';
 import {
     projectStripAutomationWrites,
+    type StripAutomationDeviceEntry,
     type StripAutomationWritesInput,
 } from '../offlineRender/projectStripAutomationWrites';
 
@@ -70,7 +84,7 @@ export type LiveAutomationWritesExclusion = Readonly<{
 }>;
 
 export type LiveAutomationWritesEntry = Readonly<{
-    target: AudioGraphStripParameterTarget;
+    target: AudioGraphParameterTarget;
     writes: readonly AudioGraphParameterWrite[];
 }>;
 
@@ -95,6 +109,14 @@ export type LiveAutomationWritesInput = Readonly<{
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     slewTickSeconds: number;
     resolveLaneCeiling: StripAutomationWritesInput['resolveLaneCeiling'];
+    /**
+     * The hosted plugin devices the native session is sounding on this strip,
+     * in the strip's own chain order. Everything else on the strip is either
+     * still Web Audio's or has no native automation body.
+     */
+    carriedDeviceEntries: (stripId: string) => readonly StripAutomationDeviceEntry[];
+    /** The device-parameter law both the admission and the extraction are held to. */
+    deviceParameterLaw: OfflineDeviceAutomationLaw;
 }>;
 
 const KNOWN_STRIP_PARAMETER_IDS = new Set(['gain', 'pan']);
@@ -103,9 +125,8 @@ const DEVICE_AUTOMATION_EXCLUSION_REASON = 'device parameter automation has no n
 
 /**
  * Enabled lanes on this strip that name neither the fader, the pan, nor a
- * send — the device-parameter family `projectStripAutomationWrites` silently
- * drops today, matching main. This producer names each one as its own
- * exclusion rather than let it vanish with no signal (#3068).
+ * send — the device-parameter family, each of which the caller then places in
+ * one of the three outcomes the header describes (#3068, #3568).
  *
  * Mirrors `scheduleTrackAutomation`'s own drop conditions
  * (`repositories/offlineScheduler/automationScheduling.ts`) so this never
@@ -140,6 +161,36 @@ function deviceParameterLanes(input: {
     });
 }
 
+/** Every hosted plugin on this strip, in chain order, as the entry shape both readers take. */
+function hostedDeviceEntries(track: Track): readonly StripAutomationDeviceEntry[] {
+    return track.devices.flatMap((device) =>
+        device.externalInstanceId === undefined
+            ? []
+            : [{ deviceId: device.id, deviceType: device.type, externalInstanceId: device.externalInstanceId }]
+    );
+}
+
+/**
+ * Whether this lane addresses one of `entries` under the device law — the same
+ * two-step resolution `scheduleTrackAutomation` and the tick path both run, so
+ * a legacy bare lane cannot be judged here against a different device than the
+ * one that will actually carry it.
+ */
+function laneAddresses(
+    lane: AutomationLane,
+    entries: readonly StripAutomationDeviceEntry[],
+    law: OfflineDeviceAutomationLaw
+): boolean {
+    const index = resolveDeviceAutomationTargetIndex(lane.parameterId, entries, (candidate, parameterId) =>
+        law.acceptsAutomation({
+            deviceId: candidate.deviceId,
+            deviceType: candidate.deviceType,
+            parameterId,
+        })
+    );
+    return index >= 0;
+}
+
 function assertNever(value: never): never {
     throw new Error(`Unknown automation write shape: ${JSON.stringify(value)}`);
 }
@@ -172,6 +223,8 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         vcaMultiplierByTrackId,
         slewTickSeconds,
         resolveLaneCeiling,
+        carriedDeviceEntries,
+        deviceParameterLaw,
     } = input;
 
     const busStripIds = new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
@@ -185,19 +238,27 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
     const exclusions: LiveAutomationWritesExclusion[] = [];
 
     for (const track of stripTracks) {
+        const carried = carriedDeviceEntries(track.id);
         // `automationMode: 'off'` produces no writes at all — enforced inside
         // `projectStripAutomationWrites` itself, and it reads no lane at all,
         // the orphan device lane included. So a strip with automation turned
         // off never earns an exclusion for a lane it was never going to read,
         // and has no consumer for the clip-bounds map either.
         if (track.automationMode !== 'off') {
-            const lanesToExclude = deviceParameterLanes({
+            const hosted = hostedDeviceEntries(track);
+            const candidateLanes = deviceParameterLanes({
                 lanes,
                 laneById,
                 trackId: track.id,
                 clipBounds: clipBoundsById(track),
             });
-            for (const lane of lanesToExclude) {
+            for (const lane of candidateLanes) {
+                if (
+                    laneAddresses(lane, carried, deviceParameterLaw) ||
+                    laneAddresses(lane, hosted, deviceParameterLaw)
+                ) {
+                    continue;
+                }
                 exclusions.push({ stripId: track.id, subjectId: lane.id, reason: DEVICE_AUTOMATION_EXCLUSION_REASON });
             }
         }
@@ -216,6 +277,8 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
             slewTickSeconds,
             resolveLaneCeiling,
+            deviceEntries: carried,
+            deviceParameterLaw,
         });
 
         if (projected.outcome === 'declined') {

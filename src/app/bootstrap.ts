@@ -15,7 +15,9 @@ import {
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import {
+    acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
+    clampExternalPluginAutomationValue,
     getAllTracks,
     getAutomationParameterRange,
     getPluginById,
@@ -251,12 +253,15 @@ configureOfflineMidiEventProjection({
     evaluateAutomationValue: getAutomationValueAtBeat,
     resolveArticulationId: resolveMidiNoteArticulationId,
 });
-// The offline render enforces the same device-parameter law the live apply path
-// does; only the composition root sees both Arrangement and the audio engine.
+// The offline render and the native live automation producer enforce the same
+// device-parameter law the live apply path does; only the composition root sees
+// both Arrangement and the audio engine.
 configureOfflineDeviceParameterLaw({
     isAutomatable: isDeviceParameterAutomatable,
     clampValue: clampDeviceParameterValue,
     quantiseValue: quantiseDeviceParameterValue,
+    acceptsExternalPluginParameter: acceptsExternalPluginAutomationParameter,
+    clampExternalPluginValue: clampExternalPluginAutomationValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
