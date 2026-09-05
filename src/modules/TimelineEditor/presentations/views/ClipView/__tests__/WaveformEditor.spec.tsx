@@ -23,7 +23,7 @@ import {
     getCachedAudioBuffer,
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -194,7 +194,7 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -582,7 +582,7 @@ describe('WaveformEditor', () => {
 
             fireEvent.click(screen.getByRole('menuitem', { name: 'Normalize' }));
 
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip-1' } });
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip-1' } });
             expect(vi.mocked(normalizeClip)).not.toHaveBeenCalled();
         });
     });
@@ -597,7 +597,7 @@ describe('WaveformEditor', () => {
 
         fireEvent.click(normalizeMenuItem);
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip-1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip-1' } });
         expect(vi.mocked(normalizeClip)).not.toHaveBeenCalled();
         expect(screen.queryByRole('menuitem', { name: 'Normalize' })).not.toBeInTheDocument();
     });
@@ -701,7 +701,7 @@ describe('WaveformEditor', () => {
         fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
         fireEvent.click(screen.getByRole('menuitem', { name: 'Normalize' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip-uuid' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip-uuid' } });
     });
 
     it('should ignore a drop that carries no files', () => {
@@ -855,7 +855,7 @@ describe('WaveformEditor', () => {
 
         fireEvent.click(screen.getByRole('menuitem', { name: 'Reverse' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip-1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip-1' } });
         expect(vi.mocked(reverseClip)).not.toHaveBeenCalled();
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });

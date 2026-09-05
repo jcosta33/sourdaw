@@ -22,7 +22,7 @@ const {
 });
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mockExecuteAppAction,
+    executeUserAppAction: mockExecuteAppAction,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({

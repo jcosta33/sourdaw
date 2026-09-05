@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
@@ -13,7 +13,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 1 } });
+                void executeUserAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 1 } });
             }
         },
     },
@@ -25,7 +25,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 1 } });
+                void executeUserAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 1 } });
             }
         },
     },
@@ -37,7 +37,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -1 } });
+                void executeUserAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -1 } });
             }
         },
     },
@@ -49,7 +49,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 12 } });
+                void executeUserAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 12 } });
             }
         },
     },
@@ -61,7 +61,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -12 } });
+                void executeUserAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -12 } });
             }
         },
     },
@@ -73,7 +73,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'humanizeNotes', payload: { clipId, amount: 0.3 } });
+                void executeUserAppAction({ type: 'humanizeNotes', payload: { clipId, amount: 0.3 } });
             }
         },
     },
@@ -85,7 +85,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'invertNotes', payload: { clipId } });
+                void executeUserAppAction({ type: 'invertNotes', payload: { clipId } });
             }
         },
     },
@@ -97,7 +97,7 @@ export const midiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'arpeggiate', payload: { clipId } });
+                void executeUserAppAction({ type: 'arpeggiate', payload: { clipId } });
             }
         },
     },

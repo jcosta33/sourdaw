@@ -67,6 +67,7 @@ vi.mock('../../../useCases/device/executeAddDeviceAction', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),

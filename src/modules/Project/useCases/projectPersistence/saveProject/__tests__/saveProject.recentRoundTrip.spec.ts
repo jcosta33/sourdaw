@@ -78,6 +78,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),

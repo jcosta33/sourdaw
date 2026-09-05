@@ -2,7 +2,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -59,7 +59,7 @@ vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('../../../useCases/duplicateTrack', () => ({
@@ -343,7 +343,7 @@ describe('TrackContextMenu', () => {
         // (audit M-015). `trackDeleteUndo.integration.spec.tsx` asserts the
         // resulting undo end-to-end.
         await vi.waitFor(() => {
-            expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+            expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
                 type: 'removeTrack',
                 payload: { trackId: 'track1' },
             });
@@ -364,7 +364,9 @@ describe('TrackContextMenu', () => {
             expect(vi.mocked(confirmUser)).toHaveBeenCalled();
         });
         expect(vi.mocked(removeTrack)).not.toHaveBeenCalled();
-        expect(vi.mocked(executeAppAction)).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+        expect(vi.mocked(executeUserAppAction)).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'removeTrack' })
+        );
     });
 
     it('commits a rename with the trimmed name', () => {
@@ -467,7 +469,7 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Disarm'));
-        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith({
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 'arm1', armed: false },
         });

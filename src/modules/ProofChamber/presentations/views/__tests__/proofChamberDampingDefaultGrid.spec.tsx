@@ -2,7 +2,7 @@ import { render, fireEvent, screen, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { DEFAULT_PARAMS, type ProofChamberEngineState } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -39,7 +39,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     generateGroupId: vi.fn((label: string) => ({ groupId: 'group-test', groupLabel: label })),
     pushUndoEntry: vi.fn(),
@@ -94,7 +94,7 @@ function renderDampKnobAt(damping: number): HTMLElement {
 /** Every value the panel sent to the engine for `damping`, in order. */
 function dampingWrites(): number[] {
     return vi
-        .mocked(executeAppAction)
+        .mocked(executeUserAppAction)
         .mock.calls.filter(([action]) => action.type === 'setDeviceParameter' && action.payload.paramId === 'damping')
         .map(([action]) => {
             if (action.type !== 'setDeviceParameter') {

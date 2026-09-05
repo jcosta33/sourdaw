@@ -89,6 +89,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
     resetActionReplayAuthority: vi.fn(),

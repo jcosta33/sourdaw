@@ -10,7 +10,7 @@ import { Slider } from '#/components/ui/slider';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -124,7 +124,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         // (`handleCommitPitchEdit` describes `restoreClipFileId` as its inverse).
         // The handler notifies the user on render failure and rethrows, so swallow
         // the rejection here rather than leaving it unhandled.
-        void executeAppAction({ type: 'commitPitchEdit', payload: { clipId, segments, contour } }).catch(() => {});
+        void executeUserAppAction({ type: 'commitPitchEdit', payload: { clipId, segments, contour } }).catch(() => {});
     };
 
     const handleKeyChange = (root: number) => {

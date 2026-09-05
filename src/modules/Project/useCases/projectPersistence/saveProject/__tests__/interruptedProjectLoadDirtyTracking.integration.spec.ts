@@ -161,6 +161,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     clearUndoHistory: mockClearUndoHistory,
     executeAppAction: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),

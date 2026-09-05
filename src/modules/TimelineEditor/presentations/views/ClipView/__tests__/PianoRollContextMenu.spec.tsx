@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     getNotesForClip,
@@ -66,8 +66,9 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: vi.fn(),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
+    pushUndoEntry: vi.fn(),
+    executeUserAppAction: vi.fn().mockResolvedValue(undefined),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     resetActionReplayAuthority: vi.fn(),
@@ -237,7 +238,7 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getAllByText('1/4')[0]!);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNotes',
             payload: { clipId: 'clip-1', gridSize: 0.25 },
         });
@@ -248,7 +249,7 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         fireEvent.click(screen.getByText('+Oct'));
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'transposeNotes',
             payload: { clipId: 'clip-1', semitones: 12 },
         });
@@ -319,7 +320,7 @@ describe('PianoRollContextMenu', () => {
 
         expect(defaultProps.onClose).toHaveBeenCalled();
         await waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith(
+            expect(executeUserAppAction).toHaveBeenCalledWith(
                 { type: 'completeMidi', payload: { clipId: 'clip-1', direction: 'forward', bars: 4 } },
                 { source: 'ai' }
             )
@@ -333,7 +334,7 @@ describe('PianoRollContextMenu', () => {
 
         fireEvent.click(screen.getByText('Extract Groove'));
         await waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'extractGroove',
                 payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v1' },
             })
@@ -342,7 +343,7 @@ describe('PianoRollContextMenu', () => {
 
         fireEvent.click(applyButton);
         await waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'applyGroove',
                 payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
             })
@@ -373,28 +374,28 @@ describe('PianoRollContextMenu', () => {
         expect(screen.getByText('Reverse (Retrograde)')).toBeDisabled();
     });
 
-    it('should call executeAppAction with invertNotes and close menu when Invert Pitch is clicked', () => {
+    it('should call executeUserAppAction with invertNotes and close menu when Invert Pitch is clicked', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
         const button = screen.getByText('Invert Pitch');
         expect(button).not.toBeDisabled();
         fireEvent.click(button);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'invertNotes',
             payload: { clipId: 'clip-1' },
         });
         expect(defaultProps.onClose).toHaveBeenCalled();
     });
 
-    it('should call executeAppAction with retrogradeNotes and close menu when Reverse (Retrograde) is clicked', () => {
+    it('should call executeUserAppAction with retrogradeNotes and close menu when Reverse (Retrograde) is clicked', () => {
         const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
         const button = screen.getByText('Reverse (Retrograde)');
         expect(button).not.toBeDisabled();
         fireEvent.click(button);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'retrogradeNotes',
             payload: { clipId: 'clip-1' },
         });
@@ -409,7 +410,7 @@ describe('PianoRollContextMenu', () => {
         expect(quarterButtons).toHaveLength(2);
         fireEvent.click(quarterButtons[1]!);
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNoteLengths',
             payload: { clipId: 'clip-1', gridSize: 0.25 },
         });
@@ -426,13 +427,13 @@ describe('PianoRollContextMenu', () => {
         expect(plus20).not.toBeDisabled();
 
         fireEvent.click(minus20);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'scaleAllVelocities',
             payload: { clipId: 'clip-1', factor: 0.8 },
         });
 
         fireEvent.click(plus20);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'scaleAllVelocities',
             payload: { clipId: 'clip-1', factor: 1.2 },
         });
@@ -448,13 +449,13 @@ describe('PianoRollContextMenu', () => {
         expect(set64).not.toBeDisabled();
 
         fireEvent.click(set100);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setAllVelocities',
             payload: { clipId: 'clip-1', velocity: 100 },
         });
 
         fireEvent.click(set64);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setAllVelocities',
             payload: { clipId: 'clip-1', velocity: 64 },
         });

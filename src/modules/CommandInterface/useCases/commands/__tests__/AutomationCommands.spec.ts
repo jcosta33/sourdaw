@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automationStore } from '#/modules/Automation/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { automationCommands } from '../AutomationCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: { lanes: [{ id: 'lane-1' }] } },
 }));
@@ -36,7 +36,7 @@ describe('automationCommands', () => {
     it('scale-automation dispatches scaleAutomation for the first lane with a 1.2x factor', () => {
         runAction('scale-automation');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'scaleAutomation',
             payload: { laneId: 'lane-1', factor: 1.2 },
         });
@@ -45,7 +45,7 @@ describe('automationCommands', () => {
     it('invert-automation dispatches invertAutomation for the first lane', () => {
         runAction('invert-automation');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'invertAutomation',
             payload: { laneId: 'lane-1' },
         });
@@ -54,7 +54,7 @@ describe('automationCommands', () => {
     it('thin-automation dispatches thinAutomation for the first lane', () => {
         runAction('thin-automation');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'thinAutomation',
             payload: { laneId: 'lane-1' },
         });
@@ -72,7 +72,7 @@ describe('automationCommands', () => {
         runAction('invert-automation');
         runAction('thin-automation');
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
 
         automationState.lanes = originalLanes;
     });

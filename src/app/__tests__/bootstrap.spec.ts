@@ -312,6 +312,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    executeUserAppAction: noop,
     getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,
     getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,

@@ -17,7 +17,7 @@ import { Dialog, DialogContent } from '#/components/ui/dialog';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import {
@@ -227,7 +227,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             if (finalPreview) {
                 // Fire-and-forget command dispatch from a mouseup handler; the
                 // store update is observed reactively, no rejection to await here.
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'moveAdjustmentRegion',
                     payload: {
                         regionId: finalPreview.regionId,
@@ -303,7 +303,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             if (finalPreview) {
                 // Fire-and-forget command dispatch from a mouseup handler; the
                 // store update is observed reactively, no rejection to await here.
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'setLayerFades',
                     payload: {
                         regionId: finalPreview.regionId,
@@ -327,7 +327,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     // dispatch is fire-and-forget — no rejection to await at the call site.
     const createLayer = (effectType: AdjustmentEffectType) => {
         const label = `${effectType.charAt(0).toUpperCase()}${effectType.slice(1)} Layer`;
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'createAdjustmentLayer',
             payload: { name: label, effectType },
         });
@@ -335,32 +335,32 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     };
 
     const toggleLayer = (layerId: string) => {
-        void executeAppAction({ type: 'toggleAdjustmentLayer', payload: { layerId } });
+        void executeUserAppAction({ type: 'toggleAdjustmentLayer', payload: { layerId } });
     };
 
     const removeLayer = (layerId: string) => {
-        void executeAppAction({ type: 'removeAdjustmentLayer', payload: { layerId } });
+        void executeUserAppAction({ type: 'removeAdjustmentLayer', payload: { layerId } });
     };
 
     const removeRegion = (layerId: string, regionId: string) => {
-        void executeAppAction({ type: 'removeAdjustmentRegion', payload: { layerId, regionId } });
+        void executeUserAppAction({ type: 'removeAdjustmentRegion', payload: { layerId, regionId } });
     };
 
     const setLayerMix = (layerId: string, mix: number) => {
-        void executeAppAction({ type: 'setLayerMix', payload: { layerId, mix } });
+        void executeUserAppAction({ type: 'setLayerMix', payload: { layerId, mix } });
     };
 
     const setLayerParameter = (layerId: string, paramName: string, value: number) => {
-        void executeAppAction({ type: 'setLayerParameter', payload: { layerId, paramName, value } });
+        void executeUserAppAction({ type: 'setLayerParameter', payload: { layerId, paramName, value } });
     };
 
     const setAffectedTracks = (layerId: string, trackIds: string[]) => {
-        void executeAppAction({ type: 'setLayerAffectedTracks', payload: { layerId, trackIds } });
+        void executeUserAppAction({ type: 'setLayerAffectedTracks', payload: { layerId, trackIds } });
     };
 
     const addRegionAtBeat = (layerId: string, beat: number) => {
         const start = Math.max(0, Math.floor(beat));
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'addAdjustmentRegion',
             payload: { layerId, startBeat: start, endBeat: start + 4, blend: 1 },
         });

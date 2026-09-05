@@ -7,7 +7,7 @@ type TemplateFixture = { id: string; name: string; description: string; category
 type RecentProjectFixture = { key: string; name: string; updatedAt: number };
 const mocks = vi.hoisted(() => ({
     createFromTemplate: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     getRecentProjects: vi.fn((): RecentProjectFixture[] => []),
     getPreviewLoop: vi.fn(() => undefined),
     getTemplates: vi.fn((): TemplateFixture[] => []),
@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -87,7 +87,7 @@ describe('LaunchScreen', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /Export \.dawproject/ }));
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'exportDawProject' });
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({ type: 'exportDawProject' });
     });
 
     it('opens the template grid and creates the selected template', async () => {

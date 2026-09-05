@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { elasticCommands } from '../ElasticCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
 
 function runAction(id: string): void {
@@ -47,7 +47,7 @@ describe('elasticCommands', () => {
     it('elastic-detect-transients dispatches detectTransients for the selected clip', () => {
         runAction('elastic-detect-transients');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'detectTransients',
             payload: { clipId: 'clip-1' },
         });
@@ -56,7 +56,7 @@ describe('elasticCommands', () => {
     it('elastic-open-editor dispatches openElasticEditor for the selected clip', () => {
         runAction('elastic-open-editor');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'openElasticEditor',
             payload: { clipId: 'clip-1' },
         });
@@ -65,7 +65,7 @@ describe('elasticCommands', () => {
     it('elastic-quantize dispatches quantizeTransients for the selected clip', () => {
         runAction('elastic-quantize');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeTransients',
             payload: { clipId: 'clip-1' },
         });
@@ -79,6 +79,6 @@ describe('elasticCommands', () => {
         runAction('elastic-open-editor');
         runAction('elastic-quantize');
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 });

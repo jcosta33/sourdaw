@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { useStore } from '#/infra/store/useStore';
 import { executeAddDeviceAction } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { type KneadClipState, type NoteBlob } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
@@ -16,7 +16,7 @@ import { KneadEditor } from '../KneadEditor';
 
 const actionMocks = vi.hoisted(() => ({
     executeAddDeviceAction: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/components/ui/button', () => ({
@@ -114,11 +114,12 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 }));
 
 // Was previously registered twice for this specifier; the second registration
-// silently shadowed this one and disconnected `executeAppAction` from
-// `actionMocks.executeAppAction`, which the assertions below configure and
+// silently shadowed this one and disconnected `executeUserAppAction` from
+// `actionMocks.executeUserAppAction`, which the assertions below configure and
 // read back through the real import. Keep exactly one registration.
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: actionMocks.executeAppAction,
+    executeAppAction: vi.fn(),
+    executeUserAppAction: actionMocks.executeUserAppAction,
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
@@ -142,7 +143,7 @@ describe('KneadEditor', () => {
         injectDependencies(notifyUser, { eventBus: { emit } });
         vi.clearAllMocks();
         actionMocks.executeAddDeviceAction.mockResolvedValue({ status: 'applied', deviceId: 'device-knead' });
-        actionMocks.executeAppAction.mockResolvedValue(undefined);
+        actionMocks.executeUserAppAction.mockResolvedValue(undefined);
     });
 
     it('should render without crashing', () => {
@@ -433,7 +434,7 @@ describe('KneadEditor', () => {
             };
 
             beforeEach(() => {
-                vi.mocked(executeAppAction).mockResolvedValue(undefined);
+                vi.mocked(executeUserAppAction).mockResolvedValue(undefined);
             });
 
             it('dispatches commitPitchEdit with a shift segment per blob', () => {
@@ -454,7 +455,7 @@ describe('KneadEditor', () => {
 
                 fireEvent.click(screen.getByText('Bounce & Commit'));
 
-                expect(executeAppAction).toHaveBeenCalledWith({
+                expect(executeUserAppAction).toHaveBeenCalledWith({
                     type: 'commitPitchEdit',
                     payload: {
                         clipId: 'clip-1',
@@ -537,7 +538,7 @@ describe('KneadEditor', () => {
 
                 fireEvent.click(screen.getByText('Bounce & Commit'));
 
-                expect(executeAppAction).toHaveBeenCalledWith({
+                expect(executeUserAppAction).toHaveBeenCalledWith({
                     type: 'commitPitchEdit',
                     payload: {
                         clipId: 'clip-1',

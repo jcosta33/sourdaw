@@ -9,7 +9,8 @@ import { setGrandBouleSympatheticSend } from '../setGrandBouleSympatheticSend';
 const dispatched: { type: string; payload: unknown }[] = [];
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: (action: { type: string; payload: unknown }) => {
+    executeAppAction: vi.fn(),
+    executeUserAppAction: (action: { type: string; payload: unknown }) => {
         dispatched.push(action);
         return Promise.resolve({ status: 'ok' });
     },

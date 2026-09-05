@@ -178,9 +178,13 @@ vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToFit', () => ({ zoomT
 vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToSelection', () => ({
     zoomToSelection: workspace.zoomToSelection,
 }));
-const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefined), undo: vi.fn(), redo: vi.fn() }));
+const command = vi.hoisted(() => ({
+    executeUserAppAction: vi.fn(async () => undefined),
+    undo: vi.fn(),
+    redo: vi.fn(),
+}));
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: command.executeAppAction,
+    executeUserAppAction: command.executeUserAppAction,
     undo: command.undo,
     redo: command.redo,
 }));
@@ -249,7 +253,7 @@ describe('useNativeApplicationMenu', () => {
         arrangement.zoomTimelineBy.mockClear();
         arrangement.clearClipSelection.mockClear();
         arrangement.selectAllClips.mockClear();
-        command.executeAppAction.mockClear();
+        command.executeUserAppAction.mockClear();
         command.undo.mockClear();
         command.redo.mockClear();
         commandInterface.dispatchCanvasEditorCommand.mockClear();
@@ -481,7 +485,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'edit:redo' });
 
         await Promise.resolve();
-        expect(command.executeAppAction).not.toHaveBeenCalled();
+        expect(command.executeUserAppAction).not.toHaveBeenCalled();
         expect(command.undo).not.toHaveBeenCalled();
         expect(command.redo).not.toHaveBeenCalled();
         input.remove();
@@ -624,7 +628,7 @@ describe('useNativeApplicationMenu', () => {
         await Promise.resolve();
         expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:select-all');
         expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(2, pianoRoll, 'edit:deselect-all');
-        expect(command.executeAppAction).not.toHaveBeenCalled();
+        expect(command.executeUserAppAction).not.toHaveBeenCalled();
         expect(arrangement.selectAllClips).not.toHaveBeenCalled();
         pianoRoll.remove();
     });
@@ -655,7 +659,7 @@ describe('useNativeApplicationMenu', () => {
 
         await Promise.resolve();
         expect(command.undo).toHaveBeenCalledOnce();
-        expect(command.executeAppAction).not.toHaveBeenCalled();
+        expect(command.executeUserAppAction).not.toHaveBeenCalled();
         expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenNthCalledWith(1, pianoRoll, 'edit:undo');
         pianoRoll.remove();
     });
@@ -688,7 +692,7 @@ describe('useNativeApplicationMenu', () => {
 
             await Promise.resolve();
             expect(commandInterface.dispatchCanvasEditorCommand).toHaveBeenCalledWith(pianoRoll, action);
-            expect(command.executeAppAction).not.toHaveBeenCalled();
+            expect(command.executeUserAppAction).not.toHaveBeenCalled();
             pianoRoll.remove();
         }
     );
@@ -742,7 +746,7 @@ describe('useNativeApplicationMenu', () => {
             })
         );
         desktop.listener?.({ action: 'edit:cut' });
-        await vi.waitFor(() => expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'cutClip' }));
+        await vi.waitFor(() => expect(command.executeUserAppAction).toHaveBeenCalledWith({ type: 'cutClip' }));
     });
 
     it('routes timeline zoom through the Arrangement use case', async () => {
@@ -1276,8 +1280,8 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'view:zoom-selection' });
         desktop.listener?.({ action: 'help:show-tour' });
 
-        await vi.waitFor(() => expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'importMidiFile' }));
-        expect(command.executeAppAction).toHaveBeenCalledWith({ type: 'importAudioFile' });
+        await vi.waitFor(() => expect(command.executeUserAppAction).toHaveBeenCalledWith({ type: 'importMidiFile' }));
+        expect(command.executeUserAppAction).toHaveBeenCalledWith({ type: 'importAudioFile' });
         const supplier = arrangement.selectAllClips.mock.calls[0]?.[0];
         expect(supplier).toBeTypeOf('function');
         expect(supplier?.()).toEqual(['clip-a', 'clip-b']);

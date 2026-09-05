@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
-import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
@@ -166,7 +166,6 @@ vi.mock('../../../useCases/clipEditing/reverseClip', () => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -394,7 +393,7 @@ describe('ClipContextMenu', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Normalize' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
         expect(normalizeClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -404,7 +403,7 @@ describe('ClipContextMenu', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Reverse' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
         expect(reverseClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -701,21 +700,21 @@ describe('ClipContextMenu', () => {
         expect(input.value).toBe('');
     });
 
-    it('dispatches invertNotes through executeAppAction and closes the menu', () => {
+    it('dispatches invertNotes through executeUserAppAction and closes the menu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Invert Pitch' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
 
-    it('dispatches retrogradeNotes through executeAppAction and closes the menu', () => {
+    it('dispatches retrogradeNotes through executeUserAppAction and closes the menu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Reverse (Retrograde)' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
 });

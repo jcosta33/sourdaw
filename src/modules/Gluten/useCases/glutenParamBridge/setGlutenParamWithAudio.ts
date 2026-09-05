@@ -63,7 +63,7 @@ export function setGlutenParamWithAudio<Key extends keyof GlutenPatch>(
     }
 
     paramBatcher.cancel(compositeKey);
-    void bridgeDeps.executeAppAction({
+    void bridgeDeps.executeUserAppAction({
         type: 'setDeviceParameter',
         payload: { deviceId: target.deviceId, paramId: key, value: encodedValue },
     });

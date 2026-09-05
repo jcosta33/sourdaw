@@ -11,7 +11,7 @@ type PluginStub = { id: string; name: string };
 
 const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAddDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied', deviceId: 'device-added' })),
     compileReorderDevicesAction: vi.fn(),
     getPlatformPlugins: vi.fn<() => PluginStub[]>(() => []),
@@ -26,7 +26,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: vi.fn(),
 }));
 
@@ -102,7 +103,7 @@ describe('DeviceChainSection', () => {
 
         // The bypassDevice action is undoable; the raw use-case write this
         // replaced never entered history.
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'bypassDevice',
             payload: { deviceId: 'dev-9', bypassed: true },
         });
@@ -115,7 +116,7 @@ describe('DeviceChainSection', () => {
         fireEvent.click(screen.getByLabelText('Remove Chorus'));
 
         // removeDevice is undoable via its restoreDevice inverse.
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'removeDevice',
             payload: { deviceId: 'dev-9' },
         });
@@ -146,7 +147,7 @@ describe('DeviceChainSection', () => {
         fireEvent.drop(target, { dataTransfer });
 
         expect(mocks.compileReorderDevicesAction).toHaveBeenCalledWith('track-1', 'dev-1', 'dev-2');
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(action);
     });
 
     it('lists built-in plugins and MIDI FX after "+ add", dispatches the addDevice action on choice, and closes on cancel without dispatching', () => {

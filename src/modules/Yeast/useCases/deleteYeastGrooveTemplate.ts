@@ -1,7 +1,7 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 export async function deleteYeastGrooveTemplate(templateId: string): Promise<void> {
-    await executeAppAction({
+    await executeUserAppAction({
         type: 'deleteGrooveTemplate',
         payload: { templateId },
     });

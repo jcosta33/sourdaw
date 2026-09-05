@@ -1,5 +1,5 @@
 import { isRaveModelPresent } from '#/modules/BrowserAi/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -73,7 +73,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Create a bassline that follows the selected MIDI clip harmonically',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            void executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } });
+            void executeUserAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } });
         }),
     },
     {
@@ -82,7 +82,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Extend the selected MIDI clip forward with AI-generated notes',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            void executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } });
+            void executeUserAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } });
         }),
     },
     {
@@ -91,7 +91,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Create a variation of the selected MIDI clip on the same track',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            void executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } });
+            void executeUserAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } });
         }),
     },
     {
@@ -100,7 +100,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Gentle variation (10% divergence) of the selected MIDI clip',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            void executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.1 } });
+            void executeUserAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.1 } });
         }),
     },
     {
@@ -109,7 +109,7 @@ export const aiCommands: CallableCommandEntry[] = [
         description: 'Major variation (60% divergence) of the selected MIDI clip',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            void executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } });
+            void executeUserAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } });
         }),
     },
     {
@@ -134,7 +134,7 @@ export const aiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'detectTempo', payload: { clipId } });
+                void executeUserAppAction({ type: 'detectTempo', payload: { clipId } });
             }
         },
     },
@@ -146,7 +146,7 @@ export const aiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'detectKey', payload: { clipId } });
+                void executeUserAppAction({ type: 'detectKey', payload: { clipId } });
             }
         },
     },
@@ -158,7 +158,7 @@ export const aiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'audioToMidi', payload: { clipId } });
+                void executeUserAppAction({ type: 'audioToMidi', payload: { clipId } });
             }
         },
     },
@@ -170,7 +170,7 @@ export const aiCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'applyGroove', payload: { clipId, grooveId: 'swing-light' } });
+                void executeUserAppAction({ type: 'applyGroove', payload: { clipId, grooveId: 'swing-light' } });
             }
         },
     },

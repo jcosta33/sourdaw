@@ -194,6 +194,7 @@ const commandMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: commandMocks.executeAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),

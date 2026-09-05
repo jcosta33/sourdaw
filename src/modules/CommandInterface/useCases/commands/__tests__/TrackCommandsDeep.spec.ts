@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackCommands } from '../TrackCommands';
 
-const executeAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const executeUserAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const { mockDuplicateTrack, mockRemoveTrack } = vi.hoisted(() => ({
     mockDuplicateTrack: vi.fn(),
     mockRemoveTrack: vi.fn(),
@@ -17,8 +17,7 @@ const { mockTrackStore, mockGetSelectedTrackId } = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction,
-    executeUserAppAction: vi.fn().mockResolvedValue(undefined),
+    executeUserAppAction,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: mockDuplicateTrack,
@@ -70,7 +69,7 @@ describe('trackCommands — guarded action commands', () => {
     it('freeze-track dispatches freezeTrack action', async () => {
         runAction('freeze-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'freezeTrack',
             payload: { trackId: 't1' },
         });
@@ -79,7 +78,7 @@ describe('trackCommands — guarded action commands', () => {
     it('unfreeze-track dispatches unfreezeTrack action', async () => {
         runAction('unfreeze-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'unfreezeTrack',
             payload: { trackId: 't1' },
         });
@@ -88,7 +87,7 @@ describe('trackCommands — guarded action commands', () => {
     it('flatten-track dispatches flattenTrack action', async () => {
         runAction('flatten-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'flattenTrack',
             payload: { trackId: 't1' },
         });
@@ -97,7 +96,7 @@ describe('trackCommands — guarded action commands', () => {
     it('bounce-to-new-track dispatches bounceToNewTrack action', async () => {
         runAction('bounce-to-new-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'bounceToNewTrack',
             payload: { trackId: 't1' },
         });
@@ -106,7 +105,7 @@ describe('trackCommands — guarded action commands', () => {
     it('bounce-in-place dispatches bounceInPlace action', async () => {
         runAction('bounce-in-place');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'bounceInPlace',
             payload: { trackId: 't1' },
         });
@@ -115,7 +114,7 @@ describe('trackCommands — guarded action commands', () => {
     it('arm-track dispatches armTrack with armed: true', async () => {
         runAction('arm-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 't1', armed: true },
         });
@@ -124,7 +123,7 @@ describe('trackCommands — guarded action commands', () => {
     it('solo-track dispatches soloTrack with soloed: true', async () => {
         runAction('solo-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'soloTrack',
             payload: { trackId: 't1', soloed: true },
         });
@@ -133,7 +132,7 @@ describe('trackCommands — guarded action commands', () => {
     it('mute-track dispatches muteTrack with muted: true', async () => {
         runAction('mute-track');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'muteTrack',
             payload: { trackId: 't1', muted: true },
         });
@@ -142,7 +141,7 @@ describe('trackCommands — guarded action commands', () => {
     it('group-tracks dispatches groupTracks wrapping the selected trackId', async () => {
         runAction('group-tracks');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'groupTracks',
             payload: { trackIds: ['t1'], name: 'Group' },
         });
@@ -151,7 +150,7 @@ describe('trackCommands — guarded action commands', () => {
     it('ungroup-tracks dispatches ungroupTracks with the track groupId from the store', async () => {
         runAction('ungroup-tracks');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'ungroupTracks',
             payload: { groupId: 'grp-1' },
         });
@@ -163,7 +162,7 @@ describe('trackCommands — guarded action commands', () => {
         track.groupId = undefined;
         runAction('ungroup-tracks');
         await flush();
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         // Restore for other tests
         track.groupId = original;
     });
@@ -175,7 +174,7 @@ describe('trackCommands — guarded action commands', () => {
         runAction('group-tracks');
         runAction('ungroup-tracks');
         await flush();
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 });
 

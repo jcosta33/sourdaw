@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { aiCommands } from '../AiCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
 
@@ -107,7 +107,7 @@ describe('aiCommands', () => {
 
         for (const { id, action } of requireMidiClipEntries) {
             runAction(id);
-            expect(executeAppAction).toHaveBeenCalledWith(action);
+            expect(executeUserAppAction).toHaveBeenCalledWith(action);
         }
     });
 
@@ -119,7 +119,7 @@ describe('aiCommands', () => {
             runAction(id);
         }
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(notifyUser).toHaveBeenCalledTimes(REQUIRE_MIDI_CLIP_IDS.length);
         expect(notifyUser).toHaveBeenCalledWith('Select a MIDI clip first', 'error');
     });
@@ -137,7 +137,7 @@ describe('aiCommands', () => {
 
         for (const { id, action } of selectedClipEntries) {
             runAction(id);
-            expect(executeAppAction).toHaveBeenCalledWith(action);
+            expect(executeUserAppAction).toHaveBeenCalledWith(action);
         }
     });
 
@@ -149,7 +149,7 @@ describe('aiCommands', () => {
             runAction(id);
         }
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
     });
 });
