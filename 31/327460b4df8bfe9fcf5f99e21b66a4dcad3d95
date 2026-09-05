@@ -1,0 +1,16 @@
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  h_1228e573df1f42 449-487
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAlternativesSection.spec.tsx
+  h_1228e573df1f42 1,5,15-24,55-58,73,75-76,82-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "31327460b4df8bfe9fcf5f99e21b66a4dcad3d95",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
