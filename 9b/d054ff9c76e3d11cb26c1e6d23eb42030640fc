@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_54219e59585d12::t_3340425198afce 203,211-233,242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9bd054ff9c76e3d11cb26c1e6d23eb42030640fc",
+  "prompts": {},
+  "sessions": {
+    "s_54219e59585d12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ee4c31fc3b0adf9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
