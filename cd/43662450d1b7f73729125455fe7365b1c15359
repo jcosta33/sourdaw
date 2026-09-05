@@ -1,0 +1,28 @@
+src/modules/Transport/useCases/setMasterGain.ts
+  s_9b530f08172a54::t_c5b68bd7c621c5 21-27,38,45-47
+src/modules/Transport/useCases/__tests__/setMasterGain.spec.ts
+  s_9b530f08172a54::t_e2275a3ab494fb 34-51
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_9b530f08172a54::t_bef1f4cd787dce 1,19-32,48-49
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_9b530f08172a54::t_9862d5a9baeed9 34-37,39-47,53-56
+  s_9b530f08172a54::t_902f3769f31ee8 111
+  s_9b530f08172a54::t_f5ff2afd9b02f2 109
+  s_9b530f08172a54::t_83bf473b32d89d 91-108,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cd43662450d1b7f73729125455fe7365b1c15359",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
