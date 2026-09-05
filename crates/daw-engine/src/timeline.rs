@@ -210,10 +210,13 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// the renderer cannot read has no correct substitute, and guessing unity
     /// would play the wrong material at the wrong pitch without saying so.
     pub invalid_clip_playbacks: u64,
-    /// How many routes the latest compensation pass could not align, because
-    /// the graph asked for more hold than
-    /// [`crate::pdc::MAX_COMPENSATION_FRAMES`] holds. Such a route still
-    /// sounds, but it sounds early, and only this number says so.
+    /// How many delay lines the latest compensation pass could not aim where
+    /// it wanted to, because more hold was asked for than
+    /// [`crate::pdc::MAX_COMPENSATION_FRAMES`] holds. Route lines and dry
+    /// lines both count: a route the ceiling cut short still sounds, but it
+    /// sounds early, and a device declaring past the ceiling runs a dry line
+    /// cut short even on a strip whose every route aligns exactly — its
+    /// bypass then moves the strip. Only this number says either happened.
     ///
     /// A state rather than an event, like [`Self::pdc_max_arrival_frames`]:
     /// restated by every pass, so it falls back to zero once the device that
@@ -312,8 +315,11 @@ impl TimelineRtDiagnostics {
             self.snapshot.invalid_clip_playbacks.saturating_add(1);
     }
 
-    fn state_pdc_clamped_routes(&mut self, routes: usize) {
-        self.snapshot.pdc_clamped_routes = routes as u64;
+    /// State the route lines and dry lines this pass found the ceiling had cut
+    /// short. Stated rather than accumulated, so the figure falls again once
+    /// the declaration that raised it is gone.
+    fn state_pdc_clamped_routes(&mut self, lines: usize) {
+        self.snapshot.pdc_clamped_routes = lines as u64;
     }
 
     fn state_pdc_max_arrival(&mut self, frames: usize) {
@@ -2135,12 +2141,25 @@ impl TimelineGraph {
     /// device keeps its latency — see [`TimelineTrack`]'s strip order for why
     /// a change that shifted alignment would click.
     ///
+    /// `clamped_devices` is the other half of the clamp count this pass
+    /// reports: how many devices declare more latency than the ceiling holds,
+    /// and so run a dry line cut short. The graph cannot see a declared figure
+    /// — only what a chain sums to — and a lone latent strip clamps no route
+    /// at all, so a count taken from the route lines alone would report a
+    /// perfectly aligned graph while every bypass toggle shifted that strip.
+    /// It is a figure handed in rather than one this pass accumulates, so the
+    /// total is restated by each pass instead of latched.
+    ///
     /// The walk is [`Self::mix_order`], which puts every contributor ahead of
     /// what it feeds, so one pass settles every summing point's depth — a
     /// bus's input, a track's input, the master sum — and a second aims the
     /// delays at it. O(strips + sends), and nothing here allocates: every
     /// buffer it touches was sized on the control thread.
-    pub(crate) fn compensate(&mut self, chain_latency: impl Fn(&[ChainEntry]) -> usize) {
+    pub(crate) fn compensate(
+        &mut self,
+        clamped_devices: usize,
+        chain_latency: impl Fn(&[ChainEntry]) -> usize,
+    ) {
         let Self {
             tracks,
             buses,
@@ -2194,7 +2213,7 @@ impl TimelineGraph {
             }
         }
 
-        let mut clamped = 0;
+        let mut clamped = clamped_devices;
         for index in 0..track_count {
             let arrival = track_arrival[index];
             for send in tracks[index].sends.iter_mut() {

@@ -45,11 +45,17 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 - **A detached device's line restarts from silence**: a device can be left holding no placement at
   all — the strip it sat on removed under it, or a hosted plugin taken off the strip that borrowed
   it — and nothing then feeds or reads its line. That is the one break in the rule above, so it is
-  the one place a line is cleared — bounded by the declared latency, on every transition into
-  detachment — and it stays silent until a chain takes the device again and starts feeding it.
+  the one place a line is cleared, and it stays silent until a chain takes the device again and
+  starts feeding it. A detached line owes that silence for whatever hold it is aimed at, not only
+  for the one it was detached with: a device still declares while it waits, and deepening its line
+  in place would expose the slots between the two figures, which hold the audio of the strip it
+  left. So the clear is taken on every transition into detachment and on every re-aiming while
+  detached, bounded each time by the latency then declared.
 - **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
-  real-time diagnostics, alongside the deepest arrival the graph was asked for. A route that could
-  not be aligned is reported, never silently misaligned.
+  real-time diagnostics, alongside the deepest arrival the graph was asked for. The count covers
+  every line the ceiling cut short — a route line, and the dry line of a device declaring past it,
+  which a strip aligning every route perfectly still runs. A hold that could not be taken is
+  reported, never silently misaligned.
 - **Lines are built control-side**: every delay line reaches the callback owning its buffers, and one
   the callback declines or gives up leaves over the ADR 0020 retirement route. A latency figure and
   a line to hold a bypassed pass at it travel on one command, so no caller can publish one without
