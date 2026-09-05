@@ -1,0 +1,40 @@
+src/modules/Transport/useCases/setMasterGain.ts
+  s_9b530f08172a54::t_e5430e0fa46022 25
+src/components/daw/Fader.tsx
+  s_9b530f08172a54::t_c2a5d0655a26f2 176-182
+  s_9b530f08172a54::t_60d98fc0e59dde 279
+  s_9b530f08172a54::t_7365c8ab5ffcc2 135-142
+  s_9b530f08172a54::t_a4cd92f4bb1cf0 243,253
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_9b530f08172a54::t_f8022cfd8ebc6f 100
+  s_9b530f08172a54::t_eb0181d647e608 1,5,7,25-27,29-55,59-69
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_9b530f08172a54::t_5d53033b5afd1a 118
+  s_9b530f08172a54::t_3e59f7d4a78e8e 4,25-31
+  s_9b530f08172a54::t_f0ac707c1e929c 81-86
+  s_9b530f08172a54::t_413bf3be663014 100,112-115,121,131-132,134-135,137,139,141-156,159
+  s_9b530f08172a54::t_5e612a72c4421a 104-111
+  s_9b530f08172a54::t_96f10a141b38b7 138,157-158,160-161
+  s_9b530f08172a54::t_f14d4778981cb9 1
+  s_9b530f08172a54::t_b369680454e3f1 87
+  s_9b530f08172a54::t_3bfc397e0676c8 32
+  s_9b530f08172a54::t_8739ca1aa0a0b5 103
+src/components/daw/__tests__/Fader.spec.tsx
+  s_9b530f08172a54::t_46498f21da64c7 337-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "133149f23cb97ea68fbdd323cb7706bc3cc61e36",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
