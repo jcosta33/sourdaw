@@ -141,6 +141,14 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         const token = gestureToken.current;
         displayedValue.current = value;
         setGestureGain(value);
+        // A keyboard nudge, a double-click, or an alt-click reset settles
+        // with no preceding transient sample, so without this write the
+        // engine never moves while a persistence barrier holds the queued
+        // commit below — only the display would move. Idempotent for a
+        // drag, whose last transient already sent this exact value to the
+        // engine; ownership past this point is still decided by
+        // `settleContinuation` reading `gestureToken`, untouched here.
+        setMasterGain(value * 100, true);
         pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token));
     };
 

@@ -219,6 +219,13 @@ export const Fader = ({
         window.addEventListener('blur', handleWindowBlur);
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
+            // A panel switch (e.g. a keyboard shortcut) can unmount the fader
+            // mid-drag without ever firing blur, visibilitychange, or
+            // pointerup. Finalizing here — before the listeners come off —
+            // settles the gesture the same way those paths do; it is a no-op
+            // when no drag is open, since `finalizeDrag` itself guards on
+            // `draggingRef.current`.
+            finalizeDragRef.current();
             window.removeEventListener('blur', handleWindowBlur);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };

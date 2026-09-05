@@ -130,13 +130,15 @@ describe('MasterChannelStrip', () => {
         });
 
         // The settle dispatches through the app action rather than writing
-        // the use case with the raw target value (50) directly. The one call
-        // that does land on `setMasterGain` is the post-settle engine
+        // the use case with the raw target value (50) directly. `setMasterGain`
+        // still lands twice: once immediately as the settle drives the engine
+        // (50, the released gesture value), and once as the post-settle engine
         // restore back to project truth — still 80, since the store mock
-        // never moved — not the fader's released gesture value.
+        // never moved.
         const { setMasterGain } = await import('#/modules/Transport/useCases');
-        expect(setMasterGain).toHaveBeenCalledTimes(1);
-        expect(setMasterGain).toHaveBeenCalledWith(80, true);
+        expect(setMasterGain).toHaveBeenCalledTimes(2);
+        expect(setMasterGain).toHaveBeenNthCalledWith(1, 50, true);
+        expect(setMasterGain).toHaveBeenNthCalledWith(2, 80, true);
     });
 
     it('drives the fader and the dB readout from the gesture value while the drag is transient', async () => {
@@ -153,6 +155,49 @@ describe('MasterChannelStrip', () => {
         // can only come from the component's own gesture-local display state.
         expect(screen.getByTestId('fader')).toHaveValue('0.5');
         expect(screen.getByTestId('level-value')).toHaveTextContent(`${formatGainDb(0.5)} dB`);
+    });
+
+    it('drives the engine from a settle with no preceding transient sample before the persisted commit lands', async () => {
+        // A keyboard nudge, a double-click, or an alt-click reset settles
+        // directly, with no transient sample opening a gesture first. While a
+        // persistence barrier holds the queued commit's dispatch open, the
+        // engine must already have moved — otherwise the display moves and
+        // the audio does not for as long as the barrier holds.
+        let resolveDispatch: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveDispatch = resolve;
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        // Flushed inside `act` only so the queued commit actually reaches
+        // `executeUserAppAction` (and captures `resolveDispatch`) — the
+        // engine write being asserted next happens synchronously inside the
+        // settle branch itself, before this commit is even queued.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.62' } });
+            await Promise.resolve();
+        });
+
+        // Asserted before the dispatch promise is ever resolved: the engine
+        // write happens synchronously in the settle branch, not as a
+        // consequence of the commit landing.
+        expect(setMasterGain).toHaveBeenCalledWith(62, true);
+
+        await act(async () => {
+            resolveDispatch?.();
+            await Promise.resolve();
+        });
+
+        // Once the dispatch lands, the owner restore reasserts project truth
+        // (still 80 here — the store mock never moved) exactly as before
+        // this fix.
+        expect(setMasterGain).toHaveBeenLastCalledWith(80, true);
     });
 
     it('holds the gesture value until the settled dispatch resolves, then reads the store again', async () => {
@@ -195,11 +240,11 @@ describe('MasterChannelStrip', () => {
             payload: { gain: 0.6, expectedPercent: 80 },
         });
 
-        // While the dispatch is still in flight, the engine's last word is
-        // still the transient sample fired above — moving
-        // `restoreEngineFromProjectTruth()` ahead of the `await` would fire
-        // it here, before the dispatch has actually landed.
-        expect(setMasterGain).toHaveBeenLastCalledWith(50, true);
+        // The settle drives the engine to its own value immediately, ahead
+        // of the still-pending dispatch — a persistence barrier must not be
+        // able to hold the engine back on the drag's last transient sample
+        // (50) while the display has already moved on to the settled value.
+        expect(setMasterGain).toHaveBeenLastCalledWith(60, true);
 
         // The store never moved (still 80), yet the fader and dB readout must
         // keep showing the gesture's 0.6 while the dispatch is still pending

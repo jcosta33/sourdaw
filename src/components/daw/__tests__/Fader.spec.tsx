@@ -271,6 +271,41 @@ describe('Fader', () => {
         });
     });
 
+    // audit M-082 follow-up — a panel switch (e.g. a keyboard shortcut) can
+    // unmount the fader mid-drag without ever firing blur, visibilitychange,
+    // or pointerup, and the blur/visibility effect's own cleanup only removed
+    // its listeners. Without finalizing there too, the gesture never settles:
+    // the engine is stuck on the last transient while the store, peers,
+    // persistence, and offline render all hold the pre-drag value.
+    describe('drag finalization on unmount', () => {
+        it('should settle a drag interrupted by unmounting the component', () => {
+            const onChange = vi.fn();
+            const { unmount } = render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 13, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 13, clientY: 40 });
+
+            const transientsBeforeUnmount = onChange.mock.calls.filter((call) => call[1] === true);
+            const lastTransientValue = onChange.mock.calls.at(-1)![0];
+
+            unmount();
+
+            const transientsAfterUnmount = onChange.mock.calls.filter((call) => call[1] === true);
+            expect(transientsAfterUnmount).toHaveLength(transientsBeforeUnmount.length);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[lastTransientValue, false]]);
+        });
+
+        it('should emit nothing when unmounting with no drag open', () => {
+            const onChange = vi.fn();
+            const { unmount } = render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+
+            unmount();
+
+            expect(onChange).not.toHaveBeenCalled();
+        });
+    });
+
     /**
      * The settle-then-commit half of the `onChange` contract, mirroring
      * `RotaryKnob`. Without it a caller that persists on every sample turns one
