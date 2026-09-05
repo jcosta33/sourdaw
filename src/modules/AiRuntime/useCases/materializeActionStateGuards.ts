@@ -79,6 +79,18 @@ function createProjectedTrack(
     };
 }
 
+function hasDeviceParameterStateGuards(
+    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>
+): boolean {
+    return (
+        action.payload.expectedTrackId !== undefined ||
+        action.payload.expectedDeviceType !== undefined ||
+        action.payload.expectedDeviceIds !== undefined ||
+        action.payload.expectedValue !== undefined ||
+        action.payload.expectedTrackFrozen !== undefined
+    );
+}
+
 export function materializeActionStateGuards(
     actions: readonly MaterializableRuntimeAction[],
     context: ProjectContext,
@@ -440,11 +452,15 @@ export function materializeActionStateGuards(
                 return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
             }
             const projectedDevices = [...projectedTrack.devices];
+            const descriptor = context.availableDeviceTypes?.find(
+                (candidate) => candidate.id === action.payload.deviceType
+            );
             projectedDevices.splice(insertionIndex, 0, {
                 id: deviceId,
+                ...(descriptor ? { name: descriptor.name } : {}),
                 type: action.payload.deviceType,
                 bypassed: false,
-                parameters: [],
+                parameters: descriptor?.parameters?.map((parameter) => ({ ...parameter })) ?? [],
             });
             tracksById.set(action.payload.trackId, {
                 ...projectedTrack,
@@ -459,6 +475,40 @@ export function materializeActionStateGuards(
                     expectedDeviceIds,
                     expectedFrozen,
                 },
+            });
+            continue;
+        }
+        if (action.type === 'setDeviceParameter' && hasDeviceParameterStateGuards(action)) {
+            const owners = [...tracksById.values()].filter((track) =>
+                track.devices.some((device) => device.id === action.payload.deviceId)
+            );
+            const owner = owners.length === 1 ? owners[0] : undefined;
+            const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+            const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
+            if (
+                !owner ||
+                !device ||
+                !parameter ||
+                owner.frozen === true ||
+                (action.payload.expectedTrackId !== undefined && action.payload.expectedTrackId !== owner.id) ||
+                (action.payload.expectedDeviceType !== undefined &&
+                    action.payload.expectedDeviceType !== device.type) ||
+                (action.payload.expectedValue !== undefined && action.payload.expectedValue !== parameter.value) ||
+                (action.payload.expectedTrackFrozen !== undefined &&
+                    action.payload.expectedTrackFrozen !== owner.frozen)
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: `Device parameter state is unavailable or protected: ${action.payload.deviceId}/${action.payload.paramId}`,
+                };
+            }
+            const expectedDeviceIds = deviceIdsByTrack.get(owner.id);
+            if (!expectedDeviceIds) {
+                return { status: 'rejected', reason: `Track is unavailable: ${owner.id}` };
+            }
+            materialized.push({
+                type: 'setDeviceParameter',
+                payload: { ...action.payload, expectedDeviceIds: [...expectedDeviceIds] },
             });
             continue;
         }

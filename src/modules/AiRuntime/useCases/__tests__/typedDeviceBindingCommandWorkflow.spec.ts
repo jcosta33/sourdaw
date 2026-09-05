@@ -61,7 +61,7 @@ const noActionHistoryMetadataPort = {
 };
 
 const prompt =
-    'Create a MIDI track named Lead with a four-beat Melody clip, add C4 at beat 0 and G4 at beat 1, then add a Filter and set its Type to Highpass.';
+    'Create a MIDI track named Lead with a four-beat Melody clip, add C4 at beat 0 and G4 at beat 1, then add Filter A, set its Type to Highpass, and add Filter B after Filter A.';
 
 const plan = {
     semantic: { classification: 'simple', uncertainty: [] },
@@ -106,6 +106,17 @@ const providerItems = [
         name: 'setDeviceParameter',
         arguments: { deviceId: '$filter', paramId: 'filter-type', value: 1 },
         dependsOn: ['add-filter'],
+    },
+    {
+        id: 'add-second-filter',
+        name: 'addDevice',
+        arguments: {
+            trackId: '$lead',
+            deviceType: 'builtin-filter',
+            binding: 'second-filter',
+            afterDeviceId: '$filter',
+        },
+        dependsOn: ['set-filter-type'],
     },
 ] as const;
 
@@ -207,14 +218,37 @@ describe('typed created-device binding Command workflow', () => {
     it('commits one typed batch and round-trips its exact identities, notes, device order, and value', async () => {
         const revision = captureProjectRevision();
         const workflow = materializeWorkflow(revision);
-        const deviceOnlyActions = [workflow.actions[0]!, workflow.actions[3]!, workflow.actions[4]!];
+        const deviceOnlyActions = [
+            workflow.actions[0]!,
+            workflow.actions[3]!,
+            workflow.actions[4]!,
+            workflow.actions[5]!,
+        ];
+        const [trackAction, firstDeviceAction, parameterAction, secondDeviceAction] = deviceOnlyActions;
+        if (
+            trackAction?.type !== 'addTrack' ||
+            firstDeviceAction?.type !== 'addDevice' ||
+            parameterAction?.type !== 'setDeviceParameter' ||
+            secondDeviceAction?.type !== 'addDevice'
+        ) {
+            throw new Error('Expected the ordered track, Filter A, parameter, Filter B action sequence');
+        }
+        expect(parameterAction.payload.expectedDeviceIds).toEqual([
+            trackAction.payload.initialDeviceId,
+            firstDeviceAction.payload.deviceId,
+        ]);
+        expect(secondDeviceAction.payload.expectedDeviceIds).toEqual([
+            trackAction.payload.initialDeviceId,
+            firstDeviceAction.payload.deviceId,
+        ]);
         const previewBatch = compilePlannedActionCommandBatch({
             actions: deviceOnlyActions,
             actionCommandGraph: {
-                dependenciesByActionIndex: [[], [0], [1]],
+                dependenciesByActionIndex: [[], [0], [1], [2]],
                 batchLocalBindings: [
                     { bindingId: '$lead', producerActionIndex: 0, producerArgument: 'id' },
                     { bindingId: '$filter', producerActionIndex: 1, producerArgument: 'deviceId' },
+                    { bindingId: '$second-filter', producerActionIndex: 3, producerArgument: 'deviceId' },
                 ],
             },
             actionLabels: deviceOnlyActions.map((action) => action.type),
@@ -246,7 +280,7 @@ describe('typed created-device binding Command workflow', () => {
         });
         expect(partial).toMatchObject({
             status: 'compiled',
-            includedOriginalCommandIds: parsedPreview.envelope.commands.map((command) => command.commandId),
+            includedOriginalCommandIds: parsedPreview.envelope.commands.slice(0, 3).map((command) => command.commandId),
         });
         if (partial.status !== 'compiled') {
             throw new Error(partial.reason);
@@ -311,7 +345,8 @@ describe('typed created-device binding Command workflow', () => {
         const commandBatch = compileWorkflowCommandBatch(workflow, captureProjectRevision(), 'live');
         const committed = await executeVersionedCommandBatchEnvelope(commandBatch);
         if (committed.status !== 'committed') {
-            throw new Error(`Expected live batch commit, received ${committed.status}: ${committed.reason}`);
+            const detail = 'reason' in committed ? `: ${committed.reason}` : '';
+            throw new Error(`Expected live batch commit, received ${committed.status}${detail}`);
         }
         flushAutomergeStorageWrites();
 
@@ -319,6 +354,7 @@ describe('typed created-device binding Command workflow', () => {
         const createdClip = createdTrack?.clips[0];
         const initialDevice = createdTrack?.devices[0];
         const createdDevice = createdTrack?.devices[1];
+        const secondCreatedDevice = createdTrack?.devices[2];
         const createdNotes = midiStore.value?.notesByClipId[createdClip?.id ?? ''];
         expect(createdTrack).toMatchObject({
             id: expect.stringMatching(/^track-ai-/u),
@@ -338,7 +374,11 @@ describe('typed created-device binding Command workflow', () => {
             name: 'Synth',
             type: 'builtin-synth',
         });
-        expect(createdTrack?.devices.map((device) => device.id)).toEqual([initialDevice?.id, createdDevice?.id]);
+        expect(createdTrack?.devices.map((device) => device.id)).toEqual([
+            initialDevice?.id,
+            createdDevice?.id,
+            secondCreatedDevice?.id,
+        ]);
         expect(createdDevice).toMatchObject({
             id: expect.stringMatching(/^device-ai-/u),
             name: 'Filter',
@@ -349,6 +389,12 @@ describe('typed created-device binding Command workflow', () => {
                 'filter-type': 1,
             },
         });
+        expect(secondCreatedDevice).toMatchObject({
+            id: expect.stringMatching(/^device-ai-/u),
+            name: 'Filter',
+            type: 'builtin-filter',
+        });
+        expect(secondCreatedDevice?.id).not.toBe(createdDevice?.id);
         expect(createdNotes).toEqual([
             {
                 id: expect.stringMatching(/^note-/u),
@@ -372,6 +418,7 @@ describe('typed created-device binding Command workflow', () => {
         const automergeDocument = JSON.stringify(getCrdtDoc('root'));
         expect(automergeDocument).toContain(createdTrack?.id ?? '<missing-track>');
         expect(automergeDocument).toContain(createdDevice?.id ?? '<missing-device>');
+        expect(automergeDocument).toContain(secondCreatedDevice?.id ?? '<missing-device>');
         expect(automergeDocument).toContain('"filter-type":1');
 
         expect(await undo()).toEqual({ headConsumed: true });

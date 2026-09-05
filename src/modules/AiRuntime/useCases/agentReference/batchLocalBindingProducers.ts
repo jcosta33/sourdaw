@@ -278,17 +278,6 @@ function resolveCreatedDeviceProducer(input: {
     };
 }
 
-export function isBatchLocalDeviceParameterTarget(
-    producer: BatchLocalBindingProducer,
-    parameterId: unknown
-): parameterId is string {
-    return (
-        typeof parameterId === 'string' &&
-        parameterId.length > 0 &&
-        producer.createdDeviceParameters?.some((parameter) => parameter.id === parameterId) === true
-    );
-}
-
 /**
  * The one place that decides which catalog commands may mint a batch-local `$binding`, which
  * application-owned argument carries the minted identity, and which target capabilities the

@@ -25,10 +25,10 @@ import {
     CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
     PROJECT_OBJECT_CREATING_COMMANDS,
-    isBatchLocalDeviceParameterTarget,
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
+import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
 
 type Candidate = {
     id: string;

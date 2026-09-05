@@ -11,10 +11,10 @@ import {
     type BatchLocalBindingProducer,
     CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
-    isBatchLocalDeviceParameterTarget,
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
+import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
 import {
     type ArbitraryCommandListEvidence,
     type ArbitraryCommandListSelectorEvidence,

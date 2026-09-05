@@ -12,7 +12,6 @@ import {
 } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
-import type { ProjectContext } from '../../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
@@ -21,6 +20,8 @@ import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommand
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { planAgentRun } from '../planAgentRun';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
+
+import type { ProjectContext } from '../../models/ProjectContext';
 
 const context = {
     tempo: 120,
@@ -4865,8 +4866,12 @@ describe('compileArbitraryCommandList', () => {
         }
 
         const tamperedParameter = structuredClone(result.compilerEvidence);
+        const parameterCommand = tamperedParameter.commands[2];
+        if (parameterCommand === undefined) {
+            throw new Error('Expected a parameter command to tamper with');
+        }
         tamperedParameter.commands[2] = {
-            ...tamperedParameter.commands[2],
+            ...parameterCommand,
             arguments: { deviceId: '$radio', paramId: 'unknown-parameter', value: 1 },
         };
         expect(
@@ -4879,7 +4884,11 @@ describe('compileArbitraryCommandList', () => {
         ).toMatchObject({ status: 'rejected' });
 
         const tamperedDependency = structuredClone(result.compilerEvidence);
-        tamperedDependency.items[2] = { ...tamperedDependency.items[2], dependsOn: [] };
+        const parameterItem = tamperedDependency.items[2];
+        if (parameterItem === undefined) {
+            throw new Error('Expected a parameter item to tamper with');
+        }
+        tamperedDependency.items[2] = { ...parameterItem, dependsOn: [] };
         expect(
             validateArbitraryCommandListEvidence({
                 evidence: tamperedDependency,
@@ -4890,8 +4899,12 @@ describe('compileArbitraryCommandList', () => {
         ).toMatchObject({ status: 'rejected' });
 
         const tamperedProducer = structuredClone(result.compilerEvidence);
+        const producerCommand = tamperedProducer.commands[1];
+        if (producerCommand === undefined) {
+            throw new Error('Expected a device producer command to tamper with');
+        }
         tamperedProducer.commands[1] = {
-            ...tamperedProducer.commands[1],
+            ...producerCommand,
             arguments: { trackId: '$lead', deviceType: 'unknown-device', binding: 'radio' },
         };
         expect(

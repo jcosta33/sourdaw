@@ -36,7 +36,6 @@ import {
     BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND,
     type BatchLocalBindingProducer,
     type BatchLocalBindingProducerName,
-    isBatchLocalDeviceParameterTarget,
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
@@ -72,6 +71,7 @@ import {
 import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
 import { hasRestrictedTrackControlScope } from './groundingStrategies/hasRestrictedTrackControlScope';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
+import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { resolveAgentReference } from './resolveAgentReference';
 
