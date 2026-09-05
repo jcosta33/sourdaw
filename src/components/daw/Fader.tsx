@@ -316,11 +316,25 @@ export const Fader = ({
         finalizeDrag();
     };
 
-    // `lostpointercapture` and the window/document blur & visibility paths
-    // finalize unconditionally: they fire for the pointer that was actually
-    // captured, or for the window rather than any pointer at all (`blur` and
-    // `visibilitychange` carry no `pointerId`), so there is nothing to
-    // compare against `activePointerIdRef.current`.
+    /**
+     * `pointercancel` / `lostpointercapture` arrive for pointers this fader does
+     * not own: measured in Chromium, a second touch that `handlePointerDown`
+     * ignored still gets implicit capture, and still fires `lostpointercapture`
+     * here when it lifts. Compare against the captured pointer before
+     * finalizing — the same guard `handlePointerUp` already applies — so a
+     * foreign pointer's capture loss cannot finalize the owner's still-open
+     * drag. Only `onBlur` and the window `blur`/`visibilitychange` listeners
+     * finalize unconditionally, because those carry no `pointerId` at all.
+     */
+    const handlePointerInterrupt = (event: PointerEvent<HTMLDivElement>): void => {
+        if (event.pointerId !== activePointerIdRef.current) {
+            return;
+        }
+        finalizeDrag();
+    };
+
+    // `onBlur` carries no `pointerId`, so it finalizes unconditionally — same
+    // as the window `blur`/`visibilitychange` listeners above.
     const handleForceFinalize = (): void => {
         finalizeDrag();
     };
@@ -407,7 +421,10 @@ export const Fader = ({
             aria-valuenow={reportedValue}
             aria-valuetext={valueText}
             className={cn(
-                'relative flex items-center select-none group',
+                'relative flex items-center select-none touch-none group',
+                // `touch-none`: without it a single-finger vertical drag inside a
+                // scrolling strip is a pan candidate, and the browser answers our
+                // capture with `pointercancel` instead of letting the drag scrub.
                 'outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                 className
             )}
@@ -416,8 +433,8 @@ export const Fader = ({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             // audit M-082: every non-pointerup end of a drag, not just the happy path.
-            onPointerCancel={handlePointerUp}
-            onLostPointerCapture={handleForceFinalize}
+            onPointerCancel={handlePointerInterrupt}
+            onLostPointerCapture={handlePointerInterrupt}
             onBlur={handleForceFinalize}
             onKeyDown={handleKeyDown}
             onDoubleClick={handleDoubleClick}
