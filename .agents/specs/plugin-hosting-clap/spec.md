@@ -44,10 +44,10 @@ Verify with: `pnpm cargo:test -- -p daw-plugin-host sandbox_crash_isolation`
 
 ### AC-003 — SAB audio transport, no per-block IPC
 
-The native plugin bridge worklet must exchange audio via shared-memory ring buffers
-and a separate param queue, with zero `tauriInvoke` calls inside `process()`.
+**Superseded 2026-09-05 (#3071).** The SAB transport was deleted; external plugins are
+engine-hosted and run inline on the engine callback with no per-block IPC and no second cadence.
 
-Verify with: `pnpm test:run -- nativePluginBridge`
+Verify with: `pnpm cargo:test --package daw-engine hosted_plugin`
 
 ### AC-004 — Format-agnostic host trait
 
@@ -100,20 +100,17 @@ Verify with: `pnpm test:run -- pluginPicker`
 
 ### AC-011 — Native bridge sizes the SAB rings and uses a separate param queue
 
-The native plugin bridge must allocate one shared-memory ring per direction
-(input frames, output frames) sized `4 × blockSize` per channel, and route
-control-rate parameter updates through a separate lock-free SPSC param queue
-(small SAB or `Atomics`-managed Int32 ring) — not the audio rings.
+**Superseded 2026-09-05 (#3071).** The SAB transport was deleted; external plugins are
+engine-hosted and run inline on the engine callback with no per-block IPC and no second cadence.
 
-Verify with: `pnpm test:run -- nativePluginBridge`
+Verify with: `pnpm cargo:test --package daw-engine hosted_plugin`
 
 ### AC-012 — Bridge under-run fills zero and counts a glitch
 
-When the output ring has no ready frames, the native bridge worklet `process()`
-must fill the output with zero and increment a glitch counter exposed via telemetry
-(never block or allocate).
+**Superseded 2026-09-05 (#3071).** The SAB transport was deleted; external plugins are
+engine-hosted and run inline on the engine callback with no per-block IPC and no second cadence.
 
-Verify with: `pnpm test:run -- nativePluginBridge`
+Verify with: `pnpm cargo:test --package daw-engine a_bypassed_hosted_effect_discards_midi_queued_while_bypassed`
 
 ## Open questions
 
@@ -150,7 +147,7 @@ getLatencySamples(), dispose() }`; each plugin module exports its own
       D1 is the largest refactor and should be done piecewise, one plugin at a time, with
       `pnpm deps:validate` and `pnpm typecheck` green after each migration. Non-blocking here
       because the bridge can deliver its worklet-side SAB path against AC-003 ahead of the
-      broader engine refactor.
+      broader engine refactor. **Resolved 2026-09-05 (#3071): the bridge was deleted; plugins are engine-hosted.**
 - [ ] (non-blocking) ARA 2 host integration sequencing — out of v1 scope; confirm the
       trait shape leaves room for it.
 

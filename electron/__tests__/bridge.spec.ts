@@ -395,9 +395,9 @@ describe('byte payloads', () => {
             pcm,
         ]);
         expect(answer).toBe(rendered);
-        expect([...(await bridge.invokeBinaryResponse('register_timeline_sample', [['sample-1', pcm]]))]).toEqual([
-            9, 8, 7, 6,
-        ]);
+        expect([
+            ...(await bridge.invokeBinaryResponse('register_timeline_sample', ['sample-1', 48000, 2, pcm])),
+        ]).toEqual([9, 8, 7, 6]);
     });
 
     it('wraps a bare ArrayBuffer rather than refusing it', async () => {
