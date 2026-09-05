@@ -1,0 +1,19 @@
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_67a9fae9a03847::t_d7afa1710f5d23 110-122,128-131,133,148-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "68d44fbaf32f0b6995dd1718ad18dd4c5db8c729",
+  "prompts": {},
+  "sessions": {
+    "s_67a9fae9a03847": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49200e7f-c5f8-4fc1-861c-c74fd1a6c90d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
