@@ -1,0 +1,47 @@
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_d27a555f01d163 14,200
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_ced0a1ec938356 207-209
+  s_87ab0a2f60ccf8::t_1f2ead8129a91d 125-136,139,210-214
+  s_87ab0a2f60ccf8::t_40fd3a2c49bb98 143,166
+  s_87ab0a2f60ccf8::t_8b6457c2026301 119,215-221
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_87ab0a2f60ccf8::t_a0f77abb44b9fd 138-146,154,329,392,402
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_87ab0a2f60ccf8::t_d3847789a65a28 205-211,220-222,224-244,450-485,493-494,503-504,508-514,516
+  s_87ab0a2f60ccf8::t_406840beb7f987 4-5,9-12,22-24,127-129,261
+  s_87ab0a2f60ccf8::t_c15e27aeffdd33 212-219,223
+  s_87ab0a2f60ccf8::t_be751850c9fa4f 517-518
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_87ab0a2f60ccf8::t_eb64fa7233a9e9 128
+  s_87ab0a2f60ccf8::t_3a3f8e6d26fe27 117-119,121,129,135,141,144,149,156
+src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts
+  s_87ab0a2f60ccf8::t_d27a555f01d163 291
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_87ab0a2f60ccf8::t_3a3f8e6d26fe27 14,114,152-153
+  s_87ab0a2f60ccf8::t_e1dd57624740ac 1
+  s_87ab0a2f60ccf8::t_bf95fcc1d19d66 203-204,337
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_779e293e23be37 31-47
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  s_87ab0a2f60ccf8::t_d27a555f01d163 34,104-108,123,145,215,236,259,413
+  s_87ab0a2f60ccf8::t_1d95571491b8da 337-354,369,379-380
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_d27a555f01d163 184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9ed47f09045d892a8e4598ad3632f3f9a6049a39",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
