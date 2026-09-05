@@ -67,7 +67,7 @@ const SectionCard = ({
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="toaster-window"
+        className="toaster-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-peach)]/70"
@@ -801,6 +801,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 onPointerCancel={() => setGrooveAmountPreview(null)}
                                 onKeyUp={commitGrooveAmount}
                                 onBlur={commitGrooveAmount}
+                                className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-[var(--color-accent-peach)]"
                             />
                         </Stack>
                         <Grid cols={2} gapX={2} gapY={3}>
