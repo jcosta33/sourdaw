@@ -3193,12 +3193,17 @@ impl AudioScheduler {
     }
 }
 
-/// Run a bypassed device's dry delay in the device's place.
+/// Run a device's dry delay over the signal passing through its place.
 ///
-/// A bypassed device keeps its latency, the convention Cubase and Reaper both
-/// follow, so switching a latent plugin in and out never shifts the strip
-/// against the rest of the mix or clicks at the switch. A device declaring no
-/// latency owns no line and passes through untouched, as it always did.
+/// `run_device` takes this pass only while its effect is bypassed, in place
+/// of processing. `run_generator` takes it every block regardless of bypass,
+/// over the chain signal the instrument never sees, because a latent
+/// instrument delays what passes through it exactly as a latent effect does.
+/// Either way a device keeps its latency, the convention Cubase and Reaper
+/// both follow, so switching a latent plugin in and out never shifts the
+/// strip against the rest of the mix or clicks at the switch. A device
+/// declaring no latency owns no line and passes through untouched, as it
+/// always did.
 #[inline]
 fn run_dry_delay(effect: &mut ActiveEffect, left: &mut [f32], right: &mut [f32], frames: usize) {
     if let Some(delay) = effect.dry_delay.as_mut() {
@@ -3274,9 +3279,10 @@ struct TrackDeviceChain<'a> {
 
 /// Run a device's own pass: the MIDI it is holding, then its audio.
 ///
-/// The counterpart to [`run_dry_delay`], and exactly one of the two runs per
-/// device per block — a bypassed device passes its dry line through in place
-/// of everything here.
+/// The dry line is not touched here. What a device's line holds is decided by
+/// the kind of device it is — an effect's line follows the signal it was
+/// handed, a generator's holds the chain signal the generator never sees — so
+/// each caller takes that line's one pass for the block itself.
 #[inline]
 fn process_device(
     effect: &mut ActiveEffect,
@@ -3287,8 +3293,6 @@ fn process_device(
     right: &mut [f32],
     frames: usize,
 ) {
-    feed_dry_delay(effect, left, right, frames);
-
     effect.probability_evaluator.process_midi_with_diagnostics(
         &mut effect.pending_midi,
         transport,
@@ -3327,14 +3331,25 @@ fn process_device(
     }
 }
 
+/// Resolve one chain entry to the device it names.
+///
+/// The lookup is taken ahead of every early-out, because a device a chain
+/// skips still owns a dry line the next bypass will read. It borrows the table
+/// rather than `self` so a caller can hold the diagnostics field at the same
+/// time.
+#[inline]
+fn resolve_effect<'a>(
+    effects: &'a mut [ActiveEffect],
+    effect_index: &IdSlotIndex,
+    effect_id: usize,
+) -> Option<&'a mut ActiveEffect> {
+    let slot = effect_index.lookup(effect_id)?;
+    effects.get_mut(slot)
+}
+
 impl DeviceChain for TrackDeviceChain<'_> {
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize) {
-        // The effect is resolved ahead of every early-out, because a device
-        // this chain skips still owns a dry line the next bypass will read.
-        let Some(slot) = self.effect_index.lookup(effect_id) else {
-            return;
-        };
-        let Some(effect) = self.effects.get_mut(slot) else {
+        let Some(effect) = resolve_effect(self.effects, self.effect_index, effect_id) else {
             return;
         };
 
@@ -3344,23 +3359,69 @@ impl DeviceChain for TrackDeviceChain<'_> {
             // bypassed rather than banking it into a burst of stale note-ons.
             run_dry_delay(effect, left, right, frames);
             effect.pending_midi.clear();
+            return;
+        }
+
+        // The running pass keeps the line current with the signal the effect
+        // was handed, so the next bypass reads back audio rather than the
+        // block the device was last bypassed on. One pass per block either
+        // way: the bypassed branch above read and wrote the same ring.
+        feed_dry_delay(effect, left, right, frames);
+        process_device(
+            effect,
+            &self.transport,
+            self.sample_rate,
+            self.midi_rt_diagnostics,
+            left,
+            right,
+            frames,
+        );
+    }
+
+    fn run_generator(
+        &mut self,
+        effect_id: usize,
+        scratch_left: &mut [f32],
+        scratch_right: &mut [f32],
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+    ) {
+        let Some(effect) = resolve_effect(self.effects, self.effect_index, effect_id) else {
+            return;
+        };
+
+        // An instrument declaring latency emits its events that many frames
+        // after it was asked for them, so everything else on the strip leaves
+        // the device that late too — otherwise the strip's clips would sound
+        // ahead of the arrival the chain declares, and ahead of every sibling
+        // held to meet it. The dry line is aimed at the declared figure and
+        // takes its one pass for the block here, over the chain signal and
+        // never over the scratch: bypassed or not, because a bypassed device
+        // keeps its latency.
+        run_dry_delay(effect, left, right, frames);
+
+        if effect.bypassed {
+            // The scratch stays as the chain cleared it, so the instrument
+            // contributes silence. MIDI queued while bypassed is discarded
+            // rather than banked into a burst of stale note-ons.
+            effect.pending_midi.clear();
         } else {
             process_device(
                 effect,
                 &self.transport,
                 self.sample_rate,
                 self.midi_rt_diagnostics,
-                left,
-                right,
+                scratch_left,
+                scratch_right,
                 frames,
             );
         }
 
-        // Last, over whatever the pass above left in the buffer: a generator's
-        // material starts at zero on a strip whose input has already waited,
-        // so it is held back to meet what landed there before it joins the
-        // chain signal. An effect owns no such line — what reached it arrived
-        // aligned.
+        // Last, over whatever the pass above left in the scratch: a
+        // generator's material starts at zero on a strip whose input has
+        // already waited, so it is held back to meet what landed there before
+        // it joins the chain signal.
         //
         // Whichever pass ran, bypass included: the chain clears the pair it
         // hands an instrument, so a bypassed generator feeds its line silence
@@ -3368,7 +3429,7 @@ impl DeviceChain for TrackDeviceChain<'_> {
         // bypassed blocks, the line would stand still and hand back the
         // material from before the switch when the device came back.
         if let Some(hold) = effect.input_hold.as_mut() {
-            hold.run(left, right, frames);
+            hold.run(scratch_left, scratch_right, frames);
         }
     }
 }
@@ -5868,6 +5929,55 @@ mod timeline_tests {
         }
     }
 
+    /// An instrument that declares latency: its material comes out `declared`
+    /// frames after the frame it was asked for, counting from the first frame
+    /// it processed.
+    ///
+    /// A real latent instrument is late in exactly this way, and it is the
+    /// only fixture that can show whether the chain holds the strip's own
+    /// material to meet it: a generator that emits on the frame it is called
+    /// looks identical whether the pass-through was held or not.
+    struct LatentGenerator {
+        declared: usize,
+        processed: usize,
+    }
+
+    impl LatentGenerator {
+        const fn new(declared: usize) -> Self {
+            Self {
+                declared,
+                processed: 0,
+            }
+        }
+    }
+
+    impl NativePlugin for LatentGenerator {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                let value = if self.processed < self.declared {
+                    0.0
+                } else {
+                    1.0
+                };
+                left[index] = value;
+                right[index] = value;
+                self.processed += 1;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "latent-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
     /// An instrument whose sample names the frame it was produced on, counting
     /// from the first frame it processed.
     ///
@@ -6075,6 +6185,34 @@ mod timeline_tests {
         ChainBoundPlugin { calls, midi_events }
     }
 
+    /// The same fixture as [`track_carrying_a_hosted_plugin`], spliced as a
+    /// generator instead of an effect: `AddHostedPlugin`, then the chain
+    /// splice `insert_track_generator` ships, hold included.
+    fn track_carrying_a_hosted_generator(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        insert_track_generator(
+            harness,
+            track_id,
+            effect_id,
+            Box::new(CountingOffsetPlugin {
+                offset,
+                calls: Arc::clone(&calls),
+                midi_events: Arc::clone(&midi_events),
+            }),
+            0,
+        );
+
+        ChainBoundPlugin { calls, midi_events }
+    }
+
     fn note_on(note: u8) -> MidiNoteEvent {
         MidiNoteEvent {
             note,
@@ -6257,6 +6395,26 @@ mod timeline_tests {
     ) {
         harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
         harness.send(insert_track_device(track_id, generator(effect_id), index));
+    }
+
+    /// Splice an instrument that declares latency onto a track, the way an
+    /// activation does: the figure and the dry line that holds a pass at it
+    /// travel together, exactly as they do for a latent effect.
+    fn insert_latent_track_generator(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        latency: usize,
+        index: usize,
+    ) {
+        insert_track_generator(
+            harness,
+            track_id,
+            effect_id,
+            Box::new(LatentGenerator::new(latency)),
+            index,
+        );
+        harness.send(set_latency(effect_id, latency));
     }
 
     /// The same instrument on a bus, which hosts one on the same terms.
@@ -7819,6 +7977,47 @@ mod timeline_tests {
         assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
     }
 
+    /// `run_generator`'s bypass branch clears `pending_midi` on the same
+    /// contract as `run_device`'s: a bypassed instrument's own material is
+    /// withheld, but the strip's pass-through keeps sounding, and MIDI queued
+    /// while it was bypassed is discarded rather than banked for the note-on
+    /// burst that arriving un-bypassed would otherwise deliver.
+    #[test]
+    fn a_bypassed_generator_discards_midi_queued_while_bypassed() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let plugin = track_carrying_a_hosted_generator(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, _) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a bypassed generator contributes none of its own material; only the strip's clip sounds"
+        );
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 0);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 0);
+
+        // Un-bypassed, the note queued while bypassed must not arrive late.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (enabled, _) = harness.render(4);
+        assert_eq!(enabled, vec![1.5; 4]);
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            0,
+            "MIDI queued while bypassed is discarded, never banked"
+        );
+
+        // A note sent while it is enabled still reaches it, so the silence
+        // above is the discard and not a device nothing addresses.
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.render(4);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
+    }
+
     #[test]
     fn a_removed_send_stops_feeding_its_bus() {
         let mut harness = Harness::new(32);
@@ -9135,6 +9334,39 @@ mod timeline_tests {
         );
     }
 
+    /// The running pass feeds the dry line exactly once per block
+    /// (`run_device`'s own `feed_dry_delay` call). A second feed from
+    /// anywhere else would advance the ring's write head twice as fast as
+    /// real time, so a later bypassed read — reaching back far enough to
+    /// span a block boundary — would land somewhere other than the content
+    /// that block actually carried.
+    #[test]
+    fn an_effects_dry_line_is_fed_exactly_once_per_running_block() {
+        // Past one 32-frame block, so the bypassed read below reaches back
+        // across the boundary between the two running blocks rather than
+        // landing entirely inside the last one.
+        const LATENCY: usize = 40;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        // Two full blocks of running, each carrying ramp content distinct
+        // from the other, so a doubled feed's repeated writes cannot pass
+        // for the genuine signal.
+        harness.render(32);
+        harness.render(32);
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        let (left, _) = harness.render(32);
+        assert_eq!(
+            left,
+            delayed_ramp(64, 32, LATENCY),
+            "the bypassed pass reads exactly the dry signal each running block fed, not \
+             audio a doubled feed raced the write head ahead of"
+        );
+    }
+
     /// A group's source line holds nothing while the track feeding it is gone,
     /// and is written all the same. Skipped, it would freeze with the group's
     /// own clip as it stood at the removal and burst that back the moment
@@ -9911,6 +10143,168 @@ mod timeline_tests {
         assert_eq!(
             restored, expected,
             "the silence the hold was fed while the instrument was bypassed comes back out before the instrument does"
+        );
+    }
+
+    /// The latency an instrument declares is the frames between asking it for
+    /// material and getting that material back, so everything else on the
+    /// strip has to leave the device that late as well. Unheld, a track's clip
+    /// would sound the instrument's latency ahead of the arrival the chain
+    /// declares for it — and ahead of every sibling the graph then holds to
+    /// meet that arrival.
+    #[test]
+    fn a_latent_generator_holds_the_strip_material_it_joins() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 512);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the clip leaves the instrument on the frame the instrument's own material does"
+        );
+    }
+
+    /// The test above shows the hold's onset but not its content: a constant
+    /// clip reads identically whether the pass-through was genuinely delayed
+    /// or merely zeroed for the same number of frames. A ramp clip names its
+    /// own frame, so a dry line fed a second time somewhere — racing its
+    /// write head ahead and reading back the wrong slots — shows up as wrong
+    /// numbers here rather than the same on/off transition landing right by
+    /// coincidence.
+    #[test]
+    fn a_latent_generator_holds_the_ramp_content_the_strip_carries() {
+        const DECLARED: usize = 32;
+        const BLOCK: usize = 32;
+        const CALLBACKS: usize = 4;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, BLOCK * CALLBACKS);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+
+        // Rendered as separate callbacks rather than one call for the whole
+        // span: a dry line fed a second time somewhere writes an extra
+        // block's worth into the ring between callbacks, so only a read that
+        // actually crosses a callback boundary can catch it — a single call
+        // covering the whole span never gives the ring a chance to be read
+        // back before that second write lands.
+        let mut left = Vec::with_capacity(BLOCK * CALLBACKS);
+        for _ in 0..CALLBACKS {
+            left.extend(harness.render(BLOCK).0);
+        }
+
+        // The clip's own content, held back to the instrument's declared
+        // latency, plus the instrument's material once its own latency has
+        // passed.
+        let mut expected = delayed_ramp(0, BLOCK * CALLBACKS, DECLARED);
+        for sample in &mut expected[DECLARED..] {
+            *sample += 1.0;
+        }
+        assert_eq!(
+            left, expected,
+            "the clip's exact ramp content arrives held to the instrument's declared latency, \
+             summed with the instrument's own material"
+        );
+    }
+
+    /// A strip's arrival is the latency its whole chain declares, generators
+    /// included, and the graph holds every sibling back to that figure. If the
+    /// instrument's latency counted at the summing point but delayed nothing
+    /// on the strip, the sibling would be held for a latency the strip never
+    /// actually took and would sound late against it.
+    #[test]
+    fn a_sibling_waits_for_a_strip_carrying_a_latent_generator() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 512);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 512);
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![3.0; 128];
+        expected[..DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the sibling track and the strip carrying the instrument reach the master together"
+        );
+    }
+
+    /// Bypass keeps latency, so a bypassed instrument goes on holding what
+    /// passes through it. Dropping the hold with the processing would shift
+    /// the strip against the rest of the mix on the switch — the very thing
+    /// keeping a bypassed device's latency exists to prevent.
+    #[test]
+    fn a_bypassed_latent_generator_still_holds_the_strip_material() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 512);
+        insert_latent_track_generator(&mut harness, 1, 901, DECLARED, 0);
+        harness.send(GraphCommand::SetBypass(901, true));
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![1.0; 128];
+        expected[..DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "only the clip sounds, and it still leaves the bypassed instrument at that instrument's declared latency"
+        );
+    }
+
+    /// What is routed into a group passes through the group's chain like the
+    /// group's own material, so a latent instrument on the group holds it too.
+    /// Unheld, the routed-in track would leave the group ahead of the arrival
+    /// the group declares and reach the master early.
+    #[test]
+    fn a_latent_generator_on_a_group_holds_the_routed_in_material_too() {
+        const DECLARED: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_latent_track_generator(&mut harness, 3, 901, DECLARED, 0);
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + DECLARED].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the routed-in track leaves the group's instrument on the frame that instrument's own material does"
+        );
+    }
+
+    /// An instrument behind a latent instrument joins the chain where the
+    /// signal has already taken that latency, so its hold owes the prefix a
+    /// latent effect there would owe. Counting only effects in that prefix
+    /// would leave the second instrument early by the first one's latency,
+    /// against the very route the group exists to meet.
+    #[test]
+    fn a_generator_behind_a_latent_generator_waits_for_that_latency_too() {
+        const AHEAD: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_latent_track_generator(&mut harness, 3, 901, AHEAD, 0);
+        insert_track_generator(
+            &mut harness,
+            3,
+            902,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![3.0; 192];
+        expected[..INPUT_DEPTH + AHEAD].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the second instrument joins the chain on the frame the material already on it reaches that same point"
         );
     }
 

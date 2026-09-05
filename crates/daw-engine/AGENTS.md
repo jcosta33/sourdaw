@@ -31,16 +31,31 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   routed-in material exactly as a clip does. Its material is summed at its own place in the chain,
   where the signal has already taken the latency of the devices ahead of it, so the hold is the
   depth of the strip's input plus that declared prefix — aimed at the input's depth alone, an
-  instrument behind a latent device would lead the very route it was placed to meet. The hold is a
+  instrument behind a latent device would lead the very route it was placed to meet. That prefix
+  counts every entry ahead of the instrument, generators included, because a latent instrument
+  delays the signal passing through it exactly as a latent effect does. The hold is a
   line built control-side and shipped with the splice that places the device, and it takes its pass
   on every block the chain visits that device, bypassed or not — the silence a bypassed instrument
   is handed is what drains the hold on schedule. Every splice ships a fresh silent line and the
   device installs it, so a generator arriving on a strip owes its hold's worth of silence there
   without any line ever being cleared in place.
-- **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
-  bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
-  the project — the common professional convention, and the reason the dry line is built with the
-  latency rather than with the device.
+- **A latent generator holds the strip material passing through it**: an instrument that declares
+  latency emits its material that many frames after the events it was asked for, so everything else
+  on the strip leaves that device that late as well — the strip's own clips and whatever is routed
+  into it alike. It is the same hold a latent effect takes, on the same dry line, taken on every
+  block the chain visits the device and bypassed or not, because bypass keeps latency. That hold is
+  what makes the summed declared latency of a chain the arrival its strip really has: without it a
+  strip carrying an instrument would deliver its material ahead of the figure the graph computed
+  for it, and ahead of every sibling the graph held back to meet that figure. The generator's own
+  material is not that hold's business — it is produced into the scratch the chain sums in, behind
+  the generator's own input hold — so the dry line takes exactly one pass per block, over the chain
+  signal and never over that scratch.
+- **Bypass keeps latency**: a bypassed latent effect runs its dry line in place of processing. A
+  latent generator's dry line runs over the pass-through on every block regardless of bypass, as the
+  bullet above states, alongside the generator's own pass into its scratch — bypass only withholds
+  that pass, never the dry line. Either way, bypass never triggers a recompensation. Auditioning one
+  plugin must not move every other route in the project — the common professional convention, and
+  the reason the dry line is built with the latency rather than with the device.
 - **Every line is written on every block it renders**: a route line and a dry line alike take
   exactly one pass per block — read-and-write while they hold, write-only otherwise. A route line
   holding nothing is fed rather than skipped, and a dry line is fed on every block the chain visits
