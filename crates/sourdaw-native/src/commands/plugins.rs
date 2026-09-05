@@ -77,6 +77,44 @@ pub type PluginUnloadResult = (Vec<String>, Vec<String>);
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
+
+/// A `PLUGIN_RUNTIME_GATE` guard that records its own release.
+///
+/// Every sweep of the retirement vec is contracted to run with the gate free,
+/// and the moment the gate becomes free is a guard's drop. Binding the record
+/// to that drop is what makes the contract observable: a guard widened back to
+/// function scope, or handed out of the frame that took it, then reports the
+/// release it actually performs rather than the one a statement standing beside
+/// the sweep claims for it.
+///
+/// Production holds the bare guard — outside `cfg(test)` this name is the
+/// guard's own type and [`observe_gate_release`] is the identity.
+#[cfg(test)]
+struct ObservedGateGuard<G>(Option<G>);
+
+#[cfg(test)]
+impl<G> Drop for ObservedGateGuard<G> {
+    /// The gate is let go before the release is recorded, so the record never
+    /// runs ahead of the thing it reports.
+    fn drop(&mut self) {
+        self.0.take();
+        note_teardown_event(TeardownEvent::RuntimeGateReleased);
+    }
+}
+
+#[cfg(not(test))]
+type ObservedGateGuard<G> = G;
+
+#[cfg(test)]
+fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
+    ObservedGateGuard(Some(guard))
+}
+
+#[cfg(not(test))]
+fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
+    guard
+}
+
 struct PluginLifecycleLease {
     instance_id: String,
     gate: Arc<tokio::sync::Mutex<()>>,
@@ -1199,7 +1237,57 @@ pub async fn load_plugin(
 /// `scan_descriptor`/`scan_instance` let a scan test inject a scan outcome.
 /// Production reaches this only through [`load_plugin`], which always supplies
 /// [`create_hosted_runtime`].
+///
+/// Holds no lock of its own: the runtime and lifecycle guards live inside
+/// [`load_plugin_under_runtime_gate`] and are gone by the time this resumes,
+/// so the sweep below runs with `PLUGIN_RUNTIME_GATE` free.
 async fn load_plugin_with_backend(
+    plugin_id: PluginId,
+    instance_id: PluginInstanceId,
+    engine_sample_rate: f64,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+    create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
+) -> Result<PluginInstance, String> {
+    let instance = load_plugin_under_runtime_gate(
+        plugin_id,
+        instance_id,
+        engine_sample_rate,
+        windows_host,
+        state,
+        create_runtime,
+    )
+    .await?;
+
+    if instance.engine_plugin_id.is_some() {
+        // A load is the moment the process is about to want the memory a
+        // previous unload could not free yet. Sweep once the new instance is
+        // safely in the scheduler, the engine lock is released, and —
+        // crucially — `PLUGIN_RUNTIME_GATE` itself is free: the gate is fair,
+        // so running a retired plugin's teardown under it would park a
+        // queued `unload_all_plugin_runtimes` writer, and every later
+        // `try_read` attach, for as long as that third-party teardown takes.
+        state.sweep_retired_engine_plugins();
+    }
+
+    Ok(instance)
+}
+
+/// The guarded body of [`load_plugin_with_backend`]: returns the loaded
+/// [`PluginInstance`] without sweeping anything.
+///
+/// The rate check and the registry resolution run first, holding nothing —
+/// resolution can wait on a bounded child-process rescan, and the gate is fair.
+/// `PLUGIN_RUNTIME_GATE` and the instance's lifecycle lease are taken directly
+/// after that resolution. The lifecycle lease is held to the end of this body
+/// on every exit. The runtime gate is held to the end of this body only on
+/// exits that do not pass through [`refuse_load`]: that helper takes the gate
+/// by value and releases it before the runtime's own teardown, so a refusal
+/// exit added after `create_runtime` must return through `refuse_load` rather
+/// than the bare reason, or it would tear the runtime down still holding the
+/// gate. Never call this directly outside that wrapper: the sweep the wrapper
+/// runs afterward depends on this frame, and both guards it took, being gone.
+async fn load_plugin_under_runtime_gate(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
     engine_sample_rate: f64,
@@ -1221,7 +1309,7 @@ async fn load_plugin_with_backend(
     // which the quit path runs) blocks behind the rescan and every later reader
     // blocks behind the writer.
     let entry = resolve_plugin_registry_entry(&plugin_id.0, state).await?;
-    let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
+    let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
     let _lifecycle_guard = lock_plugin_lifecycle(&instance_id.0).await;
     ensure_plugin_instance_id_available(&state, &instance_id.0)?;
 
@@ -1422,15 +1510,6 @@ async fn load_plugin_with_backend(
         }
     };
 
-    if engine_plugin_id.is_some() {
-        // A load is the moment the process is about to want the memory a
-        // previous unload could not free yet. Sweep once the new
-        // instance is safely in the scheduler and the engine lock is
-        // released — the plugin teardown a sweep may run belongs on this
-        // thread, but not inside another subsystem's critical section.
-        state.sweep_retired_engine_plugins();
-    }
-
     let instance = PluginInstance {
         instance_id: instance_id.clone(),
         plugin_id: plugin_id.clone(),
@@ -1561,19 +1640,17 @@ fn activation_refusal_reason(name: &str) -> String {
 /// teardown is still running `deinit_entry` and `dlclose` on.
 ///
 /// Takes the guard by value so that the release is this function's own
-/// statement rather than a scope ending somewhere below. Every guard in
-/// [`load_plugin_with_backend`] is function-scope, so reverse declaration order
-/// is what each exit between the runtime's construction and its handover would
-/// otherwise fall back on — which is the teardown-under-the-gate this exists to
-/// prevent.
+/// statement rather than a scope ending somewhere below. The runtime gate and
+/// the lifecycle lease are function-scope in [`load_plugin_under_runtime_gate`],
+/// so reverse declaration order is what each exit between the runtime's
+/// construction and its handover would otherwise fall back on — which is the
+/// teardown-under-the-gate this exists to prevent.
 fn refuse_load(
     runtime: HostedRuntime,
     reason: String,
-    gate: tokio::sync::RwLockReadGuard<'_, ()>,
+    gate: ObservedGateGuard<tokio::sync::RwLockReadGuard<'_, ()>>,
 ) -> String {
     drop(gate);
-    #[cfg(test)]
-    note_load_teardown_event(LoadTeardownEvent::RuntimeGateReleased);
     drop(runtime);
     reason
 }
@@ -1581,7 +1658,7 @@ fn refuse_load(
 /// What a refused load did, in the order it did it.
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum LoadTeardownEvent {
+enum TeardownEvent {
     RuntimeGateReleased,
     RuntimeTornDown,
 }
@@ -1596,19 +1673,31 @@ thread_local! {
     /// instead — and between the release in [`refuse_load`] and the runtime's
     /// drop there is no await, so the two events are adjacent on whichever
     /// thread ran the refusal.
-    static LOAD_TEARDOWN_EVENTS: std::cell::RefCell<Vec<LoadTeardownEvent>> =
+    ///
+    /// The three ordering tests named for sweeping retired runtimes only after
+    /// releasing the runtime gate record the release from the guard's own drop
+    /// inside the loading body, then the teardown from the sweep in the
+    /// wrapper, with an `.await?` between the two. That gap still answers here
+    /// because [`crate::block_on_test`] drives each test on a current-thread
+    /// runtime, so the task carrying both events never migrates to another
+    /// thread across the await.
+    ///
+    /// Every release entry is written by [`ObservedGateGuard`]'s own drop, so
+    /// the sequence carries where each guard actually ended rather than where a
+    /// statement claimed it had.
+    static TEARDOWN_EVENTS: std::cell::RefCell<Vec<TeardownEvent>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[cfg(test)]
-fn note_load_teardown_event(event: LoadTeardownEvent) {
-    LOAD_TEARDOWN_EVENTS.with(|events| events.borrow_mut().push(event));
+fn note_teardown_event(event: TeardownEvent) {
+    TEARDOWN_EVENTS.with(|events| events.borrow_mut().push(event));
 }
 
 /// Take this thread's sequence, leaving it empty for the next observation.
 #[cfg(test)]
-fn take_load_teardown_events() -> Vec<LoadTeardownEvent> {
-    LOAD_TEARDOWN_EVENTS.with(|events| std::mem::take(&mut *events.borrow_mut()))
+fn take_teardown_events() -> Vec<TeardownEvent> {
+    TEARDOWN_EVENTS.with(|events| std::mem::take(&mut *events.borrow_mut()))
 }
 
 /// What the engine took, for the caller to report.
@@ -1627,7 +1716,7 @@ struct EngineRegistration {
 /// Every variant that still owns a runtime exists so that owning it is the
 /// caller's problem outside the lock: dropping a runtime destroys the plugin,
 /// and parking one takes a second lock. Neither belongs inside the engine's
-/// critical section — see the block in [`load_plugin_with_backend`].
+/// critical section — see the block in [`load_plugin_under_runtime_gate`].
 enum EngineHandover {
     Registered(EngineRegistration),
     Refused(RegistrationRefusal),
@@ -1639,7 +1728,7 @@ struct RegistrationRefusal {
     reason: String,
     /// The runtime, handed back so the caller can park the instance again and
     /// retry on the next batch ([`attach_dormant_plugins`]) or drop it clear of
-    /// the engine lock ([`load_plugin_with_backend`]).
+    /// the engine lock ([`load_plugin_under_runtime_gate`]).
     ///
     /// `None` only when the runtime could not be got back at all: see
     /// [`RegistrationRefusal::recovered`].
@@ -1688,10 +1777,10 @@ impl RegistrationRefusal {
 /// record the instance, and register the slot.
 ///
 /// The one copy of that sequence. A load reaches it with a runtime it has just
-/// built ([`load_plugin_with_backend`]); the engine's first graph batch reaches
-/// it with a runtime that has been sitting dormant since a load found no engine
-/// ([`attach_dormant_plugins`]). Two copies would let the two paths drift, and
-/// the dormant one is exactly the path nobody exercises by hand.
+/// built ([`load_plugin_under_runtime_gate`]); the engine's first graph batch
+/// reaches it with a runtime that has been sitting dormant since a load found
+/// no engine ([`attach_dormant_plugins`]). Two copies would let the two paths
+/// drift, and the dormant one is exactly the path nobody exercises by hand.
 ///
 /// Takes the runtime by value because registering it moves it into the shared
 /// owner the audio thread reads through. Every refusal hands it back — before
@@ -2047,12 +2136,21 @@ pub async fn unload_plugin(
 ) -> Result<PluginUnloadResult, String> {
     match instance_id {
         Some(instance_id) => {
-            let _runtime_guard = PLUGIN_RUNTIME_GATE.read().await;
             let mut response = PluginUnloadResult::default();
-            match unload_plugin_runtime(&instance_id.0, Some(windows_host), state).await {
-                Ok(()) => response.0.push(instance_id.0),
-                Err(error) => response.1.push(error),
+            {
+                let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
+                match unload_plugin_runtime(&instance_id.0, Some(windows_host), state).await {
+                    Ok(()) => response.0.push(instance_id.0),
+                    Err(error) => response.1.push(error),
+                }
             }
+            // The read guard above ends with the block, not with this
+            // function: `unload_plugin_runtime` no longer sweeps, so this is
+            // the moment a retired runtime's teardown is safe to run. Run it
+            // here rather than under the guard — `PLUGIN_RUNTIME_GATE` is
+            // fair, so a queued `unload_all_plugin_runtimes` writer would
+            // otherwise wait out third-party teardown of unbounded length.
+            state.sweep_retired_engine_plugins();
             Ok(response)
         }
         None => unload_all_plugin_runtimes(Some(windows_host), state).await,
@@ -2063,29 +2161,35 @@ async fn unload_all_plugin_runtimes(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
 ) -> Result<PluginUnloadResult, String> {
-    let _runtime_guard = PLUGIN_RUNTIME_GATE.write().await;
-    let instance_ids = {
-        let plugins = state
-            .plugins
-            .lock()
-            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
-        let engine_plugins = state
-            .engine_plugins
-            .lock()
-            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
-        plugins
-            .keys()
-            .chain(engine_plugins.keys())
-            .cloned()
-            .collect::<BTreeSet<_>>()
-    };
     let mut result = PluginUnloadResult::default();
-    for instance_id in instance_ids {
-        match unload_plugin_runtime(&instance_id, windows_host, state).await {
-            Ok(()) => result.0.push(instance_id),
-            Err(error) => result.1.push(error),
+    {
+        let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.write().await);
+        let instance_ids = {
+            let plugins = state
+                .plugins
+                .lock()
+                .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+            plugins
+                .keys()
+                .chain(engine_plugins.keys())
+                .cloned()
+                .collect::<BTreeSet<_>>()
+        };
+        for instance_id in instance_ids {
+            match unload_plugin_runtime(&instance_id, windows_host, state).await {
+                Ok(()) => result.0.push(instance_id),
+                Err(error) => result.1.push(error),
+            }
         }
     }
+    // One sweep for the whole cascade, after the write guard above is gone:
+    // the gate has to be free either way, and a sweep per instance inside the
+    // loop would only repeat the same wait under it once per instance.
+    state.sweep_retired_engine_plugins();
     Ok(result)
 }
 
@@ -2159,6 +2263,13 @@ fn release_then_retire_engine_plugin(
     engine.remove_plugin(engine_plugin_id)
 }
 
+/// Tear one instance's runtime out of the engine and the plugin maps.
+///
+/// Never sweeps the retirement vec: this always runs with the caller's
+/// `PLUGIN_RUNTIME_GATE` guard held — `unload_plugin`'s read guard for a
+/// keyed unload, `unload_all_plugin_runtimes`'s write guard for the quit
+/// cascade — so a sweep in here would tear a retired plugin's runtime down
+/// under that same fair gate. The caller sweeps once its own guard is gone.
 async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
@@ -2242,12 +2353,11 @@ async fn unload_plugin_runtime(
         // it above already dropped the ring. Nothing keyed by engine_plugin_id
         // is left to clean up.
         //
-        // Reclaim what earlier unloads had to keep. This runtime is not a
-        // candidate yet — `runtime` is still a live reference here and the
-        // scheduler removal was only queued — so the sweep frees the previous
-        // generation, not this one.
+        // This runtime is not a sweep candidate yet even once the caller's
+        // guard is gone: `runtime` is still a live reference here and the
+        // scheduler removal was only queued, so the caller's sweep frees the
+        // previous generation, not this one.
         drop(runtime);
-        state.sweep_retired_engine_plugins();
         return Ok(());
     }
 
@@ -2746,10 +2856,10 @@ mod tests {
     ///
     /// The one ordering a refusal owes: `PLUGIN_RUNTIME_GATE` released, and only
     /// then the plugin's own `deactivate`, `destroy` and `deinit_entry`.
-    fn event_before_teardown(events: &[LoadTeardownEvent]) -> Option<LoadTeardownEvent> {
+    fn event_before_teardown(events: &[TeardownEvent]) -> Option<TeardownEvent> {
         let teardown = events
             .iter()
-            .position(|event| *event == LoadTeardownEvent::RuntimeTornDown)?;
+            .position(|event| *event == TeardownEvent::RuntimeTornDown)?;
         teardown.checked_sub(1).map(|before| events[before])
     }
 
@@ -3987,7 +4097,7 @@ mod tests {
         );
 
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        take_load_teardown_events();
+        take_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -4009,7 +4119,7 @@ mod tests {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
                     engine_free.store(
                         observed_state.engine.try_lock().is_ok(),
                         std::sync::atomic::Ordering::SeqCst,
@@ -4040,9 +4150,9 @@ mod tests {
                 .contains_key("refused-by-the-engine"),
             "and the engine kept none of it"
         );
-        let events = take_load_teardown_events();
+        let events = take_teardown_events();
         assert!(
-            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            events.contains(&TeardownEvent::RuntimeTornDown),
             "the refused runtime must actually have been torn down, not leaked"
         );
         assert!(
@@ -4052,7 +4162,7 @@ mod tests {
         );
         assert_eq!(
             event_before_teardown(&events),
-            Some(LoadTeardownEvent::RuntimeGateReleased),
+            Some(TeardownEvent::RuntimeGateReleased),
             "nor under the runtime gate, which is fair: a quit's write request \
              queued behind this teardown parks every later load and unload, and \
              fails every batch's attach outright. Got: {events:?}"
@@ -4085,7 +4195,7 @@ mod tests {
         );
 
         let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        take_load_teardown_events();
+        take_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -4102,7 +4212,7 @@ mod tests {
                 let observed_state = Arc::clone(&state);
                 let engine_free = Arc::clone(&engine_free_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
                     engine_free.store(
                         observed_state.engine.try_lock().is_ok(),
                         std::sync::atomic::Ordering::SeqCst,
@@ -4133,9 +4243,9 @@ mod tests {
                 .contains_key("editor-ask-unanswered"),
             "and hands the engine nothing"
         );
-        let events = take_load_teardown_events();
+        let events = take_teardown_events();
         assert!(
-            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            events.contains(&TeardownEvent::RuntimeTornDown),
             "the runtime it built must actually have been torn down, not leaked"
         );
         assert!(
@@ -4145,7 +4255,7 @@ mod tests {
         );
         assert_eq!(
             event_before_teardown(&events),
-            Some(LoadTeardownEvent::RuntimeGateReleased),
+            Some(TeardownEvent::RuntimeGateReleased),
             "nor under the runtime gate, which is fair: a quit's write request \
              queued behind this teardown parks every later load and unload, and \
              fails every batch's attach outright. Got: {events:?}"
@@ -4383,7 +4493,7 @@ mod tests {
         );
 
         let lease_held_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        take_load_teardown_events();
+        take_teardown_events();
 
         let error = crate::block_on_test(load_plugin_with_backend(
             PluginId("aaaa1111".to_string()),
@@ -4400,7 +4510,7 @@ mod tests {
                 wrapper.deactivate_engine_owned_command_fixture();
                 let lease_held = Arc::clone(&lease_held_at_teardown);
                 wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
-                    note_load_teardown_event(LoadTeardownEvent::RuntimeTornDown);
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
                     lease_held.store(
                         try_lock_plugin_lifecycle("never-activated-dormant").is_none(),
                         std::sync::atomic::Ordering::SeqCst,
@@ -4431,14 +4541,14 @@ mod tests {
                 .contains_key("never-activated-dormant"),
             "and nothing is parked: an attach could only refuse it, once per batch, forever"
         );
-        let events = take_load_teardown_events();
+        let events = take_teardown_events();
         assert!(
-            events.contains(&LoadTeardownEvent::RuntimeTornDown),
+            events.contains(&TeardownEvent::RuntimeTornDown),
             "the refused runtime must actually have been torn down, not leaked"
         );
         assert_eq!(
             event_before_teardown(&events),
-            Some(LoadTeardownEvent::RuntimeGateReleased),
+            Some(TeardownEvent::RuntimeGateReleased),
             "and it must go down with the runtime gate already released: that \
              gate is fair, so a quit's write request queued behind this teardown \
              parks every later load and unload, and fails every batch's attach \
@@ -4450,6 +4560,288 @@ mod tests {
              musician as a load error they retry on the same device, and a retry \
              that took this lease would call the plugin's entry point on the \
              bundle this teardown is still running deinit_entry and dlclose on"
+        );
+    }
+
+    /// A load's own sweep may only ever reach a runtime the runtime gate has
+    /// already let go of — not one it is still torn down while holding.
+    ///
+    /// Fixture A is loaded, then unloaded: its runtime lands in
+    /// `retired_engine_plugins`, still held by the `AddPluginWithBridge`
+    /// command this command-capture engine never drained, exactly as a real
+    /// scheduler holds it between a queued removal and the audio thread
+    /// dropping the slot. Draining the ring is this test's stand-in for that
+    /// drop, and it is what makes A reclaimable. Fixture B's load is the next
+    /// moment the process asks for that memory: its own success sweeps the
+    /// retirement vec, and A's teardown must land only after that load's own
+    /// runtime gate guard is gone.
+    #[test]
+    fn a_load_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let state = Arc::new(AppState::default());
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-a".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("fixture A loads");
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-a".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the unload call itself does not fail");
+        assert_eq!(
+            unload_response.1,
+            Vec::<String>::new(),
+            "fixture A must unload cleanly, or the reclaim below proves nothing"
+        );
+
+        // The scheduler's own acknowledgment: draining the ring drops the
+        // `AddPluginWithBridge` slot that load pushed, which is the only
+        // other owner of A's runtime once the maps have forgotten it.
+        while command_rx.pop().is_ok() {}
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-b".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture B", Vec::new(), false),
+                ))
+            },
+        ))
+        .expect("fixture B loads");
+
+        assert_eq!(
+            take_teardown_events(),
+            vec![
+                TeardownEvent::RuntimeGateReleased,
+                TeardownEvent::RuntimeTornDown
+            ],
+            "B's load must release its own runtime gate guard before sweeping \
+             A's retired runtime down"
+        );
+    }
+
+    /// A keyed unload's own sweep is subject to the identical rule: it may
+    /// reach a retired runtime only once the gate guard *this* unload took is
+    /// gone, never while `unload_plugin_runtime` is still running under it.
+    ///
+    /// Fixture A is loaded and unloaded first, but the ring that holds its
+    /// last reference is deliberately left undrained until after fixture C
+    /// also loads — so C's own load sweeps an empty retirement vec, and A
+    /// only becomes reclaimable afterward. That isolates the sweep under
+    /// test to C's *unload*: it is the one call whose sweep can still reach
+    /// A, and its own runtime gate guard is what must be gone first.
+    #[test]
+    fn a_keyed_unload_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let state = Arc::new(AppState::default());
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-a".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("fixture A loads");
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-a".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("fixture A unloads");
+
+        // A is still held by the queued `AddPluginWithBridge` its own load
+        // pushed, so it is not reclaimable yet: C's load, next, sweeps a
+        // retirement vec it cannot free anything from.
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-c".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture C", Vec::new(), false),
+                ))
+            },
+        ))
+        .expect("fixture C loads");
+
+        // The scheduler's own acknowledgment, now that both A's removal and
+        // C's addition are queued: draining drops both commands' slots, and
+        // A becomes reclaimable only at this point.
+        while command_rx.pop().is_ok() {}
+
+        take_teardown_events();
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-c".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the unload call itself does not fail");
+        assert_eq!(
+            unload_response.1,
+            Vec::<String>::new(),
+            "fixture C must unload cleanly"
+        );
+
+        assert_eq!(
+            take_teardown_events(),
+            vec![
+                TeardownEvent::RuntimeGateReleased,
+                TeardownEvent::RuntimeTornDown
+            ],
+            "C's own unload must release its runtime gate guard before its \
+             sweep reaches A's now-reclaimable runtime"
+        );
+    }
+
+    /// The quit cascade's sweep answers to the same rule on the gate's write
+    /// side: `unload_all_plugin_runtimes` holds one write guard across every
+    /// instance it tears down, and the single sweep that follows may reach a
+    /// retired runtime only once that guard is gone.
+    ///
+    /// Staged as the keyed case is. Fixture A is loaded and unloaded while the
+    /// ring still holds its last reference, so fixture D's load sweeps a
+    /// retirement vec it can free nothing from; draining the ring afterward is
+    /// what makes A reclaimable, and the cascade is then the one remaining call
+    /// whose sweep can reach it.
+    #[test]
+    fn the_quit_cascade_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let state = Arc::new(AppState::default());
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        take_teardown_events();
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-a".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper =
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture A", Vec::new(), false);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(|| {
+                    note_teardown_event(TeardownEvent::RuntimeTornDown);
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect("fixture A loads");
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("fixture-a".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("fixture A unloads");
+
+        // A is still held by the queued `AddPluginWithBridge` its own load
+        // pushed, so it is not reclaimable yet: D's load, next, sweeps a
+        // retirement vec it cannot free anything from.
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("fixture-d".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture("Fixture D", Vec::new(), false),
+                ))
+            },
+        ))
+        .expect("fixture D loads");
+
+        // The scheduler's own acknowledgment, now that both A's removal and
+        // D's addition are queued: draining drops both commands' slots, and
+        // A becomes reclaimable only at this point.
+        while command_rx.pop().is_ok() {}
+
+        take_teardown_events();
+
+        let cascade_response = crate::block_on_test(unload_plugin(None, &NoWindowHost, &state))
+            .expect("the cascade call itself does not fail");
+        assert_eq!(
+            cascade_response.1,
+            Vec::<String>::new(),
+            "fixture D must unload cleanly"
+        );
+
+        assert_eq!(
+            take_teardown_events(),
+            vec![
+                TeardownEvent::RuntimeGateReleased,
+                TeardownEvent::RuntimeTornDown
+            ],
+            "the cascade must release its runtime gate write guard before its \
+             sweep reaches A's now-reclaimable runtime"
         );
     }
 
