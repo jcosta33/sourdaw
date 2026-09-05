@@ -403,7 +403,7 @@ expect(
 );
 expect(heavyEvents?.pull_request === undefined, 'the heavy workflow must not run on a pull-request push');
 expect(
-    nightly.on?.schedule?.[0]?.cron === '0 3 * * *',
+    nightly.on?.schedule?.[0]?.cron === '23 3 * * *',
     'the nightly cron must survive the move of the schedule event to nightly.yml'
 );
 // `Gate` is the required context. Only health-gates.yml may mint it, so no job
