@@ -7,8 +7,8 @@
  * repository's per-file line budget; this file still spawns a real process
  * and drives a live `Page` through `connectAndMeasure`, so — like the
  * driver, and unlike `desktopLatencyReadings.ts` — most of it is not
- * unit-testable without Playwright. `stripPayloadOverrides` is the one pure
- * exception and carries its own spec.
+ * unit-testable without Playwright. `stripPayloadOverrides` and
+ * `removeProfileDir` are the pure exceptions and carry their own specs.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -60,6 +60,47 @@ export function stripPayloadOverrides(env: NodeJS.ProcessEnv): StrippedEnv {
     return { env: stripped, dropped };
 }
 
+export type ProfileRemoval = { removed: true } | { removed: false; reason: string };
+export type RemoveDirectory = (path: string) => void;
+
+/**
+ * `rmSync`'s default `maxRetries` is 0, so a file a still-exiting Chromium
+ * helper process creates while the recursive removal walks the profile
+ * directory turns into a thrown `ENOTEMPTY` instead of a completed removal.
+ * `maxRetries`/`retryDelay` make Node retry `EBUSY`, `EMFILE`, `ENFILE`,
+ * `ENOTEMPTY`, and `EPERM` with linear backoff, which is enough for a
+ * process that is already exiting to finish clearing its own files.
+ */
+function removeDirectoryWithRetries(path: string): void {
+    rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+
+/**
+ * Removes the temporary profile directory without ever throwing: a
+ * measurement's verdict is about latency, not about temp cleanup, so a
+ * removal failure is reported to the caller instead of raised.
+ */
+export function removeProfileDir(
+    profileDir: string,
+    remove: RemoveDirectory = removeDirectoryWithRetries
+): ProfileRemoval {
+    try {
+        remove(profileDir);
+        return { removed: true };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { removed: false, reason };
+    }
+}
+
+/** Warns on stdout when a profile directory could not be removed; silent on success. */
+function reportProfileRemoval(profileDir: string, removal: ProfileRemoval): void {
+    if (removal.removed) {
+        return;
+    }
+    process.stdout.write(`profile directory left behind: ${profileDir} (${removal.reason})\n`);
+}
+
 async function pickFreePort(): Promise<number> {
     return new Promise((resolve, reject) => {
         const server = createServer();
@@ -103,7 +144,7 @@ function installTeardownOnSignal(signal: NodeJS.Signals, child: ChildProcess, pr
     const handler = (): void => {
         void (async () => {
             await quitApp(child);
-            rmSync(profileDir, { recursive: true, force: true });
+            reportProfileRemoval(profileDir, removeProfileDir(profileDir));
             process.off(signal, handler);
             process.kill(process.pid, signal);
         })();
@@ -118,7 +159,9 @@ function installTeardownOnSignal(signal: NodeJS.Signals, child: ChildProcess, pr
  * the app process, the temporary profile directory, and the signal
  * listeners registered for the run — regardless of how it ends. Rethrows
  * whatever `connectAndMeasure` or the spawn itself failed with; the caller
- * decides what that means for the run's own verdict.
+ * decides what that means for the run's own verdict. A profile-removal
+ * failure is reported on stdout and never thrown, so a temp directory that
+ * cannot be deleted does not discard an otherwise-completed measurement.
  */
 export async function launchAndMeasure(
     binary: string,
@@ -186,7 +229,7 @@ export async function launchAndMeasure(
     } finally {
         abortController.abort();
         await quitApp(child);
-        rmSync(profileDir, { recursive: true, force: true });
+        reportProfileRemoval(profileDir, removeProfileDir(profileDir));
         removeSigintTeardown();
         removeSigtermTeardown();
     }
