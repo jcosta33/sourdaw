@@ -210,10 +210,16 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// the renderer cannot read has no correct substitute, and guessing unity
     /// would play the wrong material at the wrong pitch without saying so.
     pub invalid_clip_playbacks: u64,
-    /// A route whose compensation was cut to
-    /// [`crate::pdc::MAX_COMPENSATION_FRAMES`] because the graph asked for
-    /// more. Counted as it happens, like every other refusal here: the route
-    /// still sounds, but it sounds early, and only this number says so.
+    /// How many routes the latest compensation pass could not align, because
+    /// the graph asked for more hold than
+    /// [`crate::pdc::MAX_COMPENSATION_FRAMES`] holds. Such a route still
+    /// sounds, but it sounds early, and only this number says so.
+    ///
+    /// A state rather than an event, like [`Self::pdc_max_arrival_frames`]:
+    /// restated by every pass, so it falls back to zero once the device that
+    /// asked for too much is gone. A lifetime sum would keep reporting a
+    /// misalignment the graph no longer has, and would climb on every
+    /// unrelated recompute while it lasted.
     pub pdc_clamped_routes: u64,
     /// The largest latency any contributor currently declares on its way to a
     /// summing point — the figure every other contributor is delayed up to.
@@ -306,11 +312,8 @@ impl TimelineRtDiagnostics {
             self.snapshot.invalid_clip_playbacks.saturating_add(1);
     }
 
-    fn record_pdc_clamped_routes(&mut self, routes: usize) {
-        self.snapshot.pdc_clamped_routes = self
-            .snapshot
-            .pdc_clamped_routes
-            .saturating_add(routes as u64);
+    fn state_pdc_clamped_routes(&mut self, routes: usize) {
+        self.snapshot.pdc_clamped_routes = routes as u64;
     }
 
     fn state_pdc_max_arrival(&mut self, frames: usize) {
@@ -1090,6 +1093,15 @@ pub struct TimelineTrack {
     muted: bool,
     solo_gated: bool,
     output: RouteTarget,
+    /// Plugin delay compensation for this track's own clips. Whatever is
+    /// routed into this track's input arrives at that input's compensated
+    /// depth, while a clip on this track starts at zero, so the clips are the
+    /// side that waits.
+    ///
+    /// Live input already summed into `input_left` is deliberately not held
+    /// here. That is the monitoring path, and delaying what a player hears
+    /// themselves through is the one alignment a DAW must not make.
+    source_delay: CompensationDelay,
     /// Plugin delay compensation for this track's own output, applied where
     /// the strip ends and the summing point begins. See
     /// [`TimelineGraph::compensate`].
@@ -1113,8 +1125,15 @@ impl TimelineTrack {
             muted: false,
             solo_gated: false,
             output: RouteTarget::Master,
+            source_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
             output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
         })
+    }
+
+    /// Frames this track's own clips are currently held back by, so that they
+    /// meet what other strips route into this track's input.
+    pub fn source_delay_frames(&self) -> usize {
+        self.source_delay.delay()
     }
 
     /// Frames this track's output is currently held back by, for callers
@@ -1404,15 +1423,25 @@ pub struct TimelineGraph {
     /// the compensation cannot run in place over it.
     send_left: Vec<f32>,
     send_right: Vec<f32>,
+    /// Where a track's own clips are rendered before they are held back to
+    /// meet the routes summing into that track's input. What those routes
+    /// delivered is already in the input and must not be delayed a second
+    /// time, so the clips cannot be laid straight over it.
+    source_left: Vec<f32>,
+    source_right: Vec<f32>,
     /// The latency each contributor arrives at its summing point with, indexed
     /// as [`Self::mix_order`] indexes strips. Scratch for
     /// [`Self::compensate`], sized on the control thread for the same reason
     /// the mix-order buffers are.
     track_arrival: Vec<usize>,
     bus_arrival: Vec<usize>,
-    /// The deepest arrival each bus has to wait for, and the deepest the
-    /// master sum has to.
+    /// The deepest arrival each bus has to wait for.
     bus_summing_depth: Vec<usize>,
+    /// The deepest arrival each track's *input* has to wait for. A track input
+    /// is a summing point exactly as a bus is: [`route_sum`] adds a
+    /// contributor into it, and the track lays its own clips over that sum
+    /// before its chain runs.
+    track_summing_depth: Vec<usize>,
     diagnostics: TimelineRtDiagnostics,
 }
 
@@ -1432,9 +1461,12 @@ impl TimelineGraph {
             generator_right: vec![0.0; MAX_CALLBACK_FRAMES],
             send_left: vec![0.0; MAX_CALLBACK_FRAMES],
             send_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            source_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            source_right: vec![0.0; MAX_CALLBACK_FRAMES],
             track_arrival: vec![0; MAX_TIMELINE_TRACKS],
             bus_arrival: vec![0; MAX_TIMELINE_BUSES],
             bus_summing_depth: vec![0; MAX_TIMELINE_BUSES],
+            track_summing_depth: vec![0; MAX_TIMELINE_TRACKS],
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -1459,9 +1491,12 @@ impl TimelineGraph {
             generator_right: Vec::new(),
             send_left: Vec::new(),
             send_right: Vec::new(),
+            source_left: Vec::new(),
+            source_right: Vec::new(),
             track_arrival: Vec::new(),
             bus_arrival: Vec::new(),
             bus_summing_depth: Vec::new(),
+            track_summing_depth: Vec::new(),
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -2115,9 +2150,10 @@ impl TimelineGraph {
     /// a change that shifted alignment would click.
     ///
     /// The walk is [`Self::mix_order`], which puts every contributor ahead of
-    /// what it feeds, so one pass settles every summing point's depth and a
-    /// second aims the delays at it. O(strips + sends), and nothing here
-    /// allocates: every buffer it touches was sized on the control thread.
+    /// what it feeds, so one pass settles every summing point's depth — a
+    /// bus's input, a track's input, the master sum — and a second aims the
+    /// delays at it. O(strips + sends), and nothing here allocates: every
+    /// buffer it touches was sized on the control thread.
     pub(crate) fn compensate(&mut self, chain_latency: impl Fn(&[ChainEntry]) -> usize) {
         let Self {
             tracks,
@@ -2126,23 +2162,28 @@ impl TimelineGraph {
             track_arrival,
             bus_arrival,
             bus_summing_depth,
+            track_summing_depth,
             diagnostics,
             ..
         } = self;
 
         let track_count = tracks.len();
         let bus_count = buses.len();
-        for index in 0..track_count {
-            track_arrival[index] = chain_latency(&tracks[index].chain);
-        }
+        track_arrival[..track_count].fill(0);
         bus_arrival[..bus_count].fill(0);
         bus_summing_depth[..bus_count].fill(0);
+        track_summing_depth[..track_count].fill(0);
 
         let mut master_depth = 0;
         for order_index in 0..mix_order.len() {
             let (arrival, output) = match mix_order[order_index] {
                 MixNode::Track(index) => {
-                    let arrival = track_arrival[index];
+                    // Everything routed into this track's input has already
+                    // been visited, so its own chain starts from the deepest of
+                    // them — the law a bus follows, because a track fed by
+                    // other strips is the same kind of summing point.
+                    let arrival = track_summing_depth[index] + chain_latency(&tracks[index].chain);
+                    track_arrival[index] = arrival;
                     for send in &tracks[index].sends {
                         if let Some(bus) = buses.iter().position(|bus| bus.id == send.bus_id) {
                             bus_summing_depth[bus] = bus_summing_depth[bus].max(arrival);
@@ -2151,8 +2192,6 @@ impl TimelineGraph {
                     (arrival, tracks[index].output)
                 }
                 MixNode::Bus(index) => {
-                    // Everything that feeds this bus has already been visited,
-                    // so its own chain starts from the deepest of them.
                     let arrival = bus_summing_depth[index] + chain_latency(&buses[index].chain);
                     bus_arrival[index] = arrival;
                     (arrival, buses[index].output)
@@ -2163,7 +2202,9 @@ impl TimelineGraph {
                 SummingPoint::Bus(index) => {
                     bus_summing_depth[index] = bus_summing_depth[index].max(arrival);
                 }
-                SummingPoint::TrackInput => {}
+                SummingPoint::TrackInput(index) => {
+                    track_summing_depth[index] = track_summing_depth[index].max(arrival);
+                }
             }
         }
 
@@ -2178,6 +2219,11 @@ impl TimelineGraph {
                 clamped += usize::from(send.delay.set_delay(hold));
             }
 
+            // This track's own clips start at zero, so they wait the whole
+            // depth of what arrives at its input.
+            let depth = track_summing_depth[index];
+            clamped += usize::from(tracks[index].source_delay.set_delay(depth));
+
             let output = tracks[index].output;
             let hold = hold_for(
                 output,
@@ -2185,6 +2231,7 @@ impl TimelineGraph {
                 tracks,
                 buses,
                 bus_summing_depth,
+                track_summing_depth,
                 master_depth,
             );
             clamped += usize::from(tracks[index].output_delay.set_delay(hold));
@@ -2198,15 +2245,17 @@ impl TimelineGraph {
                 tracks,
                 buses,
                 bus_summing_depth,
+                track_summing_depth,
                 master_depth,
             );
             clamped += usize::from(buses[index].output_delay.set_delay(hold));
         }
 
-        diagnostics.record_pdc_clamped_routes(clamped);
+        diagnostics.state_pdc_clamped_routes(clamped);
         diagnostics.state_pdc_max_arrival(
             bus_summing_depth[..bus_count]
                 .iter()
+                .chain(track_summing_depth[..track_count].iter())
                 .copied()
                 .fold(master_depth, usize::max),
         );
@@ -2231,6 +2280,8 @@ impl TimelineGraph {
             generator_right,
             send_left,
             send_right,
+            source_left,
+            source_right,
             diagnostics,
             ..
         } = self;
@@ -2252,11 +2303,16 @@ impl TimelineGraph {
                         let track = &mut tracks[index];
                         left.copy_from_slice(&track.input_left[..frames]);
                         right.copy_from_slice(&track.input_right[..frames]);
-                        if render_clips {
-                            for clip in &track.clips {
-                                clip.render_into(block_start, frames, left, right);
-                            }
-                        }
+                        render_track_source(
+                            track,
+                            block_start,
+                            frames,
+                            render_clips,
+                            left,
+                            right,
+                            &mut source_left[..frames],
+                            &mut source_right[..frames],
+                        );
                     }
 
                     run_device_chain(
@@ -2457,6 +2513,53 @@ fn apply_master_fader(fader: &mut MasterFader, frames: usize, left: &mut [f32], 
     }
 }
 
+/// Lay a track's own clips over what other strips have already summed into its
+/// input.
+///
+/// A route landing on this track's input arrives at that input's compensated
+/// depth, while a clip on this track starts at zero, so the clips are held back
+/// to meet it. They are staged apart from the input for exactly that reason:
+/// what the input carries is aligned already, and running the hold over the
+/// pair would delay every contributor a second time — and with them the live
+/// input monitored through this track, which is the one signal that must not
+/// wait.
+#[allow(clippy::too_many_arguments)]
+fn render_track_source(
+    track: &mut TimelineTrack,
+    block_start: u64,
+    frames: usize,
+    render_clips: bool,
+    left: &mut [f32],
+    right: &mut [f32],
+    source_left: &mut [f32],
+    source_right: &mut [f32],
+) {
+    if track.source_delay.delay() == 0 {
+        if render_clips {
+            for clip in &track.clips {
+                clip.render_into(block_start, frames, left, right);
+            }
+        }
+        return;
+    }
+
+    // Staged over silence, and staged even on a stopped transport: the line
+    // has to keep running for the material still inside it to come out, which
+    // is what the rest of the strip does with its tails.
+    source_left.fill(0.0);
+    source_right.fill(0.0);
+    if render_clips {
+        for clip in &track.clips {
+            clip.render_into(block_start, frames, source_left, source_right);
+        }
+    }
+    track
+        .source_delay
+        .process(source_left, source_right, frames);
+    sum_into(left, source_left);
+    sum_into(right, source_right);
+}
+
 /// Run one strip's device chain over the signal in `left` / `right`.
 ///
 /// An effect transforms the signal in place. A generator has no audio input, so
@@ -2494,11 +2597,10 @@ enum SummingPoint {
     Master,
     /// The named bus's input, by index.
     Bus(usize),
-    /// A track's input. A track sums its own clips there at zero latency and
-    /// owns no delay line to hold them back with, so a route landing on one is
-    /// left uncompensated rather than aligned against a source that cannot
-    /// move.
-    TrackInput,
+    /// The named track's input, by index. A track fed by other strips is a
+    /// group, and its input sums exactly as a bus's does; the track's own clips
+    /// are held back to meet what lands there.
+    TrackInput(usize),
 }
 
 /// Resolve a route target the way [`route_sum`] resolves it, so compensation
@@ -2511,13 +2613,10 @@ fn summing_point(
 ) -> SummingPoint {
     match target {
         RouteTarget::Master => SummingPoint::Master,
-        RouteTarget::Track(id) => {
-            if tracks.iter().any(|track| track.id == id) {
-                SummingPoint::TrackInput
-            } else {
-                SummingPoint::Master
-            }
-        }
+        RouteTarget::Track(id) => tracks
+            .iter()
+            .position(|track| track.id == id)
+            .map_or(SummingPoint::Master, SummingPoint::TrackInput),
         RouteTarget::Bus(id) => buses
             .iter()
             .position(|bus| bus.id == id)
@@ -2527,18 +2626,20 @@ fn summing_point(
 
 /// Frames a contributor arriving at `arrival` must be held back so it meets
 /// the rest of `target`'s sources.
+#[allow(clippy::too_many_arguments)]
 fn hold_for(
     target: RouteTarget,
     arrival: usize,
     tracks: &[Box<TimelineTrack>],
     buses: &[Box<TimelineBus>],
     bus_summing_depth: &[usize],
+    track_summing_depth: &[usize],
     master_depth: usize,
 ) -> usize {
     match summing_point(target, tracks, buses) {
         SummingPoint::Master => master_depth.saturating_sub(arrival),
         SummingPoint::Bus(index) => bus_summing_depth[index].saturating_sub(arrival),
-        SummingPoint::TrackInput => 0,
+        SummingPoint::TrackInput(index) => track_summing_depth[index].saturating_sub(arrival),
     }
 }
 

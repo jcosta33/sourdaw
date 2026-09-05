@@ -24,6 +24,12 @@ pub const MAX_COMPENSATION_FRAMES: usize = 16_384;
 /// audio thread may neither allocate it nor free it (ADR 0020). Everything
 /// after construction runs in place, and the only branch per sample is the
 /// ring's own wrap.
+///
+/// A caller outside the engine builds a line and hands it over, which is why
+/// construction is the whole of the published surface. Aiming or running one
+/// belongs to the graph and its callback: a delay set from outside would put a
+/// route out of alignment, and the next compensation pass would overwrite it
+/// without ever reporting the discrepancy.
 pub struct CompensationDelay {
     left: Vec<f32>,
     right: Vec<f32>,
@@ -79,18 +85,18 @@ impl CompensationDelay {
         Some(delay)
     }
 
-    pub fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.left.len() - 1
     }
 
-    pub const fn delay(&self) -> usize {
+    pub(crate) const fn delay(&self) -> usize {
         self.delay
     }
 
     /// Delay by `frames`, or by the capacity when more is asked for than the
     /// line holds. Returns whether it clamped, so a route the ceiling cut short
     /// is counted rather than left silently misaligned.
-    pub fn set_delay(&mut self, frames: usize) -> bool {
+    pub(crate) fn set_delay(&mut self, frames: usize) -> bool {
         let capacity = self.capacity();
         let clamped = frames > capacity;
         let delay = frames.min(capacity);
@@ -123,7 +129,7 @@ impl CompensationDelay {
     /// A line at zero delay is the identity and returns without touching the
     /// ring, which is what makes the common case — a graph whose strips all
     /// arrive together — cost nothing.
-    pub fn process(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
+    pub(crate) fn process(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
         if self.delay == 0 {
             return;
         }

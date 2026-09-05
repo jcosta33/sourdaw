@@ -20,6 +20,11 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   siblings at the master, the sends landing on a bus, a bus feeding another bus — arrives having
   waited the same number of frames. A route's hold is the summing point's deepest arrival minus its
   own, and a bus's arrival carries into the point it sums at, so hops add up.
+- **A track input is a summing point too**: a track fed by other tracks or buses is a group, and
+  what lands on its input has waited the depth of that input like any other contributor. The group's
+  own clips are the side that waits, held back to meet them, so a group never leads the tracks
+  feeding it. Live input monitored through that track is not held: hearing yourself late is the one
+  alignment a DAW must not make.
 - **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
   bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
   the project — the common professional convention, and the reason the dry line is built with the

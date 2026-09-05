@@ -2670,7 +2670,10 @@ mod compensation_render_alloc_guards {
         graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
         GraphCommand, RetiredGraphObjects,
     };
-    use crate::timeline::{timeline_rt_diagnostics_channel, SendTap, TimelineBus, TimelineTrack};
+    use crate::timeline::{
+        timeline_rt_diagnostics_channel, ChainEntry, DeviceKind, RouteTarget, SendTap, TimelineBus,
+        TimelineTrack,
+    };
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
@@ -2762,6 +2765,8 @@ mod compensation_render_alloc_guards {
 
         let mut harness = CompensationHarness::new();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -2771,11 +2776,24 @@ mod compensation_render_alloc_guards {
             delay: Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)),
         });
         harness.send(GraphCommand::AddPlugin(EFFECT_ID, Box::new(SilentPlugin)));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 3,
+            entry: ChainEntry {
+                effect_id: EFFECT_ID,
+                kind: DeviceKind::Effect,
+            },
+            index: 0,
+        });
+        // A group: the latent track sums into track 2's input, which puts
+        // track 2's source line at a non-zero delay and so on the render this
+        // guard wraps.
+        harness.send(GraphCommand::SetTrackOutput(3, RouteTarget::Track(2)));
         // Two on one effect: the second replaces the line the first installed,
         // which is the free this guard exists to catch.
         harness.send(set_latency(64));
         harness.send(set_latency(128));
-        // Gives up a track that owns an output line and a send line.
+        // Gives up a track that owns an output line, a source line and a send
+        // line.
         harness.send(GraphCommand::RemoveTrack(1));
 
         // Sized outside, the way a device buffer is: the callback is what is
@@ -2787,6 +2805,20 @@ mod compensation_render_alloc_guards {
                 harness.renderer.render(&mut data, DEVICE_CHANNELS);
             }
         });
+
+        // The guard only covers what the callback ran, and the group's source
+        // line is skipped outright at zero delay. This is what says it was not.
+        assert_eq!(
+            harness
+                .renderer
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("the group track is in the graph")
+                .source_delay_frames(),
+            128,
+            "the group's source line was aimed, so the render exercised it"
+        );
 
         // Freed here, on the control side, which is the whole point of the
         // route: two objects the callback let go of and did not drop.

@@ -9393,6 +9393,144 @@ mod timeline_tests {
             diagnostics.pdc_max_arrival_frames, declared as u64,
             "the reported arrival is the figure declared, not the one the graph could hold"
         );
+
+        // Two more passes over the same clamped graph. Both commands re-aim
+        // routes that are already where they point, so nothing about the
+        // alignment moves; a running total would read three here and name two
+        // misaligned routes that do not exist.
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Master));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Master));
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            1,
+            "the count states what the latest pass clamped, not what every pass ever clamped"
+        );
+
+        harness.send(set_latency(900, 0));
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "a graph the ceiling no longer cuts short reports nothing"
+        );
+    }
+
+    /// A track routed into another track is a group, and the destination's
+    /// input sums exactly as a bus's does. An arrival discarded at that hop
+    /// leaves the whole group early against everything beside it.
+    #[test]
+    fn a_latent_track_inside_a_group_still_meets_its_sibling_at_the_master() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        assert_eq!(
+            harness.diagnostics().pdc_max_arrival_frames,
+            LATENCY as u64,
+            "the depth reported carries the group hop, not only what sums at the master"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the sibling at the master waits for the latent track inside the group"
+        );
+        assert_eq!(
+            harness.render(16).0,
+            vec![2.0; 16],
+            "past the onset every frame carries both routes"
+        );
+    }
+
+    /// A group carrying its own material is two sources at one point: what is
+    /// routed in, which has already waited, and its own clips, which have not.
+    #[test]
+    fn a_groups_own_clip_waits_for_the_latent_track_routed_into_it() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 3, 103, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(3)
+                .expect("track 3 is in the graph")
+                .source_delay_frames(),
+            LATENCY,
+            "the group's own clips are aimed at the depth of its input"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the group's clip does not sound ahead of the track feeding it"
+        );
+        assert_eq!(
+            harness.render(16).0,
+            vec![2.0; 16],
+            "past the onset the group carries both sources"
+        );
+    }
+
+    /// A group aligns the strips meeting on its input against each other, and
+    /// what it then sums at is a further point again: a track going straight
+    /// to the master waits for the whole hop.
+    #[test]
+    fn a_group_aligns_its_contributors_and_carries_their_depth_onward() {
+        const DEEP: usize = 7;
+        const SHALLOW: usize = 3;
+        let mut harness = Harness::new(48);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        track_with_constant_clip(&mut harness, 4, 104, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        harness.send(GraphCommand::SetTrackOutput(2, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, DEEP);
+        insert_latent_device(&mut harness, 2, 901, SHALLOW);
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            DEEP - SHALLOW,
+            "the shallower strip waits for the deeper one at the group's input"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(4)
+                .expect("track 4 is in the graph")
+                .output_delay_frames(),
+            DEEP,
+            "the track straight to the master waits for the whole group hop"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![3.0; 16];
+        expected[..DEEP].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the group's two strips and the direct track land on one frame"
+        );
     }
 
     /// Compensation is recursive: a bus that feeds another bus contributes its
