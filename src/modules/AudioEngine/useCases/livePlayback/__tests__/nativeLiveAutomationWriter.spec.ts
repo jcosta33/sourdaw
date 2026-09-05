@@ -28,6 +28,7 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
+    type AudioGraphDeviceParameterTarget,
     type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
@@ -43,6 +44,7 @@ import {
     DEVICE_PARAM_QUEUE_CAPACITY,
     SEAMS_PROVING_A_WHOLE_PASS,
     nativeLiveAutomationWriter,
+    writeStartSeconds,
     type LiveAutomationQueuedStamp,
     type LiveAutomationWriterTarget,
 } from '../nativeLiveAutomationWriterState';
@@ -1279,13 +1281,13 @@ describe('the live automation writer', () => {
  * a tick's writes, not just the plugin's.
  */
 describe('the live automation writer — hosted device parameters', () => {
-    const DEVICE_A: AudioGraphParameterTarget = {
-        kind: 'device-parameter',
-        trackId: 'track-a',
-        deviceId: 'plugin-1',
-        parameterId: '7',
-    };
-    const DEVICE_B: AudioGraphParameterTarget = { ...DEVICE_A, parameterId: '9' };
+    /** One parameter of the plugin the beforeEach chain holds on `track-a`. */
+    function parameterOf(parameterId: string): AudioGraphDeviceParameterTarget {
+        return { kind: 'device-parameter', trackId: 'track-a', deviceId: 'plugin-1', parameterId };
+    }
+
+    const DEVICE_A: AudioGraphParameterTarget = parameterOf('7');
+    const DEVICE_B: AudioGraphParameterTarget = parameterOf('9');
 
     /** A stamp the mirror believes the engine holds and cannot yet have released. */
     function heldStamp(startFrame: number): LiveAutomationQueuedStamp {
@@ -1382,6 +1384,61 @@ describe('the live automation writer — hosted device parameters', () => {
 
         const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
         expect(refusals).toHaveLength(1);
+    });
+
+    /**
+     * The starvation a slot-by-slot walk of a shared queue produces.
+     *
+     * Eight moving lanes on one plugin compile onto the same 10 ms slew grid,
+     * so each owes about ten writes inside one 0.1 s lookahead — well past the
+     * 63 the effect's single `DeviceParamQueue` admits. Filling slot by slot
+     * hands the whole ceiling to the first parameters and refills those same
+     * slots on every pump as their own stamps release, so the parameters
+     * behind them admit nothing for the life of the pass — silently, and with
+     * `applyAutomation` already stood down because the device is carried.
+     */
+    it('feeds every parameter of one plugin from the queue they share, earliest write first', async () => {
+        const SLOTS = 8;
+        const WRITES_PER_SLOT = 10;
+        const CEILING = DEVICE_PARAM_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN;
+        // Interleaved across the slots: slot k's write i is due one millisecond
+        // after slot k-1's, so due order and slot order disagree on every step.
+        const startOf = (slot: number, index: number): number => index * 0.01 + slot * 0.001;
+        const slots = Array.from({ length: SLOTS }, (_unused, slot) => parameterOf(`${slot}`));
+        mocks.curve = slots.map((target, slot) => ({
+            target,
+            writes: Array.from({ length: WRITES_PER_SLOT }, (_unused, index) =>
+                step(startOf(slot, index), 0.1 * index)
+            ),
+        }));
+
+        arm(0);
+        await flush();
+
+        const [batch] = mocks.apply.mock.calls[0] ?? [];
+        const admitted = (batch?.commands ?? []).flatMap((command) =>
+            command.kind === 'write-device-parameter' ? [writeStartSeconds(command.write)] : []
+        );
+        const everyStart = slots.flatMap((_unused, slot) =>
+            Array.from({ length: WRITES_PER_SLOT }, (_again, index) => startOf(slot, index))
+        );
+        const earliest = [...everyStart].sort((left, right) => left - right).slice(0, CEILING);
+        // The ceiling is spent on the writes the playhead reaches first,
+        // wherever they sit in the target order.
+        expect([...admitted].sort((left, right) => left - right)).toEqual(earliest);
+        // And no parameter is left out of it: the last slots in target order
+        // are exactly the ones a slot-by-slot walk starves.
+        for (const target of slots) {
+            expect(slotFor(target)?.cursor).toBeGreaterThan(0);
+        }
+
+        // The group is saturated — every slot still owes a write inside the
+        // window — and that is worth saying once, not once per animation frame.
+        await pump(0, 0);
+
+        const saturations = mocks.warn.mock.calls.filter(([message]) => String(message).includes('saturated'));
+        expect(saturations).toHaveLength(1);
+        expect(String(saturations[0]?.[0])).toContain('device:track-a:plugin-1');
     });
 
     it('admits one parameter of a plugin whose shared queue has a slot left', async () => {

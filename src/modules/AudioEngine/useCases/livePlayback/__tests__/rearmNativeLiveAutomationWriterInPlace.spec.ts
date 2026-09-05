@@ -1,5 +1,12 @@
 /**
- * What an in-place re-arm re-reads (#3568, #3575).
+ * What a re-arm of a pass in flight re-reads (#3568, #3575).
+ *
+ * Both routes that arm an existing pass are here, because the contract belongs
+ * to the arm rather than to either caller: an arm claims to re-project the whole
+ * world — it clears the pending re-read on that claim — so a caller handing it
+ * the arm-time strip objects would be arming against a chain the project has
+ * moved past. The in-place re-arm and the locate share one store re-read for
+ * exactly that reason, and this file proves both of them take it.
  *
  * Nothing that decides the answer is doubled: the real arm, the real producer,
  * the real stores. A chain re-arm exists precisely because a plugin reached
@@ -27,6 +34,7 @@ import { armNativeLiveAutomationWriter } from '../armNativeLiveAutomationWriter'
 import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
+import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
 
 const SAMPLE_RATE = 48_000;
 const SECONDS_PER_BEAT = 0.5;
@@ -201,5 +209,37 @@ describe('rearmNativeLiveAutomationWriterInPlace', () => {
         // `carriedStripIds` still names the strip, so dropping it here would
         // leave its devices driven by neither engine.
         expect(nativeLiveAutomationWriter.pass?.stripTracks.map((track) => track.id)).toEqual([STRIP_ID]);
+    });
+});
+
+describe('repositionNativeLiveGraphSession', () => {
+    beforeEach(() => {
+        nativeLiveGraphSession.backend = {
+            backendId: 'rearm-spec',
+            apply: () =>
+                Promise.resolve({ acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] }),
+            dispose: () => undefined,
+        };
+        nativeLiveGraphSession.rolling = true;
+        nativeLiveGraphSession.pending = Promise.resolve();
+    });
+
+    afterEach(() => {
+        nativeLiveGraphSession.backend = null;
+        nativeLiveGraphSession.rolling = false;
+    });
+
+    it('re-arms the locate against the chain the store holds, not the one the pass was taken on', async () => {
+        armOverTheFirstPlugin();
+
+        publishProjectChain([FIRST_PLUGIN, SECOND_PLUGIN]);
+        publishEngineChain([FIRST_PLUGIN.id, SECOND_PLUGIN.id]);
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 2 });
+
+        // A locate is an arm, and an arm clears the re-read the pass owed. Arming
+        // it against the pass's own strip objects would drop that request while
+        // leaving the plugin behind it stamped by nobody.
+        expect(passDeviceIds()).toEqual([FIRST_PLUGIN.id, SECOND_PLUGIN.id]);
     });
 });

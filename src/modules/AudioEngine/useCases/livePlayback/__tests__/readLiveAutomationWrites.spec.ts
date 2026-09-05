@@ -168,6 +168,22 @@ function halfFilledSeam(): void {
     offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, parameterId) => parameterId === '7';
 }
 
+/**
+ * The other half-filled shape: the value halves are there and the admission
+ * half is not.
+ *
+ * The guard has one term per half, and a missing term is invisible while every
+ * case that exercises it also drops another. This is the one that isolates the
+ * admission term — a projection that read only the clamp and the quantiser
+ * would stamp every id the lane names, including ones the instance never
+ * declared.
+ */
+function valueOnlySeam(): void {
+    emptySeam();
+    offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => Math.min(value, PUBLISHED_CEILING);
+    offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+}
+
 function readOneRegion(): ReturnType<typeof readLiveAutomationWrites> {
     return readLiveAutomationWrites({
         stripTracks: [TRACK],
@@ -238,6 +254,14 @@ describe('readLiveAutomationWrites', () => {
 
     it('admits no hosted plugin lane while any half of the parameter-law seam is unset', () => {
         halfFilledSeam();
+
+        const result = readOneRegion();
+
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+    });
+
+    it('admits no hosted plugin lane while only the value halves of the seam are set', () => {
+        valueOnlySeam();
 
         const result = readOneRegion();
 

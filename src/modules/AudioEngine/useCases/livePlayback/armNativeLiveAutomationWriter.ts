@@ -209,6 +209,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         // by. `null` when nothing wraps, which silences the seam half.
         wrapFloorFrame: spans.loop ? secondsToFrames(spans.loop.endSeconds, input.sampleRate) : null,
         queueFullReported: false,
+        saturatedGroups: new Set(),
     };
 
     void pumpNativeLiveAutomationWriter({

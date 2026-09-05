@@ -158,6 +158,16 @@ function commitBypass(deviceId: string, bypassed: boolean): void {
     };
 }
 
+/**
+ * Replace the track snapshot with a different device list, the way any project
+ * edit that adds or removes a device commits one — a new state object holding
+ * new device objects, which is what `mapAllTracks` produces.
+ */
+function replaceDevices(devices: SeedDevice[]): void {
+    const tracks = mutableTrackStore.value.tracks as SnapshotTrack[];
+    mutableTrackStore.value = { tracks: tracks.map((track) => ({ ...track, devices })) };
+}
+
 /** One device carrying two lanes of its own, which is what a plugin usually looks like. */
 function seedTwoLanesOnOneDevice(device: SeedDevice): void {
     mutableTrackStore.value = {
@@ -668,6 +678,36 @@ describe('applyAutomation', () => {
             applyAutomation(2);
 
             expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+        });
+
+        it('forgets a bypassed device’s state once the device leaves the snapshot', () => {
+            // The ledger deliberately survives a replaced snapshot, because the
+            // un-bypass *is* a replaced snapshot. What it must not survive is
+            // the device leaving the project: an id that comes back belongs to
+            // a device nobody bypassed — a plugin re-added, or another project
+            // loaded onto the same ids — and a stale `true` would restate its
+            // parameter over IPC on the first tick that reached it, doubling
+            // the writer the carried gate exists to stop.
+            const device: SeedDevice = {
+                id: 'device-eq9',
+                type: 'builtin-eq',
+                parameterValues: { 'eq-low-gain': 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-eq9:eq-low-gain' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            applyAutomation(0);
+
+            replaceDevices([]);
+            applyAutomation(1);
+
+            // Back under the same id, live, on a lane that is not moving:
+            // nothing here is a release from bypass.
+            replaceDevices([{ ...device, bypassed: false }]);
+            applyAutomation(2);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
         });
     });
 

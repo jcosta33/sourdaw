@@ -203,6 +203,15 @@ export type LiveAutomationWriterPass = {
     wrapFloorFrame: number | null;
     /** Whether this pass has already reported the engine's queue full. */
     queueFullReported: boolean;
+    /**
+     * The ledger groups this pass has already reported saturated.
+     *
+     * A saturated group is not a refusal — the writes it did admit go out — so
+     * nothing downstream latches it, and a plugin whose parameters outrun their
+     * shared queue would say so on every animation frame for as long as the
+     * curve moves. One line per group per pass is what a reader can act on.
+     */
+    saturatedGroups: Set<string>;
 };
 
 export const nativeLiveAutomationWriter: {
