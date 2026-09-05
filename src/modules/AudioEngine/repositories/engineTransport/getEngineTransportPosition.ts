@@ -23,6 +23,7 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         tempo: readNumber(payload, 'tempo'),
         timeSigNum: readNumber(payload, 'timeSigNum'),
         timeSigDenom: readNumber(payload, 'timeSigDenom'),
+        masterPeak: readNumber(payload, 'masterPeak'),
     };
 }
 

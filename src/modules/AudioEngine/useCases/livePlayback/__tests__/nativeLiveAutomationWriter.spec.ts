@@ -637,6 +637,7 @@ describe('the live automation writer', () => {
             tempo: 120,
             timeSigNum: 4,
             timeSigDenom: 4,
+            masterPeak: 0,
         });
         await flush();
 

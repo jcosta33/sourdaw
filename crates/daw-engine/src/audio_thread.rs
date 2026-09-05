@@ -17,9 +17,9 @@ use crate::midi::diagnostics::{
 };
 use crate::plugin_slot::CaptureInputBlock;
 use crate::scheduler::{
-    graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
-    GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
-    RETIREMENT_QUEUE_CAPACITY,
+    graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+    GraphCommand, GraphProgressSnapshot, MasterMeterSnapshot, RetiredGraphObjects,
+    TransportPositionSnapshot, RETIREMENT_QUEUE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -213,6 +213,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
     let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
     let (transport_position_tx, _transport_position_reader) = transport_position_channel();
+    let (master_meter_tx, _master_meter_reader) = master_meter_channel();
     let (engine_event_tx, _engine_event_rx) = engine_event_channel();
     spawn_audio_thread_with_diagnostics(
         command_rx,
@@ -220,6 +221,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         timeline_diagnostics_tx,
         graph_progress_tx,
         transport_position_tx,
+        master_meter_tx,
         engine_event_tx,
         None,
         false,
@@ -259,6 +261,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
+    master_meter_tx: Input<MasterMeterSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
@@ -282,6 +285,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             timeline_rt_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
+            master_meter_tx,
             engine_event_tx,
             capture_event_tx,
             force_default_buffer,
@@ -660,6 +664,11 @@ impl DeviceRenderer {
         publish_bridge_round_trip(&self.bridge_round_trip_slot, callback_frames);
         self.scheduler.process_audio_bridges(callback_frames);
 
+        // What the device is actually handed this callback. A shadowed block
+        // writes zeros and so contributes nothing, which is what keeps the
+        // meter a statement about the output rather than about the render.
+        let mut callback_peak = 0.0f32;
+
         // 3. Process the native effects chain (for standalone native rendering).
         // Scratch is fixed-size and owned here, so no heap allocation occurs
         // per buffer.
@@ -702,6 +711,13 @@ impl DeviceRenderer {
             // Adapt the rendered stereo pair to the device's actual
             // channel count.
             write_interleaved(chunk, left, right, channels, frames);
+
+            // Meter the buffer the device was actually handed, not the
+            // stereo scratch that fed it: a mono device folds left/right
+            // into one channel before this point, and a channel count
+            // above two leaves the extra channels zero-filled, which folds
+            // in harmlessly.
+            callback_peak = callback_peak.max(block_peak(&chunk[..frames * channels]));
         }
 
         self.scheduler.publish_midi_rt_diagnostics();
@@ -715,7 +731,25 @@ impl DeviceRenderer {
         // reason: one write per callback, after every block of it, so a reader
         // between callbacks sees a position the engine actually reached.
         self.scheduler.publish_transport_position();
+        // The meter's channel, on the same edge and for the same reason. It
+        // carries the whole callback's frame count because the hold window is
+        // measured in frames the device consumed, not in blocks this loop
+        // happened to split them into.
+        self.scheduler
+            .publish_master_meter(callback_peak, callback_frames as u64);
     }
+}
+
+/// The loudest sample the interleaved buffer the device was just handed
+/// holds, whatever its channel layout.
+///
+/// Runs inside the audio deadline: one pass over the slice the callback just
+/// wrote and that is still in cache, no allocation and no branch on data.
+#[inline]
+fn block_peak(written: &[f32]) -> f32 {
+    written
+        .iter()
+        .fold(0.0f32, |peak, sample| peak.max(sample.abs()))
 }
 
 /// Open the capture side and build the ring it feeds.
@@ -915,6 +949,7 @@ fn build_audio_stream(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
+    master_meter_tx: Input<MasterMeterSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
@@ -947,6 +982,7 @@ fn build_audio_stream(
         timeline_rt_diagnostics_tx,
         graph_progress_tx,
         transport_position_tx,
+        master_meter_tx,
     );
 
     // Built before the renderer, because the renderer takes the consumer with
@@ -1856,8 +1892,8 @@ mod capture_render_tests {
     };
     use crate::plugin_slot::{CaptureInputBlock, NativePlugin};
     use crate::scheduler::{
-        graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
-        RetiredGraphObjects,
+        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        GraphCommand, RetiredGraphObjects,
     };
     use crate::timeline::timeline_rt_diagnostics_channel;
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -1940,6 +1976,7 @@ mod capture_render_tests {
             let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
             let (graph_progress_tx, _progress_reader) = graph_progress_channel();
             let (transport_position_tx, _position_reader) = transport_position_channel();
+            let (master_meter_tx, _meter_reader) = master_meter_channel();
             let scheduler = AudioScheduler::with_rt_diagnostics(
                 command_rx,
                 retired_tx,
@@ -1948,6 +1985,7 @@ mod capture_render_tests {
                 timeline_diagnostics_tx,
                 graph_progress_tx,
                 transport_position_tx,
+                master_meter_tx,
             );
             let (feed_tx, feed_rx) = RingBuffer::new(1);
             Self {
@@ -2270,19 +2308,22 @@ mod capture_render_tests {
     }
 }
 
-/// The shadow monitor gate, driven through the production render callback.
+/// What the device is handed, driven through the production render callback.
 ///
-/// [`DeviceRenderer::render`] is the callback the device seam carries, and the
-/// gate is applied there and nowhere else, so these drive that method directly
-/// with a device buffer of their own rather than a device.
+/// [`DeviceRenderer::render`] is the callback the device seam carries. The
+/// shadow gate is applied there and nowhere else, and the master meter
+/// measures the same buffer that gate decides the contents of, so both are
+/// properties of this one method — these drive it directly with a device
+/// buffer of their own rather than a device.
 #[cfg(test)]
-mod shadow_monitor_tests {
+mod device_output_tests {
     use super::{new_bridge_round_trip_slot, DeviceRenderer};
     use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
     use crate::plugin_slot::TransportState;
     use crate::scheduler::{
-        graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
-        GraphProgressReader, GraphProgressSnapshot, RetiredGraphObjects,
+        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        GraphCommand, GraphProgressReader, GraphProgressSnapshot, MasterMeterReader,
+        RetiredGraphObjects, PEAK_HOLD_RELEASES_PER_SECOND,
     };
     use crate::timeline::{
         timeline_rt_diagnostics_channel, ClipPlacement, ClipPlayback, TimelineClip, TimelineTrack,
@@ -2292,10 +2333,20 @@ mod shadow_monitor_tests {
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const DEVICE_CHANNELS: usize = 2;
-    /// Loud enough that a leak of any size is unmistakable, and a value the
-    /// unity-rate render reproduces bit-exactly.
-    const MATERIAL_SAMPLE: f32 = 0.5;
+    /// Left channel sample: subtle to catch one-channel folds.
+    const LEFT_SAMPLE: f32 = 0.5;
+    /// Right channel sample: louder and negative to catch averaging and missing abs().
+    const RIGHT_SAMPLE: f32 = -0.75;
+    /// The true peak across both channels: the magnitude the meter must report.
+    const MATERIAL_PEAK: f32 = 0.75;
     const COMMAND_CAPACITY: usize = 32;
+
+    /// How long a peak stands before a quieter callback replaces it, derived
+    /// the way the scheduler derives it so the bracket below stays true when
+    /// the release rate moves.
+    fn peak_hold_frames() -> usize {
+        (SAMPLE_RATE / PEAK_HOLD_RELEASES_PER_SECOND) as usize
+    }
 
     /// The render callback plus the control side of its command ring.
     struct DeviceHarness {
@@ -2303,6 +2354,7 @@ mod shadow_monitor_tests {
         retired_rx: Consumer<RetiredGraphObjects>,
         renderer: DeviceRenderer,
         progress: GraphProgressReader,
+        meter: MasterMeterReader,
     }
 
     impl DeviceHarness {
@@ -2313,6 +2365,7 @@ mod shadow_monitor_tests {
             let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
             let (graph_progress_tx, progress) = graph_progress_channel();
             let (transport_position_tx, _position_reader) = transport_position_channel();
+            let (master_meter_tx, meter) = master_meter_channel();
             let scheduler = AudioScheduler::with_rt_diagnostics(
                 command_rx,
                 retired_tx,
@@ -2321,6 +2374,7 @@ mod shadow_monitor_tests {
                 timeline_diagnostics_tx,
                 graph_progress_tx,
                 transport_position_tx,
+                master_meter_tx,
             );
             // No capture side: this module drives the monitor gate, and the
             // renderer with no feed delivers no input at all.
@@ -2334,6 +2388,7 @@ mod shadow_monitor_tests {
                     capture_feed_rx,
                 ),
                 progress,
+                meter,
             }
         }
 
@@ -2347,8 +2402,15 @@ mod shadow_monitor_tests {
         /// One device callback of `frames`, returning the interleaved buffer
         /// the device would have played.
         fn render(&mut self, frames: usize) -> Vec<f32> {
-            let mut data = vec![0.0f32; frames * DEVICE_CHANNELS];
-            self.renderer.render(&mut data, DEVICE_CHANNELS);
+            self.render_with_channels(frames, DEVICE_CHANNELS)
+        }
+
+        /// One device callback of `frames` on a device exposing `channels`
+        /// channels, returning the interleaved buffer the device would have
+        /// played.
+        fn render_with_channels(&mut self, frames: usize, channels: usize) -> Vec<f32> {
+            let mut data = vec![0.0f32; frames * channels];
+            self.renderer.render(&mut data, channels);
             // This thread is both the command side and the render side, so
             // freeing here is safe and keeps the retirement ring from
             // stalling the next drain.
@@ -2359,19 +2421,27 @@ mod shadow_monitor_tests {
         fn progress(&mut self) -> GraphProgressSnapshot {
             self.progress.snapshot()
         }
+
+        /// The master peak the last callback published — what a UI poll
+        /// landing between callbacks would read.
+        fn master_peak(&mut self) -> f32 {
+            self.meter.snapshot().peak
+        }
     }
 
-    /// A track holding one clip of constant material from frame zero, and a
+    /// A track holding one clip with asymmetric material from frame zero, and a
     /// rolling transport — the smallest schedule whose device output is
-    /// unmistakably non-zero.
+    /// unmistakably non-zero. The left and right channels differ in magnitude and
+    /// sign so that a fold missing either channel, dropping abs(), or averaging
+    /// would produce a different peak than the true maximum.
     fn schedule_rolling_material(harness: &mut DeviceHarness, frames: usize) {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
             TimelineClip::new(
                 7,
-                vec![MATERIAL_SAMPLE; frames].into(),
-                vec![MATERIAL_SAMPLE; frames].into(),
+                vec![LEFT_SAMPLE; frames].into(),
+                vec![RIGHT_SAMPLE; frames].into(),
                 ClipPlacement {
                     start_frame: 0,
                     source_offset_frames: 0,
@@ -2408,7 +2478,7 @@ mod shadow_monitor_tests {
             heard.iter().any(|sample| *sample != 0.0),
             "the unshadowed schedule must reach the device, or the silent half proves nothing"
         );
-        assert_eq!(heard[0], MATERIAL_SAMPLE);
+        assert_eq!(heard[0], LEFT_SAMPLE);
         assert!(
             silent.iter().all(|sample| *sample == 0.0),
             "a shadowed monitor writes true zeros, not a small gain"
@@ -2432,7 +2502,7 @@ mod shadow_monitor_tests {
 
         assert!(while_shadowed.iter().all(|sample| *sample == 0.0));
         assert!(after_cutover.iter().any(|sample| *sample != 0.0));
-        assert_eq!(after_cutover[0], MATERIAL_SAMPLE);
+        assert_eq!(after_cutover[0], LEFT_SAMPLE);
     }
 
     /// The shadow silences the output, never the clock. A shadowed engine
@@ -2474,5 +2544,105 @@ mod shadow_monitor_tests {
         assert_eq!(wrapped.loop_wraps, 1);
         assert_eq!(wrapped.last_wrap_frame, LOOP_END);
         assert_eq!(wrapped.playhead_frame, FRAMES as u64 * 2 - LOOP_END);
+    }
+
+    /// The meter's own claim: the level it publishes is the level the device
+    /// was handed, measured as the maximum absolute value across both channels.
+    /// The render is unity from the clip's gain through the master fader, so a
+    /// meter that folded only one channel, dropped abs(), or averaged the pair
+    /// would land somewhere other than the true peak.
+    #[test]
+    fn the_master_meter_publishes_the_peak_the_device_was_handed() {
+        const FRAMES: usize = 512;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES);
+        let heard = harness.render(FRAMES);
+
+        // Interleaved stereo: index 0 is left, index 1 is right.
+        assert_eq!(heard[0], LEFT_SAMPLE);
+        assert_eq!(heard[1], RIGHT_SAMPLE);
+        assert_eq!(harness.master_peak(), MATERIAL_PEAK);
+    }
+
+    /// A meter fed per callback and read per animation frame needs the hold:
+    /// the poll lands between callbacks, and the callback it lands after is
+    /// rarely the loud one. So a peak stands for the hold window and falls
+    /// only once the window has passed — never on the next quiet block.
+    #[test]
+    fn a_peak_stands_through_the_hold_window_and_falls_after_it() {
+        const FRAMES: usize = 512;
+
+        let mut harness = DeviceHarness::new();
+        // Material for exactly one callback: every callback after the first
+        // renders past the clip and hands the device silence.
+        schedule_rolling_material(&mut harness, FRAMES);
+        harness.render(FRAMES);
+        assert_eq!(harness.master_peak(), MATERIAL_PEAK);
+
+        harness.render(FRAMES);
+        assert_eq!(
+            harness.master_peak(),
+            MATERIAL_PEAK,
+            "one callback of silence is well inside the hold window; a meter that fell here \
+             would read zero for every transient a poll did not happen to land on"
+        );
+
+        // The hold releases on a callback boundary, so the fall lands on the
+        // first callback whose accumulated silence has passed the window —
+        // within one further callback of it, never before it.
+        let mut silent_frames = FRAMES;
+        while harness.master_peak() != 0.0 {
+            assert!(
+                silent_frames < peak_hold_frames() + 2 * FRAMES,
+                "the hold must release: the peak still stood after {silent_frames} silent frames"
+            );
+            harness.render(FRAMES);
+            silent_frames += FRAMES;
+        }
+
+        assert!(
+            silent_frames > peak_hold_frames(),
+            "the peak fell after {silent_frames} silent frames, short of the hold window"
+        );
+    }
+
+    /// The meter reports the output, not the render. A shadowed monitor hands
+    /// the device zeros, so the level a musician sees is zero however loud the
+    /// graph behind it is — and the same schedule, unshadowed, meters its own
+    /// material's peak.
+    #[test]
+    fn a_shadowed_callback_meters_zero_where_the_same_schedule_meters_its_material() {
+        const FRAMES: usize = 512;
+
+        let mut audible = DeviceHarness::new();
+        schedule_rolling_material(&mut audible, FRAMES);
+        audible.render(FRAMES);
+
+        let mut shadowed = DeviceHarness::new();
+        schedule_rolling_material(&mut shadowed, FRAMES);
+        shadowed.send(GraphCommand::SetMonitorShadow(true));
+        shadowed.render(FRAMES);
+
+        assert_eq!(audible.master_peak(), MATERIAL_PEAK);
+        assert_eq!(shadowed.master_peak(), 0.0);
+    }
+
+    /// A mono device folds the stereo pair into one channel before the
+    /// device ever sees it (`write_interleaved`'s averaging fold). The meter
+    /// must report the peak of that folded sum, not the peak of the stereo
+    /// scratch the device was never handed.
+    #[test]
+    fn a_mono_device_meters_the_fold_it_was_handed() {
+        const FRAMES: usize = 512;
+        const MONO_CHANNELS: usize = 1;
+        const FOLDED_SAMPLE: f32 = (LEFT_SAMPLE + RIGHT_SAMPLE) * 0.5;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES);
+        let heard = harness.render_with_channels(FRAMES, MONO_CHANNELS);
+
+        assert_eq!(heard[0], FOLDED_SAMPLE);
+        assert_eq!(harness.master_peak(), FOLDED_SAMPLE.abs());
     }
 }

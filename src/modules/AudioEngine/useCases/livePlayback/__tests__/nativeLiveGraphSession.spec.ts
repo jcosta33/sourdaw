@@ -227,6 +227,7 @@ function rollingReading(positionSeconds: number): EngineTransportPosition {
         tempo: 120,
         timeSigNum: 4,
         timeSigDenom: 4,
+        masterPeak: 0,
     };
 }
 
