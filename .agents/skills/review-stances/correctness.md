@@ -20,6 +20,11 @@ the probe that would have caught it. Keep each lesson short enough to paste into
   bug report named, and the adjacent value the report did not name.
 - A green gate is not evidence: name what would have to break for the existing checks to fail, and
   whether anything observes it.
+- When the change touches a shared control or a component that shares its input model, read the
+  sibling components on the same surface before attacking: their comments carry measured browser
+  behaviour (a `lostpointercapture` for a pointer the control never owned, a window or tab switch
+  that never delivers `pointerup`) that the change must survive, and a stance that reads only the
+  changed file re-derives, or misses, what a sibling already pinned.
 
 ## Lessons from escapes
 
