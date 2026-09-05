@@ -132,6 +132,14 @@ export const Fader = ({
     const gestureStartValue = useRef(value);
     /** The latest value emitted during the gesture — the one the finalizer commits. */
     const currentValue = useRef(value);
+    /**
+     * Whether this gesture emitted at least one transient sample. A drag that
+     * moves away and returns to its start pixel still moved the cap and drove
+     * the engine with transient samples along the way — `currentValue` landing
+     * back on `gestureStartValue` does not mean nothing happened, so the
+     * finalizer cannot use value equality to decide whether to settle.
+     */
+    const hasEmittedTransient = useRef(false);
     /** audit M-082: the id of the captured pointer, so a finalizer that has no event can still release it. */
     const activePointerIdRef = useRef<number | null>(null);
     const finalizeDragRef = useRef<() => void>(() => {});
@@ -165,9 +173,13 @@ export const Fader = ({
         // The commit that closes the gesture. It is emitted for every way a drag
         // can end — pointerup, cancel, lost capture, blur, tab switch — because a
         // caller that only persists on the commit would otherwise lose the whole
-        // sweep when the OS steals the gesture. A drag that never moved emits
-        // nothing, so a bare click on the cap stays a no-op.
-        if (!Object.is(currentValue.current, gestureStartValue.current)) {
+        // sweep when the OS steals the gesture. Emitted whenever the gesture sent
+        // at least one transient sample, not when the final value differs from the
+        // start: a drag that moves away and returns to its start pixel still drove
+        // the engine through transients and must still settle project truth, even
+        // though `currentValue` lands back on `gestureStartValue`. A bare click on
+        // the cap emits no transient and therefore stays a no-op.
+        if (hasEmittedTransient.current) {
             onChange(currentValue.current, false);
         }
         if (pointerId === null || !rootRef.current) {
@@ -228,6 +240,7 @@ export const Fader = ({
         // groove jumps the value immediately, and that jump is part of what the
         // finalizer has to commit.
         gestureStartValue.current = value;
+        hasEmittedTransient.current = false;
 
         const capEl = event.currentTarget.querySelector('[data-role="fader-cap"]');
         const isCapClick = capEl?.contains(event.target as Node);
@@ -237,6 +250,7 @@ export const Fader = ({
             const percent = 1 - (event.clientY - rect.top) / rect.height;
             const newValue = clampAndSnap(min + percent * (max - min));
             onChange(newValue, true);
+            hasEmittedTransient.current = true;
             currentValue.current = newValue;
             startValue.current = newValue;
             startY.current = event.clientY;
@@ -262,6 +276,7 @@ export const Fader = ({
         newValue = Math.round(newValue / currentStep) * currentStep;
         const clamped = clampAndSnap(newValue);
         currentValue.current = clamped;
+        hasEmittedTransient.current = true;
         onChange(clamped, true);
     };
 

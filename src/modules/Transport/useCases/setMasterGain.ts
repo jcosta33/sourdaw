@@ -22,9 +22,7 @@ import { MAX_MASTER_GAIN } from '../stores/transportStore';
  * `isTransient` mirrors `setTrackGain`'s contract: a transient sample (every
  * value emitted while the master fader's cap is under the pointer) drives
  * only the engine, and the settled value (the one sample emitted once the
- * gesture ends) additionally writes `transportStore` — the durable, undoable
- * value. Without the split, every pointermove wrote project truth, turning
- * one fader drag into dozens of undo-history entries.
+ * gesture ends) additionally writes `transportStore` — the durable value.
  */
 const MIN_MASTER_GAIN = 0;
 

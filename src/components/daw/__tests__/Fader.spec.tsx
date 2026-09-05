@@ -334,6 +334,26 @@ describe('Fader', () => {
 
             expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[jumped[0], false]]);
         });
+
+        it('should still settle a drag that moves away and returns to its start value', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            const startValue = 0;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 12, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 12, clientY: 40 });
+            // Back to the exact pixel the gesture began from — the settled value
+            // equals the start value, but the gesture still drove the engine
+            // through the transient in between and must still close out.
+            fireEvent.pointerMove(slider, { pointerId: 12, clientY: 50 });
+            fireEvent.pointerUp(slider, { pointerId: 12 });
+
+            const transients = onChange.mock.calls.filter((call) => call[1] === true);
+            expect(transients.length).toBeGreaterThan(0);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[startValue, false]]);
+        });
     });
 
     /**

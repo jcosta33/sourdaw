@@ -1,7 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
@@ -20,6 +20,14 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     setMasterGain: vi.fn<(gain: number) => void>(),
+}));
+
+const commandMocks = vi.hoisted(() => ({
+    executeUserAppAction: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: commandMocks.executeUserAppAction,
 }));
 
 // Mock child components
@@ -70,6 +78,13 @@ vi.mock('../MixerLevelReadout', () => ({
 describe('MasterChannelStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // `mockReturnValue` (used below to prove a cleared `gestureGain` reads a
+        // later store change) overrides the base implementation permanently —
+        // `clearAllMocks` resets calls, not implementations — so every test
+        // re-asserts the 80 default rather than inheriting whatever a prior
+        // test last set it to.
+        storeMocks.useStore.mockReturnValue({ masterGain: 80 });
+        commandMocks.executeUserAppAction.mockResolvedValue(undefined);
     });
 
     it('should render with correct width class', () => {
@@ -82,16 +97,28 @@ describe('MasterChannelStrip', () => {
         expect(screen.getByText('Master')).toBeInTheDocument();
     });
 
-    it('should call setMasterGain on fader change', async () => {
+    it('dispatches the settled change through the app action instead of writing the use case directly', async () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
-        fireEvent.change(fader, { target: { value: '0.5' } });
+
+        // Flushed inside `act` so the dispatch's promise — and the `finally`
+        // that clears `gestureGain` once it resolves — settles before the test
+        // makes its assertions, instead of updating the component afterwards.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.5' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.5, expectedPercent: 80 },
+        });
 
         const { setMasterGain } = await import('#/modules/Transport/useCases');
-        expect(setMasterGain).toHaveBeenCalledWith(50, false);
+        expect(setMasterGain).not.toHaveBeenCalled();
     });
 
-    it('drives the fader from the gesture value while the drag is transient, then commits settled', async () => {
+    it('drives the fader and the dB readout from the gesture value while the drag is transient', async () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
         const { setMasterGain } = await import('#/modules/Transport/useCases');
@@ -101,14 +128,37 @@ describe('MasterChannelStrip', () => {
 
         expect(setMasterGain).toHaveBeenCalledWith(50, true);
         // The store mock never moves off `masterGain: 80` — the rendered fader
-        // tracking the transient sample instead of 0.8 can only come from the
-        // component's own gesture-local display state.
+        // and dB readout tracking the transient sample instead of 0.8/-1.9dB
+        // can only come from the component's own gesture-local display state.
         expect(screen.getByTestId('fader')).toHaveValue('0.5');
+        expect(screen.getByTestId('level-value')).toHaveTextContent(`${formatGainDb(0.5)} dB`);
+    });
+
+    it('holds the gesture value until the settled dispatch resolves, then reads the store again', async () => {
+        const { rerender } = render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.6' } });
 
         fader.removeAttribute('data-transient');
-        fireEvent.change(fader, { target: { value: '0.55' } });
+        fireEvent.change(fader, { target: { value: '0.8' } });
 
-        expect(setMasterGain).toHaveBeenCalledWith(expect.closeTo(55, 5), false);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.8, expectedPercent: 80 },
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId('fader')).toHaveValue('0.8');
+        });
+
+        // With the gesture actually cleared, a later store change is what the
+        // same fader instance now reads — a `gestureGain` never cleared would
+        // keep showing the stale 0.8 forever regardless of what the store says.
+        storeMocks.useStore.mockReturnValue({ masterGain: 60 });
+        rerender(<MasterChannelStrip widthClass="w-36" />);
+        expect(screen.getByTestId('fader')).toHaveValue('0.6');
     });
 
     it('should display correct dB value for gain 80', () => {
