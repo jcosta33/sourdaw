@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { scheduleBuiltinSynthNote } from '../scheduleBuiltinSynthNote';
 
-type ParamEvent = { method: string; value: number; time: number };
+type ParamEvent = { method: string; value: number; time: number; param?: string };
 
-function makeParam(events: ParamEvent[]) {
+function makeParam(events: ParamEvent[], param?: string) {
     return {
         value: 0,
-        setValueAtTime: (value: number, time: number) => events.push({ method: 'setValueAtTime', value, time }),
+        setValueAtTime: (value: number, time: number) =>
+            events.push({ method: 'setValueAtTime', value, time, ...(param ? { param } : {}) }),
         linearRampToValueAtTime: (value: number, time: number) =>
-            events.push({ method: 'linearRampToValueAtTime', value, time }),
+            events.push({ method: 'linearRampToValueAtTime', value, time, ...(param ? { param } : {}) }),
         exponentialRampToValueAtTime: (value: number, time: number) =>
-            events.push({ method: 'exponentialRampToValueAtTime', value, time }),
-        setTargetAtTime: (value: number, time: number) => events.push({ method: 'setTargetAtTime', value, time }),
+            events.push({ method: 'exponentialRampToValueAtTime', value, time, ...(param ? { param } : {}) }),
+        setTargetAtTime: (value: number, time: number) =>
+            events.push({ method: 'setTargetAtTime', value, time, ...(param ? { param } : {}) }),
     };
 }
 
@@ -43,7 +45,7 @@ function makeFakeContext() {
     function makeFilter() {
         return {
             type: 'lowpass',
-            frequency: makeParam(events),
+            frequency: makeParam(events, 'filterFrequency'),
             Q: makeParam(events),
             connect: (destination: unknown) => destination,
             disconnect: () => {},
@@ -163,6 +165,122 @@ describe('scheduleBuiltinSynthNote pitch-bend depth', () => {
         scheduleWithBend(ctx, undefined);
 
         expect(firstFrequency(events)).toBeCloseTo(440, 6);
+    });
+});
+
+describe('scheduleBuiltinSynthNote filter velocity sensitivity', () => {
+    function getFilterCutoff(events: ParamEvent[]): number {
+        const event = events.find(
+            (candidate) => candidate.param === 'filterFrequency' && candidate.method === 'setValueAtTime'
+        );
+        return event?.value ?? 0;
+    }
+
+    it('disables velocity sensitivity when filterVelocitySensitivity is 0 (cutoff invariant across velocities)', () => {
+        const low = makeFakeContext();
+        const high = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx: low.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0 },
+            clipGain: 1,
+        });
+
+        scheduleBuiltinSynthNote({
+            ctx: high.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 127,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0 },
+            clipGain: 1,
+        });
+
+        const cutoffLow = getFilterCutoff(low.events);
+        const cutoffHigh = getFilterCutoff(high.events);
+
+        expect(cutoffLow).toBe(5000);
+        expect(cutoffHigh).toBe(5000);
+        expect(cutoffLow).toBe(cutoffHigh);
+    });
+
+    it('scales filter cutoff linearly with velocity when filterVelocitySensitivity is 1', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 63.5,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 1 },
+            clipGain: 1,
+        });
+
+        const cutoff = getFilterCutoff(events);
+        expect(cutoff).toBe(2500);
+    });
+
+    it('is continuous near zero sensitivity without jumping down at 0', () => {
+        const zeroSens = makeFakeContext();
+        const nearZeroSens = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx: zeroSens.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0 },
+            clipGain: 1,
+        });
+
+        scheduleBuiltinSynthNote({
+            ctx: nearZeroSens.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0.001 },
+            clipGain: 1,
+        });
+
+        const cutoffZero = getFilterCutoff(zeroSens.events);
+        const cutoffNearZero = getFilterCutoff(nearZeroSens.events);
+
+        expect(Math.abs(cutoffNearZero - cutoffZero)).toBeLessThan(10);
+    });
+
+    it('preserves legacy velocity scaling when filterVelocitySensitivity is undefined', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: {
+                ...baseBuiltinSynthParams,
+                filterCutoff: 5000,
+                filterVelocitySensitivity: undefined as unknown as number,
+            },
+            clipGain: 1,
+        });
+
+        const cutoff = getFilterCutoff(events);
+        const expected = 5000 * (0.3 + 0.7 * (32 / 127));
+        expect(cutoff).toBeCloseTo(expected, 6);
     });
 });
 

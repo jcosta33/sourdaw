@@ -149,12 +149,13 @@ export function scheduleBuiltinSynthNote({
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
 
-    // Velocity → filter brightness: harder hits open the filter more
-    const velSens = params.filterVelocitySensitivity ?? 0;
+    // Velocity → filter brightness: harder hits open the filter more.
+    // When explicitly provided (including 0), use linear sensitivity scaling:
+    // 0 sens = always full (disabled), 1 sens = full range (0 to 1).
+    // When undefined (legacy callers), fall back to legacy default (0.3 + 0.7 * vel/127).
+    const velSens = params.filterVelocitySensitivity;
     const velocityScale =
-        velSens > 0
-            ? 1 - velSens + velSens * (safeVelocity / 127) // 0 sens = always full, 1 sens = full range
-            : 0.3 + 0.7 * (safeVelocity / 127); // legacy default when param not set
+        velSens !== undefined ? 1 - velSens + velSens * (safeVelocity / 127) : 0.3 + 0.7 * (safeVelocity / 127);
     // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
     const pitchScale = Math.sqrt(frequency / 440);
     let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
