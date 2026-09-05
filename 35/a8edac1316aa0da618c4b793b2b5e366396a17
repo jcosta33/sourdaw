@@ -1,0 +1,24 @@
+tests/e2e/browserAiPanelsTestId.spec.ts
+  s_87ab0a2f60ccf8::t_48abed6ff30bde 66-68,87-96
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_87ab0a2f60ccf8::t_0eecf8e71e9966 2,76-79,269-272,292-295,347-350
+  s_87ab0a2f60ccf8::t_7b6747c2d3db3c 257-268,273-291,296-299
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_87ab0a2f60ccf8::t_bf707c4b035387 188-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "35a8edac1316aa0da618c4b793b2b5e366396a17",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": null
+    }
+  }
+}
