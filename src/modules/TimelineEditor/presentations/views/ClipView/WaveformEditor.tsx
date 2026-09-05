@@ -31,11 +31,12 @@ import {
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import {
     decodeAudioFile,
+    discardDecodedAudioFile,
     getCachedAudioBuffer,
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
+import { captureProjectTransitionAuthority, verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
@@ -245,6 +246,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
     };
 
     const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
+        const authority = captureProjectTransitionAuthority();
         event.preventDefault();
         setIsDragging(false);
         const file = event.dataTransfer.files[0];
@@ -254,6 +256,10 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
 
         try {
             const { id: bufferId } = await decodeAudioFile(file);
+            if (!authority.isCurrent()) {
+                discardDecodedAudioFile(bufferId);
+                return;
+            }
             if (replaceClipAudioBuffer(clipId, bufferId)) {
                 // Dropping a file here is the repair the missing-media panel
                 // prompts for, and the panel holds a scan rather than a
@@ -264,10 +270,14 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                 // and the edge closes a dependency cycle (`deps:validate`
                 // no-circular).
                 verifyAudioBufferReferences();
+                setBufferVersion((value) => value + 1);
+                return;
             }
-            setBufferVersion((value) => value + 1);
+            discardDecodedAudioFile(bufferId);
         } catch {
-            notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+            if (authority.isCurrent()) {
+                notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+            }
         }
     };
 

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -86,6 +87,11 @@ vi.mock('../../../useCases/importMidiFile', () => ({
     importMidiFile: vi.fn(),
 }));
 
+const transition = vi.hoisted(() => ({ current: true }));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+}));
+
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
@@ -114,6 +120,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('TrackContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transition.current = true;
     });
 
     it('should render without crashing', () => {
@@ -411,7 +418,7 @@ describe('TrackContextMenu', () => {
     });
 
     it('imports a selected audio file into the track', async () => {
-        vi.mocked(importAudioClipToTrack).mockResolvedValue(undefined);
+        vi.mocked(importAudioClipToTrack).mockResolvedValue('completed');
         renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
@@ -425,7 +432,9 @@ describe('TrackContextMenu', () => {
         Object.defineProperty(audioInput, 'files', { value: [file], configurable: true });
         fireEvent.change(audioInput);
         await vi.waitFor(() => {
-            expect(vi.mocked(importAudioClipToTrack)).toHaveBeenCalledWith('track1', file);
+            expect(vi.mocked(importAudioClipToTrack)).toHaveBeenCalledWith('track1', file, {
+                shouldContinue: expect.any(Function),
+            });
         });
     });
 
@@ -443,8 +452,31 @@ describe('TrackContextMenu', () => {
         Object.defineProperty(midiInput, 'files', { value: [file], configurable: true });
         fireEvent.change(midiInput);
         await vi.waitFor(() => {
-            expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file);
+            expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file, { shouldContinue: expect.any(Function) });
         });
+    });
+
+    it('does not decode a selected audio file after the initiating project changes', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import Audio...'));
+        transition.current = false;
+        const audioInput = Array.from(document.querySelectorAll('input[type=file]')).find(
+            (input) => (input as HTMLInputElement).accept === 'audio/*'
+        ) as HTMLInputElement;
+        Object.defineProperty(audioInput, 'files', {
+            value: [new File(['data'], 'stale.wav', { type: 'audio/wav' })],
+            configurable: true,
+        });
+
+        fireEvent.change(audioInput);
+
+        expect(importAudioClipToTrack).not.toHaveBeenCalled();
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
     });
 
     it('applies a color from the color picker', () => {

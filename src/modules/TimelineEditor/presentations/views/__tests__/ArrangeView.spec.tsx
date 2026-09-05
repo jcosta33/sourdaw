@@ -8,7 +8,7 @@ import {
     importMidiFile,
     setTimelineHorizontalScrollbarScrollX,
 } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -199,6 +199,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
+}));
+
+const transition = vi.hoisted(() => ({ current: true }));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -281,6 +287,8 @@ const readFirstScrollbarCall = (): { scrollX: number; maxScrollX: number } => {
 describe('ArrangeView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transition.current = true;
+        vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
         Object.defineProperty(window, 'innerWidth', {
             configurable: true,
             value: 1000,
@@ -411,8 +419,66 @@ describe('ArrangeView', () => {
         dropFiles([goodMidi]);
 
         await waitFor(() => {
-            expect(importMidiFile).toHaveBeenCalledWith(goodMidi);
+            expect(importMidiFile).toHaveBeenCalledWith(goodMidi, { shouldContinue: expect.any(Function) });
         });
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('discards every uncommitted parallel decode when the initiating project is superseded', async () => {
+        let resolveFirst!: (value: { id: string; buffer: AudioBuffer }) => void;
+        let resolveSecond!: (value: { id: string; buffer: AudioBuffer }) => void;
+        vi.mocked(decodeAudioFile)
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveFirst = resolve;
+                })
+            )
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveSecond = resolve;
+                })
+            );
+        render(<ArrangeView />);
+        const first = new File(['first'], 'first.wav', { type: 'audio/wav' });
+        const second = new File(['second'], 'second.wav', { type: 'audio/wav' });
+        dropFiles([first, second]);
+        await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(2));
+
+        resolveFirst({ id: 'audio-first', buffer: { duration: 1 } as AudioBuffer });
+        transition.current = false;
+        resolveSecond({ id: 'audio-second', buffer: { duration: 1 } as AudioBuffer });
+
+        await waitFor(() => {
+            expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-first');
+            expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-second');
+        });
+        expect(addTrack).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('preserves an earlier committed decode when a later MIDI import supersedes the drop', async () => {
+        vi.mocked(decodeAudioFile)
+            .mockResolvedValueOnce({ id: 'audio-committed', buffer: { duration: 1 } as AudioBuffer })
+            .mockResolvedValueOnce({ id: 'audio-pending', buffer: { duration: 1 } as AudioBuffer });
+        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-committed' } as ReturnType<typeof addTrack>);
+        vi.mocked(importMidiFile).mockImplementationOnce(async () => {
+            transition.current = false;
+            return 'superseded';
+        });
+        render(<ArrangeView />);
+        const first = new File(['first'], 'first.wav', { type: 'audio/wav' });
+        const midi = new File(['midi'], 'switch.mid', { type: 'audio/midi' });
+        const pending = new File(['pending'], 'pending.wav', { type: 'audio/wav' });
+
+        dropFiles([first, midi, pending]);
+
+        await waitFor(() => expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-pending'));
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-committed', audioBufferId: 'audio-committed' })
+        );
+        expect(discardDecodedAudioFile).not.toHaveBeenCalledWith('audio-committed');
+        expect(addTrack).toHaveBeenCalledTimes(1);
         expect(notifyUser).not.toHaveBeenCalled();
     });
 

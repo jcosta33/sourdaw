@@ -1,7 +1,8 @@
 import { type DragEvent, useState } from 'react';
 
-import { decodeAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -100,6 +101,7 @@ export const useTimelineFileDrop = ({
     const [isImporting, setIsImporting] = useState(false);
 
     const handleFileDrop = async (event: DragEvent<HTMLDivElement>): Promise<void> => {
+        const authority = captureProjectTransitionAuthority();
         event.preventDefault();
         setIsDragOver(false);
 
@@ -143,26 +145,25 @@ export const useTimelineFileDrop = ({
         const sampleData = event.dataTransfer.getData('application/x-sourdaw-sample');
         if (sampleData) {
             setIsImporting(true);
+            let sampleCommitted = false;
+            let discardPreparedSampleResources = () => {};
             try {
                 const sample = parseSample(sampleData);
-
-                let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                const sampleTargetTrack = targetTrackId
-                    ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
-                    : null;
-                if (!targetTrackId || !sampleTargetTrack || sampleTargetTrack.kind !== 'audio') {
-                    const newTrack = addTrack({ name: sample.name, kind: 'audio' });
-                    if (!newTrack) {
-                        return;
-                    }
-                    targetTrackId = newTrack.id;
-                }
-
-                // Decode the actual audio file so it goes into audioBufferCache.
-                // Without this, the clip has no bufferId and will be silent in exports.
                 let audioBufferId: string | undefined;
+                let decodedAudioBufferId: string | undefined;
                 let assetHash: string | undefined;
+                let assetLeaseId: string | undefined;
                 let durationBeats = sample.durationSeconds ? Math.max(1, Math.ceil(sample.durationSeconds * 2)) : 4;
+                const assetTransfer = getAssetTransfer();
+
+                discardPreparedSampleResources = () => {
+                    if (assetLeaseId) {
+                        assetTransfer?.releaseStagedAsset(assetLeaseId);
+                    }
+                    if (decodedAudioBufferId) {
+                        discardDecodedAudioFile(decodedAudioBufferId);
+                    }
+                };
 
                 // Factory (and any already-decoded) samples keep their AudioBuffer
                 // in the cache under the sample id — there is no file to re-read and
@@ -187,16 +188,30 @@ export const useTimelineFileDrop = ({
                             fallbackName: sample.name,
                         });
                         if (resolvedSampleFile.status === 'resolved') {
+                            if (!authority.isCurrent()) {
+                                return;
+                            }
                             const { file } = resolvedSampleFile;
                             try {
                                 const result = await decodeAudioFile(file);
                                 audioBufferId = result.id;
+                                decodedAudioBufferId = result.id;
                                 durationBeats = Math.max(
                                     1,
                                     Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
                                 );
-                                assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+                                if (!authority.isCurrent()) {
+                                    discardPreparedSampleResources();
+                                    return;
+                                }
+                                const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
+                                assetHash = stagedAsset?.hash;
+                                assetLeaseId = stagedAsset?.leaseId;
                             } catch {
+                                if (!authority.isCurrent()) {
+                                    discardPreparedSampleResources();
+                                    return;
+                                }
                                 notifyUser(
                                     `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
                                     'warning'
@@ -205,13 +220,35 @@ export const useTimelineFileDrop = ({
                         }
                     }
                 } catch {
+                    if (!authority.isCurrent()) {
+                        discardPreparedSampleResources();
+                        return;
+                    }
                     notifyUser(
                         `Could not access "${sample.name}" — the file may have moved or folder permissions were revoked.`,
                         'warning'
                     );
                 }
 
-                addClip({
+                if (!authority.isCurrent()) {
+                    discardPreparedSampleResources();
+                    return;
+                }
+
+                let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
+                const sampleTargetTrack = targetTrackId
+                    ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
+                    : null;
+                if (!targetTrackId || !sampleTargetTrack || sampleTargetTrack.kind !== 'audio') {
+                    const newTrack = addTrack({ name: sample.name, kind: 'audio' });
+                    if (!newTrack) {
+                        discardPreparedSampleResources();
+                        return;
+                    }
+                    targetTrackId = newTrack.id;
+                }
+
+                const clip = addClip({
                     trackId: targetTrackId,
                     startBeat: beat,
                     endBeat: beat + durationBeats,
@@ -220,8 +257,21 @@ export const useTimelineFileDrop = ({
                     audioBufferId,
                     assetHash,
                 });
+                if (!clip) {
+                    discardPreparedSampleResources();
+                    return;
+                }
+                sampleCommitted = true;
+                if (assetLeaseId) {
+                    assetTransfer?.promoteStagedAsset(assetLeaseId);
+                }
             } catch {
-                notifyUser('Could not place the dropped sample — its metadata was malformed.', 'error');
+                if (!sampleCommitted) {
+                    discardPreparedSampleResources();
+                }
+                if (authority.isCurrent()) {
+                    notifyUser('Could not place the dropped sample — its metadata was malformed.', 'error');
+                }
             } finally {
                 setIsImporting(false);
             }
@@ -257,6 +307,9 @@ export const useTimelineFileDrop = ({
         let currentBeat = beat;
         try {
             for (const file of files) {
+                if (!authority.isCurrent()) {
+                    return;
+                }
                 const isMidiFile =
                     file.type === 'audio/midi' ||
                     file.type === 'audio/x-midi' ||
@@ -268,7 +321,10 @@ export const useTimelineFileDrop = ({
                     );
 
                 if (isMidiFile) {
-                    await importMidiFile(file);
+                    const result = await importMidiFile(file, { shouldContinue: authority.isCurrent });
+                    if (result === 'superseded') {
+                        return;
+                    }
                     continue;
                 }
 
@@ -276,10 +332,29 @@ export const useTimelineFileDrop = ({
                     continue;
                 }
 
+                let decodedBufferId: string | undefined;
+                let stagedAssetLeaseId: string | undefined;
+                let committed = false;
+                const assetTransfer = getAssetTransfer();
                 try {
                     const { id: bufferId, buffer } = await decodeAudioFile(file);
+                    decodedBufferId = bufferId;
+                    if (!authority.isCurrent()) {
+                        discardDecodedAudioFile(bufferId);
+                        return;
+                    }
                     const model = buildTimelineRenderModel();
                     const durationBeats = Math.max(4, Math.ceil((buffer.duration / 60) * model.tempo));
+
+                    const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
+                    stagedAssetLeaseId = stagedAsset?.leaseId;
+                    if (!authority.isCurrent()) {
+                        if (stagedAsset) {
+                            assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+                        }
+                        discardDecodedAudioFile(bufferId);
+                        return;
+                    }
 
                     let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                     const targetTrack = targetTrackId
@@ -288,26 +363,50 @@ export const useTimelineFileDrop = ({
                     if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
                         const newTrack = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
                         if (!newTrack) {
+                            if (stagedAsset) {
+                                assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+                            }
+                            discardDecodedAudioFile(bufferId);
                             return;
                         }
                         targetTrackId = newTrack.id;
                     }
 
-                    const assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
-
-                    addClip({
+                    const clip = addClip({
                         trackId: targetTrackId,
                         startBeat: currentBeat,
                         endBeat: currentBeat + durationBeats,
                         name: file.name.replace(/\.[^.]+$/, ''),
                         type: 'audio',
                         audioBufferId: bufferId,
-                        assetHash,
+                        assetHash: stagedAsset?.hash,
                     });
+
+                    if (!clip) {
+                        if (stagedAsset) {
+                            assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+                        }
+                        discardDecodedAudioFile(bufferId);
+                        return;
+                    }
+                    committed = true;
+                    if (stagedAsset) {
+                        assetTransfer?.promoteStagedAsset(stagedAsset.leaseId);
+                    }
 
                     currentBeat += durationBeats;
                 } catch {
-                    notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+                    if (!committed) {
+                        if (stagedAssetLeaseId) {
+                            assetTransfer?.releaseStagedAsset(stagedAssetLeaseId);
+                        }
+                        if (decodedBufferId) {
+                            discardDecodedAudioFile(decodedBufferId);
+                        }
+                    }
+                    if (authority.isCurrent()) {
+                        notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+                    }
                 }
             }
         } finally {

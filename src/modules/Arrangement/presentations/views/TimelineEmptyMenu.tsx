@@ -5,8 +5,9 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -90,16 +91,23 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
     };
 
     const handleImportAudio = () => {
+        const authority = captureProjectTransitionAuthority();
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff';
         input.onchange = async () => {
             const file = input.files?.[0];
-            if (!file) {
+            if (!file || !authority.isCurrent()) {
                 return;
             }
+            let decodedBufferId: string | undefined;
             try {
                 const result = await decodeAudioFile(file);
+                decodedBufferId = result.id;
+                if (!authority.isCurrent()) {
+                    discardDecodedAudioFile(result.id);
+                    return;
+                }
                 const targetTrackId =
                     trackId ??
                     (() => {
@@ -107,15 +115,23 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                         return trackStore.value?.tracks[trackStore.value.tracks.length - 1]?.id ?? '';
                     })();
                 const durationBeats = Math.ceil((result.buffer.duration / 60) * (transportStore.value?.tempo ?? 120));
-                addClip({
+                const clip = addClip({
                     trackId: targetTrackId,
                     startBeat: beat,
                     endBeat: beat + durationBeats,
                     name: file.name.replace(/\.[^.]+$/, ''),
                     audioBufferId: result.id,
                 });
+                if (!clip) {
+                    discardDecodedAudioFile(result.id);
+                }
             } catch {
-                notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+                if (decodedBufferId) {
+                    discardDecodedAudioFile(decodedBufferId);
+                }
+                if (authority.isCurrent()) {
+                    notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
+                }
             }
         };
         input.click();
@@ -123,13 +139,14 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
     };
 
     const handleImportMidi = () => {
+        const authority = captureProjectTransitionAuthority();
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.mid,.midi';
         input.onchange = async () => {
             const file = input.files?.[0];
-            if (file) {
-                await importMidiFile(file);
+            if (file && authority.isCurrent()) {
+                await importMidiFile(file, { shouldContinue: authority.isCurrent });
             }
         };
         input.click();

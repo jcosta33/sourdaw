@@ -20,11 +20,12 @@ import {
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import {
     decodeAudioFile,
+    discardDecodedAudioFile,
     getCachedAudioBuffer,
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
-import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
+import { captureProjectTransitionAuthority, verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { WaveformEditor } from '../WaveformEditor';
@@ -138,6 +139,7 @@ vi.mock('#/utils/UI/resolveToken', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
     getCachedAudioBuffer: vi.fn(() => null),
     getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
     isDesktopRuntime: vi.fn(() => false),
@@ -187,8 +189,10 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
     denoiseAudio: vi.fn(),
 }));
 
+const transition = vi.hoisted(() => ({ current: true }));
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
     verifyAudioBufferReferences: vi.fn(),
 }));
 
@@ -253,6 +257,7 @@ describe('WaveformEditor', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        transition.current = true;
     });
 
     afterEach(() => {
@@ -799,6 +804,31 @@ describe('WaveformEditor', () => {
             expect(vi.mocked(replaceClipAudioBuffer)).toHaveBeenCalledWith('clip-1', 'audio-dropped');
         });
         expect(vi.mocked(verifyAudioBufferReferences)).not.toHaveBeenCalled();
+        expect(vi.mocked(discardDecodedAudioFile)).toHaveBeenCalledWith('audio-dropped');
+    });
+
+    it('discards a relink decode and leaves an identical clip id untouched after the project changes', async () => {
+        let resolveDecode!: (value: { id: string; buffer: AudioBuffer }) => void;
+        vi.mocked(decodeAudioFile).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveDecode = resolve;
+            })
+        );
+        render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+        fireEvent.drop(dropZone, {
+            dataTransfer: { files: [new File(['data'], 'stale.wav', { type: 'audio/wav' })] },
+        });
+        await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(1));
+
+        transition.current = false;
+        resolveDecode({ id: 'audio-stale', buffer: {} as AudioBuffer });
+
+        await waitFor(() => expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-stale'));
+        expect(replaceClipAudioBuffer).not.toHaveBeenCalled();
+        expect(verifyAudioBufferReferences).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
     });
 
     it('should notify the user when decoding a dropped file fails', async () => {

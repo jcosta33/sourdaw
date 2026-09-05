@@ -1,4 +1,4 @@
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -11,7 +11,16 @@ import { trackStore } from '../stores/trackStore';
 
 import { addClip } from './clip/addClip';
 
-export async function importAudioFile(file: File): Promise<void> {
+type ImportAudioFileOptions = {
+    shouldContinue: () => boolean;
+};
+
+type ImportAudioFileOutput = 'completed' | 'superseded';
+
+export async function importAudioFile(
+    file: File,
+    { shouldContinue }: ImportAudioFileOptions
+): Promise<ImportAudioFileOutput> {
     let bufferId: string;
     let buffer: AudioBuffer;
 
@@ -20,13 +29,22 @@ export async function importAudioFile(file: File): Promise<void> {
         bufferId = result.id;
         buffer = result.buffer;
     } catch {
+        if (!shouldContinue()) {
+            return 'superseded';
+        }
         notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
-        return;
+        return 'completed';
+    }
+
+    if (!shouldContinue()) {
+        discardDecodedAudioFile(bufferId);
+        return 'superseded';
     }
 
     const state = getTrackState();
     if (!state) {
-        return;
+        discardDecodedAudioFile(bufferId);
+        return 'completed';
     }
 
     const transport = transportStore.value;
@@ -35,53 +53,85 @@ export async function importAudioFile(file: File): Promise<void> {
     const endBeat = Math.ceil(durationBeats / 4) * 4;
     const name = file.name.replace(/\.[^.]+$/, '');
 
-    // Register the blob with AssetTransfer if a collaboration session is active,
-    // so peers can request it by hash. addLocalAsset is a no-op when null.
-    const assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+    const assetTransfer = getAssetTransfer();
+    let stagedAsset: Awaited<ReturnType<NonNullable<typeof assetTransfer>['stageLocalAsset']>> | undefined;
+    try {
+        stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
+    } catch {
+        discardDecodedAudioFile(bufferId);
+        if (!shouldContinue()) {
+            return 'superseded';
+        }
+        notifyUser(`Failed to import "${file.name}" — asset registration failed`, 'error');
+        return 'completed';
+    }
 
-    // The track store is immutable-via-set — every .set() yields a new
-    // top-level object, so capturing the reference before/after is
-    // equivalent to structuredClone() but without the O(n) deep-copy hit
-    // that used to block the main thread twice per import (§77.1).
-    const trackSnapshotBefore = trackStore.value;
+    const releasePreparedResources = () => {
+        if (stagedAsset) {
+            assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
+        }
+        discardDecodedAudioFile(bufferId);
+    };
+
+    if (!shouldContinue()) {
+        releasePreparedResources();
+        return 'superseded';
+    }
 
     const track = createTrack({ name, kind: 'audio' });
 
-    // Re-read the track state *after* the awaited addLocalAsset above so a
+    // Re-read the track state after the staged asset hash so a
     // concurrent write that landed during the asset hash (another import, a
     // clip/device edit, a remote CRDT apply) is not clobbered by a stale
     // snapshot. importMidiFile re-reads the same way before its write.
     const freshState = getTrackState();
     if (!freshState) {
-        return;
+        releasePreparedResources();
+        return 'completed';
     }
 
-    // Add the track to the store first so that addClip can find it
-    setTrackState({ ...freshState, tracks: [...freshState.tracks, track] });
+    const trackSnapshotBefore = freshState;
 
-    addClip({
-        trackId: track.id,
-        startBeat: 0,
-        endBeat: Math.max(4, endBeat),
-        name,
-        type: 'audio',
-        audioBufferId: bufferId,
-        assetHash,
-    });
+    try {
+        // Add the track to the store first so that addClip can find it.
+        setTrackState({ ...freshState, tracks: [...freshState.tracks, track] });
 
-    const trackSnapshotAfter = trackStore.value;
+        const clip = addClip({
+            trackId: track.id,
+            startBeat: 0,
+            endBeat: Math.max(4, endBeat),
+            name,
+            type: 'audio',
+            audioBufferId: bufferId,
+            assetHash: stagedAsset?.hash,
+        });
 
-    pushUndoEntry(
-        `Import audio: ${name}`,
-        () => {
-            if (trackSnapshotBefore) {
-                trackStore.set(trackSnapshotBefore);
-            }
-        },
-        () => {
-            if (trackSnapshotAfter) {
-                trackStore.set(trackSnapshotAfter);
-            }
+        if (!clip) {
+            throw new Error('Imported audio clip was not committed');
         }
-    );
+
+        const trackSnapshotAfter = trackStore.value;
+        pushUndoEntry(
+            `Import audio: ${name}`,
+            () => {
+                trackStore.set(trackSnapshotBefore);
+            },
+            () => {
+                if (trackSnapshotAfter) {
+                    trackStore.set(trackSnapshotAfter);
+                }
+            }
+        );
+    } catch {
+        setTrackState(trackSnapshotBefore);
+        releasePreparedResources();
+        notifyUser(`Failed to import "${file.name}" — project state could not be updated`, 'error');
+        return 'completed';
+    }
+
+    if (stagedAsset) {
+        assetTransfer?.promoteStagedAsset(stagedAsset.leaseId);
+    }
+
+    return 'completed';
 }

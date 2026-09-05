@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { importMidiFile } from '#/modules/Arrangement/useCases';
 import { undo, redo } from '#/modules/Command/useCases';
-import { saveProject, newProject } from '#/modules/Project/useCases';
+import { captureProjectTransitionAuthority, saveProject, newProject } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { setWorkspaceEventBus, type WorkspaceEventBus } from '../../../useCases/workspaceEventBus';
@@ -12,7 +12,12 @@ import { useAppEventHandlers } from '../useAppEventHandlers';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({ importMidiFile: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({ undo: vi.fn(), redo: vi.fn(), executeUserAppAction: vi.fn() }));
-vi.mock('#/modules/Project/useCases', () => ({ saveProject: vi.fn(), newProject: vi.fn() }));
+const transition = vi.hoisted(() => ({ current: true }));
+vi.mock('#/modules/Project/useCases', () => ({
+    saveProject: vi.fn(),
+    newProject: vi.fn(),
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+}));
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 
 // A minimal in-process bus: `on` records the handler keyed by event name so
@@ -48,6 +53,7 @@ describe('useAppEventHandlers', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        transition.current = true;
         bus = createFakeEventBus();
         setWorkspaceEventBus(bus);
         onOpenExport = vi.fn<() => void>();
@@ -102,7 +108,11 @@ describe('useAppEventHandlers', () => {
 
         bus.fire('midi.import', { file });
 
-        expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file);
+        expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file, { shouldContinue: expect.any(Function) });
+        const options = vi.mocked(importMidiFile).mock.calls[0]?.[1];
+        transition.current = false;
+        expect(options?.shouldContinue()).toBe(false);
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
     });
 
     it('does not import when midi.import carries no file', () => {
