@@ -199,4 +199,41 @@ describe('stereo-widener.dsp behavior (offline render)', () => {
         // High frequencies pass through with full stereo width (> 0.95)
         expect(ratio).toBeGreaterThan(0.95);
     });
+
+    it('scales cutoff frequency with mono_bass across intermediate crossover settings', async () => {
+        const fromSample = Math.floor(MEASURE_FROM_S * SAMPLE_RATE);
+        const toSample = TOTAL_S * SAMPLE_RATE;
+        const inputSideSignal = sine(50, 0.5);
+        const inputL = (n: number): number => inputSideSignal(n);
+        const inputR = (n: number): number => -inputSideSignal(n);
+
+        const renderRatioForCutoff = async (cutoff: number): Promise<number> => {
+            const { left, right } = await renderStereo(generator, [inputL, inputR], {
+                width: 100,
+                mono_bass: cutoff,
+            });
+            const outputSide = new Float32Array(toSample);
+            const inputSide = new Float32Array(toSample);
+            for (let i = 0; i < toSample; i++) {
+                outputSide[i] = ((left[i] ?? 0) - (right[i] ?? 0)) * 0.5;
+                inputSide[i] = (inputL(i) - inputR(i)) * 0.5;
+            }
+            return rms(outputSide, fromSample, toSample) / rms(inputSide, fromSample, toSample);
+        };
+
+        const ratio500 = await renderRatioForCutoff(500);
+        const ratio100 = await renderRatioForCutoff(100);
+        const ratio50 = await renderRatioForCutoff(50);
+
+        // Analytical for 1st-order highpass at 50 Hz:
+        // fc = 500 Hz -> 50 / sqrt(50^2 + 500^2) ≈ 0.0995
+        // fc = 100 Hz -> 50 / sqrt(50^2 + 100^2) ≈ 0.447
+        // fc = 50 Hz  -> 50 / sqrt(50^2 + 50^2)  ≈ 0.707
+        expect(ratio500).toBeLessThan(0.15);
+        expect(ratio100).toBeGreaterThan(0.35);
+        expect(ratio100).toBeLessThan(0.55);
+        expect(ratio50).toBeGreaterThan(0.65);
+        expect(ratio50).toBeLessThan(0.75);
+        expect(ratio100).toBeGreaterThan(ratio500 * 3.5);
+    });
 });
