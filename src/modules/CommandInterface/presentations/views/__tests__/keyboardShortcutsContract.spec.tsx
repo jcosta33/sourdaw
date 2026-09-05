@@ -208,6 +208,21 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             expect(lastIsInput()).toBe(true);
         });
 
+        it('gates the global shortcut (isInput=true) when Delete fires inside a [role="listbox"] surface', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            // Selection popups such as the mixer's routing menus render
+            // role="listbox" with tab-focusable option buttons.
+            const listbox = mount(document.createElement('div'));
+            listbox.setAttribute('role', 'listbox');
+            const option = listbox.appendChild(document.createElement('div'));
+            option.setAttribute('role', 'option');
+
+            option.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+
+            expect(lastIsInput()).toBe(true);
+        });
+
         it('does NOT gate a keydown originating outside an open dialog surface', () => {
             openSessionWithCommandHandlers();
             render(<Host />);

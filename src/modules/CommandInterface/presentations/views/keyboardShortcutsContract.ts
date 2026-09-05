@@ -20,7 +20,9 @@ function shouldDispatchShortcutAppActions(): boolean {
     return Object.keys(getHandlerMap()).length > 0;
 }
 
-const MODAL_SURFACE_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"]';
+// A focused listbox owns the keyboard like any modal surface (mixer routing / preset popups).
+// A focused listbox owns the keyboard like any modal surface (mixer routing / preset popups).
+const MODAL_SURFACE_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 /** True when the keydown's target sits inside an open modal or menu surface. */
 function isWithinModalSurface(target: EventTarget | null): boolean {
