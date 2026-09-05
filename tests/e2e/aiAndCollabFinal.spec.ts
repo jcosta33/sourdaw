@@ -136,7 +136,7 @@ test.describe('Generate Button Deep', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const generate = page.getByRole('button', { name: 'Generate' });
+        const generate = page.getByRole('button', { name: 'Generate', exact: true });
         await generate.click();
         await page.waitForTimeout(500);
         await generate.click();

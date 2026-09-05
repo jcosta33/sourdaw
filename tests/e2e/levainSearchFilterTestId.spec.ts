@@ -20,7 +20,7 @@ test.describe('Levain instrument search', () => {
     });
 
     test('violin keeps Solo Violin, hides Trumpets, and clear restores Trumpets', async ({ page }) => {
-        const search = page.getByRole('textbox', { name: 'Search Levain instruments' });
+        const search = page.getByRole('searchbox', { name: 'Search Levain instruments' });
         const lineup = search.locator('xpath=../..');
         const soloViolin = lineup.getByRole('button', { name: /Solo Violin/ });
         const trumpets = lineup.getByRole('button', { name: /Trumpets/ });
