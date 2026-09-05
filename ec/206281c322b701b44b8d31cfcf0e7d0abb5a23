@@ -1,0 +1,16 @@
+src/modules/Command/useCases/__tests__/actionLabels.spec.ts
+  h_1228e573df1f42 15-16
+src/modules/Command/useCases/actionLabels.ts
+  h_1228e573df1f42 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ec206281c322b701b44b8d31cfcf0e7d0abb5a23",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
