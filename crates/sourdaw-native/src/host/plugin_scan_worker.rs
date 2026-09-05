@@ -858,6 +858,105 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .stderr(Stdio::null());
         command
     }
+
+    /// The response belongs to one manual VST3 worker test. Its UUID makes a
+    /// stale response from another test process impossible to mistake for this
+    /// worker's result, and its drop removes no path the test did not create.
+    struct Vst3WorkerResponsePath(PathBuf);
+
+    impl Vst3WorkerResponsePath {
+        fn create() -> Self {
+            Self(std::env::temp_dir().join(format!(
+                "sourdaw-vst3-instance-worker-{}.json",
+                uuid::Uuid::new_v4()
+            )))
+        }
+    }
+
+    impl Drop for Vst3WorkerResponsePath {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    /// This leaf is selected exactly by the manual parent below. It keeps the
+    /// real bundle load in the bounded child: the test runner that requested
+    /// the evidence never calls a third-party VST3 entry point itself.
+    #[test]
+    #[ignore = "selected only by the bounded VST3 worker regression test"]
+    fn real_vst3_instance_worker_child() {
+        let plugin_path = std::env::var_os("SOURDAW_TEST_VST3_PATH")
+            .expect("SOURDAW_TEST_VST3_PATH is required for the VST3 worker child");
+        let response_path = std::env::var_os("SOURDAW_TEST_VST3_RESPONSE_PATH")
+            .expect("SOURDAW_TEST_VST3_RESPONSE_PATH is required for the VST3 worker child");
+
+        assert_eq!(
+            run_from_args([
+                OsString::from("sourdaw-vst3-instance-worker-child"),
+                OsString::from(INSTANCE_WORKER_ARGUMENT),
+                OsString::from(PluginFormat::Vst3.wire_name()),
+                plugin_path,
+                // VST3 resolves the bundle's declared class itself. The
+                // backend intentionally ignores this selector, but the
+                // instance-worker protocol still requires a valid UTF-8 id.
+                OsString::from("com.native-instruments.massive"),
+                response_path,
+            ]),
+            Some(0),
+            "the worker must serialize the real VST3 instance result"
+        );
+    }
+
+    /// #3749: this is intentionally manual and vendor-backed. It exercises the
+    /// VST3 registry's real `backend.instance` call through `run_from_args`, so
+    /// changing that call site to fabricate `Some(false)` fails here even while
+    /// helper-only capability tests remain green. It never opens an editor:
+    /// VST3's editor query remains a UI-thread operation outside scan workers.
+    #[test]
+    #[ignore = "requires SOURDAW_TEST_VST3_PATH and launches its bundle only in a bounded child"]
+    fn a_real_vst3_instance_worker_leaves_editor_support_unqueried() {
+        let plugin_path = std::env::var_os("SOURDAW_TEST_VST3_PATH")
+            .expect("SOURDAW_TEST_VST3_PATH is required for this manual VST3 worker test");
+        let response_path = Vst3WorkerResponsePath::create();
+        let mut command =
+            Command::new(std::env::current_exe().expect("test executable should exist"));
+        command
+            .arg("--exact")
+            .arg("host::plugin_scan_worker::tests::real_vst3_instance_worker_child")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .env("SOURDAW_TEST_VST3_PATH", plugin_path)
+            .env("SOURDAW_TEST_VST3_RESPONSE_PATH", &response_path.0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let status = run_bounded(&mut command, WORKER_TIMEOUT)
+            .expect("the VST3 worker child must remain observable within its bound");
+        assert!(status.success(), "the VST3 worker child must succeed");
+
+        let bytes = fs::read(&response_path.0)
+            .expect("the successful VST3 worker child must serialize a response");
+        let response: WorkerResponse<ScannedInstance> = serde_json::from_slice(&bytes)
+            .expect("the VST3 worker response must deserialize as ScannedInstance");
+        assert_ne!(
+            response.worker_pid,
+            std::process::id(),
+            "the VST3 metadata must come from the worker child, not this test runner"
+        );
+        let scanned = response
+            .result
+            .expect("the VST3 worker must serialize successful instance metadata");
+        assert!(
+            scanned.capabilities.audio_channels.is_some(),
+            "the VST3 worker must report the bundle's declared audio channels"
+        );
+        assert_eq!(
+            scanned.capabilities.has_custom_ui, None,
+            "the worker must not fabricate VST3 editor absence without a UI-thread query"
+        );
+    }
+
     #[test]
     fn crashed_helper_does_not_take_down_the_supervisor() {
         let (fixture_root, plugin_path) = build_hostile_clap("crash");
