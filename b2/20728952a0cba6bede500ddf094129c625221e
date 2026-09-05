@@ -1,0 +1,22 @@
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_28abfd94826e36::t_d486b6886a5f42 235-241,250-252
+  s_28abfd94826e36::t_83039db5127a2a 128-129,131-133
+  s_28abfd94826e36::t_b4b0d81089d1f0 143-144,146-158,160
+  s_28abfd94826e36::t_f63feeb74a428e 21-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b220728952a0cba6bede500ddf094129c625221e",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
