@@ -14,6 +14,7 @@ describe('ACTION_LABELS', () => {
         expect(ACTION_LABELS.cutClip).toBe('Cut clip');
         expect(ACTION_LABELS.copyClip).toBe('Copy clip');
         expect(ACTION_LABELS.pasteClip).toBe('Paste clip');
+        expect(ACTION_LABELS.duplicateClipToNextBar).toBe('Duplicate clip to next bar');
     });
 });
 
