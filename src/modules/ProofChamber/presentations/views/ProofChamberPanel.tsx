@@ -428,13 +428,30 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
         const result = await executeAppActionBatch(actions, { groupId, groupLabel });
+        if (result.status === 'committed-with-warning') {
+            // The project write landed, but post-commit history work failed, so
+            // the grouped one-history-step undo entry this gesture promises is
+            // missing or partial — the next undo may step past the whole load.
+            // Every sibling batch consumer surfaces this status; silence here
+            // would keep promising one-step undo the history no longer holds.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.warning}`);
+            notifyUser(
+                `The "${space}" space loaded with degraded undo history — the next undo may step past it.`,
+                'warning'
+            );
+            return;
+        }
         if (result.status === 'ambiguous') {
             // The write may or may not have persisted — the storage transaction's
             // commit state is unknown — so the toast hedges instead of naming an
-            // outcome the batch never reported.
+            // outcome the batch never reported. The hedge points at reloading the
+            // project because that is the one truth-derived view: the Space tray
+            // renders the optimistic engine store written before the batch and
+            // never resynced, so it shows the load as active even when nothing
+            // persisted.
             logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
             notifyUser(
-                `The "${space}" space load outcome is unknown. Check the Space tray before retrying.`,
+                `The "${space}" space load may not have persisted — reload the project to confirm before retrying.`,
                 'warning'
             );
             return;

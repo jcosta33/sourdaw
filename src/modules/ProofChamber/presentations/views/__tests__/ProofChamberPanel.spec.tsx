@@ -146,13 +146,44 @@ describe('ProofChamberPanel', () => {
     });
 
     /**
+     * A `committed-with-warning` batch did land the space, but post-commit
+     * history work failed — the grouped one-history-step undo entry this
+     * gesture promises is missing or partial, and the next undo may step past
+     * the whole load. Silence would keep the promise the history no longer
+     * holds, so the load must surface as exactly one warning naming the space
+     * and the undo consequence.
+     */
+    it('warns once about degraded undo history when the space-load batch commits with a warning', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'committed-with-warning',
+            warning: 'history observer unavailable',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('undo'), 'warning');
+        const [committedWarningMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expect(committedWarningMessage).toContain('plate');
+        expect(committedWarningMessage).not.toContain("can't be changed");
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    /**
      * An ambiguous batch may have persisted the space and may not have — the
      * storage transaction's commit state is unknown — so the warning hedges
-     * rather than claiming the refusal the batch never issued. A silent branch
-     * would leave the click's outcome unknowable; a refusal toast would name a
-     * false cause.
+     * rather than claiming the refusal the batch never issued. The hedge points
+     * at a project reload, the one truth-derived view that distinguishes the
+     * outcomes: the Space tray renders the optimistic engine store written
+     * before the batch and never resynced, so it shows the load as active even
+     * when nothing persisted. A silent branch would leave the click's outcome
+     * unknowable; a refusal toast would name a false cause.
      */
-    it('hedges with one warning that the load outcome is unknown when the space-load batch is ambiguous', async () => {
+    it('hedges with one warning pointing at a project reload when the space-load batch is ambiguous', async () => {
         vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
             status: 'ambiguous',
             reason: 'unknown commit state',
@@ -165,10 +196,12 @@ describe('ProofChamberPanel', () => {
         await waitFor(() => {
             expect(notifyUser).toHaveBeenCalledTimes(1);
         });
-        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('outcome is unknown'), 'warning');
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('reload the project'), 'warning');
         const [ambiguousMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
         expect(ambiguousMessage).toContain('plate');
+        expect(ambiguousMessage).toContain('may not have persisted');
         expect(ambiguousMessage).not.toContain("can't be changed");
+        expect(ambiguousMessage).not.toContain('Space tray');
         expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
     });
 
