@@ -16,7 +16,7 @@ import {
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
-import { nativeLiveGraphSession } from '../../livePlayback/nativeLiveGraphSessionState';
+import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from '../../livePlayback/nativeLiveGraphSessionState';
 import { masterGainState } from '../masterGainState';
 import { setMasterGainValue } from '../setMasterGainValue';
 
@@ -129,6 +129,30 @@ describe('setMasterGainValue', () => {
             [{ kind: 'set-master-gain', gain: 0.6 }],
             [{ kind: 'set-master-gain', gain: 0.6 }],
         ]);
+    });
+
+    // A session start runs on this same chain and publishes its handle only at
+    // the end of its turn, after its topology batch has already read the level.
+    // A gesture during that start therefore sees no session, and deciding
+    // before the queue would drop it: the take would run with the native strips
+    // at the level the start opened at until the fader next moved.
+    it('lands a gesture made during a session start behind that start', async () => {
+        let openSession = (): void => undefined;
+        const started = new Promise<void>((resolve) => {
+            openSession = () => {
+                resolve();
+            };
+        });
+        void queueOnNativeLiveGraphSession(async () => {
+            await started;
+            nativeLiveGraphSession.backend = backend;
+        });
+
+        setMasterGainValue(0.4);
+        openSession();
+        await nativeLiveGraphSession.pending;
+
+        expect(appliedBatches()).toEqual([{ schemaVersion: 1, commands: [{ kind: 'set-master-gain', gain: 0.4 }] }]);
     });
 
     it('states one clamped level to both carriers', async () => {

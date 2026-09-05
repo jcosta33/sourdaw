@@ -7063,6 +7063,43 @@ mod timeline_tests {
         );
     }
 
+    /// The fader arrives at its target rather than parking beside it.
+    ///
+    /// A one-pole approach covers a fraction of what is left, so the step
+    /// shrinks with the distance and underflows `f32` before the distance
+    /// reaches zero: the fader stops moving a hair off its target, and a fader
+    /// that never settles walks every block sample by sample and holds a level
+    /// that is not the one the gesture asked for, for the rest of the session.
+    /// The residue is inaudible; being permanently unsettled is not.
+    #[test]
+    fn master_fader_settles_exactly_on_a_target_it_cannot_reach_by_halving() {
+        const BLOCK: usize = 4_096;
+        const BLOCKS: usize = 4;
+
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, BLOCK * BLOCKS);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.8,
+            smoothing,
+        });
+
+        // Well past six time constants, by which an approach has covered all
+        // but a quarter percent of the distance and long since stopped moving.
+        let mut last = Vec::new();
+        for _ in 0..BLOCKS {
+            let (block, _) = harness.render(BLOCK);
+            last = block;
+        }
+
+        assert!(
+            last.iter().all(|sample| *sample == 0.8),
+            "the fader must land on the level the gesture named, not beside it: the last block ends at {}",
+            last.last().expect("the last block rendered")
+        );
+    }
+
     /// A loop wrap is not a fader move.
     ///
     /// The wrap sends the playhead back below the frame the gesture arrived on,
@@ -7089,6 +7126,9 @@ mod timeline_tests {
         harness.playing();
 
         let (approaching, _) = harness.render(BEFORE_SEAM);
+        // Sent before the wrap, and the case has power only that way round: a
+        // fader still travelling when the seam arrives is what distinguishes an
+        // approach from a stamped ramp, which would resolve back to its start.
         harness.send(GraphCommand::SetMasterGain {
             value: 0.0,
             smoothing,

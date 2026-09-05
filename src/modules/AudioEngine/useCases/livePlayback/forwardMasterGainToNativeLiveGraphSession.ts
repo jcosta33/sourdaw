@@ -21,6 +21,15 @@
  * level from where it stands and a shadowed one writes zeros at the device
  * whatever its fader says, so both are correct the moment they start sounding —
  * which a session that was skipped would not be.
+ *
+ * Every gesture enqueues, and whether a session exists is decided on the queue
+ * rather than before it. A forward with no session open costs one queued turn
+ * and sends nothing. A forward that races a start lands behind it — the start
+ * publishes its handle at the end of its own turn, after the topology batch has
+ * already read the level — so this turn finds the handle and states the level
+ * the fader now holds. Deciding before the queue would drop that gesture
+ * instead, leaving the take running with the native strips at the level the
+ * start opened at until the fader next moves.
  */
 
 import { masterGainState } from '../engineAccess/masterGainState';
@@ -28,12 +37,9 @@ import { masterGainState } from '../engineAccess/masterGainState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 export function forwardMasterGainToNativeLiveGraphSession(): void {
-    if (!nativeLiveGraphSession.backend) {
-        return;
-    }
     void queueOnNativeLiveGraphSession(async (): Promise<void> => {
-        // Re-read on the queue: a stop admitted between the gesture and this
-        // turn has already disposed the handle the check above saw.
+        // Read on the queue: a start admitted between the gesture and this turn
+        // has published its handle by now, and a stop has disposed one.
         const backend = nativeLiveGraphSession.backend;
         if (!backend) {
             return;

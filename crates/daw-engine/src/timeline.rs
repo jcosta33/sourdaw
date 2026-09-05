@@ -1200,10 +1200,16 @@ enum MixNode {
     Bus(usize),
 }
 
-/// Where the approach stops. A one-pole approach only ever covers a fraction
-/// of what is left, so a fader pulled to silence would never reach it and would
-/// keep multiplying the mix by numbers small enough to cost a denormal on every
-/// frame of the rest of the session.
+/// Where a pull to silence stops. A one-pole approach only ever covers a
+/// fraction of what is left, so a fader pulled to silence would never reach it
+/// and would keep multiplying the mix by numbers small enough to cost a
+/// denormal on every frame of the rest of the session.
+///
+/// This ends that one approach and no other. Around silence an `f32` step stays
+/// representable far past this distance, so the epsilon is what the descent
+/// meets first; anywhere else in the audible range the step underflows while
+/// more than this is still left, and [`MasterFader::next`] ends the approach on
+/// that stall instead.
 const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
 
 /// The master fader: a level the mix approaches sample by sample, holding no
@@ -1252,12 +1258,28 @@ impl MasterFader {
     /// sample is multiplied by the level the fader stood at when it arrived, so
     /// the first sample after a gesture still carries the level the sample
     /// before it did and nothing steps.
+    ///
+    /// The approach ends for either of two reasons, and both are needed to
+    /// reach [`Self::settled`] from anywhere in the audible range. Close to
+    /// silence the distance left falls under
+    /// [`MASTER_FADER_SETTLED_EPSILON`] first, which is what keeps a pull to
+    /// silence out of the denormals. Everywhere else the increment underflows
+    /// before that: one step covers a coefficient's worth of what is left, and
+    /// that lands below half an ULP of `value` while roughly `1e-4` dB of
+    /// distance remains — inaudible, but enough that a fader which never
+    /// settled would leave the block-constant path in
+    /// `apply_master_fader` unreachable for the rest of the session.
+    /// A step that cannot move the value is that end, so it settles there.
     fn next(&mut self) -> f32 {
         let level = self.value;
-        self.value += (self.target - self.value) * self.smoothing;
-        if (self.target - self.value).abs() < MASTER_FADER_SETTLED_EPSILON {
-            self.value = self.target;
-        }
+        let advanced = self.value + (self.target - self.value) * self.smoothing;
+        let stalled = advanced == self.value;
+        let within_epsilon = (self.target - advanced).abs() < MASTER_FADER_SETTLED_EPSILON;
+        self.value = if stalled || within_epsilon {
+            self.target
+        } else {
+            advanced
+        };
         level
     }
 }
