@@ -70,7 +70,9 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         },
     },
     {
-        // Live track gain 0.8; the guard expects 0.5.
+        // Live track gain is the model default (0.8, `models/Track.ts`); the
+        // guard expects 0.5. If that default ever moved to 0.5 the divergence
+        // would vanish and this row would red — the reliance is pinned.
         title: 'setTrackGain refuses to write against a diverged document',
         actionType: 'setTrackGain',
         divergedAction: { type: 'setTrackGain', payload: { trackId: 'track-live', gain: 0.5, expectedGain: 0.5 } },
@@ -84,7 +86,10 @@ const FIXTURE_PROVEN_ACTION_TYPES = [...new Set(CONFLICT_CAPABLE_FIXTURES.map((f
 function seedLiveProjectState(): void {
     setTrackStoreState({
         ...defaultTrackState,
-        tracks: [createTrack({ id: 'track-live', name: 'Live', kind: 'audio', gain: 0.8 })],
+        // No `gain` here: `CreateTrackInput` does not take one, so the track is
+        // seeded with the model's default gain (0.8) that the setTrackGain
+        // fixture's `expectedGain` deliberately mismatches.
+        tracks: [createTrack({ id: 'track-live', name: 'Live', kind: 'audio' })],
     });
     const clip = addClip({
         id: 'clip-live',
