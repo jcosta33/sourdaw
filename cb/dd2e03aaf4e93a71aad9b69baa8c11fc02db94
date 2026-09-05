@@ -1,0 +1,20 @@
+tests/e2e/browserDisplayScale.spec.ts
+  s_28abfd94826e36::t_83cfc7a6eb265d 262,265-269,275-281
+  s_28abfd94826e36::t_6cba5fc94fcb7d 435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cbdd2e03aaf4e93a71aad9b69baa8c11fc02db94",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
