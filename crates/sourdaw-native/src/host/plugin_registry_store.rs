@@ -194,7 +194,7 @@ struct PersistedScanRegistryRef<'a> {
 ///
 /// `quarantine` still defaults, but not for a before-the-column document —
 /// the column has existed since version 4 and this struct only ever accepts
-/// version [`SCAN_REGISTRY_SCHEMA_VERSION`] (5), so that document cannot
+/// version [`SCAN_REGISTRY_SCHEMA_VERSION`], so that document cannot
 /// reach here. The default instead covers a same-schema file that was
 /// hand-edited or truncated before the key was written: it reads as "nothing
 /// quarantined" rather than as unreadable.
@@ -1025,9 +1025,9 @@ fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T>
 /// [`PluginRegistryStore::persist`] needs this column and nothing else, and it
 /// needs it from a file another writer owns half of. Deserializing the whole
 /// document to reach one column ties a sibling's quarantine record to this
-/// build's ability to parse the sibling's rows — a row shape from a newer build,
-/// or a row this one corrupted, and the column reads as empty and the persist
-/// erases every quarantine decision in it. But the column must not survive a
+/// build's ability to parse the sibling's rows — a same-schema row this build
+/// cannot parse, or a row this build corrupted, and the column reads as empty
+/// and the persist erases every quarantine decision in it. But the column must not survive a
 /// document from a *different* schema: those rows belong to a shape this
 /// build never agreed to, and letting them through here would have
 /// `persist` copy them verbatim into the schema-[`SCAN_REGISTRY_SCHEMA_VERSION`]
@@ -2149,6 +2149,18 @@ mod tests {
         // the other schema's row into a current-schema document if the
         // column's own gate were missing.
         test_root.store().persist(&[]);
+
+        let rewritten: PersistedScanRegistry =
+            serde_json::from_slice(&fs::read(&location).expect("registry should be readable"))
+                .expect("registry should parse");
+        assert_eq!(
+            rewritten.schema_version, SCAN_REGISTRY_SCHEMA_VERSION,
+            "the persist must have rewritten the file at this build's schema"
+        );
+        assert!(
+            rewritten.quarantine.is_empty(),
+            "the persist must have rewritten the file with an empty quarantine column"
+        );
 
         let next_launch = test_root.store();
         next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
