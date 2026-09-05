@@ -126,6 +126,14 @@ export type LiveGraphTopologyInput = Readonly<{
     transport: LiveGraphTransportState;
     /** Whether this session's engine may reach the speakers at all. */
     monitor: LiveGraphMonitorMode;
+    /**
+     * Where the master fader stands, as a clamped linear amplitude.
+     *
+     * A strip this engine carries leaves through the native device and never
+     * crosses the Web Audio master fader, so the level has to travel with the
+     * topology or the two carriers play the same project at two levels.
+     */
+    masterGain: number;
     /** What each strip plays, from {@link projectLiveGraphProgramme}. */
     programme: LiveGraphProgramme;
     /**
@@ -237,6 +245,12 @@ function routingCommands(input: {
  * — every strip left at the engine's default. Locating first is the only order
  * under which the state a strip declares survives the batch that declares it.
  *
+ * The master level follows the locate for that same reason and is the one
+ * command in this batch that cannot be stated before it: the engine anchors the
+ * fader's ramp on the frame it drains the command at, so a level sent ahead of
+ * the locate is stamped at the position the engine is leaving and cancelled by
+ * the seek that follows it.
+ *
  * Then every strip before any route, because a send names a bus that has to
  * exist by the time it is read; then the programme, which names a strip for the
  * same reason. Clip placement is in absolute timeline frames and a seek touches
@@ -253,6 +267,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
         attachedInstanceIds,
         transport,
         monitor,
+        masterGain,
         programme,
         inputMonitoredTrackIds,
     } = input;
@@ -298,6 +313,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
             playing: transport.playing,
             positionSeconds: transport.positionSeconds,
         },
+        { kind: 'set-master-gain', gain: masterGain },
         ...strips,
         ...routes,
         ...playbacks,

@@ -103,6 +103,7 @@ import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/cre
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
+import { masterGainState } from '../engineAccess/masterGainState';
 import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
@@ -111,7 +112,11 @@ import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWr
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
-import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
+import {
+    projectLiveGraphTopology,
+    type LiveGraphMonitorMode,
+    type LiveGraphTopologyInput,
+} from './projectLiveGraphTopology';
 import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
@@ -592,6 +597,19 @@ async function rollSessionTransport(input: {
     return null;
 }
 
+/**
+ * The session's topology batch, at the level the master fader is standing at.
+ *
+ * The level is read here rather than taken as an argument because a session
+ * states its topology more than once — again when the first batch reports newly
+ * attached plugins — and the fader may have moved between the two. Reading it
+ * per projection is what keeps the second batch from restoring the first one's
+ * level.
+ */
+function projectSessionTopology(input: Omit<LiveGraphTopologyInput, 'masterGain'>): readonly AudioGraphCommand[] {
+    return projectLiveGraphTopology({ ...input, masterGain: masterGainState.gain });
+}
+
 export function startNativeLiveGraphSession(
     input: StartNativeLiveGraphSessionInput
 ): Promise<NativeLiveGraphSessionResult> {
@@ -625,7 +643,7 @@ export function startNativeLiveGraphSession(
         const parked = { playing: false, positionSeconds: input.positionSeconds } as const;
         const audible = monitor === 'audible';
         const projectTopology = (attachedInstanceIds: ReadonlySet<string>): readonly AudioGraphCommand[] =>
-            projectLiveGraphTopology({ ...topology, attachedInstanceIds, transport: parked, monitor, programme });
+            projectSessionTopology({ ...topology, attachedInstanceIds, transport: parked, monitor, programme });
         // Reopening the gates, and the only route that does: every decline past
         // the optimistic claim below runs through it, so no path can leave Web
         // Audio silenced for an engine that never sounded anything.

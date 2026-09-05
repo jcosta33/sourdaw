@@ -114,6 +114,7 @@ function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGrap
         attachedInstanceIds: new Set(),
         transport: { playing: true, positionSeconds: 0 },
         monitor: 'shadowed',
+        masterGain: 0.8,
         programme: NO_PROGRAMME,
         inputMonitoredTrackIds: new Set(),
         ...overrides,
@@ -666,7 +667,33 @@ describe('projectLiveGraphTopology', () => {
         expect(commands).toEqual([
             { kind: 'set-monitor-shadow', shadowed: true },
             { kind: 'set-transport', playing: false, positionSeconds: 3 },
+            { kind: 'set-master-gain', gain: 0.8 },
         ]);
+    });
+
+    it('carries the master level the fader is standing at', () => {
+        const commands = project({ masterGain: 0.35 });
+
+        expect(commands).toContainEqual({ kind: 'set-master-gain', gain: 0.35 });
+    });
+
+    it('states the master level after the locate, which would otherwise cancel it', () => {
+        // The engine stamps this command at the frame it drains it on, so one
+        // drained before the seek is stamped at the position the engine is
+        // leaving — and `cancel_from` drops every write at or past the frame
+        // the seek lands on. Sent ahead of the transport, the master level is
+        // destroyed by the locate that follows it, and the session plays at
+        // the engine's default level with nothing to say about it.
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            transport: { playing: true, positionSeconds: 0 },
+            masterGain: 0.35,
+        });
+
+        const transportAt = commands.findIndex((command) => command.kind === 'set-transport');
+        const masterAt = commands.findIndex((command) => command.kind === 'set-master-gain');
+        expect(transportAt).toBeGreaterThanOrEqual(0);
+        expect(masterAt).toBeGreaterThan(transportAt);
     });
 
     it('opens the batch with the monitor mode, ahead of anything that could be audible', () => {

@@ -611,6 +611,10 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
         attachedInstanceIds: new Set(),
         transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
+        // Unity: the export leg this render is compared against applies the
+        // project's own master level, so any other reading here would be a
+        // difference in the mix rather than in the programme under test.
+        masterGain: 1,
         // No fixture track monitors live input, so the carrier law leaves every
         // one of them to be judged on its chain and its routing alone.
         inputMonitoredTrackIds: new Set(),

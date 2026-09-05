@@ -87,6 +87,7 @@ const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], str
     'remove-device': 'an offline render builds each device chain once, at strip creation',
     'set-transport': "an offline render's transport is fixed by the region it was created for",
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
+    'set-master-gain': 'an offline render applies the master level itself, from the project',
 };
 
 /**
@@ -348,6 +349,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'remove-device':
             case 'set-transport':
             case 'set-monitor-shadow':
+            case 'set-master-gain':
                 // Refused ahead of application; unreachable here.
                 return null;
         }

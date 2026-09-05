@@ -111,7 +111,8 @@ export type NativeGraphWireCommand =
     | Readonly<{ kind: 'write-device-parameter'; target: AudioGraphDeviceParameterTarget; write: AudioGraphStepWrite }>
     | Readonly<{ kind: 'schedule-clip'; playback: NativeGraphWireClipPlayback }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
-    | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>;
+    | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>
+    | Readonly<{ kind: 'set-master-gain'; gain: number }>;
 
 /** `GraphBatchPayload` in `graph.rs`. */
 export type NativeGraphWireBatch = Readonly<{
@@ -220,6 +221,8 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             };
         case 'set-monitor-shadow':
             return { kind: 'set-monitor-shadow', shadowed: command.shadowed };
+        case 'set-master-gain':
+            return { kind: 'set-master-gain', gain: command.gain };
     }
     // Unreachable while the switch covers the union. Typed `never` so a command
     // added to the contract fails the typecheck here rather than crossing the

@@ -14,11 +14,11 @@ use crate::midi_fx::{
 };
 use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
-    RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
-    MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    timeline_rt_diagnostics_channel, AutomationEvent, AutomationTarget, AutomationWrite,
+    ChainEntry, ClipPlacement, ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent,
+    DeviceParamQueue, RampShape, RetiredTimelineObject, RouteTarget, SendTap, TimelineBus,
+    TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES,
+    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::knead::engine::KneadEngine;
@@ -538,6 +538,27 @@ pub enum GraphCommand {
         target: AutomationTarget,
         write: AutomationWrite,
     },
+    /// Move the master fader to `value`, gliding there over `ramp_frames` from
+    /// wherever the fader stands on the frame the engine is about to render.
+    ///
+    /// The stamp is the engine's, not the sender's, and that is the whole
+    /// reason this is a command of its own rather than an
+    /// [`GraphCommand::AutomateParam`] on [`AutomationTarget::MasterGain`]. A
+    /// fader is a gesture with no timeline coordinate: a sender's reading of
+    /// the playhead is a feed behind the frame the next callback renders, so a
+    /// sender-stamped write lands in the past and resolves to its end state —
+    /// a step, and a click. Only the audio thread knows the frame it is about
+    /// to render.
+    ///
+    /// The write replaces rather than appends, so a drag that sends one
+    /// command per tick keeps at most one write in the parameter's fixed
+    /// queue however fast the sender moves, and each ramp re-anchors on the
+    /// value the ramp it replaces had actually reached. `ramp_frames` of zero
+    /// is a step, on [`crate::timeline::RampedParam`]'s own law.
+    SetMasterGain {
+        value: f32,
+        ramp_frames: u32,
+    },
     /// A time-stamped change to a built-in device parameter, addressed without
     /// a name so consuming the command frees nothing on the audio thread.
     ///
@@ -674,6 +695,7 @@ impl GraphCommand {
             | Self::SetClipPlayback(..)
             | Self::SeekFrames(..)
             | Self::AutomateParam { .. }
+            | Self::SetMasterGain { .. }
             | Self::AutomateDeviceParam { .. }
             // The input bus addresses effects the table already holds; it
             // takes no slot of its own.
@@ -2159,6 +2181,23 @@ impl AudioScheduler {
                 }
                 GraphCommand::AutomateParam { target, write } => {
                     self.timeline.automate(target, write);
+                    None
+                }
+                // Anchored on the frame this drain is about to render, which
+                // is the coordinate the sender does not have. `Replace` is
+                // what makes the ramp continue the fader's trajectory instead
+                // of jumping to it, and what keeps a drag's stream from
+                // filling the parameter's queue.
+                GraphCommand::SetMasterGain { value, ramp_frames } => {
+                    self.timeline.automate(
+                        AutomationTarget::MasterGain,
+                        AutomationWrite::Replace(AutomationEvent {
+                            at_frame: self.playhead_frames,
+                            duration_frames: ramp_frames,
+                            value,
+                            shape: RampShape::Linear,
+                        }),
+                    );
                     None
                 }
                 GraphCommand::AutomateDeviceParam {
@@ -5933,7 +5972,7 @@ mod tests {
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
-    use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
+    use crate::timeline::{DeviceKind, AUTOMATION_QUEUE_CAPACITY, MAX_TIMELINE_TRACKS};
     use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
     use std::any::Any;
@@ -6926,6 +6965,95 @@ mod timeline_tests {
         // the engineer expects to be last on the strip.
         let (left, _) = harness.render(4);
         assert_eq!(left, vec![0.25; 4]);
+    }
+
+    /// A 10 ms ramp at 48 kHz, the span the master fader command carries.
+    const MASTER_RAMP_FRAMES: u32 = 480;
+    /// The same span as the divisor a per-frame step is measured against.
+    const MASTER_RAMP_SPAN: f32 = 480.0;
+
+    /// The master fader glides from the frame the engine is about to render.
+    ///
+    /// A step from unity to silence is the loudest click a mix can make, and
+    /// the frame the ramp starts on is the one the sender cannot name: pulling
+    /// the fader to zero has to leave the first frame at the level the last
+    /// block ended on and reach zero only at the end of the span.
+    #[test]
+    fn master_gain_ramps_from_the_playhead_frame_without_a_step() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 960);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            ramp_frames: MASTER_RAMP_FRAMES,
+        });
+
+        let (left, _) = harness.render(960);
+
+        assert_eq!(
+            left[0], 1.0,
+            "the ramp must start at the level the fader held"
+        );
+        let midpoint = left[240];
+        assert!(
+            (midpoint - 0.5).abs() < 0.001,
+            "halfway through the span the fader should be halfway down, got {midpoint}"
+        );
+        assert_eq!(
+            left[480], 0.0,
+            "the ramp must land on its target at the end of the span"
+        );
+        assert!(
+            left[481..].iter().all(|sample| *sample == 0.0),
+            "nothing may sound after the fader reached zero"
+        );
+        let largest_step = 1.0 / MASTER_RAMP_SPAN + f32::EPSILON;
+        for window in left[..=480].windows(2) {
+            let step = window[0] - window[1];
+            assert!(
+                (0.0..=largest_step).contains(&step),
+                "the descent must be monotone and no faster than one span, stepped by {step}"
+            );
+        }
+    }
+
+    /// A drag is a stream of writes, not one.
+    ///
+    /// Every write drained in one block carries the same engine frame, so each
+    /// replaces the one before it: the parameter's fixed queue never fills
+    /// however fast the fader moves, and the ramp that wins anchors on the
+    /// value the ramp it replaced had actually reached rather than jumping to
+    /// where a stale write was heading.
+    #[test]
+    fn master_gain_re_anchors_on_the_ramp_it_replaces_rather_than_queueing_behind_it() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 1_440);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            ramp_frames: MASTER_RAMP_FRAMES,
+        });
+        harness.render(240);
+
+        for _ in 0..=AUTOMATION_QUEUE_CAPACITY {
+            harness.send(GraphCommand::SetMasterGain {
+                value: 1.0,
+                ramp_frames: MASTER_RAMP_FRAMES,
+            });
+        }
+
+        assert_eq!(
+            harness.diagnostics().automation_queue_overflows,
+            0,
+            "a replacing write must not queue behind the one it replaces"
+        );
+        let (left, _) = harness.render(481);
+        assert!(
+            (left[0] - 0.5).abs() < 0.001,
+            "the new ramp must start where the old one had reached, got {}",
+            left[0]
+        );
+        assert_eq!(left[480], 1.0, "the newest write is the one that lands");
     }
 
     #[test]
