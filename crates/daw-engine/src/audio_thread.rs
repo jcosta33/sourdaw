@@ -2646,3 +2646,157 @@ mod device_output_tests {
         assert_eq!(harness.master_peak(), FOLDED_SAMPLE.abs());
     }
 }
+
+/// Compensation's real-time contract, driven through the production render
+/// callback.
+///
+/// Every delay line the graph runs is built control-side and reaches the
+/// callback owning its buffers, and a line the callback replaces or gives up
+/// leaves over the ADR 0020 retirement route. Both halves are one property of
+/// this callback: an allocation and a free are equally fatal on the audio
+/// thread, and `assert_no_alloc` catches both.
+///
+/// The interceptor is installed as the test binary's global allocator by the
+/// scheduler's own guards and exists only in debug builds
+/// (`assert_no_alloc`'s `disable_release` feature is on by default), which is
+/// why this module is `#[cfg(all(test, debug_assertions))]`.
+#[cfg(all(test, debug_assertions))]
+mod compensation_render_alloc_guards {
+    use super::{new_bridge_round_trip_slot, DeviceRenderer};
+    use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
+    use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
+    use crate::plugin_slot::NativePlugin;
+    use crate::scheduler::{
+        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        GraphCommand, RetiredGraphObjects,
+    };
+    use crate::timeline::{timeline_rt_diagnostics_channel, SendTap, TimelineBus, TimelineTrack};
+    use assert_no_alloc::assert_no_alloc;
+    use rtrb::{Consumer, Producer, RingBuffer};
+    use std::any::Any;
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const DEVICE_CHANNELS: usize = 2;
+    const CALLBACK_FRAMES: usize = 128;
+    const COMMAND_CAPACITY: usize = 32;
+    const EFFECT_ID: usize = 900;
+
+    struct CompensationHarness {
+        command_tx: Producer<GraphCommand>,
+        retired_rx: Consumer<RetiredGraphObjects>,
+        renderer: DeviceRenderer,
+    }
+
+    impl CompensationHarness {
+        fn new() -> Self {
+            let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
+            let (retired_tx, retired_rx) = RingBuffer::new(COMMAND_CAPACITY + 1);
+            let (midi_diagnostics_tx, _midi_reader) = active_midi_rt_diagnostics_channel();
+            let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
+            let (graph_progress_tx, _progress_reader) = graph_progress_channel();
+            let (transport_position_tx, _position_reader) = transport_position_channel();
+            let (master_meter_tx, _meter_reader) = master_meter_channel();
+            let scheduler = AudioScheduler::with_rt_diagnostics(
+                command_rx,
+                retired_tx,
+                SAMPLE_RATE,
+                midi_diagnostics_tx,
+                timeline_diagnostics_tx,
+                graph_progress_tx,
+                transport_position_tx,
+                master_meter_tx,
+            );
+            let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
+            Self {
+                command_tx,
+                retired_rx,
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    new_bridge_round_trip_slot(),
+                    capture_feed_rx,
+                ),
+            }
+        }
+
+        fn send(&mut self, command: GraphCommand) {
+            self.command_tx
+                .push(command)
+                .map_err(|_| "the command ring should hold this test's batch")
+                .expect("push");
+        }
+    }
+
+    /// Something for the effect table to hold, so a declared latency lands on a
+    /// registered effect and the second declaration replaces the first's line
+    /// rather than being refused.
+    struct SilentPlugin;
+
+    impl NativePlugin for SilentPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn name(&self) -> &str {
+            "silent-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The command the control thread builds for a declared latency.
+    fn set_latency(latency_frames: usize) -> GraphCommand {
+        GraphCommand::SetEffectLatency {
+            effect_id: EFFECT_ID,
+            latency_frames,
+            dry_delay: CompensationDelay::for_latency(latency_frames),
+        }
+    }
+
+    #[test]
+    fn compensating_the_graph_neither_allocates_nor_frees_on_the_callback() {
+        const CALLBACKS: usize = 4;
+
+        let mut harness = CompensationHarness::new();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PostFader,
+            level: 0.5,
+            delay: Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)),
+        });
+        harness.send(GraphCommand::AddPlugin(EFFECT_ID, Box::new(SilentPlugin)));
+        // Two on one effect: the second replaces the line the first installed,
+        // which is the free this guard exists to catch.
+        harness.send(set_latency(64));
+        harness.send(set_latency(128));
+        // Gives up a track that owns an output line and a send line.
+        harness.send(GraphCommand::RemoveTrack(1));
+
+        // Sized outside, the way a device buffer is: the callback is what is
+        // under test, not the buffer it is handed.
+        let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+
+        assert_no_alloc(|| {
+            for _ in 0..CALLBACKS {
+                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+            }
+        });
+
+        // Freed here, on the control side, which is the whole point of the
+        // route: two objects the callback let go of and did not drop.
+        let mut retired = 0;
+        while harness.retired_rx.pop().is_ok() {
+            retired += 1;
+        }
+        assert_eq!(
+            retired, 2,
+            "the replaced dry line and the removed track both leave over the retirement route"
+        );
+    }
+}

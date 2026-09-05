@@ -9,6 +9,7 @@ pub mod engine_events;
 pub mod midi;
 pub mod midi_fx;
 pub mod offline;
+pub mod pdc;
 pub mod plugin_slot;
 pub mod scheduler;
 pub mod timeline;
@@ -20,6 +21,7 @@ use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
     ActiveMidiRtDiagnosticsSnapshot,
 };
+use pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
@@ -682,6 +684,23 @@ impl EngineHandle {
         self.push(GraphCommand::RemovePluginWithBridge(id))
     }
 
+    /// State how many frames a registered device delays its own output by, so
+    /// the graph compensates every route that device sits on.
+    ///
+    /// The dry line the device runs while bypassed is built here, against the
+    /// declared figure, because the audio thread may not allocate one.
+    pub fn set_effect_latency(
+        &mut self,
+        effect_id: usize,
+        latency_frames: usize,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: CompensationDelay::for_latency(latency_frames),
+        })
+    }
+
     /// Feed a native plugin the audio the input device captures, block by
     /// block, alongside the graph audio it already renders.
     ///
@@ -807,6 +826,9 @@ impl EngineHandle {
     }
 
     /// Add a send from a track to a bus at the given tap.
+    ///
+    /// The send's compensation delay is built here, on the control thread,
+    /// because the audio thread may not allocate one.
     pub fn add_send(
         &mut self,
         track_id: usize,
@@ -819,6 +841,7 @@ impl EngineHandle {
             bus_id,
             tap,
             level,
+            delay: Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)),
         })
     }
 

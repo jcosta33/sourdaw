@@ -8,14 +8,17 @@
 //!
 //! The watcher is a dedicated non-RT thread that blocks in `recv()` until a
 //! plugin actually flags, then performs the deactivate / reactivate / re-query
-//! through the `SharedHostedPlugin` control seam and emits `plugin-latency-changed`
-//! to the webview. Nothing polls: an idle session does no work at all, and a
-//! plugin that changes latency mid-session reaches the frontend without the UI
-//! having to ask.
+//! through the `SharedHostedPlugin` control seam, emits `plugin-latency-changed`
+//! to the webview and aims the graph's compensation at the new figure. Nothing
+//! polls: an idle session does no work at all, and a plugin that changes latency
+//! mid-session reaches both the frontend and the mix without the UI having to
+//! ask.
 
 use crate::events::{EventSink, EventSinkExt};
+use crate::host::native_bridge::LatencyChange;
 use crate::host::runtime_for_instance;
 use crate::state::EnginePluginInstanceData;
+use daw_engine::EngineHandle;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender};
@@ -45,6 +48,15 @@ pub struct PluginLatencyChanged {
 static LATENCY_CHANGE_SENDER: OnceLock<Sender<String>> = OnceLock::new();
 
 type EnginePlugins = Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>;
+type Engine = Arc<Mutex<Option<EngineHandle>>>;
+
+/// What one wake owes the graph: the effect whose delay compensation is now
+/// wrong, and the latency to aim it at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatencyCompensation {
+    pub effect_id: usize,
+    pub latency_frames: usize,
+}
 
 /// Wake the watcher for `instance_id`.
 ///
@@ -65,12 +77,12 @@ pub fn notify_latency_change(instance_id: &str) {
 /// latency, which would corrupt compensation on every track using the plugin).
 pub fn latency_change_payload(
     instance_id: &str,
-    refreshed: Result<Option<f64>, String>,
+    refreshed: &Result<Option<LatencyChange>, String>,
 ) -> Option<PluginLatencyChanged> {
     match refreshed {
-        Ok(Some(latency_ms)) => Some(PluginLatencyChanged {
+        Ok(Some(change)) => Some(PluginLatencyChanged {
             instance_id: instance_id.to_string(),
-            latency_ms,
+            latency_ms: change.latency_ms,
         }),
         Ok(None) => None,
         Err(error) => {
@@ -83,9 +95,64 @@ pub fn latency_change_payload(
     }
 }
 
+/// Decide what one wake should compensate.
+///
+/// The same three-way rule the event follows, plus the engine's own condition:
+/// an instance the graph does not hold has no effect to aim, so it compensates
+/// nothing rather than addressing an id the effect table never took. Silent on
+/// failure because [`latency_change_payload`] already reported that poll —
+/// one failed re-query is one diagnostic.
+pub fn latency_compensation(
+    engine_plugin_id: Option<usize>,
+    refreshed: &Result<Option<LatencyChange>, String>,
+) -> Option<LatencyCompensation> {
+    let Ok(Some(change)) = refreshed else {
+        return None;
+    };
+    Some(LatencyCompensation {
+        effect_id: engine_plugin_id?,
+        latency_frames: change.latency_frames,
+    })
+}
+
+/// The instance's effect id, re-read after the poll rather than carried across
+/// it: the control visit waits up to [`CONTROL_TIMEOUT`], and an instance
+/// unloaded inside that window must not have a retired effect compensated.
+fn engine_plugin_id(engine_plugins: &EnginePlugins, instance_id: &str) -> Option<usize> {
+    let guard = engine_plugins.lock().ok()?;
+    guard
+        .get(instance_id)
+        .map(|instance| instance.engine_plugin_id)
+}
+
+/// Aim the graph's dry-delay line for one effect at its new latency.
+///
+/// Failures are reported and not retried: the instance stays registered and
+/// sounding, mixed at its old compensation until its next latency change. A
+/// worse mix rather than a broken one.
+fn publish_compensation(engine: &Engine, instance_id: &str, compensation: LatencyCompensation) {
+    let mut guard = match engine.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            eprintln!("[Plugin] latency watcher failed to lock the engine: {error}");
+            return;
+        }
+    };
+    // No engine yet means no graph holds this effect: the activation path
+    // publishes the latency when one is built.
+    let Some(engine) = guard.as_mut() else {
+        return;
+    };
+    if let Err(error) =
+        engine.set_effect_latency(compensation.effect_id, compensation.latency_frames)
+    {
+        eprintln!("[Plugin] failed to compensate instance {instance_id}: {error}");
+    }
+}
+
 /// Start the watcher thread. Idempotent: a second call is ignored, so the sender
 /// installed by the first `start` stays the one the host callbacks reach.
-pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
+pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins, engine: Engine) {
     let (sender, receiver) = channel::<String>();
     if LATENCY_CHANGE_SENDER.set(sender).is_err() {
         return;
@@ -102,9 +169,19 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
                     // Unloaded between the plugin's callback and this wake.
                     continue;
                 };
-                let refreshed = runtime.poll_latency_change_ms(CONTROL_TIMEOUT);
-                if let Some(payload) = latency_change_payload(&instance_id, refreshed) {
+                let refreshed = runtime.poll_latency_change(CONTROL_TIMEOUT);
+                if let Some(payload) = latency_change_payload(&instance_id, &refreshed) {
                     events.emit(PLUGIN_LATENCY_CHANGED_EVENT, payload);
+                }
+                // After the event: the frontend's own latency read is what a
+                // user waits on, and the graph command is a push onto a ring
+                // the audio thread drains on its own schedule anyway.
+                let compensation = latency_compensation(
+                    engine_plugin_id(&engine_plugins, &instance_id),
+                    &refreshed,
+                );
+                if let Some(compensation) = compensation {
+                    publish_compensation(&engine, &instance_id, compensation);
                 }
             }
         });
@@ -121,9 +198,16 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 mod tests {
     use super::*;
 
+    fn changed(latency_ms: f64, latency_frames: usize) -> Result<Option<LatencyChange>, String> {
+        Ok(Some(LatencyChange {
+            latency_ms,
+            latency_frames,
+        }))
+    }
+
     #[test]
     fn a_changed_latency_becomes_an_event_payload_carrying_milliseconds() {
-        let payload = latency_change_payload("inst-1", Ok(Some(10.0)));
+        let payload = latency_change_payload("inst-1", &changed(10.0, 441));
 
         assert_eq!(
             payload,
@@ -136,15 +220,75 @@ mod tests {
 
     #[test]
     fn an_unchanged_poll_emits_nothing() {
-        assert_eq!(latency_change_payload("inst-1", Ok(None)), None);
+        assert_eq!(latency_change_payload("inst-1", &Ok(None)), None);
     }
 
     #[test]
     fn a_failed_requery_emits_nothing_rather_than_a_fabricated_latency() {
         assert_eq!(
-            latency_change_payload("inst-1", Err("control path timed out".to_string())),
+            latency_change_payload("inst-1", &Err("control path timed out".to_string())),
             None,
             "a failed re-query must not publish a latency the plugin never reported"
+        );
+    }
+
+    #[test]
+    fn a_changed_latency_compensates_the_instances_effect_with_the_new_frame_count() {
+        assert_eq!(
+            latency_compensation(Some(7), &changed(10.0, 441)),
+            Some(LatencyCompensation {
+                effect_id: 7,
+                latency_frames: 441,
+            })
+        );
+    }
+
+    #[test]
+    fn an_unchanged_poll_compensates_nothing() {
+        assert_eq!(latency_compensation(Some(7), &Ok(None)), None);
+    }
+
+    #[test]
+    fn a_failed_requery_compensates_nothing_rather_than_a_fabricated_latency() {
+        assert_eq!(
+            latency_compensation(Some(7), &Err("control path timed out".to_string())),
+            None,
+            "a failed re-query must not aim a delay line at a latency the plugin never reported"
+        );
+    }
+
+    #[test]
+    fn one_polled_change_both_emits_the_event_and_compensates_the_effect() {
+        let refreshed = changed(14.5, 640);
+
+        assert_eq!(
+            latency_change_payload("inst-9", &refreshed),
+            Some(PluginLatencyChanged {
+                instance_id: "inst-9".to_string(),
+                latency_ms: 14.5,
+            })
+        );
+        assert_eq!(
+            latency_compensation(Some(3), &refreshed),
+            Some(LatencyCompensation {
+                effect_id: 3,
+                latency_frames: 640,
+            })
+        );
+    }
+
+    #[test]
+    fn a_change_on_an_instance_the_graph_does_not_hold_emits_the_event_and_compensates_nothing() {
+        let refreshed = changed(14.5, 640);
+
+        assert!(
+            latency_change_payload("inst-9", &refreshed).is_some(),
+            "the panel still shows the plugin's own reported latency"
+        );
+        assert_eq!(
+            latency_compensation(None, &refreshed),
+            None,
+            "an instance the graph does not hold has no effect id to address"
         );
     }
 

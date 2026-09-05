@@ -12,6 +12,7 @@ use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
 };
+use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
@@ -285,6 +286,23 @@ pub enum GraphCommand {
     AddDetachedEffect(usize, PluginCore),
     SetParam(usize, DeviceParam, f32),
     SetBypass(usize, bool),
+    /// State how many frames a device delays its own output by, so the graph
+    /// can hold everything that arrives at a summing point beside it back to
+    /// the same depth.
+    ///
+    /// `latency_frames` is the device's own claim, uncorrected: it is what the
+    /// arrivals are computed from and what the diagnostics report, and the
+    /// compensation ceiling is applied where a delay is aimed rather than here.
+    /// `dry_delay` is the line that runs in the device's place while it is
+    /// bypassed — `Some` exactly when the device declares latency — built on
+    /// the control thread by [`crate::pdc::CompensationDelay::for_latency`],
+    /// because the audio thread may neither build one nor free one (ADR 0020).
+    /// The line this command replaces leaves over the retirement channel.
+    SetEffectLatency {
+        effect_id: usize,
+        latency_frames: usize,
+        dry_delay: Option<Box<CompensationDelay>>,
+    },
 
     // External plugins (CLAP/VST3/AU)
     AddPlugin(usize, Box<dyn NativePlugin>),
@@ -492,11 +510,16 @@ pub enum GraphCommand {
     /// Add a send from a track to a bus at the given tap. A pre-fader send
     /// taps ahead of the fader and the mute; a post-fader send taps after the
     /// panner.
+    ///
+    /// `delay` is the send's own plugin delay compensation, built on the
+    /// control thread on the same contract as every other owning payload here.
+    /// A refused send hands it straight back to the retirement channel.
     AddSend {
         track_id: usize,
         bus_id: usize,
         tap: SendTap,
         level: f32,
+        delay: Box<CompensationDelay>,
     },
     RemoveSend {
         track_id: usize,
@@ -665,6 +688,7 @@ impl GraphCommand {
             // back on the master chain — so none of them frees a slot.
             Self::SetParam(..)
             | Self::SetBypass(..)
+            | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
             | Self::AddMidiFx(..)
             | Self::RemoveMidiFx(..)
@@ -706,6 +730,84 @@ impl GraphCommand {
             | Self::UnregisterCaptureConsumer(..) => 0,
             #[cfg(test)]
             Self::RegisterAudioBridge(..) => 0,
+        }
+    }
+
+    /// Whether applying this command changes what the graph's plugin delay
+    /// compensation is computed from: a declared latency, a chain's contents,
+    /// a strip's existence, or a route.
+    ///
+    /// The match carries no wildcard for the same reason
+    /// [`Self::effect_table_delta`] carries none: a command that moves the
+    /// graph's alignment and does not say so leaves every summing point aimed
+    /// at the previous topology, and the mix is early or late until some
+    /// unrelated command happens to dirty it.
+    ///
+    /// Bypass is deliberately absent. A bypassed device keeps its latency and
+    /// runs its dry line in its place, so the alignment is unchanged — and
+    /// re-aiming every delay on an A/B would put a discontinuity in the mix
+    /// exactly where an engineer is listening for one.
+    pub(crate) const fn dirties_compensation(&self) -> bool {
+        match self {
+            // The declared figure itself, and the chain memberships and routes
+            // the arrivals are summed along.
+            Self::SetEffectLatency { .. }
+            | Self::AddTrack(..)
+            | Self::RemoveTrack(..)
+            | Self::SetTrackOutput(..)
+            | Self::InsertTrackDevice { .. }
+            | Self::RemoveTrackDevice { .. }
+            | Self::RemoveTrackDeviceRetired { .. }
+            | Self::InsertBusDevice { .. }
+            | Self::RemoveBusDevice { .. }
+            | Self::RemoveBusDeviceRetired { .. }
+            | Self::AddSend { .. }
+            | Self::RemoveSend { .. }
+            | Self::AddBus(..)
+            | Self::RemoveBus(..)
+            | Self::SetBusOutput(..) => true,
+            // An effect leaving the table stops contributing its latency to
+            // whatever chain still lists it, so its departure moves arrivals
+            // exactly as taking it out of the chain would.
+            Self::RemovePluginWithBridge(..) => true,
+            #[cfg(test)]
+            Self::RemovePlugin(..) => true,
+            // A registration always arrives at zero declared latency — the
+            // latency is stated afterwards, by `SetEffectLatency` — so no
+            // arrival can move on the block that installs one.
+            Self::AddEffect(..)
+            | Self::AddDetachedEffect(..)
+            | Self::AddPlugin(..)
+            | Self::AddPluginWithBridge(..)
+            | Self::SetParam(..)
+            | Self::SetBypass(..)
+            | Self::SendMidiNote(..)
+            | Self::AddMidiFx(..)
+            | Self::RemoveMidiFx(..)
+            | Self::SetMidiFxParam(..)
+            | Self::SetTransport(..)
+            | Self::SetTransportPlayback { .. }
+            | Self::SetTransportMaps(..)
+            | Self::SetLoopRegion(..)
+            | Self::SetMonitorShadow(..)
+            | Self::BeginBatch { .. }
+            | Self::SwapCommandChannel { .. }
+            | Self::SetTrackMute(..)
+            | Self::SetTrackSoloGate(..)
+            | Self::SetBusMute(..)
+            | Self::SetBusSoloGate(..)
+            | Self::AddClip(..)
+            | Self::RemoveClip(..)
+            | Self::SetClipPlacement(..)
+            | Self::SetClipPlayback(..)
+            | Self::SeekFrames(..)
+            | Self::AutomateParam { .. }
+            | Self::SetMasterGain { .. }
+            | Self::AutomateDeviceParam { .. }
+            | Self::RegisterCaptureConsumer(..)
+            | Self::UnregisterCaptureConsumer(..) => false,
+            #[cfg(test)]
+            Self::RegisterAudioBridge(..) => false,
         }
     }
 }
@@ -795,6 +897,21 @@ struct ActiveEffect {
     midi_fx: MidiFxChain,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
+    /// Frames of latency this device declares, as its host last read them.
+    ///
+    /// The figure the graph's compensation is computed from, kept exactly as
+    /// declared: a device reporting more than the compensation ceiling is
+    /// clamped where a delay is aimed, never where the claim is recorded, so
+    /// the claim stays visible to whoever has to act on it.
+    latency_frames: usize,
+    /// This device's own dry delay, run in its place while it is bypassed.
+    ///
+    /// Bypass keeps latency (Cubase and Reaper both do this), so A/B-ing a
+    /// bypass never shifts the strip's alignment against the rest of the mix.
+    /// `None` for a device declaring no latency, which is every built-in the
+    /// engine owns. Built on the control thread and carried in by
+    /// [`GraphCommand::SetEffectLatency`].
+    dry_delay: Option<Box<CompensationDelay>>,
     placement: EffectPlacement,
     /// Where a strip returns this effect when it releases it.
     ///
@@ -1399,6 +1516,8 @@ impl ActiveEffect {
             id,
             instance,
             bypassed: false,
+            latency_frames: 0,
+            dry_delay: None,
             probability_evaluator: ProbabilityEvaluator,
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
@@ -1465,6 +1584,12 @@ pub struct AudioScheduler {
     /// delivery walks the whole of it every chunk and the reserve is a
     /// handful of entries — a trie would cost a walk per id to save nothing.
     capture_consumers: Vec<usize>,
+    /// Whether the drain changed something the graph's plugin delay
+    /// compensation is computed from — a declared latency, a chain's contents,
+    /// a strip's existence, or a route. Cleared by the recompute at the end of
+    /// the drain, so a batch that touches a hundred strips re-aims the delays
+    /// once rather than once per command.
+    pdc_dirty: bool,
     timeline: TimelineGraph,
     /// Absolute frame of the next block's first sample. It advances only while
     /// the transport is playing, so a clip start and a parameter stamp mean
@@ -1585,6 +1710,7 @@ impl AudioScheduler {
             audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
             bridge_index: IdSlotIndex::reserved(AUDIO_BRIDGE_TABLE_CAPACITY),
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+            pdc_dirty: false,
             timeline: TimelineGraph::new(),
             playhead_frames: 0,
             command_rx: Some(command_rx),
@@ -1763,6 +1889,20 @@ impl AudioScheduler {
     ///   never inside one.
     #[inline]
     pub fn update_graph(&mut self) {
+        self.drain_commands();
+        // After the drain rather than inside it: a batch that adds a bus, its
+        // devices and every send into it passes through states no mix should
+        // ever be aligned against, and re-aiming per command would also make a
+        // project-sized batch quadratic.
+        if self.pdc_dirty {
+            self.pdc_dirty = false;
+            self.recompute_compensation();
+        }
+    }
+
+    /// Apply everything the command ring is holding, up to the first refusal
+    /// the retirement ring forces.
+    fn drain_commands(&mut self) {
         if !self.flush_pending_retirement() {
             return;
         }
@@ -1830,6 +1970,7 @@ impl AudioScheduler {
     /// Returns `false` when the retirement ring could not take it; the caller
     /// stops draining and the held retirement flushes first next callback.
     fn apply_and_retire(&mut self, cmd: GraphCommand) -> bool {
+        self.pdc_dirty |= cmd.dirties_compensation();
         match self.apply_command(cmd) {
             Some(retired) => self.retire(retired),
             None => true,
@@ -1876,12 +2017,39 @@ impl AudioScheduler {
                     }
                     None
                 }
+                // Bypass deliberately does not dirty the compensation: a
+                // bypassed device keeps its latency and runs its dry delay in
+                // place of itself, so nothing about the graph's alignment
+                // changes and re-aiming every delay here would glitch the mix
+                // on every A/B.
                 GraphCommand::SetBypass(id, bypassed) => {
                     if let Some(effect) = self.effect_mut(id) {
                         effect.bypassed = bypassed;
                     }
                     None
                 }
+                GraphCommand::SetEffectLatency {
+                    effect_id,
+                    latency_frames,
+                    dry_delay,
+                } => match self.effect_mut(effect_id) {
+                    Some(effect) => {
+                        effect.latency_frames = latency_frames;
+                        let replaced = std::mem::replace(&mut effect.dry_delay, dry_delay);
+                        replaced.map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
+                    }
+                    None => {
+                        // Refused like every other command naming an effect the
+                        // table does not hold; the line it carried leaves over
+                        // the retirement channel rather than being freed here.
+                        self.timeline.record_unknown_target();
+                        dry_delay.map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
+                    }
+                },
                 GraphCommand::AddPlugin(id, plugin) => {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
@@ -2143,13 +2311,17 @@ impl AudioScheduler {
                     bus_id,
                     tap,
                     level,
-                } => {
-                    self.timeline.add_send(track_id, bus_id, tap, level);
-                    None
-                }
+                    delay,
+                } => self
+                    .timeline
+                    .add_send(track_id, bus_id, tap, level, delay)
+                    .map(|refused| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(refused))
+                    }),
                 GraphCommand::RemoveSend { track_id, bus_id } => {
-                    self.timeline.remove_send(track_id, bus_id);
-                    None
+                    self.timeline.remove_send(track_id, bus_id).map(|removed| {
+                        RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(removed))
+                    })
                 }
                 GraphCommand::AddBus(bus) => self.timeline.add_bus(bus).map(|rejected| {
                     RetiredGraphObjects::timeline(RetiredTimelineObject::Bus(rejected))
@@ -2288,6 +2460,31 @@ impl AudioScheduler {
             };
             retired
         }
+    }
+
+    /// Re-aim every route's compensation delay at the graph as it now stands.
+    ///
+    /// The topology walk belongs to the graph and the declared latencies
+    /// belong to this table, so the graph is handed a reader for one chain's
+    /// latency rather than a copy of the table. Bypassed devices count: bypass
+    /// keeps latency, so an A/B never moves the mix.
+    fn recompute_compensation(&mut self) {
+        let Self {
+            effects,
+            effect_index,
+            timeline,
+            ..
+        } = self;
+
+        timeline.compensate(|chain| {
+            chain.iter().fold(0, |latency, entry| {
+                latency
+                    + effect_index
+                        .lookup(entry.effect_id)
+                        .and_then(|slot| effects.get(slot))
+                        .map_or(0, |effect| effect.latency_frames)
+            })
+        });
     }
 
     /// Whether an id already names a live effect, resolved through the id
@@ -3108,6 +3305,7 @@ impl AudioScheduler {
             }
 
             if effect.bypassed {
+                run_dry_delay(effect, left, right, num_samples);
                 effect.pending_midi.clear();
                 continue;
             }
@@ -3194,6 +3392,19 @@ impl AudioScheduler {
     }
 }
 
+/// Run a bypassed device's dry delay in the device's place.
+///
+/// A bypassed device keeps its latency, the convention Cubase and Reaper both
+/// follow, so switching a latent plugin in and out never shifts the strip
+/// against the rest of the mix or clicks at the switch. A device declaring no
+/// latency owns no line and passes through untouched, as it always did.
+#[inline]
+fn run_dry_delay(effect: &mut ActiveEffect, left: &mut [f32], right: &mut [f32], frames: usize) {
+    if let Some(delay) = effect.dry_delay.as_mut() {
+        delay.process(left, right, frames);
+    }
+}
+
 /// Runs one track's device chain over that track's signal.
 ///
 /// The effects stay in the scheduler's id-indexed table alongside their
@@ -3236,8 +3447,9 @@ impl DeviceChain for TrackDeviceChain<'_> {
 
         if effect.bypassed {
             // Same contract as the master chain: a bypassed device passes its
-            // signal through untouched and discards MIDI queued while bypassed
-            // rather than banking it into a burst of stale note-ons.
+            // signal through its own latency and discards MIDI queued while
+            // bypassed rather than banking it into a burst of stale note-ons.
+            run_dry_delay(effect, left, right, frames);
             effect.pending_midi.clear();
             return;
         }
@@ -6118,6 +6330,68 @@ mod timeline_tests {
         }
     }
 
+    /// Really runs late: hands back what it was given `latency` frames ago,
+    /// filling the opening gap with silence, the way a lookahead limiter or an
+    /// FFT-window device does.
+    ///
+    /// Compensation is only observable against a device that genuinely delays.
+    /// A stub that declared a latency it did not take would leave every
+    /// alignment assertion below passing on silence it never had to earn.
+    ///
+    /// The declared figure is shared so a test can move it, which is what a
+    /// plugin flagging a latency change mid-session does. A change jumps the
+    /// read offset without clearing the ring, exactly as the graph's own line
+    /// does, so the two stay comparable across the change.
+    struct LatentPlugin {
+        left_history: Vec<f32>,
+        right_history: Vec<f32>,
+        write: usize,
+        latency: Arc<AtomicUsize>,
+    }
+
+    impl LatentPlugin {
+        fn new(latency: Arc<AtomicUsize>, capacity: usize) -> Self {
+            Self {
+                left_history: vec![0.0; capacity + 1],
+                right_history: vec![0.0; capacity + 1],
+                write: 0,
+                latency,
+            }
+        }
+    }
+
+    impl NativePlugin for LatentPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            let slots = self.left_history.len();
+            let latency = self.latency.load(Ordering::Relaxed).min(slots - 1);
+            let mut write = self.write;
+            // At zero latency the read lands on the slot just written, so the
+            // plugin is an identity rather than a special case.
+            let mut read = (write + slots - latency) % slots;
+            for index in 0..num_samples {
+                self.left_history[write] = left[index];
+                self.right_history[write] = right[index];
+                left[index] = self.left_history[read];
+                right[index] = self.right_history[read];
+                write = (write + 1) % slots;
+                read = (read + 1) % slots;
+            }
+            self.write = write;
+        }
+
+        fn name(&self) -> &str {
+            "latent-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
     /// Counts the MIDI events actually handed to a device, so a burst that
     /// was banked while the device ran nowhere is visible.
     struct MidiCountingPlugin {
@@ -6339,6 +6613,86 @@ mod timeline_tests {
         chain.iter().map(|entry| entry.effect_id).collect()
     }
 
+    /// The line every send is built with control-side, before any pass has
+    /// aimed it. At rest it holds nothing, so a send built with one taps its
+    /// source on the frame it is taken.
+    fn uncompensated() -> Box<CompensationDelay> {
+        Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
+    }
+
+    /// The command the control thread builds for a declared latency: the figure
+    /// and the dry line that holds a bypassed pass at it travel together, so no
+    /// caller can publish one without the other.
+    fn set_latency(effect_id: usize, latency_frames: usize) -> GraphCommand {
+        GraphCommand::SetEffectLatency {
+            effect_id,
+            latency_frames,
+            dry_delay: CompensationDelay::for_latency(latency_frames),
+        }
+    }
+
+    /// The capacity every [`LatentPlugin`] in these tests carries — larger than
+    /// any latency they declare, so the plugin's own ring never clamps and an
+    /// assertion that fails is about compensation rather than about the fixture.
+    const LATENT_PLUGIN_CAPACITY: usize = 4096;
+
+    /// Put a genuinely late device at the head of a track's chain and declare
+    /// its latency, the way an activation does. Returns the declared figure so
+    /// a test can move it mid-session.
+    fn insert_latent_device(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        latency: usize,
+    ) -> Arc<AtomicUsize> {
+        let declared = Arc::new(AtomicUsize::new(latency));
+        harness.send(GraphCommand::AddPlugin(
+            effect_id,
+            Box::new(LatentPlugin::new(
+                Arc::clone(&declared),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id,
+            entry: effect(effect_id),
+            index: 0,
+        });
+        harness.send(set_latency(effect_id, latency));
+        declared
+    }
+
+    /// A track carrying one mono clip whose sample at frame `t` is `t + 1`.
+    ///
+    /// A constant clip cannot show a delay past its own onset — every frame of
+    /// it looks like every other — so any assertion about an alignment that
+    /// changes mid-render needs material that names its own frame.
+    fn track_with_ramp_clip(harness: &mut Harness, track_id: usize, clip_id: usize, frames: usize) {
+        let ramp: Vec<f32> = (0..frames).map(|frame| frame as f32 + 1.0).collect();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                clip_id,
+                ramp.into(),
+                [].into(),
+                placement(0, 0, frames as u64),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
+    /// What a ramp track delayed by `latency` frames reads over `frames` frames
+    /// starting at `start`, silent until the delay has filled.
+    fn delayed_ramp(start: usize, frames: usize, latency: usize) -> Vec<f32> {
+        (start..start + frames)
+            .map(|frame| match frame.checked_sub(latency) {
+                Some(source) => source as f32 + 1.0,
+                None => 0.0,
+            })
+            .collect()
+    }
+
     /// A track carrying one mono clip of a constant value, routed to the
     /// master.
     fn track_with_constant_clip(
@@ -6555,6 +6909,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
@@ -6580,6 +6935,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PostFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::SetTrackMute(1, true));
 
@@ -6599,12 +6955,14 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::AddSend {
             track_id: 2,
             bus_id: 50,
             tap: SendTap::PostFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         for track_id in [1, 2] {
             harness.send(GraphCommand::AutomateParam {
@@ -6672,6 +7030,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Track(1)));
 
@@ -6709,6 +7068,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
 
         assert_eq!(harness.diagnostics().routing_cycles_refused, 1);
@@ -8048,6 +8408,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PreFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         // Muted, so the bus hears the send alone and nothing of the track's
         // own output.
@@ -8081,6 +8442,7 @@ mod timeline_tests {
             bus_id: 50,
             tap: SendTap::PostFader,
             level: 1.0,
+            delay: uncompensated(),
         });
         harness.send(GraphCommand::InsertBusDevice {
             bus_id: 50,
@@ -8824,5 +9186,259 @@ mod timeline_tests {
             ),
             (4, 4)
         );
+    }
+
+    /// A latent device on one track alone would pull that track late against
+    /// every sibling — the classic "one plugin and the whole mix flams".
+    #[test]
+    fn a_latent_track_and_its_sibling_reach_the_master_on_the_same_frame() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the compensated sibling stays silent for exactly as long as the \
+             latent track takes to sound"
+        );
+        assert_eq!(right, left);
+
+        let (later, _) = harness.render(16);
+        assert_eq!(
+            later,
+            vec![2.0; 16],
+            "past the onset every frame carries both tracks"
+        );
+    }
+
+    /// A plugin may re-declare its latency mid-session — a mode switch, an
+    /// oversampling change. Every route that meets it has to be re-aimed, or
+    /// the mix stays flammed for the rest of the session.
+    #[test]
+    fn a_latency_change_realigns_the_mix_within_one_block() {
+        const FIRST: usize = 7;
+        const SECOND: usize = 11;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 128);
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+        let declared = insert_latent_device(&mut harness, 1, 900, FIRST);
+
+        harness.render(16);
+
+        // The plugin's own delay and the figure it declares move together, as
+        // they do when a plugin flags a change and the host re-queries it.
+        declared.store(SECOND, Ordering::Relaxed);
+        harness.send(set_latency(900, SECOND));
+
+        let (left, _) = harness.render(16);
+        let aligned: Vec<f32> = delayed_ramp(16, 16, SECOND)
+            .iter()
+            .map(|sample| sample * 2.0)
+            .collect();
+        assert_eq!(
+            left, aligned,
+            "both tracks arrive at the new latency from the first block after the change"
+        );
+    }
+
+    /// Bypass is not a latency change. Cubase and Reaper both keep a bypassed
+    /// device's delay in the mix, because dropping it would jump every other
+    /// route in the project each time a user auditions one plugin.
+    #[test]
+    fn a_bypassed_latent_device_keeps_holding_its_track_back() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 128);
+        track_with_ramp_clip(&mut harness, 2, 102, 128);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        harness.render(16);
+        harness.send(GraphCommand::SetBypass(900, true));
+        // The dry line starts empty, so the switch itself costs one block of
+        // fill. What must not move is where the track sits once it has filled.
+        harness.render(16);
+
+        let (left, _) = harness.render(32);
+        let aligned: Vec<f32> = delayed_ramp(32, 32, LATENCY)
+            .iter()
+            .map(|sample| sample * 2.0)
+            .collect();
+        assert_eq!(
+            left, aligned,
+            "a bypassed latent device runs its dry line, so the mix does not move"
+        );
+    }
+
+    /// A send is a second route out of a track, and it sums somewhere else. It
+    /// carries its own compensation because the bus it lands on has an arrival
+    /// time of its own, unrelated to the master's.
+    #[test]
+    fn two_sends_meeting_on_one_bus_arrive_on_the_same_frame() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+        for track_id in [1, 2] {
+            harness.send(GraphCommand::AddSend {
+                track_id,
+                bus_id: 50,
+                tap: SendTap::PreFader,
+                level: 0.5,
+                delay: uncompensated(),
+            });
+        }
+        // Muted so the only thing reaching the master is the bus, and the
+        // assertion is about the sends rather than the direct outputs.
+        harness.send(GraphCommand::SetTrackMute(1, true));
+        harness.send(GraphCommand::SetTrackMute(2, true));
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the send off the dry track waits for the send off the latent one"
+        );
+    }
+
+    /// A bus's own devices delay everything routed through it, so a track that
+    /// goes straight to the master would otherwise lead the whole bus by the
+    /// bus's latency.
+    #[test]
+    fn a_track_direct_to_the_master_waits_for_a_latent_bus_beside_it() {
+        const BUS_LATENCY: usize = 5;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+
+        let declared = Arc::new(AtomicUsize::new(BUS_LATENCY));
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+        ));
+        harness.send(GraphCommand::InsertBusDevice {
+            bus_id: 50,
+            entry: effect(900),
+            index: 0,
+        });
+        harness.send(set_latency(900, BUS_LATENCY));
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            BUS_LATENCY,
+            "the direct track holds for the bus it sums beside"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..BUS_LATENCY].fill(0.0);
+        assert_eq!(left, expected);
+    }
+
+    /// Latency has a ceiling — Cubase constrains past a threshold, Pro Tools
+    /// fixes a maximum. Past it the graph aligns as far as it can and says so,
+    /// rather than sizing a delay line off a figure a plugin invented.
+    #[test]
+    fn a_latency_past_the_ceiling_clamps_its_routes_and_counts_them() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddPlugin(
+            900,
+            Box::new(ScalingPlugin { factor: 1.0 }),
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(900),
+            index: 0,
+        });
+        harness.send(set_latency(900, declared));
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            MAX_COMPENSATION_FRAMES,
+            "the sibling holds as far as the ceiling allows"
+        );
+        let diagnostics = harness.diagnostics();
+        assert_eq!(
+            diagnostics.pdc_clamped_routes, 1,
+            "exactly the route that could not be aligned is counted"
+        );
+        assert_eq!(
+            diagnostics.pdc_max_arrival_frames, declared as u64,
+            "the reported arrival is the figure declared, not the one the graph could hold"
+        );
+    }
+
+    /// Compensation is recursive: a bus that feeds another bus contributes its
+    /// own arrival to the next summing point, so the delays along a chain of
+    /// hops add up.
+    #[test]
+    fn delays_along_two_bus_hops_sum_at_the_master() {
+        const FIRST_HOP: usize = 3;
+        const SECOND_HOP: usize = 5;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 64);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Bus(51)));
+
+        for (effect_id, bus_id, latency) in [(900, 50, FIRST_HOP), (901, 51, SECOND_HOP)] {
+            let declared = Arc::new(AtomicUsize::new(latency));
+            harness.send(GraphCommand::AddPlugin(
+                effect_id,
+                Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            ));
+            harness.send(GraphCommand::InsertBusDevice {
+                bus_id,
+                entry: effect(effect_id),
+                index: 0,
+            });
+            harness.send(set_latency(effect_id, latency));
+        }
+
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            FIRST_HOP + SECOND_HOP,
+            "the direct track holds for both hops, not just the last one"
+        );
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![2.0; 16];
+        expected[..FIRST_HOP + SECOND_HOP].fill(0.0);
+        assert_eq!(left, expected);
     }
 }

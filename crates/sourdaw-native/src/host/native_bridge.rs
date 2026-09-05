@@ -374,6 +374,19 @@ impl PluginRuntimeLifecycle {
     }
 }
 
+/// One plugin's latency after a change it flagged, in the two units its two
+/// consumers need.
+///
+/// Milliseconds for the webview: the plugin counts latency in frames of the rate
+/// it was ACTIVATED with, which is a different clock from the `AudioContext`, so
+/// a sample count must not cross the IPC boundary. Frames for the engine graph,
+/// which schedules in the device's own frames and has no other unit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatencyChange {
+    pub latency_ms: f64,
+    pub latency_frames: usize,
+}
+
 /// Runtime owner for a hosted plugin shared by the RT processor and non-RT
 /// control path.
 ///
@@ -615,19 +628,22 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     /// Apply any pending latency change the plugin flagged (via
     /// `clap_host_latency.changed()` / `request_restart()`) and report the new
-    /// latency in **milliseconds**, or `None` when nothing was pending.
+    /// latency, or `None` when nothing was pending.
     ///
-    /// Milliseconds, not samples: the plugin counts latency in frames of the rate
-    /// it was ACTIVATED with (`load_plugin`'s CPAL default-output rate). That is a different clock
-    /// from the webview's `AudioContext`, so a sample count must not cross the
-    /// IPC boundary — `ClapWrapper::latency_ms` converts where the rate is known.
+    /// Both figures are read in this one control visit rather than in two,
+    /// because a second visit would answer about a plugin that may have been
+    /// deactivated, reactivated or re-flagged in between, and the event and the
+    /// compensation would then describe different plugins.
     ///
     /// Runs on the non-RT control path through the existing CAS control seam, so
     /// the deactivate/reactivate a latency change requires cannot race the RT
     /// `process` path — and it adds no new audio-thread calls.
-    pub fn poll_latency_change_ms(&self, timeout: Duration) -> Result<Option<f64>, String> {
+    pub fn poll_latency_change(&self, timeout: Duration) -> Result<Option<LatencyChange>, String> {
         self.with_control(timeout, |plugin| match plugin.poll_latency_change()? {
-            Some(_) => Ok(Some(plugin.latency_ms())),
+            Some(_) => Ok(Some(LatencyChange {
+                latency_ms: plugin.latency_ms(),
+                latency_frames: plugin.latency_samples() as usize,
+            })),
             None => Ok(None),
         })
     }

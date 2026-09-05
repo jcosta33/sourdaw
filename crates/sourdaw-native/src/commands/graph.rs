@@ -2014,6 +2014,11 @@ fn map_command(
                     SendTapPayload::PostFader => daw_engine::timeline::SendTap::PostFader,
                 },
                 level: send_level(*level)?,
+                // Built here, on the control thread: the send's compensation
+                // ring is heap, and the audio thread may not allocate it.
+                delay: Box::new(daw_engine::pdc::CompensationDelay::new(
+                    daw_engine::pdc::MAX_COMPENSATION_FRAMES,
+                )),
             });
             registry
                 .strips

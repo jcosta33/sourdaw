@@ -14,6 +14,25 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 - **Headroom over Latency**: SPSC ring buffers must decouple the audio callback from asynchronous command processing without dropping blocks before native plugins process them.
 - **Teardown Order**: Audio streams must stop and drain before dropping downstream DSP nodes or CLAP plugin instances.
 
+## Plugin Delay Compensation
+
+- **Alignment at every summing point**: everything meeting at one point — a track output and its
+  siblings at the master, the sends landing on a bus, a bus feeding another bus — arrives having
+  waited the same number of frames. A route's hold is the summing point's deepest arrival minus its
+  own, and a bus's arrival carries into the point it sums at, so hops add up.
+- **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
+  bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
+  the project — the common professional convention, and the reason the dry line is built with the
+  latency rather than with the device.
+- **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
+  real-time diagnostics, alongside the deepest arrival the graph was asked for. A route that could
+  not be aligned is reported, never silently misaligned.
+- **Lines are built control-side**: every delay line reaches the callback owning its buffers, and one
+  the callback replaces or gives up leaves over the ADR 0020 retirement route. A latency figure and
+  the line sized for it travel on one command, so no caller can publish one without the other.
+- **What dirties compensation**: a change to declared latency, to the device chains, or to the shape
+  of the routing graph. Gain, pan, mute, solo, bypass and transport do not.
+
 ## Verification
 
 ```bash

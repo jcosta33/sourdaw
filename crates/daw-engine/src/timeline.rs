@@ -13,6 +13,7 @@
 use std::sync::Arc;
 
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
+use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use triple_buffer::{Input, Output};
 
 /// Tracks the graph holds. A command naming a further track is refused and
@@ -209,6 +210,18 @@ pub struct TimelineRtDiagnosticsSnapshot {
     /// the renderer cannot read has no correct substitute, and guessing unity
     /// would play the wrong material at the wrong pitch without saying so.
     pub invalid_clip_playbacks: u64,
+    /// A route whose compensation was cut to
+    /// [`crate::pdc::MAX_COMPENSATION_FRAMES`] because the graph asked for
+    /// more. Counted as it happens, like every other refusal here: the route
+    /// still sounds, but it sounds early, and only this number says so.
+    pub pdc_clamped_routes: u64,
+    /// The largest latency any contributor currently declares on its way to a
+    /// summing point — the figure every other contributor is delayed up to.
+    ///
+    /// A state rather than an event: restated by each compensation pass, so it
+    /// falls again when the device that raised it is removed, and it reports
+    /// what the graph declared rather than what the ceiling allowed.
+    pub pdc_max_arrival_frames: u64,
 }
 
 pub(crate) struct TimelineRtDiagnosticsReader {
@@ -247,6 +260,8 @@ impl TimelineRtDiagnostics {
                 exponential_ramp_fallbacks: 0,
                 unresolved_send_buses: 0,
                 invalid_clip_playbacks: 0,
+                pdc_clamped_routes: 0,
+                pdc_max_arrival_frames: 0,
             },
         }
     }
@@ -289,6 +304,17 @@ impl TimelineRtDiagnostics {
     fn record_invalid_clip_playback(&mut self) {
         self.snapshot.invalid_clip_playbacks =
             self.snapshot.invalid_clip_playbacks.saturating_add(1);
+    }
+
+    fn record_pdc_clamped_routes(&mut self, routes: usize) {
+        self.snapshot.pdc_clamped_routes = self
+            .snapshot
+            .pdc_clamped_routes
+            .saturating_add(routes as u64);
+    }
+
+    fn state_pdc_max_arrival(&mut self, frames: usize) {
+        self.snapshot.pdc_max_arrival_frames = frames as u64;
     }
 }
 
@@ -1017,12 +1043,18 @@ fn clip_fade_envelope(offset: u64, length: u64, head: u64, tail: u64) -> f32 {
 /// `AddSend` and `AddBus` in a command batch cannot matter. Whether the send
 /// actually found its bus is therefore a render-time fact, latched here so a
 /// dead send is diagnosed once rather than once per callback.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct TrackSend {
     bus_id: usize,
     tap: SendTap,
     level: RampedParam,
     bus_missing: bool,
+    /// This send's own plugin delay compensation: the bus it lands on is a
+    /// summing point of its own, and a send taps a strip at a different depth
+    /// than that strip's output does. Built on the control thread and carried
+    /// in by [`crate::scheduler::GraphCommand::AddSend`], because the callback
+    /// may neither allocate it nor free it.
+    delay: Box<CompensationDelay>,
 }
 
 /// One track: an input sum, clips, a device chain, a solo gate, sends, a fader,
@@ -1058,6 +1090,10 @@ pub struct TimelineTrack {
     muted: bool,
     solo_gated: bool,
     output: RouteTarget,
+    /// Plugin delay compensation for this track's own output, applied where
+    /// the strip ends and the summing point begins. See
+    /// [`TimelineGraph::compensate`].
+    output_delay: CompensationDelay,
 }
 
 impl TimelineTrack {
@@ -1077,7 +1113,23 @@ impl TimelineTrack {
             muted: false,
             solo_gated: false,
             output: RouteTarget::Master,
+            output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
         })
+    }
+
+    /// Frames this track's output is currently held back by, for callers
+    /// proving the alignment rather than inferring it from a mix.
+    pub fn output_delay_frames(&self) -> usize {
+        self.output_delay.delay()
+    }
+
+    /// Frames one of this track's sends is currently held back by, or `None`
+    /// when no send lands on `bus_id`.
+    pub fn send_delay_frames(&self, bus_id: usize) -> Option<usize> {
+        self.sends
+            .iter()
+            .find(|send| send.bus_id == bus_id)
+            .map(|send| send.delay.delay())
     }
 
     pub const fn id(&self) -> usize {
@@ -1149,6 +1201,9 @@ pub struct TimelineBus {
     muted: bool,
     solo_gated: bool,
     output: RouteTarget,
+    /// Plugin delay compensation for this bus's own output, on the same law as
+    /// a track's: a bus is a contributor to whatever it feeds.
+    output_delay: CompensationDelay,
 }
 
 impl TimelineBus {
@@ -1165,7 +1220,14 @@ impl TimelineBus {
             muted: false,
             solo_gated: false,
             output: RouteTarget::Master,
+            output_delay: CompensationDelay::new(MAX_COMPENSATION_FRAMES),
         })
+    }
+
+    /// Frames this bus's output is currently held back by. See
+    /// [`TimelineTrack::output_delay_frames`].
+    pub fn output_delay_frames(&self) -> usize {
+        self.output_delay.delay()
     }
 
     pub const fn id(&self) -> usize {
@@ -1217,6 +1279,9 @@ pub(crate) enum RetiredTimelineObject {
     Track(Box<TimelineTrack>),
     Bus(Box<TimelineBus>),
     Clip(Box<TimelineClip>),
+    /// A compensation delay a refused send, a removed send, or a replaced
+    /// device latency gave up. Its ring is heap like any other buffer here.
+    Delay(Box<CompensationDelay>),
 }
 
 /// One strip in the render sequence. Tracks and buses share an order so a
@@ -1334,6 +1399,20 @@ pub struct TimelineGraph {
     /// place over the running signal without discarding it.
     generator_left: Vec<f32>,
     generator_right: Vec<f32>,
+    /// Where a send's tapped copy is delayed before it sums into its bus. A
+    /// send taps the strip's running signal, which the strip still needs, so
+    /// the compensation cannot run in place over it.
+    send_left: Vec<f32>,
+    send_right: Vec<f32>,
+    /// The latency each contributor arrives at its summing point with, indexed
+    /// as [`Self::mix_order`] indexes strips. Scratch for
+    /// [`Self::compensate`], sized on the control thread for the same reason
+    /// the mix-order buffers are.
+    track_arrival: Vec<usize>,
+    bus_arrival: Vec<usize>,
+    /// The deepest arrival each bus has to wait for, and the deepest the
+    /// master sum has to.
+    bus_summing_depth: Vec<usize>,
     diagnostics: TimelineRtDiagnostics,
 }
 
@@ -1351,6 +1430,11 @@ impl TimelineGraph {
             scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
             generator_left: vec![0.0; MAX_CALLBACK_FRAMES],
             generator_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            send_left: vec![0.0; MAX_CALLBACK_FRAMES],
+            send_right: vec![0.0; MAX_CALLBACK_FRAMES],
+            track_arrival: vec![0; MAX_TIMELINE_TRACKS],
+            bus_arrival: vec![0; MAX_TIMELINE_BUSES],
+            bus_summing_depth: vec![0; MAX_TIMELINE_BUSES],
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -1373,6 +1457,11 @@ impl TimelineGraph {
             scratch_right: Vec::new(),
             generator_left: Vec::new(),
             generator_right: Vec::new(),
+            send_left: Vec::new(),
+            send_right: Vec::new(),
+            track_arrival: Vec::new(),
+            bus_arrival: Vec::new(),
+            bus_summing_depth: Vec::new(),
             diagnostics: TimelineRtDiagnostics::new(),
         }
     }
@@ -1664,18 +1753,28 @@ impl TimelineGraph {
         true
     }
 
-    pub(crate) fn add_send(&mut self, track_id: usize, bus_id: usize, tap: SendTap, level: f32) {
+    /// Take ownership of a send's compensation delay, or hand it straight back
+    /// when the send is refused — the caller retires what comes back rather
+    /// than dropping it on the callback.
+    pub(crate) fn add_send(
+        &mut self,
+        track_id: usize,
+        bus_id: usize,
+        tap: SendTap,
+        level: f32,
+        delay: Box<CompensationDelay>,
+    ) -> Option<Box<CompensationDelay>> {
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
-            return;
+            return Some(delay);
         };
         if track.sends.iter().any(|send| send.bus_id == bus_id) {
             self.diagnostics.record_id_collision();
-            return;
+            return Some(delay);
         }
         if track.sends.len() == track.sends.capacity() {
             self.diagnostics.record_capacity_refusal();
-            return;
+            return Some(delay);
         }
 
         track.sends.push(TrackSend {
@@ -1683,28 +1782,40 @@ impl TimelineGraph {
             tap,
             level: RampedParam::new(level),
             bus_missing: false,
+            delay,
         });
-        if !self.rebuild_mix_order() {
-            if let Some(track) = self.track_mut(track_id) {
-                track.sends.pop();
-            }
-            self.diagnostics.record_routing_cycle_refused();
-            let _ = self.rebuild_mix_order();
+        if self.rebuild_mix_order() {
+            return None;
         }
+
+        let refused = self
+            .track_mut(track_id)
+            .and_then(|track| track.sends.pop())
+            .map(|send| send.delay);
+        self.diagnostics.record_routing_cycle_refused();
+        let _ = self.rebuild_mix_order();
+        refused
     }
 
-    pub(crate) fn remove_send(&mut self, track_id: usize, bus_id: usize) {
+    /// Take a send out of a track and hand its compensation delay back for
+    /// retirement.
+    pub(crate) fn remove_send(
+        &mut self,
+        track_id: usize,
+        bus_id: usize,
+    ) -> Option<Box<CompensationDelay>> {
         let Some(track) = self.tracks.iter_mut().find(|track| track.id == track_id) else {
             self.diagnostics.record_unknown_target();
-            return;
+            return None;
         };
         let Some(index) = track.sends.iter().position(|send| send.bus_id == bus_id) else {
             self.diagnostics.record_unknown_target();
-            return;
+            return None;
         };
 
-        track.sends.remove(index);
+        let removed = track.sends.remove(index);
         let _ = self.rebuild_mix_order();
+        Some(removed.delay)
     }
 
     /// The tap a send takes its signal from, for callers proving the strip
@@ -1994,6 +2105,113 @@ impl TimelineGraph {
     /// stopped transport: the device chains, the sends, the buses and the
     /// master sum drain the tails of what was already sounding, which is what
     /// a stopped transport does in any DAW.
+    /// Re-aim every route's compensation delay so that each summing point
+    /// receives every contributor at the same latency.
+    ///
+    /// `chain_latency` answers what one strip's device chain declares; the
+    /// effects themselves live on the scheduler, so the graph asks rather than
+    /// owning the figure. Bypassed devices are included, because a bypassed
+    /// device keeps its latency — see [`TimelineTrack`]'s strip order for why
+    /// a change that shifted alignment would click.
+    ///
+    /// The walk is [`Self::mix_order`], which puts every contributor ahead of
+    /// what it feeds, so one pass settles every summing point's depth and a
+    /// second aims the delays at it. O(strips + sends), and nothing here
+    /// allocates: every buffer it touches was sized on the control thread.
+    pub(crate) fn compensate(&mut self, chain_latency: impl Fn(&[ChainEntry]) -> usize) {
+        let Self {
+            tracks,
+            buses,
+            mix_order,
+            track_arrival,
+            bus_arrival,
+            bus_summing_depth,
+            diagnostics,
+            ..
+        } = self;
+
+        let track_count = tracks.len();
+        let bus_count = buses.len();
+        for index in 0..track_count {
+            track_arrival[index] = chain_latency(&tracks[index].chain);
+        }
+        bus_arrival[..bus_count].fill(0);
+        bus_summing_depth[..bus_count].fill(0);
+
+        let mut master_depth = 0;
+        for order_index in 0..mix_order.len() {
+            let (arrival, output) = match mix_order[order_index] {
+                MixNode::Track(index) => {
+                    let arrival = track_arrival[index];
+                    for send in &tracks[index].sends {
+                        if let Some(bus) = buses.iter().position(|bus| bus.id == send.bus_id) {
+                            bus_summing_depth[bus] = bus_summing_depth[bus].max(arrival);
+                        }
+                    }
+                    (arrival, tracks[index].output)
+                }
+                MixNode::Bus(index) => {
+                    // Everything that feeds this bus has already been visited,
+                    // so its own chain starts from the deepest of them.
+                    let arrival = bus_summing_depth[index] + chain_latency(&buses[index].chain);
+                    bus_arrival[index] = arrival;
+                    (arrival, buses[index].output)
+                }
+            };
+            match summing_point(output, tracks, buses) {
+                SummingPoint::Master => master_depth = master_depth.max(arrival),
+                SummingPoint::Bus(index) => {
+                    bus_summing_depth[index] = bus_summing_depth[index].max(arrival);
+                }
+                SummingPoint::TrackInput => {}
+            }
+        }
+
+        let mut clamped = 0;
+        for index in 0..track_count {
+            let arrival = track_arrival[index];
+            for send in tracks[index].sends.iter_mut() {
+                let hold = buses
+                    .iter()
+                    .position(|bus| bus.id == send.bus_id)
+                    .map_or(0, |bus| bus_summing_depth[bus].saturating_sub(arrival));
+                clamped += usize::from(send.delay.set_delay(hold));
+            }
+
+            let output = tracks[index].output;
+            let hold = hold_for(
+                output,
+                arrival,
+                tracks,
+                buses,
+                bus_summing_depth,
+                master_depth,
+            );
+            clamped += usize::from(tracks[index].output_delay.set_delay(hold));
+        }
+        for index in 0..bus_count {
+            let arrival = bus_arrival[index];
+            let output = buses[index].output;
+            let hold = hold_for(
+                output,
+                arrival,
+                tracks,
+                buses,
+                bus_summing_depth,
+                master_depth,
+            );
+            clamped += usize::from(buses[index].output_delay.set_delay(hold));
+        }
+
+        diagnostics.record_pdc_clamped_routes(clamped);
+        diagnostics.state_pdc_max_arrival(
+            bus_summing_depth[..bus_count]
+                .iter()
+                .copied()
+                .fold(master_depth, usize::max),
+        );
+    }
+
     pub(crate) fn render(
         &mut self,
         block_start: u64,
@@ -2011,6 +2229,8 @@ impl TimelineGraph {
             scratch_right,
             generator_left,
             generator_right,
+            send_left,
+            send_right,
             diagnostics,
             ..
         } = self;
@@ -2067,6 +2287,8 @@ impl TimelineGraph {
                             frames,
                             left,
                             right,
+                            &mut send_left[..frames],
+                            &mut send_right[..frames],
                             diagnostics,
                         );
                         apply_gain(
@@ -2097,8 +2319,14 @@ impl TimelineGraph {
                             frames,
                             left,
                             right,
+                            &mut send_left[..frames],
+                            &mut send_right[..frames],
                             diagnostics,
                         );
+                        // Last on the strip, after the post-fader tap: the
+                        // sends carry their own compensation, and only what
+                        // leaves for the summing point is held back here.
+                        track.output_delay.process(left, right, frames);
                     }
 
                     route_sum(
@@ -2150,6 +2378,7 @@ impl TimelineGraph {
                             right.fill(0.0);
                         }
                         apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
+                        bus.output_delay.process(left, right, frames);
                     }
 
                     route_sum(
@@ -2260,6 +2489,59 @@ fn run_device_chain(
     }
 }
 
+/// Where one route's audio is summed with everything else arriving there.
+enum SummingPoint {
+    Master,
+    /// The named bus's input, by index.
+    Bus(usize),
+    /// A track's input. A track sums its own clips there at zero latency and
+    /// owns no delay line to hold them back with, so a route landing on one is
+    /// left uncompensated rather than aligned against a source that cannot
+    /// move.
+    TrackInput,
+}
+
+/// Resolve a route target the way [`route_sum`] resolves it, so compensation
+/// is computed for the point the audio actually lands on: a target naming no
+/// live node falls back to the master sum there, and must fall back here too.
+fn summing_point(
+    target: RouteTarget,
+    tracks: &[Box<TimelineTrack>],
+    buses: &[Box<TimelineBus>],
+) -> SummingPoint {
+    match target {
+        RouteTarget::Master => SummingPoint::Master,
+        RouteTarget::Track(id) => {
+            if tracks.iter().any(|track| track.id == id) {
+                SummingPoint::TrackInput
+            } else {
+                SummingPoint::Master
+            }
+        }
+        RouteTarget::Bus(id) => buses
+            .iter()
+            .position(|bus| bus.id == id)
+            .map_or(SummingPoint::Master, SummingPoint::Bus),
+    }
+}
+
+/// Frames a contributor arriving at `arrival` must be held back so it meets
+/// the rest of `target`'s sources.
+fn hold_for(
+    target: RouteTarget,
+    arrival: usize,
+    tracks: &[Box<TimelineTrack>],
+    buses: &[Box<TimelineBus>],
+    bus_summing_depth: &[usize],
+    master_depth: usize,
+) -> usize {
+    match summing_point(target, tracks, buses) {
+        SummingPoint::Master => master_depth.saturating_sub(arrival),
+        SummingPoint::Bus(index) => bus_summing_depth[index].saturating_sub(arrival),
+        SummingPoint::TrackInput => 0,
+    }
+}
+
 #[inline]
 fn visit_route_target(
     target: RouteTarget,
@@ -2330,6 +2612,11 @@ fn sum_into(destination: &mut [f32], source: &[f32]) {
     }
 }
 
+/// Sum this track's sends at `tap` into the buses they land on.
+///
+/// `send_left` / `send_right` are the graph's scratch pair: a send that carries
+/// compensation delays its own copy of the tapped signal, which the strip still
+/// needs unchanged for everything downstream of the tap.
 #[allow(clippy::too_many_arguments)]
 fn run_sends(
     track: &mut TimelineTrack,
@@ -2339,12 +2626,29 @@ fn run_sends(
     frames: usize,
     left: &[f32],
     right: &[f32],
+    send_left: &mut [f32],
+    send_right: &mut [f32],
     diagnostics: &mut TimelineRtDiagnostics,
 ) {
     for send in track.sends.iter_mut() {
         if send.tap != tap {
             continue;
         }
+
+        // Ahead of every reason this send might contribute nothing this block.
+        // The line has to see every frame of the tap or its content stops
+        // matching the time it is asked for, and a bus that comes back, or a
+        // level that leaves zero, would then read audio from whenever the send
+        // last ran.
+        let (left, right) = if send.delay.delay() == 0 {
+            (left, right)
+        } else {
+            send_left.copy_from_slice(&left[..frames]);
+            send_right.copy_from_slice(&right[..frames]);
+            send.delay.process(send_left, send_right, frames);
+            (&send_left[..frames], &send_right[..frames])
+        };
+
         let Some(bus) = buses.iter_mut().find(|bus| bus.id == send.bus_id) else {
             // A send is the one command whose target is resolved at render
             // time, so a bus that was removed or never added can only be
@@ -2876,7 +3180,9 @@ mod tests {
                 )
             )
             .is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
 
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
@@ -2917,6 +3223,13 @@ mod tests {
         assert_eq!(graph.diagnostics().unresolved_send_buses, 2);
     }
 
+    /// The delay line every send is built with control-side, at rest. A graph
+    /// that never runs `compensate` leaves it at zero delay, so a send built
+    /// with one taps its source exactly as it did before compensation existed.
+    fn uncompensated() -> Box<CompensationDelay> {
+        Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES))
+    }
+
     /// A track carrying one mono clip of a constant value, with no fade of any
     /// kind so the arithmetic under test is the only thing shaping the mix.
     fn graph_with_constant_clip(track_id: usize, value: f32, frames: u64) -> TimelineGraph {
@@ -2941,7 +3254,9 @@ mod tests {
     fn the_solo_gate_closes_ahead_of_the_send_taps_and_the_mute_deliberately_does_not() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PreFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PreFader, 1.0, uncompensated())
+            .is_none());
 
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
@@ -2983,7 +3298,9 @@ mod tests {
     fn bus_strip_mute_silences_the_sends_that_feed_it() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
 
         let mut left = vec![0.0; 4];
         let mut right = vec![0.0; 4];
@@ -3047,7 +3364,9 @@ mod tests {
     fn bus_strip_solo_gate_silences_like_a_track() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
 
         graph.set_bus_solo_gate(50, true);
         assert!(graph.bus(50).expect("the bus").is_solo_gated());
@@ -3073,7 +3392,9 @@ mod tests {
     fn a_send_bus_runs_its_own_insert_chain_over_what_reaches_it() {
         let mut graph = graph_with_constant_clip(1, 1.0, 4);
         assert!(graph.add_bus(TimelineBus::new(50)).is_none());
-        graph.add_send(1, 50, SendTap::PostFader, 1.0);
+        assert!(graph
+            .add_send(1, 50, SendTap::PostFader, 1.0, uncompensated())
+            .is_none());
         let mut devices = TestDevices {
             scaler_id: 7,
             factor: 0.5,

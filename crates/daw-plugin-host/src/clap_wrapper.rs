@@ -199,6 +199,9 @@ struct EngineOwnedCommandFixture {
     /// stage a change the host never made — the plugin-side edit a user performs
     /// in the plugin's own editor.
     parameters: Vec<PluginParameter>,
+    /// Frames the fixture declares as its own latency, standing in for a
+    /// plugin's `clap.latency` reading.
+    latency_samples: u32,
     /// Every thread the fixture's editor lifecycle was called on, in order.
     ///
     /// The `gui` extension is `[main-thread]`, so which thread reached the
@@ -912,6 +915,7 @@ impl ClapWrapper {
                 has_gui,
                 editor_resizable: has_gui,
                 parameters: Vec::new(),
+                latency_samples: 0,
                 gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
                 teardown_observer: None,
@@ -960,6 +964,21 @@ impl ClapWrapper {
     ) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.parameters = parameters;
+        }
+    }
+
+    /// Stage the latency the fixture declares, in frames of the rate it was
+    /// activated with.
+    ///
+    /// Stands in for a plugin with a lookahead or an FFT window. A host has to
+    /// compensate that figure across every route the instance sits on, and no
+    /// fixture could otherwise report one — there is no latency extension
+    /// behind a fixture to read.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_latency_samples(&mut self, latency_samples: u32) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.latency_samples = latency_samples;
         }
     }
 
@@ -2367,8 +2386,8 @@ impl ClapWrapper {
     /// while active. Call from the main/control thread only.
     pub fn latency_samples(&self) -> u32 {
         #[cfg(feature = "engine-owned-command-fixture")]
-        if self.command_fixture.is_some() {
-            return 0;
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.latency_samples;
         }
 
         if !self.activated {

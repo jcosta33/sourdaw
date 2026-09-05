@@ -1851,6 +1851,12 @@ fn register_runtime_with_engine(
     // seam — see `EnginePluginInstanceData`.
     let parameter_events = AudioPlugin::parameter_event_queue(&runtime);
 
+    // Read while the runtime is still exclusively ours. Both formats define the
+    // figure only for an activated plugin, and the guard above proved that; once
+    // the runtime is shared, reaching it again waits on the control gate an open
+    // editor can hold.
+    let latency_frames = <HostedRuntime as HostedPluginRuntime>::latency_samples(&runtime) as usize;
+
     let shared_plugin = Arc::new(SharedHostedPlugin::new(runtime));
 
     // The record insert re-decides the session ceiling inside its own critical
@@ -1903,6 +1909,16 @@ fn register_runtime_with_engine(
             }
         }
         return Err(RegistrationRefusal::recovered(error, shared_plugin));
+    }
+
+    // Past the registration, on the same control-thread visit that read the
+    // figure, and never before it: the command names an effect id, and the
+    // graph refuses one its table does not hold yet. A push that fails leaves
+    // the instance registered and sounding — uncompensated until the next
+    // latency change, which is a worse mix rather than a broken one, so it is
+    // reported and not unwound.
+    if let Err(error) = engine.set_effect_latency(id, latency_frames) {
+        eprintln!("[Plugin] failed to publish latency for instance {instance_id}: {error}");
     }
 
     Ok(EngineRegistration {
@@ -4089,6 +4105,56 @@ mod tests {
         assert!(
             recovered.set_plugin_host_request_notifier(Box::new(|_| {})),
             "a runtime handed back to be parked must carry no host-request wake"
+        );
+    }
+
+    /// A plugin with a lookahead or an FFT window declares its latency at
+    /// activation and never flags a change afterwards, so the registration is
+    /// the only visit that can carry the figure to the graph. Without it the
+    /// effect registers at zero and every route parallel to the plugin stays
+    /// ahead of it for the rest of the session.
+    #[test]
+    fn registering_a_latent_plugin_publishes_its_declared_latency_with_a_dry_delay() {
+        let state = AppState::default();
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Latent Fixture", Vec::new(), false);
+        wrapper.set_engine_owned_command_fixture_latency_samples(512);
+        let runtime: HostedRuntime = wrapper.into();
+
+        let registration = register_runtime_with_engine(
+            &mut engine,
+            &state,
+            "latent-instance",
+            runtime,
+            "Latent Fixture",
+            &[],
+            false,
+            DeviceKind::Effect,
+        );
+        let Ok(registration) = registration else {
+            panic!("a fresh session registers the instance");
+        };
+
+        let mut published = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            if let daw_engine::scheduler::GraphCommand::SetEffectLatency {
+                effect_id,
+                latency_frames,
+                dry_delay,
+            } = command
+            {
+                published.push((effect_id, latency_frames, dry_delay.is_some()));
+            }
+        }
+
+        assert_eq!(
+            published,
+            vec![(registration.engine_plugin_id, 512, true)],
+            "the registration publishes the plugin's own declared latency, \
+             and the dry line that holds a bypassed pass at it"
         );
     }
 
