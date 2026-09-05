@@ -107,6 +107,30 @@ describe('setMasterGainValue', () => {
         expect(appliedBatches()).toHaveLength(1);
     });
 
+    // A drag produces gestures faster than a bridge round trip completes. The
+    // level is read on the queue, so the backlog collapses onto the fader's
+    // current position instead of replaying the positions it passed through.
+    it('states the level the fader now holds from every forward waiting behind a blocked queue', async () => {
+        let releaseFirst = (): void => undefined;
+        const first = new Promise<void>((resolve) => {
+            releaseFirst = () => {
+                resolve();
+            };
+        });
+        nativeLiveGraphSession.backend = backend;
+        nativeLiveGraphSession.pending = first;
+
+        setMasterGainValue(0.3);
+        setMasterGainValue(0.6);
+        releaseFirst();
+        await nativeLiveGraphSession.pending;
+
+        expect(appliedBatches().map((batch) => batch.commands)).toEqual([
+            [{ kind: 'set-master-gain', gain: 0.6 }],
+            [{ kind: 'set-master-gain', gain: 0.6 }],
+        ]);
+    });
+
     it('states one clamped level to both carriers', async () => {
         nativeLiveGraphSession.backend = backend;
 

@@ -245,11 +245,11 @@ function routingCommands(input: {
  * — every strip left at the engine's default. Locating first is the only order
  * under which the state a strip declares survives the batch that declares it.
  *
- * The master level follows the locate for that same reason and is the one
- * command in this batch that cannot be stated before it: the engine anchors the
- * fader's ramp on the frame it drains the command at, so a level sent ahead of
- * the locate is stamped at the position the engine is leaving and cancelled by
- * the seek that follows it.
+ * The master level rides in the same opening group, behind the monitor gate: it
+ * is what every strip in this batch will be heard through, so it is stated
+ * before anything can sound. Its position in the batch is otherwise free — the
+ * engine takes it as a target for a smoother rather than as a stamped write, so
+ * no locate can cancel it and no order can strand it.
  *
  * Then every strip before any route, because a send names a bus that has to
  * exist by the time it is read; then the programme, which names a strip for the

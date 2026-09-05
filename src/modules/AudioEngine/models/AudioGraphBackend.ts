@@ -513,11 +513,11 @@ export type AudioGraphSetMonitorShadowCommand = Readonly<{
  * this union: it addresses no strip, so it appears in no
  * {@link AudioGraphStripReport}, and it is deliberately not a
  * {@link AudioGraphStripParameterTarget}. A fader is a gesture, and a gesture
- * has no timeline coordinate — a caller that stamped one would stamp it from
- * a reading of the backend's position that is already behind the frame the
- * backend is about to render, and a write landing in the past resolves to its
- * end state, which is a step. So the backend anchors this on its own clock and
- * glides there over a span it owns.
+ * has no timeline coordinate: where the hand left it is true at every position,
+ * including one the transport reaches by seeking or by wrapping a loop. So this
+ * is a target the backend approaches from wherever its fader currently stands,
+ * never a change stamped at a frame — which also means no ordering against a
+ * locate, and no queue for a drag to overrun.
  *
  * A backend that applies the master level from the project rather than from a
  * live gesture — an offline render is one — refuses this rather than accepting

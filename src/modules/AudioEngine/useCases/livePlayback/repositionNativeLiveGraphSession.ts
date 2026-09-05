@@ -2,9 +2,9 @@
  * Move a rolling native engine to a new position without interrupting it
  * (#3101, D3.c.4a).
  *
- * A locate, not a restart. The batch carries the transport and the master
- * level, and that is enough because everything else a relocated playhead has to
- * be governed by is already installed on this session and survives the move:
+ * A locate, not a restart. The command carries nothing but the transport, and
+ * that is enough because everything a relocated playhead has to be governed by
+ * is already installed on this session and survives the move:
  *
  * - The loop region is `SetLoopRegion`'s alone (`scheduler.rs`), so it is
  *   untouched here. `frames_until_loop_end` reads the *current*
@@ -18,9 +18,10 @@
  *   at the frame each span starts on. So the engine reports the arrangement's
  *   tempo at the new position without being told it again.
  *
- * The master level is the one thing that does not survive, which is why it
- * travels: a fader ramp still gliding at the seek target ends past it, and the
- * locate stops it where it stood with nothing left to finish the glide.
+ * - The master fader is a smoother the engine advances per sample rather than a
+ *   stamped write (`MasterFader`, `timeline.rs`), so a locate cannot reach it:
+ *   it holds no frame for the seek to invalidate, and a glide the locate
+ *   interrupts simply continues at the new position.
  *
  * The native `set-transport` maps to `SetTransportPlayback` followed by
  * `SeekFrames` (`commands/graph.rs`) — playback state, then the locate — and
@@ -42,8 +43,6 @@
  * declines, and the next play is what relocates it, carrying the position and
  * a fresh attempt at the maps.
  */
-
-import { masterGainState } from '../engineAccess/masterGainState';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
@@ -71,15 +70,7 @@ export function repositionNativeLiveGraphSession(
         }
         const result = await backend.apply({
             schemaVersion: 1,
-            commands: [
-                { kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds },
-                // Restated after the locate, because the locate is what drops
-                // it: a fader still gliding when the playhead moves is a ramp
-                // whose end lies past the seek target, and `cancel_from` stops
-                // it where it stood. Nothing else would finish the glide, so a
-                // locate inside the fader's ramp would park the master partway.
-                { kind: 'set-master-gain', gain: masterGainState.gain },
-            ],
+            commands: [{ kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds }],
         });
         reportAttachedPlugins(result);
         if (result.application !== 'applied') {

@@ -1008,14 +1008,13 @@ describe('startNativeLiveGraphSession', () => {
     // A strip this engine carries leaves through the native device and never
     // crosses the Web Audio master node, so a session opened at unity would
     // play those tracks hot against every strip Web Audio is still sounding.
-    it('opens at the level the master fader is standing at, behind the locate', async () => {
+    it('opens at the level the master fader is standing at', async () => {
         masterGainState.gain = 0.35;
 
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
-        // Behind the transport, because `set-transport` locates and a locate
-        // cancels a write stamped at or past the frame it lands on.
-        expect(appliedBatches()[0]?.commands[1]).toMatchObject({ kind: 'set-transport' });
+        // In the opening group, ahead of every strip it governs, so the first
+        // block this session renders is already at the fader's level.
         expect(appliedBatches()[0]?.commands[2]).toEqual({ kind: 'set-master-gain', gain: 0.35 });
     });
 
@@ -1650,17 +1649,16 @@ describe('repositionNativeLiveGraphSession', () => {
         expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
         expect(appliedBatches().at(-1)?.commands).toEqual([
             { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
-            { kind: 'set-master-gain', gain: 0.8 },
         ]);
         // A locate that replaced would tear down the topology the plugin
         // runtimes are standing on to move the playhead a few beats.
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
     });
 
-    // The locate drops a fader ramp whose end lies past the target
-    // (`RampedParam::cancel_from`), and nothing else would finish that glide —
-    // so a locate landing inside the ramp would park the master partway down.
-    it('restates the master level behind the locate that would drop it', async () => {
+    // The fader is a smoother the engine advances per sample, holding no frame
+    // for the seek to invalidate, so a locate leaves the master level exactly
+    // where it stands and a restate here would carry no work.
+    it('leaves the master level alone, because a locate cannot reach the fader', async () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
         masterGainState.gain = 0.6;
 
@@ -1668,7 +1666,6 @@ describe('repositionNativeLiveGraphSession', () => {
 
         expect(appliedBatches().at(-1)?.commands).toEqual([
             { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
-            { kind: 'set-master-gain', gain: 0.6 },
         ]);
     });
 
@@ -1757,7 +1754,6 @@ describe('repositionNativeLiveGraphSession', () => {
         ]);
         expect(appliedBatches()[2]?.commands).toEqual([
             { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
-            { kind: 'set-master-gain', gain: 0.8 },
         ]);
     });
 

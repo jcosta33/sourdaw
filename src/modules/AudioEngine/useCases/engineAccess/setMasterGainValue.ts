@@ -11,10 +11,13 @@ import { masterGainState } from './masterGainState';
  * The clamp happens here rather than only inside the Web Audio engine because
  * the clamped value is the one both carriers have to agree on: two engines
  * given different numbers for one fader is the split this exists to close.
+ *
+ * Recording the level precedes the forward, because the forward reads it back on
+ * the session's queue rather than carrying it.
  */
 export function setMasterGainValue(value: number): void {
     const gain = clampFaderGain(value);
     masterGainState.gain = gain;
     audioEngine.setMasterGain(gain);
-    forwardMasterGainToNativeLiveGraphSession(gain);
+    forwardMasterGainToNativeLiveGraphSession();
 }

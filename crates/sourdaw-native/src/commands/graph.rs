@@ -183,15 +183,23 @@ fn fader_max_gain() -> f32 {
     10f32.powf(FADER_HEADROOM_DB / 20.0)
 }
 
-/// How long the master fader takes to reach a new level.
+/// The time constant the master fader approaches a new level on.
 ///
-/// The mirror of the Web Audio fader's own smoothing: `setMasterGain` in
-/// `src/modules/AudioEngine/repositories/createWebAudioEngine.ts` ramps with
-/// `setTargetAtTime` on a 10 ms time constant, so a native-carried strip that
-/// glided over any other span would answer the same gesture at a different
-/// rate than the strips beside it. Ten milliseconds is also long enough to
-/// make the loudest step a fader can produce — unity to silence — click-free.
-const MASTER_GAIN_RAMP_SECONDS: f64 = 0.010;
+/// The law is the Web Audio fader's own: `setMasterGain` in
+/// `src/modules/AudioEngine/repositories/createWebAudioEngine.ts` smooths with
+/// `setTargetAtTime(value, now, 0.01)`, a one-pole approach that covers the
+/// same fraction of the distance left every sample. Both carriers of one mix
+/// answer one gesture by one law, so a strip the native engine carries arrives
+/// at the new level together with the strips beside it. Ten milliseconds is
+/// also slow enough to make the loudest move a fader can make — unity to
+/// silence — click-free.
+const MASTER_GAIN_TIME_CONSTANT_SECONDS: f64 = 0.010;
+
+/// The per-sample coefficient of that approach: `1 - exp(-1 / (T * fs))`, the
+/// fraction of the distance left one sample covers.
+fn master_gain_smoothing(sample_rate: f32) -> f32 {
+    (1.0 - (-1.0 / (MASTER_GAIN_TIME_CONSTANT_SECONDS * f64::from(sample_rate))).exp()) as f32
+}
 
 /// This app's pan scale is −50…+50; the engine's pan law takes −1…+1.
 const PROJECT_PAN_SCALE: f32 = 50.0;
@@ -348,8 +356,9 @@ pub enum GraphCommandPayload {
     /// `gain` uses (`1.0` is unity, and the ceiling is the fader's headroom
     /// rather than unity). Session-level like the monitor gate: it addresses
     /// no strip, appears in no report, and is never a `write-parameter`
-    /// target, because a fader gesture carries no timeline coordinate for a
-    /// stamped write to use.
+    /// target. Where the hand left the fader is true at every position, so the
+    /// engine takes it as a target to approach rather than as a change stamped
+    /// at a frame.
     #[serde(rename_all = "camelCase")]
     SetMasterGain { gain: f64 },
 }
@@ -2205,23 +2214,17 @@ fn map_command(
                 return Err("set-master-gain: gain is negative".to_string());
             }
             let value = (stored as f32).min(fader_max_gain());
-            let ramp_frames = frames_u32(
-                seconds_to_frames(
-                    MASTER_GAIN_RAMP_SECONDS,
-                    sample_rate,
-                    "set-master-gain ramp",
-                )?,
-                "set-master-gain ramp",
-            )?;
             // No `touch`: the command names no strip, so there is no realized
-            // chain for a report to observe. No `push_automation` either: the
-            // stamp is the engine's own playhead rather than one this side
-            // holds, and the write replaces, so the parameter's queue holds at
-            // most one master write however long a drag runs
-            // (`RampedParam::cancel_stale`). A ledger entry charged against a
-            // stamp this side never knew would refuse batches the engine has
-            // room for.
-            ops.push(GraphCommand::SetMasterGain { value, ramp_frames });
+            // chain for a report to observe. No `push_automation` either, and
+            // not because the budget is being dodged — this is not an
+            // automation write at all. It carries no frame and takes no slot in
+            // any parameter's queue: the engine re-aims one smoother, which
+            // holds a target rather than a schedule. Charging the automation
+            // ledger for it would refuse batches the engine has room for.
+            ops.push(GraphCommand::SetMasterGain {
+                value,
+                smoothing: master_gain_smoothing(sample_rate),
+            });
             Ok(())
         }
     }
@@ -3642,13 +3645,11 @@ mod tests {
         }
     }
 
-    /// The master fader crosses as a command the engine stamps itself: a
-    /// value and a span, with no frame this side could have known. It names no
-    /// strip, so it observes none, and it charges no queue slot, because the
-    /// stamp it would be charged against does not exist until the audio thread
-    /// drains it.
+    /// The master fader crosses as a target and the coefficient to approach it
+    /// by, with no frame anywhere in it. It names no strip, so it observes
+    /// none, and it charges no automation slot, because it queues no write.
     #[test]
-    fn set_master_gain_maps_onto_an_engine_stamped_ramp_that_charges_no_queue() {
+    fn set_master_gain_maps_onto_a_smoother_target_that_charges_no_queue() {
         let batch = batch(json!([
             { "kind": "set-master-gain", "gain": 0.5 }
         ]));
@@ -3657,27 +3658,54 @@ mod tests {
         let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
             .expect("the master fader should map without a strip");
 
+        // What the coefficient means: over one time constant — 480 frames at
+        // 48 kHz — the approach leaves `1/e` of the distance, which is the
+        // definition `setTargetAtTime(value, now, 0.01)` answers to.
         let master_writes = mapped
             .ops
             .iter()
             .filter(|op| {
                 matches!(
                     op,
-                    GraphCommand::SetMasterGain { value, ramp_frames }
-                        if *value == 0.5 && *ramp_frames == 480
+                    GraphCommand::SetMasterGain { value, smoothing }
+                        if *value == 0.5
+                            && ((1.0 - smoothing).powi(480) - 1.0 / std::f32::consts::E).abs()
+                                < 1e-4
                 )
             })
             .count();
         assert_eq!(
             master_writes, 1,
-            "one 10 ms ramp to the requested level, at 48 kHz"
+            "one aim at the requested level, on the Web Audio fader's own law"
         );
         assert_eq!(mapped.ops.len(), 1, "the command carries nothing else");
         assert!(mapped.reports.is_empty(), "no strip was addressed");
         assert!(
             registry.automation_pending.is_empty(),
-            "a write the engine stamps cannot be charged against a stamp this side holds"
+            "a target the engine approaches occupies no parameter queue to charge"
         );
+    }
+
+    /// The approach is stated per sample, so its coefficient has to be derived
+    /// from the rate the session actually runs at: one rate's coefficient at
+    /// another rate is a different time constant, and the two carriers would
+    /// stop agreeing.
+    #[test]
+    fn set_master_gain_scales_its_smoothing_with_the_sample_rate() {
+        let batch = batch(json!([
+            { "kind": "set-master-gain", "gain": 0.5 }
+        ]));
+
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 96_000.0)
+            .expect("the master fader should map at any rate");
+
+        // The same 10 ms, which is 960 frames at this rate rather than 480.
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::SetMasterGain { smoothing, .. }
+                if ((1.0 - smoothing).powi(960) - 1.0 / std::f32::consts::E).abs() < 1e-4
+        )));
     }
 
     /// The master fader has the same +6 dB of headroom a strip fader has, and
