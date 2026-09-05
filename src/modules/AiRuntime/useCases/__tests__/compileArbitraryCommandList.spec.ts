@@ -12,6 +12,7 @@ import {
 } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
+import type { ProjectContext } from '../../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
@@ -4796,6 +4797,139 @@ describe('compileArbitraryCommandList', () => {
             { bindingId: '$piano', producerActionIndex: 0, producerArgument: 'id' },
             { bindingId: '$melody', producerActionIndex: 1, producerArgument: 'id' },
         ]);
+    });
+
+    it('accepts a newly created bound device as a setDeviceParameter target', () => {
+        const deviceContext: ProjectContext = {
+            ...context,
+            availableDeviceTypes: [
+                {
+                    id: 'builtin-filter',
+                    name: 'Filter',
+                    parameters: [
+                        {
+                            id: 'filter-type',
+                            name: 'Type',
+                            type: 'choice',
+                            value: 0,
+                            minValue: 0,
+                            maxValue: 3,
+                            unit: '',
+                            choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
+                        },
+                    ],
+                },
+            ],
+        };
+        const result = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-created-device-parameter',
+            calls: [
+                creationProposal([
+                    { id: 'make-lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                    {
+                        id: 'add-radio',
+                        name: 'addDevice',
+                        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'radio' },
+                        dependsOn: ['make-lead'],
+                    },
+                    {
+                        id: 'set-radio-type',
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: '$radio', paramId: 'filter-type', value: 1 },
+                        dependsOn: ['add-radio'],
+                    },
+                ]),
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            throw new Error('Expected compiler evidence for a created device parameter chain');
+        }
+        const replayed = validateArbitraryCommandListEvidence({
+            evidence: result.compilerEvidence,
+            calls: result.compilerEvidence.commands,
+            context: deviceContext,
+            revision: 'revision-created-device-parameter',
+        });
+        expect(replayed).toMatchObject({ status: 'accepted' });
+        if (replayed.status === 'accepted') {
+            expect(replayed.actionCommandGraph).toEqual({
+                dependenciesByActionIndex: [[], [0], [1]],
+                batchLocalBindings: [
+                    { bindingId: '$lead', producerActionIndex: 0, producerArgument: 'id' },
+                    { bindingId: '$radio', producerActionIndex: 1, producerArgument: 'deviceId' },
+                ],
+            });
+        }
+
+        const tamperedParameter = structuredClone(result.compilerEvidence);
+        tamperedParameter.commands[2] = {
+            ...tamperedParameter.commands[2],
+            arguments: { deviceId: '$radio', paramId: 'unknown-parameter', value: 1 },
+        };
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: tamperedParameter,
+                calls: tamperedParameter.commands,
+                context: deviceContext,
+                revision: 'revision-created-device-parameter',
+            })
+        ).toMatchObject({ status: 'rejected' });
+
+        const tamperedDependency = structuredClone(result.compilerEvidence);
+        tamperedDependency.items[2] = { ...tamperedDependency.items[2], dependsOn: [] };
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: tamperedDependency,
+                calls: tamperedDependency.commands,
+                context: deviceContext,
+                revision: 'revision-created-device-parameter',
+            })
+        ).toMatchObject({ status: 'rejected' });
+
+        const tamperedProducer = structuredClone(result.compilerEvidence);
+        tamperedProducer.commands[1] = {
+            ...tamperedProducer.commands[1],
+            arguments: { trackId: '$lead', deviceType: 'unknown-device', binding: 'radio' },
+        };
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: tamperedProducer,
+                calls: tamperedProducer.commands,
+                context: deviceContext,
+                revision: 'revision-created-device-parameter',
+            })
+        ).toMatchObject({ status: 'rejected' });
+
+        const unknownParameter = compileArbitraryCommandList({
+            context: deviceContext,
+            revision: 'revision-created-device-parameter',
+            calls: [
+                creationProposal([
+                    {
+                        id: 'make-lead',
+                        name: 'addTrack',
+                        arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
+                    },
+                    {
+                        id: 'add-filter',
+                        name: 'addDevice',
+                        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter' },
+                        dependsOn: ['make-lead'],
+                    },
+                    {
+                        id: 'set-unknown-parameter',
+                        name: 'setDeviceParameter',
+                        arguments: { deviceId: '$filter', paramId: 'unknown-parameter', value: 1 },
+                        dependsOn: ['add-filter'],
+                    },
+                ]),
+            ],
+        });
+        expect(unknownParameter).toMatchObject({ status: 'rejected' });
+        expect(JSON.stringify(unknownParameter)).not.toMatch(/(?:track|device)-ai-/u);
     });
 
     it.each([

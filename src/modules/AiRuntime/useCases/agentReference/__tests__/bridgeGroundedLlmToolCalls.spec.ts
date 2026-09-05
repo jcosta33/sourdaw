@@ -2497,6 +2497,232 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('grounds and projects a descriptor-backed parameter on a device the plan creates', () => {
+        const prompt = 'make a new MIDI track with a filter';
+        const context: ProjectContext = {
+            ...projectContext,
+            availableDeviceTypes: [
+                {
+                    id: 'builtin-filter',
+                    name: 'Filter',
+                    parameters: [
+                        {
+                            id: 'filter-type',
+                            name: 'Type',
+                            type: 'choice',
+                            value: 0,
+                            minValue: 0,
+                            maxValue: 3,
+                            unit: '',
+                            choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
+                        },
+                    ],
+                },
+            ],
+        };
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision: 'revision-created-filter',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: prompt,
+                            constraints: [],
+                            scope: {
+                                targetIds: [],
+                                targetRanges: [],
+                                protectedTargetIds: [],
+                                protectedRanges: [],
+                            },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'make-lead',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
+                                },
+                                {
+                                    id: 'add-filter',
+                                    name: 'addDevice',
+                                    arguments: {
+                                        trackId: '$lead',
+                                        deviceType: 'builtin-filter',
+                                        binding: 'filter',
+                                    },
+                                    dependsOn: ['make-lead'],
+                                },
+                                {
+                                    id: 'set-filter-type',
+                                    name: 'setDeviceParameter',
+                                    arguments: { deviceId: '$filter', paramId: 'filter-type', value: 1 },
+                                    dependsOn: ['add-filter'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+
+        const result = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: 'revision-created-filter',
+            prompt,
+        });
+
+        expect(result.rejections).toEqual([]);
+        const deviceIdentity = (result.batchLocalActionIdentities ?? []).find(
+            (identity) => identity.actionType === 'addDevice'
+        );
+        const trackIdentity = (result.batchLocalActionIdentities ?? []).find(
+            (identity) => identity.actionType === 'addTrack'
+        );
+        if (deviceIdentity?.actionType !== 'addDevice') {
+            throw new Error('Expected one minted device identity');
+        }
+        if (trackIdentity?.actionType !== 'addTrack' || trackIdentity.initialDeviceId === undefined) {
+            throw new Error('Expected one MIDI track identity with its canonical default device');
+        }
+        expect(deviceIdentity.deviceId).toMatch(/^device-ai-/u);
+        expect(trackIdentity.initialDeviceId).toMatch(/^device-command-/u);
+        expect(result.actions).toEqual([
+            { type: 'addTrack', payload: { name: 'Lead', kind: 'midi', select: false } },
+            {
+                type: 'addDevice',
+                payload: { trackId: expect.stringMatching(/^track-ai-/u), deviceType: 'builtin-filter' },
+            },
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: deviceIdentity.deviceId,
+                    paramId: 'filter-type',
+                    value: 1,
+                    expectedTrackId: expect.stringMatching(/^track-ai-/u),
+                    expectedDeviceType: 'builtin-filter',
+                    expectedDeviceIds: [trackIdentity.initialDeviceId, deviceIdentity.deviceId],
+                    expectedValue: 0,
+                    expectedTrackFrozen: false,
+                },
+            },
+        ]);
+    });
+
+    it.each([
+        {
+            name: 'out-of-range value',
+            parameter: {
+                id: 'filter-type',
+                name: 'Type',
+                type: 'choice' as const,
+                value: 0,
+                minValue: 0,
+                maxValue: 3,
+                unit: '',
+                choices: ['Lowpass', 'Highpass', 'Bandpass', 'Notch'],
+            },
+            paramId: 'filter-type',
+            value: 4,
+        },
+        {
+            name: 'value outside the descriptor legal set',
+            parameter: {
+                id: 'filter-quality',
+                name: 'Quality',
+                type: 'int' as const,
+                value: 0,
+                minValue: 0,
+                maxValue: 2,
+                legalValues: [0, 2],
+                unit: '',
+            },
+            paramId: 'filter-quality',
+            value: 1,
+        },
+    ])('atomically rejects a created device parameter with an $name', ({ parameter, paramId, value }) => {
+        const context: ProjectContext = {
+            ...projectContext,
+            availableDeviceTypes: [{ id: 'builtin-filter', name: 'Filter', parameters: [parameter] }],
+        };
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision: 'revision-invalid-created-filter',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: 'Create one filtered MIDI track.',
+                            constraints: [],
+                            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'make-lead',
+                                    name: 'addTrack',
+                                    arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
+                                },
+                                {
+                                    id: 'add-filter',
+                                    name: 'addDevice',
+                                    arguments: {
+                                        trackId: '$lead',
+                                        deviceType: 'builtin-filter',
+                                        binding: 'filter',
+                                    },
+                                    dependsOn: ['make-lead'],
+                                },
+                                {
+                                    id: 'set-filter-parameter',
+                                    name: 'setDeviceParameter',
+                                    arguments: { deviceId: '$filter', paramId, value },
+                                    dependsOn: ['add-filter'],
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+
+        const result = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            projectRevision: 'revision-invalid-created-filter',
+            prompt: 'create a new MIDI track with a filter',
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections).not.toEqual([]);
+        expect(JSON.stringify(result)).not.toMatch(/(?:track|device)-ai-/u);
+    });
+
     it('binds a clip on a concrete MIDI track only while that track is unfrozen', () => {
         const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
         const call = {

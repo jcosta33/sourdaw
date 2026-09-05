@@ -11,6 +11,7 @@ import {
     type BatchLocalBindingProducer,
     CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
+    isBatchLocalDeviceParameterTarget,
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
@@ -494,6 +495,26 @@ export function validateArbitraryCommandListEvidence(input: {
         for (const targetRule of groundingRules.targetRules) {
             for (const [offset, command] of itemCommands.entries()) {
                 const target = command.arguments[targetRule.argument];
+                const dependencyTarget =
+                    targetRule.dependsOn === undefined ? undefined : command.arguments[targetRule.dependsOn];
+                if (
+                    targetRule.capability === 'device-parameter' &&
+                    typeof dependencyTarget === 'string' &&
+                    dependencyTarget.startsWith('$')
+                ) {
+                    const producer = producerByBinding.get(dependencyTarget.slice(1));
+                    if (
+                        producer === undefined ||
+                        producer.createdDeviceType === undefined ||
+                        !evidenceDependsTransitivelyOn(item.itemId, producer.itemId, itemsById) ||
+                        !isBatchLocalDeviceParameterTarget(producer, target)
+                    ) {
+                        return {
+                            status: 'rejected',
+                            reason: 'Structured command compiler evidence batch-local device parameter is invalid.',
+                        };
+                    }
+                }
                 if (typeof target !== 'string' || !target.startsWith('$')) {
                     continue;
                 }

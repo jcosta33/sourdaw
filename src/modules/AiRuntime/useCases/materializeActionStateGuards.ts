@@ -46,6 +46,39 @@ function createProjectedBus(busId: string, name: string): ProjectContextTrack {
     };
 }
 
+function createProjectedTrack(
+    trackId: string,
+    name: string,
+    kind: string,
+    initialDeviceId: string | undefined
+): ProjectContextTrack {
+    const devices =
+        kind === 'midi' && initialDeviceId !== undefined
+            ? [{ id: initialDeviceId, name: 'Synth', type: 'builtin-synth', bypassed: false, parameters: [] }]
+            : [];
+    return {
+        id: trackId,
+        name,
+        kind,
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        armed: false,
+        frozen: false,
+        gain: 0.8,
+        pan: 0,
+        automationMode: 'read',
+        vcaGroupId: null,
+        outputId: 'master',
+        clipCount: 0,
+        alternativeClipIds: [],
+        deviceCount: devices.length,
+        clips: [],
+        devices,
+        sends: [],
+    };
+}
+
 export function materializeActionStateGuards(
     actions: readonly MaterializableRuntimeAction[],
     context: ProjectContext,
@@ -336,6 +369,29 @@ export function materializeActionStateGuards(
                 type: 'muteTrack',
                 payload: { ...action.payload, expectedMuted: track.muted },
             });
+            continue;
+        }
+        if (action.type === 'addTrack' && action.payload.id) {
+            if (tracksById.has(action.payload.id)) {
+                return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };
+            }
+            tracksById.set(
+                action.payload.id,
+                createProjectedTrack(
+                    action.payload.id,
+                    action.payload.name,
+                    action.payload.kind,
+                    action.payload.initialDeviceId
+                )
+            );
+            deviceIdsByTrack.set(
+                action.payload.id,
+                action.payload.kind === 'midi' && action.payload.initialDeviceId !== undefined
+                    ? [action.payload.initialDeviceId]
+                    : []
+            );
+            frozenByTrack.set(action.payload.id, false);
+            materialized.push(action);
             continue;
         }
         if (action.type === 'addDevice') {
