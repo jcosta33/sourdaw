@@ -17,6 +17,14 @@
  * track marked native the engine cannot build goes silent, and a track left on
  * Web Audio the engine also plays is heard twice.
  *
+ * "Everything that reaches the speakers" covers what a strip *sounds*, not only
+ * what it processes, and a hosted plugin is the one thing on a chain that has a
+ * native body and only a native body: Web Audio builds nothing for it, and the
+ * engine splices an instrument plugin into the chain as a generator (#3826). A
+ * track holding an attached plugin therefore has something to sound with no
+ * clip under the playhead at all, which is why the rule about having nothing to
+ * play asks about the chain as well as about the programme.
+ *
  * Buses get no entry. They are shared: a native-carried track feeds the native
  * bus while a web-carried one feeds the Web Audio bus of the same name, and the
  * two sum at the hardware output. That is what makes the split per track
@@ -116,6 +124,22 @@ function chainOf(track: Track, context: CarrierContext): AudioGraphDeviceChain {
     return context.programme.bakedStripIds.has(track.id) ? [] : track.devices;
 }
 
+/**
+ * Whether this strip's own chain holds a plugin the native engine has already
+ * taken on.
+ *
+ * The reading {@link hasNativeBody} makes, asked of the chain rather than of a
+ * single device: an externally hosted plugin is the engine's exactly when the
+ * engine reports its instance attached, and a plugin the host never resolved to
+ * an instance names nothing an attach state could answer for.
+ */
+function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
+    return chainOf(track, context).some(
+        (device) =>
+            device.externalInstanceId !== undefined && context.attachedInstanceIds.has(device.externalInstanceId)
+    );
+}
+
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
     return chainOf(track, context).find((device) => !hasNativeBody(device, context.attachedInstanceIds)) ?? null;
 }
@@ -180,13 +204,22 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * Order is the contract, not an implementation detail: the reason a musician
  * reads has to be the first thing that is actually wrong, and a track with no
  * clips on it is not "missing a plugin".
+ *
+ * Rule 1 asks whether the strip has anything to sound, which is a wider
+ * question than whether the programme put a clip on it. An attached plugin
+ * sounds on its own — the engine splices an instrument in as a generator — and
+ * it has a body on no other carrier, so a clip-less strip holding one is
+ * carried natively rather than handed to a Web Audio strip that would voice
+ * nothing at all. An *unattached* plugin names no instance the engine holds, so
+ * a clip-less strip carrying one still has nothing scheduled.
  */
 function firstFailure(
     track: Track,
     context: CarrierContext,
     inputMonitoredTrackIds: ReadonlySet<string>
 ): string | null {
-    if ((context.programme.playbacksByStripId.get(track.id)?.length ?? 0) === 0) {
+    const plays = (context.programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
+    if (!plays && !hostsAttachedPlugin(track, context)) {
         return 'nothing scheduled';
     }
     if (inputMonitoredTrackIds.has(track.id)) {

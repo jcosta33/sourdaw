@@ -13,10 +13,10 @@ import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
  * state would show a position the mix is not at.
  *
  * `nativeLiveGraphSession.audibleCarrier` is that condition. It is the
- * conjunction of both halves — a topology that schedules something, and a
- * monitor that is open — so a session that schedules a whole programme behind
- * a shadowed monitor keeps the cursor on Web Audio, and the cutover moves it
- * with nothing to remember to switch on.
+ * conjunction of both halves — a topology that carries at least one strip the
+ * engine was told to sound, and a monitor that is open — so a session that
+ * carries a whole project behind a shadowed monitor keeps the cursor on Web
+ * Audio, and the cutover moves it with nothing to remember to switch on.
  *
  * `null` therefore covers every case in which the engine's position is not the
  * position a musician is hearing: no feed, no engine, an engine that is not

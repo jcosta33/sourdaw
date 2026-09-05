@@ -732,15 +732,17 @@ export function startNativeLiveGraphSession(
             // A new session is new news: whatever the previous one deferred was
             // about a topology this batch has just replaced.
             nativeLiveGraphSession.lastDeferredChainNotice = null;
-            // Both halves, and both are needed. What was scheduled is read off the
-            // batch actually sent, so the day the producer emits clips nothing has
-            // to be remembered here; whether any of it can be heard is the monitor
-            // mode, and a shadowed engine writes true zeros at the device however
-            // full its timeline is.
+            // Both halves, and both are needed. Whether this engine sounds
+            // anything is read off the batch actually sent, as the strips it was
+            // told to contribute: a contributing strip is one Web Audio has been
+            // gated out of, so the engine is the only carrier left for it whether
+            // a clip plays on it or a hosted plugin generates into it. Whether any
+            // of that can be heard is the monitor mode, and a shadowed engine
+            // writes true zeros at the device however full its timeline is.
             const shadowed = monitor === 'shadowed';
-            const schedulesClips = rebound.commands.some((command) => command.kind === 'schedule-clip');
+            const carriesStrips = carriedStripIds(rebound.commands).size > 0;
             nativeLiveGraphSession.monitorShadowed = shadowed;
-            nativeLiveGraphSession.audibleCarrier = schedulesClips && !shadowed;
+            nativeLiveGraphSession.audibleCarrier = carriesStrips && !shadowed;
             // The topology went out parked (see the batch above), so this session
             // has not rolled yet whatever the one it replaced was doing.
             nativeLiveGraphSession.rolling = false;

@@ -382,6 +382,32 @@ describe('projectLiveGraphTopology', () => {
         }
     });
 
+    it('builds a clip-less strip whose hosted plugin the engine holds as contributing audio', () => {
+        // The plugin has a native body and no other kind: Web Audio builds
+        // nothing for it, and the engine splices an instrument in as a
+        // generator. A strip left off the native side here has no clip to play
+        // and no carrier to sound its plugin either, so it is silent outright.
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [
+                        createDevice({
+                            id: 'dev-1',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:harness-tone',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(true);
+    });
+
     it('builds a playing strip whose whole chain is native as contributing audio', () => {
         const commands = project({
             stripTracks: [createTrack({ id: 'audio-1', devices: [createDevice({ id: 'dev-1', type: 'knead' })] })],

@@ -141,6 +141,65 @@ describe('projectStripCarriers', () => {
         expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'nothing scheduled' });
     });
 
+    // Rule 1, the other half: "nothing to play" is about the strip having
+    // nothing to sound, and a plugin the engine holds sounds on its own —
+    // instruments are spliced into the chain as generators. Web Audio builds no
+    // body for a hosted plugin at all, so a clip-less track sent there over this
+    // rule is a track nothing voices for the whole take.
+    it('carries a clip-less track whose hosted plugin the engine already holds', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [pluginDevice({ id: 'd', name: 'Harness Tone', instanceId: 'i1' })],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
+    });
+
+    // Getting a track past rule 1 is not getting it past the law: the rules
+    // after it answer for a clip-less track exactly as they do for a playing
+    // one, in the order they always did.
+    it('leaves a clip-less track carrying an attached plugin on Web Audio while its input is monitored', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [pluginDevice({ id: 'd', name: 'Harness Tone', instanceId: 'i1' })],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(['audio-1']),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'input monitoring is on' });
+    });
+
+    it('judges the whole chain of a clip-less track its attached plugin carried past rule 1', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [
+                        pluginDevice({ id: 'd', name: 'Harness Tone', instanceId: 'i1' }),
+                        createDevice({ id: 'd2', type: 'builtin-eq' }),
+                    ],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'device builtin-eq has no native body' });
+    });
+
     // Rule 2. The live input reaches the Web Audio strip and nothing else, so
     // gating that strip would take a musician's own signal out of their
     // headphones mid-take.

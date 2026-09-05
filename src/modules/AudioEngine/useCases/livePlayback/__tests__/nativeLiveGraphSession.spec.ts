@@ -201,6 +201,22 @@ const SCHEDULED_CLIP: AudioGraphCommand = {
 };
 
 /**
+ * A `create-track-strip` command the engine is told to sound, in the shape the
+ * contract defines. `contributesAudio` is the whole of what a carried strip is:
+ * Web Audio is gated out of it, so the native engine is the only thing left to
+ * voice it.
+ */
+const CARRIED_STRIP: AudioGraphCommand = {
+    kind: 'create-track-strip',
+    trackId: 'audio-1',
+    name: 'Track 1',
+    state: { gain: 0.8, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+    devices: [],
+    honorMuted: true,
+    contributesAudio: true,
+};
+
+/**
  * The arrangement's transport maps as this module receives them: already
  * projected into engine seconds by the Transport module, never re-derived here.
  */
@@ -1066,13 +1082,14 @@ describe('startNativeLiveGraphSession', () => {
     it('is not the audible carrier while nothing is scheduled', async () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
 
-        // The live topology emits strips and routes and no `schedule-clip`, so
-        // this engine has nothing to sound whatever its monitor says.
+        // The project holds one bare track with no clip and no plugin, so the
+        // live topology carries no strip natively and this engine has nothing
+        // to sound whatever its monitor says.
         expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
     });
 
-    it('is not the audible carrier for a shadowed session that schedules a whole programme', async () => {
-        mocks.topologyOverride = [SCHEDULED_CLIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
+    it('is not the audible carrier for a shadowed session however many strips it carries', async () => {
+        mocks.topologyOverride = [CARRIED_STRIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
@@ -1081,13 +1098,29 @@ describe('startNativeLiveGraphSession', () => {
             monitor: 'shadowed',
         });
 
-        // The half that a has-clips reading gets wrong: this engine is full of
-        // material and audible nowhere, so a cursor drawn from it would leave
-        // the mix a musician is actually hearing.
+        // The half a carried-strips reading alone gets wrong: this engine holds
+        // the whole mix and is audible nowhere, so a cursor drawn from it would
+        // leave the mix a musician is actually hearing.
         expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
     });
 
-    it('becomes the audible carrier once a scheduled programme meets an open monitor', async () => {
+    it('becomes the audible carrier once a carried strip meets an open monitor', async () => {
+        mocks.topologyOverride = [CARRIED_STRIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            monitor: 'audible',
+        });
+
+        // Both halves, and only both. The strip is carried with no clip on it
+        // at all — which is exactly a track whose only voice is a hosted plugin
+        // the engine holds, and the case a has-clips reading called silent.
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(true);
+    });
+
+    it('is not the audible carrier for a clip on a strip the engine was not told to sound', async () => {
         mocks.topologyOverride = [SCHEDULED_CLIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
 
         await startNativeLiveGraphSession({
@@ -1097,10 +1130,10 @@ describe('startNativeLiveGraphSession', () => {
             monitor: 'audible',
         });
 
-        // Both halves, and only both: what was scheduled is read off the batch
-        // actually sent, so the day the producer emits clips the cutover moves
-        // the cursor with no edit here.
-        expect(nativeLiveGraphSession.audibleCarrier).toBe(true);
+        // Web Audio still owns that strip, so what the native engine renders of
+        // this clip reaches no output. Reading the session as the carrier would
+        // move the cursor onto a transport nobody hears.
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
     });
 
     it('claims the strips it is about to sound before the batch that sounds them', async () => {

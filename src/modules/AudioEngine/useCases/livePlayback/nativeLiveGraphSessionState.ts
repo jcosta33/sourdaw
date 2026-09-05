@@ -21,14 +21,17 @@ export type NativeLiveGraphSession = {
     /**
      * Whether this session's engine is the one a musician is actually hearing.
      *
-     * Two independent conditions, and both have to hold: the topology has to
-     * schedule something (an engine with no clips has nothing to sound), and
-     * the monitor has to be open (a shadowed engine writes true zeros at the
-     * device however full its timeline is). Naming it for the conclusion
-     * rather than for either half is deliberate — the earlier `carriesAudio`
-     * asked only whether clips were scheduled, and the day a shadowed session
-     * schedules a real programme that reading is wrong in the direction that
-     * moves the playback cursor onto an engine nobody can hear.
+     * Two independent conditions, and both have to hold: the batch has to
+     * carry at least one strip the engine was told to contribute (a strip Web
+     * Audio has been gated out of is one only this engine can voice, whether a
+     * clip plays on it or a hosted plugin generates into it, and a batch that
+     * carries none leaves every strip where it was), and the monitor has to be
+     * open (a shadowed engine writes true zeros at the device however full its
+     * timeline is). Naming it for the conclusion rather than for either half is
+     * deliberate — the earlier `carriesAudio` asked only whether clips were
+     * scheduled, and the day a shadowed session schedules a real programme that
+     * reading is wrong in the direction that moves the playback cursor onto an
+     * engine nobody can hear.
      *
      * Anything that must follow the audible transport — the playback cursor
      * above all — reads this rather than assuming a running engine is the one
