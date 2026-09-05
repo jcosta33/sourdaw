@@ -1,0 +1,44 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_9b530f08172a54::t_9f447e4db53bd8 243-245,257-258
+  s_9b530f08172a54::t_7519f1e34ec9bb 165-193,259
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  s_9b530f08172a54::t_a5f3204f59d84f 1-205
+src/modules/AudioEngine/useCases/livePlayback/rearmNativeLiveAutomationWriterInPlace.ts
+  s_9b530f08172a54::t_c8a1c302abb602 68
+  s_9b530f08172a54::t_c16627b5ecca1e 22-23,27-46
+  s_9b530f08172a54::t_6e22eb12d9b437 47
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_d57a8a1cdc81b4 203
+  s_9b530f08172a54::t_766cd8e7af8837 230-232
+  s_9b530f08172a54::t_41feb756a4bc92 188-189
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_9b530f08172a54::t_7057895ca0bd92 658
+  s_9b530f08172a54::t_7493e39b630a31 140-160
+  s_9b530f08172a54::t_9f3d1e8024d418 619-621,628,632
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_9b530f08172a54::t_e238e403fb181f 149-156
+  s_9b530f08172a54::t_a2b1cb6fecba86 108-109
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_9b530f08172a54::t_07cae6927d3b55 256-262
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_f76ce6133cd2de 237
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_b34e2bb3af699a 156-170
+  s_9b530f08172a54::t_32c85c49221cc7 238-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0f94bb28916179b88c34d12eb9121e9bed44c0b2",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
