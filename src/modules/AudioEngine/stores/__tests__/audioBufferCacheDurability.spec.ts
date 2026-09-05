@@ -194,6 +194,36 @@ describe('audio buffer save durability', () => {
         }
     });
 
+    it('protects a required finalized recovery while an admitted ordinary write is still settling', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        const recoveryId = 'required-finalized-recovery';
+        const peerId = 'unrelated-finalized-recovery';
+        const pendingId = 'pending-ordinary-buffer';
+        controls.committedRecovery.set(recoveryId, makeRecovery(recoveryId, 'recovery-required', [0.6]));
+        controls.committedRecovery.set(peerId, makeRecovery(peerId, 'recovery-peer', [0.9]));
+        controls.pauseWriteSettlements();
+        audioBufferCache.set(pendingId, makeBuffer([0.25]));
+        const durability = audioBufferCache.ensureDurable([recoveryId, pendingId]);
+        await waitForPendingWrite(controls);
+
+        const collection = audioBufferCache.garbageCollectBySize(0);
+        for (let attempt = 0; attempt < 100 && controls.pendingWriteSettlementCount() < 2; attempt++) {
+            await flushIndexedDbTasks(1);
+        }
+        expect(controls.pendingWriteSettlementCount()).toBe(2);
+        const [deleted, result] = await settlePromiseWithWrites(Promise.all([collection, durability]), controls);
+        const recoveredPcm = Array.from(controls.committed.get(recoveryId)?.channelData[0] ?? []);
+
+        expect(deleted).toBe(1);
+        expect(controls.committedRecovery.has(peerId)).toBe(false);
+        expect(controls.committedRecovery.has(recoveryId)).toBe(false);
+        expect(recoveredPcm).toEqual([Math.fround(0.6)]);
+        expect(result.status).toBe('durable');
+        if (result.status === 'durable') {
+            result.release();
+        }
+    });
+
     it('fails the admitted barrier when its pending ordinary attempt aborts and retries only on a later barrier', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         seedOrdinaryBuffer(controls, 'released-after-failure', [0.5]);

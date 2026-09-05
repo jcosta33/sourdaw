@@ -72,3 +72,5 @@ that write, then loads a metadata-only project that retains the decoded ID. Save
 captured failure, retry B only on a later Save, and cold reopen B rather than A. Repeat with a held
 success and with a same-ID replacement before the old attempt settles; neither an old receipt nor an
 old completion may certify the replacement.
+
+The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
