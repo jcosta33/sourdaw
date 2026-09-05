@@ -2665,14 +2665,14 @@ mod compensation_render_alloc_guards {
     use super::{new_bridge_round_trip_slot, DeviceRenderer};
     use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
     use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
-    use crate::plugin_slot::NativePlugin;
+    use crate::plugin_slot::{NativePlugin, TransportState};
     use crate::scheduler::{
         graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
         GraphCommand, RetiredGraphObjects,
     };
     use crate::timeline::{
-        timeline_rt_diagnostics_channel, ChainEntry, DeviceKind, RouteTarget, SendTap, TimelineBus,
-        TimelineTrack,
+        timeline_rt_diagnostics_channel, ChainEntry, ClipPlacement, ClipPlayback, DeviceKind,
+        RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
     };
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -2759,14 +2759,43 @@ mod compensation_render_alloc_guards {
         }
     }
 
+    /// One mono clip of a constant value from frame zero, so the frame the
+    /// material first sounds on is the only thing the assertion has to read.
+    fn constant_clip(clip_id: usize, value: f32, frames: usize) -> Box<TimelineClip> {
+        TimelineClip::new(
+            clip_id,
+            vec![value; frames].into(),
+            [].into(),
+            ClipPlacement {
+                start_frame: 0,
+                source_offset_frames: 0,
+                length_frames: frames as u64,
+            },
+            ClipPlayback::at_gain(1.0),
+        )
+    }
+
     #[test]
     fn compensating_the_graph_neither_allocates_nor_frees_on_the_callback() {
         const CALLBACKS: usize = 4;
+        const GROUP_CLIP_ID: usize = 202;
+        const GROUP_CLIP_VALUE: f32 = 0.5;
+        const HELD_FRAMES: usize = 128;
 
         let mut harness = CompensationHarness::new();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        // The group's own material, so the render has something to hold and the
+        // hold is readable at the master rather than only in the graph's state.
+        harness.send(GraphCommand::AddClip(
+            2,
+            constant_clip(GROUP_CLIP_ID, GROUP_CLIP_VALUE, CALLBACKS * CALLBACK_FRAMES),
+        ));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -2797,17 +2826,26 @@ mod compensation_render_alloc_guards {
         harness.send(GraphCommand::RemoveTrack(1));
 
         // Sized outside, the way a device buffer is: the callback is what is
-        // under test, not the buffer it is handed.
+        // under test, not the buffer it is handed. So is the master the render
+        // is read back from, for the same reason.
         let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+        let mut heard = vec![0.0f32; CALLBACKS * CALLBACK_FRAMES];
 
         assert_no_alloc(|| {
-            for _ in 0..CALLBACKS {
+            for callback in 0..CALLBACKS {
                 harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
+                for (frame, sample) in block.iter_mut().enumerate() {
+                    *sample = data[frame * DEVICE_CHANNELS];
+                }
             }
         });
 
         // The guard only covers what the callback ran, and the group's source
-        // line is skipped outright at zero delay. This is what says it was not.
+        // line is skipped outright at zero delay. Aiming it says the graph
+        // asked for the hold; the master says the render took it. Both are
+        // needed, because compensation aims a line whether or not the render
+        // path that runs it was ever reached.
         assert_eq!(
             harness
                 .renderer
@@ -2816,8 +2854,14 @@ mod compensation_render_alloc_guards {
                 .track(2)
                 .expect("the group track is in the graph")
                 .source_delay_frames(),
-            128,
-            "the group's source line was aimed, so the render exercised it"
+            HELD_FRAMES,
+            "the group's source line was aimed at the depth of the latent track feeding it"
+        );
+        let mut expected = vec![GROUP_CLIP_VALUE; CALLBACKS * CALLBACK_FRAMES];
+        expected[..HELD_FRAMES].fill(0.0);
+        assert_eq!(
+            heard, expected,
+            "the group's own clip waits the whole hold at the master, so the callback ran the line"
         );
 
         // Freed here, on the control side, which is the whole point of the

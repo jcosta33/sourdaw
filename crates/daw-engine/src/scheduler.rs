@@ -9450,15 +9450,23 @@ mod timeline_tests {
 
     /// A group carrying its own material is two sources at one point: what is
     /// routed in, which has already waited, and its own clips, which have not.
+    ///
+    /// The group carries a latent device of its own, so the depth of its input
+    /// and that depth plus its own chain are different numbers. Aiming the
+    /// source line at the latter would delay the group's clips past the track
+    /// feeding them and then delay both again through the chain.
     #[test]
     fn a_groups_own_clip_waits_for_the_latent_track_routed_into_it() {
         const LATENCY: usize = 7;
+        const GROUP_LATENCY: usize = 2;
+        const ARRIVAL: usize = LATENCY + GROUP_LATENCY;
         let mut harness = Harness::new(32);
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
         track_with_constant_clip(&mut harness, 3, 103, 1.0, 64);
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
         insert_latent_device(&mut harness, 1, 900, LATENCY);
+        insert_latent_device(&mut harness, 3, 901, GROUP_LATENCY);
 
         assert_eq!(
             harness
@@ -9468,15 +9476,15 @@ mod timeline_tests {
                 .expect("track 3 is in the graph")
                 .source_delay_frames(),
             LATENCY,
-            "the group's own clips are aimed at the depth of its input"
+            "the group's own clips are aimed at the depth of its input, not at that depth plus its own chain"
         );
 
         let (left, _) = harness.render(16);
         let mut expected = vec![2.0; 16];
-        expected[..LATENCY].fill(0.0);
+        expected[..ARRIVAL].fill(0.0);
         assert_eq!(
             left, expected,
-            "the group's clip does not sound ahead of the track feeding it"
+            "the group's clip does not sound ahead of the track feeding it, and the pair leaves the group's own device together"
         );
         assert_eq!(
             harness.render(16).0,

@@ -112,15 +112,28 @@ impl CompensationDelay {
         // non-zero delays the ring is current, so the change is a read-offset
         // jump and nothing is cleared.
         if self.delay == 0 {
-            self.clear();
+            self.silence_the_delayed_tail(delay);
         }
         self.delay = delay;
         clamped
     }
 
-    fn clear(&mut self) {
-        self.left.fill(0.0);
-        self.right.fill(0.0);
+    /// Silence the only region that can still hand back stale audio, and
+    /// restart the ring at its head.
+    ///
+    /// With `write` back at zero, [`Self::process`] starts reading at
+    /// `slots - delay` and reaches slot zero exactly `delay` frames later, by
+    /// which point every slot it visits was written earlier in that same call.
+    /// So the leading tail is the whole of what the line owes silence, and
+    /// clearing more is work the callback pays for nothing: every line the
+    /// graph builds is sized at [`MAX_COMPENSATION_FRAMES`], and one
+    /// compensation pass re-aims every sibling route at once, so a full fill
+    /// here costs two ceiling-sized memsets per route on the audio thread to
+    /// silence a handful of frames.
+    fn silence_the_delayed_tail(&mut self, delay: usize) {
+        let slots = self.left.len();
+        self.left[slots - delay..].fill(0.0);
+        self.right[slots - delay..].fill(0.0);
         self.write = 0;
     }
 
@@ -152,6 +165,14 @@ impl CompensationDelay {
             }
         }
         self.write = write;
+    }
+
+    /// The ring itself, for a test that has to prove which slots a re-aiming
+    /// touched. Deliberately not a published surface: nothing outside a test
+    /// has any business reading the buffer a line runs on.
+    #[cfg(test)]
+    fn ring(&self) -> (&[f32], &[f32]) {
+        (&self.left, &self.right)
     }
 }
 
@@ -239,6 +260,56 @@ mod tests {
 
         assert_eq!(next_left, vec![0.0, 0.0, 9.0, 9.0]);
         assert_eq!(next_right, next_left);
+    }
+
+    #[test]
+    fn a_shorter_delay_taken_up_after_zero_reads_silence_before_the_new_material() {
+        let mut delay = CompensationDelay::new(8);
+        delay.set_delay(4);
+        let mut left = ramp(8);
+        let mut right = ramp(8);
+        delay.process(&mut left, &mut right, 8);
+
+        // Off: the caller skips the line, so the graph runs on while the ring
+        // keeps the audio it was holding.
+        delay.set_delay(0);
+        let mut skipped_left = vec![9.0; 8];
+        let mut skipped_right = vec![9.0; 8];
+        delay.process(&mut skipped_left, &mut skipped_right, 8);
+        assert_eq!(skipped_left, vec![9.0; 8]);
+
+        delay.set_delay(2);
+        let mut next_left = vec![5.0; 6];
+        let mut next_right = vec![5.0; 6];
+        delay.process(&mut next_left, &mut next_right, 6);
+
+        // Two frames of silence for the hold the line has just taken up, then
+        // the new material — never the ramp the ring was still holding.
+        assert_eq!(next_left, vec![0.0, 0.0, 5.0, 5.0, 5.0, 5.0]);
+        assert_eq!(next_right, next_left);
+    }
+
+    #[test]
+    fn taking_up_a_delay_silences_the_tail_the_read_head_traverses_and_nothing_else() {
+        let mut delay = CompensationDelay::new(8);
+        delay.set_delay(8);
+        let mut left = ramp(8);
+        let mut right = ramp(8);
+        delay.process(&mut left, &mut right, 8);
+
+        delay.set_delay(0);
+        delay.set_delay(2);
+
+        // The read head starts two slots from the end and reaches the slots
+        // this line's next call writes immediately after, so those two are the
+        // whole of what can still hand back stale audio. Clearing the rest is
+        // a ceiling-sized memset the audio callback would pay for nothing.
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 0.0, 0.0].as_slice()
+        );
+        assert_eq!(ring_right, ring_left);
     }
 
     #[test]
