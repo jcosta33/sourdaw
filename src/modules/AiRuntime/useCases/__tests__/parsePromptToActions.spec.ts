@@ -484,6 +484,34 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).not.toHaveBeenCalled();
     });
 
+    it('preserves 1% gain semantics for track volume command on fast path', async () => {
+        vi.mocked(tryParameterizedPath).mockImplementation(actualParsing.tryParameterizedPath);
+
+        const context: ProjectContext = {
+            ...createMixerContext(),
+            selectedTrackId: 'track-vocals',
+        };
+        vi.mocked(getProjectContext).mockReturnValue(context);
+
+        const percentResult = await parsePromptToActions('volume 1%', context);
+
+        expect(percentResult.actions).toHaveLength(1);
+        expect(percentResult.actions[0]?.payload).toMatchObject({
+            trackId: 'track-vocals',
+            gain: 0.01,
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+
+        const bareResult = await parsePromptToActions('set volume to 1', context);
+
+        expect(bareResult.actions).toHaveLength(1);
+        expect(bareResult.actions[0]?.payload).toMatchObject({
+            trackId: 'track-vocals',
+            gain: 1,
+        });
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
     it('preserves user text case for track names when creating multiple tracks through compound fast path', async () => {
         vi.mocked(tryCompoundFastPath).mockImplementation(actualParsing.tryCompoundFastPath);
 
