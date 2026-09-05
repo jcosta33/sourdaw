@@ -1,0 +1,47 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_28abfd94826e36::t_2703c1188206cb 193,197-198,310,313-314,327,337,350-351,364,377
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_28abfd94826e36::t_5dd5a6f3070bd0 75,78-80,314,325,353,397,497
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/MacrosPanel.spec.tsx
+  s_a3c5cd5adff5c0::t_73d7aed5fe2d79 1,4-5,8-13,15-27,40,42,45,47-48,51,53-84
+src/modules/Crumbs/useCases/__tests__/setCrumbsParamWithAudio.spec.ts
+  s_9b530f08172a54::t_5066c717788da3 1-54
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_28abfd94826e36::t_f42f484dc4f9a4 19,109
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAlternativesSection.tsx
+  s_28abfd94826e36::t_02249525e093a5 10,34,56,74
+src/modules/Yeast/useCases/__tests__/yeastGrooveTemplateRoutes.spec.ts
+  s_9b530f08172a54::t_482fd11ab7ae7e 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "91628d1174079c1bbd048491c9889b46c5ebcd84",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a3c5cd5adff5c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3f3d1070e2df5b72",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
