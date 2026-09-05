@@ -1,0 +1,55 @@
+src/modules/AiRuntime/useCases/__tests__/selectRetainedSectionRenderManualReviews.spec.ts
+  s_9b530f08172a54::t_f3cb53f50cb9f2 26-30
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_a53c9269ca319a::t_3876c7213664f2 66,74
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/settleConfirmedCommandExecution.spec.ts
+  s_0f5c2c63c5e5e9::t_378536d636c545 41
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_0f5c2c63c5e5e9::t_21d2f91cbb89b5 107
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_0f5c2c63c5e5e9::t_cdea190d5dcde4 107
+src/modules/Collaboration/useCases/__tests__/automergeSyncMessageSize.spec.ts
+  s_0f5c2c63c5e5e9::t_9a6416a356a2be 18
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_0f5c2c63c5e5e9::t_ae096aa135bd3c 73
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_a53c9269ca319a::t_765c6d77d5bdd4 35,42
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_0f5c2c63c5e5e9::t_3850b602a03277 133
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollExpressionLaneReach.spec.tsx
+  s_0f5c2c63c5e5e9::t_c944a4a8131722 125
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorRampAbort.spec.tsx
+  s_a53c9269ca319a::t_bab476634fb1b8 16,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "195a277039c7a82f885823bb06fa45b9bd1974ae",
+  "prompts": {},
+  "sessions": {
+    "s_0f5c2c63c5e5e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7c0b2fb1cf4ba626",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a53c9269ca319a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a861de2bf12a20179",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
