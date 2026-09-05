@@ -70,7 +70,7 @@ const mocks = vi.hoisted(() => ({
      * Doubled because what this file owns is whether a pump's own batch
      * forwards one, not what PluginHost then writes.
      */
-    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
+    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string }) => void>(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -374,15 +374,13 @@ describe('the live automation writer', () => {
         await flush();
         mocks.apply.mockResolvedValueOnce({
             ...APPLIED,
-            attachedPlugins: [{ instanceId: 'inst-pumped', bridgeRoundTripFrames: 192 }],
+            attachedPlugins: [{ instanceId: 'inst-pumped' }],
         });
 
         await pump(0.95, 0);
 
         expect(writesOf(1)).toEqual([step(1, 0.6)]);
-        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
-            [{ instanceId: 'inst-pumped', bridgeRoundTripFrames: 192 }],
-        ]);
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([[{ instanceId: 'inst-pumped' }]]);
     });
 
     it('opens a looping pass at the playhead, and takes the whole region only once a seam closes', async () => {

@@ -566,9 +566,8 @@ describe('AudioEngine', () => {
 
     it('should load worklets on initialize', async () => {
         await engine.initialize();
-        // sidechain-compressor, native-plugin-bridge, recording, metering,
-        // bitcrusher-rate.
-        expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(5);
+        // sidechain-compressor, recording, metering, bitcrusher-rate.
+        expect(mockCtx.audioWorklet.addModule).toHaveBeenCalledTimes(4);
     });
 
     it('should manage master gain', () => {
@@ -1755,8 +1754,8 @@ describe('AudioEngine', () => {
             const callsBefore = mockCtx.audioWorklet.addModule.mock.calls.length;
             await Promise.all([engine.initialize(), engine.initialize()]);
             const callsAfter = mockCtx.audioWorklet.addModule.mock.calls.length;
-            // Five modules loaded exactly once despite two callers.
-            expect(callsAfter - callsBefore).toBe(5);
+            // Four modules loaded exactly once despite two callers.
+            expect(callsAfter - callsBefore).toBe(4);
         });
     });
 

@@ -15,9 +15,6 @@ export function markAttachedInstances(result: AudioGraphApplyResult): void {
         return;
     }
     for (const attached of result.attachedPlugins ?? []) {
-        markExternalPluginEngineAttached({
-            instanceId: attached.instanceId,
-            bridgeRoundTripFrames: attached.bridgeRoundTripFrames,
-        });
+        markExternalPluginEngineAttached({ instanceId: attached.instanceId });
     }
 }

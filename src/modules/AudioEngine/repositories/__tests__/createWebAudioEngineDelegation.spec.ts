@@ -305,7 +305,6 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
                 detectedUnderrunBlocks: 0,
                 silentFrames: 0,
                 lastUnderrunAtFrame: 0,
-                bridgeDroppedBlocks: 0,
             },
         });
     });
@@ -317,14 +316,12 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
         Atomics.add(workletView, DROPOUT_IDX.detectedUnderrunBlocks, 2);
         Atomics.add(workletView, DROPOUT_IDX.silentFrames, 256);
         Atomics.store(workletView, DROPOUT_IDX.lastUnderrunAtFrame, 9_600);
-        Atomics.add(workletView, DROPOUT_IDX.bridgeDroppedBlocks, 5);
 
         // Read through the health surface — no message round-trip, no polling.
         expect(engine.getHealth().dropouts).toEqual({
             detectedUnderrunBlocks: 2,
             silentFrames: 256,
             lastUnderrunAtFrame: 9_600,
-            bridgeDroppedBlocks: 5,
         });
 
         dropoutCounters.reset();

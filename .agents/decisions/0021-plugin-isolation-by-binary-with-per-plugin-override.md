@@ -6,8 +6,8 @@ status: accepted
 date: 2026-08-12
 owner: The Sourdaw team
 sources:
-  - .agents/artifacts/sourdaw/SPEC-native-plugin-isolation.md
-  - .agents/artifacts/sourdaw/CHANGE-plugin-hosting-runtime-and-transport.md
+    - .agents/artifacts/sourdaw/SPEC-native-plugin-isolation.md
+    - .agents/artifacts/sourdaw/CHANGE-plugin-hosting-runtime-and-transport.md
 ---
 
 # 0021 — One helper per plugin binary, with a per-plugin full-isolation override
@@ -22,15 +22,14 @@ Today there is no isolation of any kind. `crates/daw-plugin-host/src/scanner.rs:
 is `dlopen`ed and executed **in the Tauri application process during metadata scanning**, before the
 user has instantiated anything. `clap_wrapper.rs:336` and `:389` repeat it at instantiation. There is
 no child process, no supervisor, no `catch_unwind`, no timeout. `tauri.conf.json` declares no
-`externalBin`, so no helper is bundled — which makes the comment in
-`public/audio/worklets/native-plugin-bridge-processor.js:5`, "the plugin lives in another process",
-false.
+`externalBin`, so no helper is bundled: nothing in the product runs a third-party plugin anywhere
+but in the application process.
 
 ## Topology — one helper per plugin binary (DG-001)
 
 Every host that documents isolation exposes it as a spectrum and lets the user choose. Bitwig ships
-five levels: *Within*, *Together*, *By manufacturer*, *By plug-in*, *Individually* — with
-**"Together" as the default**, and *Individually* described as "full isolation for each plug-in
+five levels: _Within_, _Together_, _By manufacturer_, _By plug-in_, _Individually_ — with
+**"Together" as the default**, and _Individually_ described as "full isolation for each plug-in
 process… This will require more computing resources, but that is the trade-off." REAPER offers
 "Separate process" (one shared bridge, "if one plugin crashes the bridge process, all the other
 bridged plugins will die too") and "Dedicated process" per plugin. FL Studio makes bridging a
@@ -43,8 +42,8 @@ nowhere.
 **Decision:** one helper per `(format, canonical plugin id, resolved binary path, code-signature
 identity)`, maximum 8 instances per helper, plus a per-plugin "run individually" override. This is
 Bitwig's "By plug-in" as the working default with "Individually" as the escape hatch, and it buys the
-property that matters, in Bitwig's own words: *"no plug-in's stability should be compromised by
-another plug-in."*
+property that matters, in Bitwig's own words: _"no plug-in's stability should be compromised by
+another plug-in."_
 
 Freeze the group size only after measuring helper RSS. Bitwig's "most memory-intensive" claim is
 qualitative and no vendor publishes numbers. If measured private RSS is under ~3 MB per helper with
@@ -62,7 +61,7 @@ Apple's model is the one to copy, because it is the only shipped one and it is c
 `mach-lookup.global-name`, `network.client`, `temporary-exception.files.all.read-write` — and states
 that a sandbox-safe component "can function correctly in even the most severely sandboxed process…
 curtailed or no access to common system resources like the file system, device drivers, the network."
-Crucially Apple also concedes that most plugins are *not* sandbox-safe, and provides a user-consent
+Crucially Apple also concedes that most plugins are _not_ sandbox-safe, and provides a user-consent
 escape: with the `com.apple.security.temporary-exception.audio-unit-host` entitlement, "the system
 will ask the user whether or not it is acceptable… If the user says yes, the system will suspend the
 process's sandbox."

@@ -1,10 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    getLiveEngineSampleRate,
-    nativeLiveGraphSessionSplice,
-    reportBridgeRoundTripFrames,
-    reportLatency,
-} from '#/modules/AudioEngine/useCases';
+import { getLiveEngineSampleRate, nativeLiveGraphSessionSplice, reportLatency } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -148,7 +143,6 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                 instanceId: externalInstanceId,
                 engineSampleRate,
                 onLatencyMs: (latencyMs) => reportLatency(committedDevice.id, latencyMs),
-                onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(committedDevice.id, frames),
             });
             if (activation.status === 'failed') {
                 throw new Error(activation.reason);

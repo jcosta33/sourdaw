@@ -12,7 +12,7 @@ const BYTES_PER_SAMPLE = 4;
  * Denoise audio through the native desktop command bridge.
  *
  * Samples cross as Float32 little-endian bytes, matching
- * `process_plugin_audio` and `register_timeline_sample`. The native command
+ * `register_timeline_sample`. The native command
  * body owns the length ceiling.
  */
 export async function denoiseAudio(

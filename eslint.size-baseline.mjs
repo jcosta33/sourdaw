@@ -216,7 +216,6 @@ export const sizeBaselineFiles = [
     'src/modules/AudioEngine/engine/GrandBouleNode.ts',
     'src/modules/AudioEngine/engine/GrinderNode.ts',
     'src/modules/AudioEngine/engine/LevainNode.ts',
-    'src/modules/AudioEngine/engine/NativePluginBridgeNode.ts',
     'src/modules/AudioEngine/engine/ProofNode.ts',
     'src/modules/AudioEngine/engine/ToasterNode.ts',
     'src/modules/AudioEngine/engine/TrackNode.ts',

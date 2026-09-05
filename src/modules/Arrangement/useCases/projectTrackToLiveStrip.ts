@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     getLiveEngineSampleRate,
     initializeTrackStripFromSnapshot,
-    reportBridgeRoundTripFrames,
     reportLatency,
     setTrackGain,
     setTrackPan,
@@ -113,7 +112,6 @@ export function projectTrackToLiveStrip({
                     stateChunk: device.externalStateChunk,
                     engineSampleRate,
                     onLatencyMs: (latencyMs) => reportLatency(device.id, latencyMs),
-                    onBridgeRoundTripFrames: (frames) => reportBridgeRoundTripFrames(device.id, frames),
                 });
                 onExternalPluginActivation?.(activation);
             }

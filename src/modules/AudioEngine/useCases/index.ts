@@ -120,7 +120,6 @@ export { getCompensationDelay } from './latencyCompensation/compensation/getComp
 export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 export { reportLatency } from './latencyCompensation/compensation/reportLatency';
-export { reportBridgeRoundTripFrames } from './latencyCompensation/compensation/reportBridgeRoundTripFrames';
 export { clearReportedLatency } from './latencyCompensation/compensation/clearReportedLatency';
 
 export { cancelExport } from './offlineRender/exportCancellation';

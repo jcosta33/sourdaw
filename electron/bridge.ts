@@ -300,10 +300,10 @@ export const createSourdawBridge = (
             if (meta.some(isBytes)) {
                 throw new TypeError(`${command} may carry only one byte payload, as its last argument`);
             }
-            // Returned, not discarded. `process_plugin_audio` takes a buffer
-            // and answers with one, once per render quantum; dropping the
-            // answer here would reach the call site as the legitimate "no
-            // output yet" value and render silence with nothing logged.
+            // Returned, not discarded. A byte-carrying command may answer
+            // with something the caller reads, and dropping it here would
+            // reach the call site as `undefined` — indistinguishable from a
+            // command that legitimately answers nothing, with nothing logged.
             return ipc.invoke(commandChannel(command), [...meta, bytes]);
         },
 

@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     findSupportedPlugin: vi.fn(),
     getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => 96_000),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
 }));
 
@@ -29,7 +28,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
-    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,
 }));
 
@@ -215,11 +213,6 @@ describe('handleLoadExternalPlugin command path', () => {
         expect(activation?.onLatencyMs).toEqual(expect.any(Function));
         activation?.onLatencyMs?.(12.5);
         expect(mocks.reportLatency).toHaveBeenCalledWith(device?.id, 12.5);
-        // The bridge round trip lands under the same device id as the plugin's
-        // own latency, which is the key the teardown path clears.
-        expect(activation?.onBridgeRoundTripFrames).toEqual(expect.any(Function));
-        activation?.onBridgeRoundTripFrames?.(1280);
-        expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith(device?.id, 1280);
         // The existing command contract deliberately has no inverse for a
         // newly materialized external instance; this route must not invent one.
         expect(undoStore.value?.past).toHaveLength(0);

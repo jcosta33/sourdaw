@@ -85,7 +85,7 @@ const mocks = vi.hoisted(() => ({
      * Doubled because what this file owns is which instances the session
      * forwards, not what PluginHost then writes.
      */
-    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
+    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string }) => void>(),
     /**
      * One entry per live backend handle the session opened, flipped when that
      * handle is closed. A declined batch has to close the handle it opened, and
@@ -478,10 +478,7 @@ describe('startNativeLiveGraphSession', () => {
     it('forwards every instance the engine start took over', async () => {
         mocks.applyGraphCommands.mockResolvedValueOnce({
             ...APPLIED,
-            attachedPlugins: [
-                { instanceId: 'inst-1', bridgeRoundTripFrames: 512 },
-                { instanceId: 'inst-2', bridgeRoundTripFrames: 1024 },
-            ],
+            attachedPlugins: [{ instanceId: 'inst-1' }, { instanceId: 'inst-2' }],
         });
 
         await startNativeLiveGraphSession({
@@ -491,8 +488,8 @@ describe('startNativeLiveGraphSession', () => {
         });
 
         expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
-            [{ instanceId: 'inst-1', bridgeRoundTripFrames: 512 }],
-            [{ instanceId: 'inst-2', bridgeRoundTripFrames: 1024 }],
+            [{ instanceId: 'inst-1' }],
+            [{ instanceId: 'inst-2' }],
         ]);
     });
 
@@ -504,7 +501,7 @@ describe('startNativeLiveGraphSession', () => {
     it('forwards the instances the roll took, not only the topology’s', async () => {
         mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
             ...APPLIED,
-            attachedPlugins: [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+            attachedPlugins: [{ instanceId: 'inst-rolled' }],
         });
 
         await startNativeLiveGraphSession({
@@ -513,9 +510,7 @@ describe('startNativeLiveGraphSession', () => {
             sampleRate: SAMPLE_RATE,
         });
 
-        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
-            [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
-        ]);
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([[{ instanceId: 'inst-rolled' }]]);
     });
 
     it('corrects nothing when the start attached no instances', async () => {
@@ -544,7 +539,7 @@ describe('startNativeLiveGraphSession', () => {
         mocks.applyGraphCommands
             .mockResolvedValueOnce({
                 ...APPLIED,
-                attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+                attachedPlugins: [{ instanceId: 'i1' }],
             })
             .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2, reports: boundReports });
 
@@ -601,8 +596,8 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
         mocks.applyGraphCommands
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i2', bridgeRoundTripFrames: 256 }] });
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] })
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i2' }] });
 
         await startNativeLiveGraphSession({
             positionSeconds: 0,
@@ -615,8 +610,8 @@ describe('startNativeLiveGraphSession', () => {
         // corrected on its device, it simply waits for the next play to be
         // spliced into the chain.
         expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
-            [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
-            [{ instanceId: 'i2', bridgeRoundTripFrames: 256 }],
+            [{ instanceId: 'i1' }],
+            [{ instanceId: 'i2' }],
         ]);
     });
 
@@ -638,7 +633,7 @@ describe('startNativeLiveGraphSession', () => {
             .mockResolvedValueOnce({
                 ...APPLIED,
                 reports: firstReports,
-                attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }],
+                attachedPlugins: [{ instanceId: 'i1' }],
             })
             .mockResolvedValueOnce({
                 acceptance: 'rejected',
@@ -678,7 +673,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
         mocks.applyGraphCommands
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] })
             .mockResolvedValueOnce({
                 acceptance: 'accepted',
                 application: 'needs-reconcile',
@@ -1216,7 +1211,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
         mocks.applyGraphCommands
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] })
             .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2 });
 
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
@@ -1266,7 +1261,7 @@ describe('startNativeLiveGraphSession', () => {
             ghostClips: [],
         });
         mocks.applyGraphCommands
-            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1', bridgeRoundTripFrames: 512 }] })
+            .mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] })
             .mockResolvedValueOnce({
                 acceptance: 'accepted',
                 application: 'needs-reconcile',
@@ -1624,14 +1619,12 @@ describe('stopNativeLiveGraphSession', () => {
         mocks.markExternalPluginEngineAttached.mockClear();
         mocks.applyGraphCommands.mockResolvedValueOnce({
             ...APPLIED,
-            attachedPlugins: [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
+            attachedPlugins: [{ instanceId: 'inst-stopped' }],
         });
 
         await stopNativeLiveGraphSession({ positionSeconds: 8 });
 
-        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
-            [{ instanceId: 'inst-stopped', bridgeRoundTripFrames: 64 }],
-        ]);
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([[{ instanceId: 'inst-stopped' }]]);
     });
 
     it('keeps the session when the engine refuses the stop, so a playing engine stays reachable', async () => {
@@ -1734,14 +1727,12 @@ describe('repositionNativeLiveGraphSession', () => {
         mocks.markExternalPluginEngineAttached.mockClear();
         mocks.applyGraphCommands.mockResolvedValueOnce({
             ...APPLIED,
-            attachedPlugins: [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+            attachedPlugins: [{ instanceId: 'inst-located' }],
         });
 
         await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
 
-        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
-            [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
-        ]);
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([[{ instanceId: 'inst-located' }]]);
     });
 
     it('refuses to roll an engine the session parked because its maps were declined', async () => {

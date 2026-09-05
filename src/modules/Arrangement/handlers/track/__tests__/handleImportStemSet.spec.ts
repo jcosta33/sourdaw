@@ -75,7 +75,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     getLiveEngineSampleRate: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({

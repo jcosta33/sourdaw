@@ -50,19 +50,6 @@ export type PluginInstance = {
      */
     tail_samples: number;
     /**
-     * Frames the native audio bridge adds on top of `latency_ms`, at the
-     * activation sample rate. Zero when no engine took the instance — nothing
-     * crosses a bridge that does not exist.
-     *
-     * The host measures this against the device period its audio callback
-     * actually runs on, which this process never sees; it is reported for that
-     * reason and cannot be derived here.
-     *
-     * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet
-     * relay with the native graph, and this field goes with it.
-     */
-    bridge_round_trip_frames: number;
-    /**
      * The id this instance was given inside the native audio engine, or `null`
      * when the load succeeded but no engine was running to attach it to.
      *

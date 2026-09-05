@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
     updateDeviceBypass: vi.fn(),
     activateExternalPlugin: vi.fn(),
     getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => ENGINE_SAMPLE_RATE),
-    reportBridgeRoundTripFrames: vi.fn(),
     warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
@@ -58,7 +57,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
     getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
-    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,
     createRuntimeGraphTopologyFingerprint: vi.fn(),
 }));
@@ -210,17 +208,14 @@ describe('projectTrackToLiveStrip', () => {
             })
         );
 
-        // The injected latency sinks write under the engine DEVICE id, so the
+        // The injected latency sink writes under the engine DEVICE id, so the
         // rebuilt strip reports compensation against the same key the removal
         // path clears — not the plugin instance id.
         const activation = mocks.activateExternalPlugin.mock.calls.at(-1)?.[0] as {
             onLatencyMs?: (latencyMs: number) => void;
-            onBridgeRoundTripFrames?: (frames: number) => void;
         };
         activation.onLatencyMs?.(7.25);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 7.25);
-        activation.onBridgeRoundTripFrames?.(1408);
-        expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith('device-1', 1408);
 
         vi.clearAllMocks();
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));

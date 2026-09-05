@@ -6,7 +6,6 @@ import {
 } from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
-import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
     externalPluginActivationEpoch,
@@ -51,15 +50,6 @@ type ActivateExternalPluginInput = {
      * latency-change event, which carries no rate for a caller to divide by.
      */
     onLatencyMs?: (latencyMs: number) => void;
-    /**
-     * Sink for what the native audio bridge costs this instance, in frames of
-     * `engineSampleRate`. Reported once at activation, alongside the plugin's
-     * own latency, because the two are compensated together.
-     *
-     * Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the worklet
-     * relay with the native graph, and this sink goes with it.
-     */
-    onBridgeRoundTripFrames?: (frames: number) => void;
 };
 
 function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
@@ -87,7 +77,7 @@ function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 
  * The restore is queued immediately after instantiation on the same lifecycle
  * tail — it is NOT synchronized with the first audio block. A running native
  * engine can process a few default-state blocks before the restore IPC lands
- * (`add_plugin_with_bridge` enqueues to the RT ring before the restore command
+ * (`add_hosted_plugin` enqueues to the RT ring before the restore command
  * returns); state converges to the saved chunk shortly after.
  */
 export function activateExternalPlugin({
@@ -96,7 +86,6 @@ export function activateExternalPlugin({
     stateChunk,
     engineSampleRate,
     onLatencyMs,
-    onBridgeRoundTripFrames,
 }: ActivateExternalPluginInput): Promise<ExternalPluginActivationResult> {
     const rebuildCompletion = pluginLifecycleScheduler.currentRebuildCompletion();
     if (rebuildCompletion) {
@@ -107,7 +96,6 @@ export function activateExternalPlugin({
                 stateChunk,
                 engineSampleRate,
                 onLatencyMs,
-                onBridgeRoundTripFrames,
             })
         );
     }
@@ -173,14 +161,6 @@ export function activateExternalPlugin({
         watchExternalPluginLatency();
     }
 
-    if (onBridgeRoundTripFrames) {
-        // Registered the same way and for a longer reach: if no engine is
-        // running, the real bridge cost is not known until one starts and takes
-        // this instance over, which happens long after this call resolves.
-        // `markExternalPluginEngineAttached` reports it through this sink.
-        externalBridgeFramesReporters.set(instanceId, onBridgeRoundTripFrames);
-    }
-
     const activationTask = (async (): Promise<ExternalPluginActivationResult> => {
         let attachment: ExternalPluginActivationResult | null = null;
         try {
@@ -221,16 +201,11 @@ export function activateExternalPlugin({
             // browser stub), so no runtime guard is needed. Later changes arrive
             // through the plugin-latency-changed subscription instead.
             onLatencyMs?.(instance.latency_ms);
-            // What the bridge costs on top of that. Reported here and only
-            // here: the latency-change event carries the plugin's own figure,
-            // and the bridge's depth does not change with it.
-            onBridgeRoundTripFrames?.(instance.bridge_round_trip_frames);
         } catch (error) {
             // Instantiation failed: drop the guard so a later rebuild can retry,
             // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
             externalLatencyReporters.delete(instanceId);
-            externalBridgeFramesReporters.delete(instanceId);
             setActivationStatus(instanceId, 'error', String(error));
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return { status: 'failed', stage: 'load', reason: String(error) };
