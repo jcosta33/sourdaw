@@ -20,8 +20,8 @@ function shouldDispatchShortcutAppActions(): boolean {
     return Object.keys(getHandlerMap()).length > 0;
 }
 
-// A focused listbox owns the keyboard like any modal surface (mixer routing / preset popups).
-// A focused listbox owns the keyboard like any modal surface (mixer routing / preset popups).
+// A focused dialog / alertdialog / menu / listbox surface owns the keyboard:
+// keydowns from inside it stay in the surface, not the app shortcuts (#3618).
 const MODAL_SURFACE_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 /** True when the keydown's target sits inside an open modal or menu surface. */

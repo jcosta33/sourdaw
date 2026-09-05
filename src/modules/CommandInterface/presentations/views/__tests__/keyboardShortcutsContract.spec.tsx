@@ -223,6 +223,20 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             expect(lastIsInput()).toBe(true);
         });
 
+        it('gates the global shortcut (isInput=true) when Delete fires inside a [role="alertdialog"] surface', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            // Alert surfaces such as the load-failure overlay render
+            // role="alertdialog" and hold focus while on screen.
+            const alert = mount(document.createElement('div'));
+            alert.setAttribute('role', 'alertdialog');
+            const surfaceButton = alert.appendChild(document.createElement('button'));
+
+            surfaceButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+
+            expect(lastIsInput()).toBe(true);
+        });
+
         it('does NOT gate a keydown originating outside an open dialog surface', () => {
             openSessionWithCommandHandlers();
             render(<Host />);

@@ -289,6 +289,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         left: contextMenu.x,
                         top: contextMenu.y,
                     }}
+                    role="menu"
                 >
                     {contextMenu.kind === 'empty' ? (
                         <DawMenuButton onClick={handleAddMarker}>

@@ -150,6 +150,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                 <div
                                     ref={snapshotsRef}
                                     className="daw-floating-surface absolute top-full right-0 z-50 mt-1 min-w-[140px] rounded-lg p-1"
+                                    role="menu"
                                 >
                                     {snapshots.map((snap) => (
                                         <Row key={snap.id} gap={1}>

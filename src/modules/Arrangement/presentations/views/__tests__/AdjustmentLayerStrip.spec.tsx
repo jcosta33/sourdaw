@@ -173,11 +173,47 @@ describe('AdjustmentLayerStrip', () => {
         ).toBeInTheDocument();
     });
 
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open menu deletes the arrangement clips behind it.
+    it('layer context menu items sit inside a [role="menu"] surface', () => {
+        mocks.layers = [
+            {
+                id: 'L1',
+                name: 'EQ Layer',
+                effectType: 'eq',
+                parameters: [],
+                affectedTrackIds: [],
+                insertionIndex: 0,
+                regions: [],
+                enabled: true,
+                mix: 1,
+                color: '#ff0000',
+            },
+        ];
+        renderStrip();
+        const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
+        fireEvent.contextMenu(layerRow, { clientX: 100, clientY: 100 });
+
+        expect(
+            within(screen.getByTestId('adjustment-layer-context-menu'))
+                .getByText(/disable layer|enable layer/i)
+                .closest('[role="menu"]')
+        ).not.toBeNull();
+    });
+
     it('should open the Add menu when the add button is clicked', () => {
         renderStrip();
         const addButton = screen.getByRole('button', { name: /add adjustment layer/i });
         fireEvent.click(addButton);
         expect(screen.getByText('New Adjustment Layer')).toBeInTheDocument();
+    });
+
+    it('Add menu items sit inside a [role="menu"] surface', () => {
+        renderStrip();
+        fireEvent.click(screen.getByRole('button', { name: /add adjustment layer/i }));
+
+        expect(screen.getByText('New Adjustment Layer').closest('[role="menu"]')).not.toBeNull();
     });
 
     const layerWithRegion = (): MockLayer => ({
