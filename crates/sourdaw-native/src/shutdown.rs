@@ -113,9 +113,9 @@ pub fn shutdown(
 
     let mut report = ShutdownReport::default();
     match close_every_plugin_gui(windows, app_state) {
-        Ok((closed, refused)) => {
-            report.closed_editors = closed;
-            report.editors_that_refused = refused;
+        Ok(gui_report) => {
+            report.closed_editors = gui_report.closed_instance_ids;
+            report.editors_that_refused = gui_report.errors;
         }
         Err(error) => report.editor_close_error = Some(error),
     }

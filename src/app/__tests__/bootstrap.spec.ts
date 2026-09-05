@@ -115,6 +115,8 @@ const {
     composeGrandBouleMock,
     toasterGrooveExecutorMock,
     executeUserAppActionBinding,
+    recordNativeChainReleasesMock,
+    registerReleasedStripReportSinkMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -195,6 +197,12 @@ const {
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
         stampSessionUndoWitnessMock: vi.fn(),
         composeGrandBouleMock: vi.fn(),
+        // Distinguishable from the shared noop for the same reason as the
+        // Toaster and MIDI-learn bindings above: the sink-wiring assertion
+        // pins this exact reference, so registering some other function in
+        // its place — or dropping the registration outright — fails here.
+        recordNativeChainReleasesMock: vi.fn(),
+        registerReleasedStripReportSinkMock: vi.fn<(sink: (reports: readonly unknown[]) => void) => void>(),
     };
 });
 
@@ -275,6 +283,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     compileAudioGraphTopology: noop,
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
+    recordNativeChainReleases: recordNativeChainReleasesMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -432,6 +441,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     getExternalPluginContractVersionForCommand: () => 'external-plugin-v1:test',
     getPluginHostHandlers: sentinelHandlers('PluginHost'),
+    registerReleasedStripReportSink: registerReleasedStripReportSinkMock,
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
@@ -810,6 +820,18 @@ describe('bootstrap', () => {
         expect(setAutomationParameterRangeResolverMock).toHaveBeenCalledExactlyOnceWith(
             getAutomationParameterRangeMock
         );
+    });
+
+    /**
+     * An unload changes native strip state with no batch of its own to carry
+     * it, so PluginHost's own release reports have no route to AudioEngine's
+     * session mirror except the sink the composition root wires here (#3793).
+     * Pinned by reference, like the Toaster and MIDI-learn bindings above:
+     * registering some other function, or dropping the registration outright,
+     * leaves an unload's released strips with nowhere to narrow the mirror.
+     */
+    it('wires an unload plugin release report to narrow the native chain session AudioEngine holds', () => {
+        expect(registerReleasedStripReportSinkMock).toHaveBeenCalledExactlyOnceWith(recordNativeChainReleasesMock);
     });
 
     /**

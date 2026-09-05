@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, MutexGuard, TryLockError};
 
-use crate::commands::plugins::PluginUnloadResult;
 use crate::events::{EventSink, EventSinkExt};
 use crate::host::plugin_window::{
     next_editor_open_sequence, plugin_editor_window_label, NoWindowHost, PluginEditorWindow,
@@ -46,6 +45,19 @@ const LOSING_REPORT_TEARDOWN_WAIT: std::time::Duration = std::time::Duration::fr
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PluginGuiClosed {
     pub instance_id: String,
+}
+
+/// Which editors a close-all pass closed, and why any others did not.
+///
+/// Distinct from `plugins::PluginUnloadReply`: closing an editor releases no
+/// chain entry, so this carries no strip reports, and it is never sent
+/// across the desktop IPC boundary — `close_all_plugin_guis` is a denied
+/// exit-cascade command, run only from `shutdown` and this module's own
+/// tests.
+#[derive(Debug, Default, Serialize)]
+pub struct PluginGuiCloseReport {
+    pub closed_instance_ids: Vec<String>,
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -845,13 +857,13 @@ pub async fn close_plugin_gui(
 /// single slow plugin left native windows on screen with no owner and no way to
 /// close them. Each outcome is recorded and the pass continues.
 fn record_plugin_gui_close_outcome(
-    report: &mut PluginUnloadResult,
+    report: &mut PluginGuiCloseReport,
     instance_id: &str,
     close_result: Result<(), String>,
 ) {
     match close_result {
-        Ok(()) => report.0.push(instance_id.to_string()),
-        Err(error) => report.1.push(format!("{}: {}", instance_id, error)),
+        Ok(()) => report.closed_instance_ids.push(instance_id.to_string()),
+        Err(error) => report.errors.push(format!("{}: {}", instance_id, error)),
     }
 }
 
@@ -868,7 +880,7 @@ fn record_plugin_gui_close_outcome(
 pub async fn close_all_plugin_guis(
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
-) -> Result<PluginUnloadResult, String> {
+) -> Result<PluginGuiCloseReport, String> {
     close_every_plugin_gui(Some(windows_host), state)
 }
 
@@ -936,8 +948,8 @@ fn close_engine_owned_editor(
 pub fn close_every_plugin_gui(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<PluginUnloadResult, String> {
-    let mut report = PluginUnloadResult::default();
+) -> Result<PluginGuiCloseReport, String> {
+    let mut report = PluginGuiCloseReport::default();
     // An exit that has already lost its windows has also lost the shell thread
     // they lived on, and `NoWindowHost` says so: the editor calls run here,
     // which is the only thread left to run them on.
@@ -965,10 +977,10 @@ pub fn close_every_plugin_gui(
                 let _ = lend_on_ui_thread(editor_thread, &mut instance.plugin, |plugin| {
                     plugin.close_gui()
                 });
-                report.0.push(instance_id.clone());
+                report.closed_instance_ids.push(instance_id.clone());
             }
         }
-        None => report.1.push(
+        None => report.errors.push(
             "Command-owned plugin instances were busy; their editors were not closed".to_string(),
         ),
     }
@@ -1841,15 +1853,15 @@ mod tests {
             .expect("a refusing instance must not fail the whole pass");
 
         assert_eq!(
-            report.0,
+            report.closed_instance_ids,
             ["healthy-instance"],
             "the instances that did close must be reported"
         );
-        assert_eq!(report.1.len(), 1);
+        assert_eq!(report.errors.len(), 1);
         assert!(
-            report.1[0].starts_with("refusing-instance: "),
+            report.errors[0].starts_with("refusing-instance: "),
             "the error report must name the instance that failed, got: {:?}",
-            report.1
+            report.errors
         );
         assert!(
             state
@@ -1890,14 +1902,14 @@ mod tests {
             .expect("closing every editor should succeed");
 
         assert_eq!(
-            report.0,
+            report.closed_instance_ids,
             ["engine-with-editor"],
             "only instances that actually had an editor may be reported as closed"
         );
         assert!(
-            report.1.is_empty(),
+            report.errors.is_empty(),
             "an instance with no editor is not a failure, got: {:?}",
-            report.1
+            report.errors
         );
     }
 
@@ -2460,7 +2472,7 @@ mod tests {
     fn exit_pass_within(
         state: &Arc<AppState>,
         wait: std::time::Duration,
-    ) -> Result<PluginUnloadResult, String> {
+    ) -> Result<PluginGuiCloseReport, String> {
         let closing = Arc::clone(state);
         let (answer, answered) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -2504,20 +2516,20 @@ mod tests {
             .expect("the exit pass must complete");
 
         assert!(
-            report.0.is_empty(),
+            report.closed_instance_ids.is_empty(),
             "an editor that was refused is not an editor that closed: {:?}",
-            report.0
+            report.closed_instance_ids
         );
         assert_eq!(
-            report.1.len(),
+            report.errors.len(),
             1,
             "the refusal must be reported rather than swallowed: {:?}",
-            report.1
+            report.errors
         );
         assert!(
-            report.1[0].contains("engine-owned-fixture"),
+            report.errors[0].contains("engine-owned-fixture"),
             "the report must name the instance whose editor was left open: {}",
-            report.1[0]
+            report.errors[0]
         );
 
         let _ = release.send(());
@@ -2550,12 +2562,12 @@ mod tests {
         drop(held);
 
         assert!(
-            report.0.is_empty(),
+            report.closed_instance_ids.is_empty(),
             "no editor was reached, so none closed: {:?}",
-            report.0
+            report.closed_instance_ids
         );
         assert_eq!(
-            report.1,
+            report.errors,
             ["Command-owned plugin instances were busy; their editors were not closed"],
             "the skipped store must be reported"
         );
