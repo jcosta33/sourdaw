@@ -1591,7 +1591,7 @@ describe('ProofPanel', () => {
         expect(faceplate).not.toBeNull();
         expect(faceplate).toHaveClass('overflow-auto');
         expect(faceplate).not.toHaveClass('overflow-hidden');
-        expect(faceplate?.className).not.toMatch(/min-h-\[/);
+        expect(faceplate?.className).not.toMatch(/\bmin-h-(?!0\b)/);
     });
 
     it('keeps the grid row min-h-0 with no min-height floor so rails own their overflow', () => {
@@ -1600,6 +1600,6 @@ describe('ProofPanel', () => {
         const grid = faceplate?.querySelector<HTMLElement>('.grid');
         expect(grid).not.toBeNull();
         expect(grid).toHaveClass('min-h-0');
-        expect(grid?.className).not.toMatch(/min-h-\[/);
+        expect(grid?.className).not.toMatch(/\bmin-h-(?!0\b)/);
     });
 });
