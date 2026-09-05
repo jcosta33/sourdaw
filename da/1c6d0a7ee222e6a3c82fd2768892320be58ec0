@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_4a35466972885f::t_a851e7789da774 73-75,89-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "da1c6d0a7ee222e6a3c82fd2768892320be58ec0",
+  "prompts": {},
+  "sessions": {
+    "s_4a35466972885f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0bb8c38b4583f7ec",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
