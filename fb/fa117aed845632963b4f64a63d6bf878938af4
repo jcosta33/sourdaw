@@ -1,0 +1,16 @@
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  h_1228e573df1f42 22,395,430-437
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  h_1228e573df1f42 1,5-6,23-26,110-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "fbfa117aed845632963b4f64a63d6bf878938af4",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
