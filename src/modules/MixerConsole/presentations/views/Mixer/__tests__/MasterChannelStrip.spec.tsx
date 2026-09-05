@@ -40,7 +40,8 @@ const commandMocks = vi.hoisted(() => ({
     executeUserAppAction: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: commandMocks.executeUserAppAction,
 }));
 
