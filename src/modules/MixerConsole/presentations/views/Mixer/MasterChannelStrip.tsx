@@ -27,22 +27,36 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     // the pre-gesture store value for as long as the commit takes to land.
     const [gestureGain, setGestureGain] = useState<number | null>(null);
     /**
-     * Identifies which gesture owns the display and the engine. A settle's
-     * dispatch awaits the Automerge snapshot transaction, which a
-     * persistence barrier can hold for real time — long enough for the
-     * pointer to be grabbed again before the first gesture's commit lands.
-     * That commit's continuation must not clobber the newer gesture just
-     * because it resolves late; the token is how it tells the two apart.
-     * Incremented at the first transient sample after the previous gesture
-     * settled (tracked by `liveGestureValue` going back to `null`).
+     * Identifies which settle owns the display and the engine once its
+     * dispatch resolves. A settle's dispatch awaits the Automerge snapshot
+     * transaction, which a persistence barrier can hold for real time —
+     * long enough for the pointer to be grabbed again, or another settle to
+     * land, before this one's commit resolves. That commit's continuation
+     * must not clobber whatever now owns the display just because it
+     * resolves late; the token is how it tells old from current. Advances
+     * at the first transient sample of a new gesture and again at every
+     * settle — including a keyboard or double-click settle that never
+     * opened one — so each settle captures a token no later gesture or
+     * settle shares.
      */
     const gestureToken = useRef(0);
-    // The current gesture's most recent transient sample, `null` between
-    // gestures. Doubles as the "is a gesture open" flag and, for a settle
-    // whose continuation lands after a newer gesture has opened, as the
-    // value that continuation re-sends to the engine on that gesture's
-    // behalf.
-    const liveGestureValue = useRef<number | null>(null);
+    // Whether a drag gesture is currently open, between its first transient
+    // sample and its settle. Keyboard and double-click settles never open
+    // one. This — not `displayedValue`, which a settle also writes — is
+    // what `handleFaderChange` checks to decide whether a transient sample
+    // starts a new gesture (and advances `gestureToken`) or continues one
+    // already open.
+    const gestureOpen = useRef(false);
+    /**
+     * What the fader and dB readout show for the open-or-pending gesture:
+     * written at every transient sample and at every settle, so it always
+     * holds the newest one, and cleared only when the settle that currently
+     * owns the token lands. A settle whose continuation has lost that
+     * ownership — because a newer gesture or settle claimed the token
+     * first — reads this to re-send the *current* display value to the
+     * engine instead of reasserting its own, now-stale, gain.
+     */
+    const displayedValue = useRef<number | null>(null);
     // Serialises settled dispatches: chaining each one onto the previous
     // gesture's settled dispatch — rather than firing them independently —
     // is what lets a later commit's `expectedPercent` read the store only
@@ -71,23 +85,26 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     };
 
     /**
-     * Runs once a settle's dispatch has landed, whichever gesture's token it
-     * was issued under. If no newer gesture has opened since, this settle is
-     * still the display and engine's owner and reconciles both from project
-     * truth as before. Otherwise a newer gesture has already taken over —
-     * restoring here would clobber it with this stale commit's outcome, so
-     * this instead re-asserts the newer gesture's own live sample on the
-     * engine (its own eventual settle reconciles the rest) and leaves the
-     * display state untouched.
+     * Runs once a settle's dispatch has landed, whichever token it was
+     * issued under. If no newer gesture has opened and no newer settle has
+     * landed since, this settle is still the display and engine's owner and
+     * reconciles both from project truth as before. Otherwise something
+     * newer has already taken over — restoring here would clobber it with
+     * this stale commit's outcome, so this instead re-asserts whatever
+     * `displayedValue` currently holds (the newer gesture's live sample, or
+     * a newer settle's optimistic value — never `null` here, since one of
+     * them set it) on the engine, and leaves the display state untouched;
+     * its own eventual settle reconciles the rest.
      */
     const settleContinuation = (token: number): void => {
         if (gestureToken.current === token) {
             restoreEngineFromProjectTruth();
             setGestureGain(null);
+            displayedValue.current = null;
             return;
         }
-        if (liveGestureValue.current !== null) {
-            setMasterGain(liveGestureValue.current * 100, true);
+        if (displayedValue.current !== null) {
+            setMasterGain(displayedValue.current * 100, true);
         }
     };
 
@@ -110,16 +127,19 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
 
     const handleFaderChange = (value: number, isTransient?: boolean): void => {
         if (isTransient === true) {
-            if (liveGestureValue.current === null) {
+            if (!gestureOpen.current) {
                 gestureToken.current += 1;
             }
-            liveGestureValue.current = value;
+            gestureOpen.current = true;
+            displayedValue.current = value;
             setGestureGain(value);
             setMasterGain(value * 100, true);
             return;
         }
+        gestureOpen.current = false;
+        gestureToken.current += 1;
         const token = gestureToken.current;
-        liveGestureValue.current = null;
+        displayedValue.current = value;
         setGestureGain(value);
         pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token));
     };

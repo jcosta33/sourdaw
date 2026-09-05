@@ -272,6 +272,7 @@ describe('MasterChannelStrip', () => {
         // but gesture B is still open and must keep owning the display and
         // the engine — dropping the token comparison snaps the fader back to
         // 0.65 here instead.
+        const engineCallsBeforeResolve = vi.mocked(setMasterGain).mock.calls.length;
         storeMocks.useStore.mockReturnValue({ masterGain: 65 });
         storeMocks.transportStoreValue = { masterGain: 65 };
         await act(async () => {
@@ -283,8 +284,15 @@ describe('MasterChannelStrip', () => {
         expect(screen.getByTestId('fader')).toHaveValue('0.3');
         expect(screen.getByTestId('level-value')).toHaveTextContent(`${formatGainDb(0.3)} dB`);
         // A's late-landing continuation re-asserts gesture B's own live
-        // sample on the engine — not A's restored project truth (65).
+        // sample on the engine — not A's restored project truth (65) — by
+        // making exactly one more engine call: the not-owner re-send.
+        expect(vi.mocked(setMasterGain).mock.calls.length).toBe(engineCallsBeforeResolve + 1);
         expect(setMasterGain).toHaveBeenLastCalledWith(30, true);
+        // The engine is never explicitly set to A's committed value (65)
+        // by the stale resolution: the one new call it produces is the
+        // resend above, not a restore to A's committed gain.
+        const newEngineCalls = vi.mocked(setMasterGain).mock.calls.slice(engineCallsBeforeResolve);
+        expect(newEngineCalls).not.toContainEqual([65, true]);
 
         // Settle B: its dispatch reads `expectedPercent` off the store as it
         // now stands (65, what A's commit landed), not the value that was
@@ -299,6 +307,153 @@ describe('MasterChannelStrip', () => {
             type: 'setMasterGain',
             payload: { gain: 0.3, expectedPercent: 65 },
         });
+    });
+
+    it('lets the newer of two pending settles own the display and engine when the older lands late', async () => {
+        let resolveDispatchA: (() => void) | undefined;
+        let resolveDispatchB: (() => void) | undefined;
+        commandMocks.executeUserAppAction
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveDispatchA = resolve;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveDispatchB = resolve;
+                    })
+            );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        // Gesture A settles at 0.55 — its dispatch (A) stays pending,
+        // standing in for a persistence barrier holding the Automerge
+        // snapshot open.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.55' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.550' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // Gesture B opens and settles at 0.45 while A is still pending — B's
+        // dispatch chains onto A's still-open commit and has not reached
+        // `executeUserAppAction` yet.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.45' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.450' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // A lands: the store moves to 55 (what A's commit landed) just
+        // before resolving it. A's continuation is no longer the owner —
+        // B's settle claimed the token first — so it re-asserts B's own
+        // displayed value (0.45) instead of restoring A's committed 0.55,
+        // and B's now-unblocked dispatch reads that 55 as `expectedPercent`.
+        const engineCallsBeforeResolveA = vi.mocked(setMasterGain).mock.calls.length;
+        storeMocks.transportStoreValue = { masterGain: 55 };
+        await act(async () => {
+            resolveDispatchA?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('fader')).toHaveValue('0.45');
+        expect(screen.getByTestId('level-value')).toHaveTextContent(`${formatGainDb(0.45)} dB`);
+        // Checked by count, not just value, because B's own transient
+        // sample already wrote (45, true) to the engine earlier — a
+        // resend that silently never fires (a settle that clears
+        // `displayedValue` instead of holding B's value) would leave the
+        // last call reading right by coincidence.
+        expect(vi.mocked(setMasterGain).mock.calls.length).toBe(engineCallsBeforeResolveA + 1);
+        expect(setMasterGain).toHaveBeenLastCalledWith(45, true);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2);
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.45, expectedPercent: 55 },
+        });
+
+        // B lands: the store settles at 45 (what B's commit landed). B
+        // still owns the token, so this restores the engine and display
+        // from project truth instead of re-asserting a stale sample.
+        storeMocks.useStore.mockReturnValue({ masterGain: 45 });
+        storeMocks.transportStoreValue = { masterGain: 45 };
+        await act(async () => {
+            resolveDispatchB?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('fader')).toHaveValue('0.45');
+        expect(setMasterGain).toHaveBeenLastCalledWith(45, true);
+    });
+
+    it('lets the newest of several keyboard settles own the display and engine when an earlier one lands late', async () => {
+        let resolveDispatch1: (() => void) | undefined;
+        commandMocks.executeUserAppAction
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        resolveDispatch1 = resolve;
+                    })
+            )
+            // Never resolved: the point of this test is the state right
+            // after the *first* settle lands, not what happens once the
+            // chain drains further. The third settle's dispatch stays
+            // chained behind this one and is never itself invoked, so no
+            // third mock implementation is queued — one left unconsumed
+            // would leak into whichever test runs next.
+            .mockImplementationOnce(() => new Promise<void>(() => {}));
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        // Three keyboard settles in a row — none of them is a transient
+        // sample, so none opens a drag gesture — each chaining its dispatch
+        // onto the previous one's still-pending commit.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.81' } });
+            await Promise.resolve();
+        });
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.82' } });
+            await Promise.resolve();
+        });
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.83' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('fader')).toHaveValue('0.83');
+
+        // The first settle lands: its continuation is no longer the owner —
+        // the second and third settles each claimed the token before it
+        // resolved — so it re-asserts the newest settle's displayed value
+        // (0.83) instead of restoring project truth (81) or clearing the
+        // display down to whatever the store now holds.
+        storeMocks.transportStoreValue = { masterGain: 81 };
+        await act(async () => {
+            resolveDispatch1?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('fader')).toHaveValue('0.83');
+        expect(screen.getByTestId('level-value')).toHaveTextContent(`${formatGainDb(0.83)} dB`);
+        expect(setMasterGain).toHaveBeenLastCalledWith(83, true);
     });
 
     it('serialises settled dispatches so a later gesture always commits after an earlier one has landed', async () => {
