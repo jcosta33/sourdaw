@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, type rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { removeProfileDir, stripPayloadOverrides } from '../desktopLatencyProcess.ts';
+import { removeDirectoryWithRetries, removeProfileDir, stripPayloadOverrides } from '../desktopLatencyProcess.ts';
 
 describe('stripPayloadOverrides', () => {
     it('removes every payload-override key that was set', () => {
@@ -85,5 +85,23 @@ describe('removeProfileDir', () => {
         removeProfileDir('/tmp/sourdaw-desktop-measure-spec-fake', remove);
 
         expect(calls).toEqual(['/tmp/sourdaw-desktop-measure-spec-fake']);
+    });
+});
+
+describe('removeDirectoryWithRetries', () => {
+    it('calls the injected rm exactly once with the retry schedule Node 24 actually runs', () => {
+        const calls: Array<[string, unknown]> = [];
+        const rm: typeof rmSync = (path, options) => {
+            calls.push([path as string, options]);
+        };
+
+        removeDirectoryWithRetries('/tmp/sourdaw-desktop-measure-spec-fake', rm);
+
+        expect(calls).toEqual([
+            [
+                '/tmp/sourdaw-desktop-measure-spec-fake',
+                { recursive: true, force: true, maxRetries: 2, retryDelay: 1000 },
+            ],
+        ]);
     });
 });

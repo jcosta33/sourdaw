@@ -7,8 +7,9 @@
  * repository's per-file line budget; this file still spawns a real process
  * and drives a live `Page` through `connectAndMeasure`, so — like the
  * driver, and unlike `desktopLatencyReadings.ts` — most of it is not
- * unit-testable without Playwright. `stripPayloadOverrides` and
- * `removeProfileDir` are the pure exceptions and carry their own specs.
+ * unit-testable without Playwright. `stripPayloadOverrides` is pure, and
+ * `removeProfileDir` / `removeDirectoryWithRetries` are testable because
+ * their file-system call is injectable; they carry their own specs.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -68,11 +69,15 @@ export type RemoveDirectory = (path: string) => void;
  * helper process creates while the recursive removal walks the profile
  * directory turns into a thrown `ENOTEMPTY` instead of a completed removal.
  * `maxRetries`/`retryDelay` make Node retry `EBUSY`, `EMFILE`, `ENFILE`,
- * `ENOTEMPTY`, and `EPERM` with linear backoff, which is enough for a
- * process that is already exiting to finish clearing its own files.
+ * `ENOTEMPTY`, and `EPERM`, which is enough for a process that is already
+ * exiting to finish clearing its own files. Node 24's `fs.rmSync` sleeps
+ * `i * retryDelay / 1000` whole seconds between retries on POSIX (integer
+ * division in `src/node_file.cc`), so `retryDelay` only takes effect in
+ * whole-second increments; the values below give attempts at 0 s, then
+ * after 1 s, then after 2 s.
  */
-function removeDirectoryWithRetries(path: string): void {
-    rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+export function removeDirectoryWithRetries(path: string, rm: typeof rmSync = rmSync): void {
+    rm(path, { recursive: true, force: true, maxRetries: 2, retryDelay: 1000 });
 }
 
 /**
@@ -93,7 +98,6 @@ export function removeProfileDir(
     }
 }
 
-/** Warns on stdout when a profile directory could not be removed; silent on success. */
 function reportProfileRemoval(profileDir: string, removal: ProfileRemoval): void {
     if (removal.removed) {
         return;
