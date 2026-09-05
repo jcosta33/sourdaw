@@ -446,6 +446,45 @@ describe('ClipContextMenu', () => {
             )
         );
     });
+    it('routes audio-to-MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+
+        const action = { type: 'audioToMidi', payload: { clipId: 'clip1' } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes Continue MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Continue MIDI…' }));
+
+        const action = { type: 'completeMidi', payload: { clipId: 'midi1', bars: 4 } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes the wilder variation through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Regenerate (different style)' }));
+
+        const action = { type: 'variationMidi', payload: { clipId: 'midi1', amount: 0.6 } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes the bassline generation through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Generate Bassline from Clip' }));
+
+        const action = { type: 'generateBassline', payload: { clipId: 'midi1', style: 'root-fifth' } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
 
     it('does not dispatch denoise for a clip without an audioBufferId', () => {
         // clip1 has no audioBufferId: there is no cache entry to denoise and no
