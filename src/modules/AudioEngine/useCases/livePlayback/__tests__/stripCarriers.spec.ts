@@ -167,12 +167,54 @@ describe('projectStripCarriers', () => {
         expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
     });
 
-    // Rule 1, the bound on that half. The native programme admits audio clips
-    // alone, so an instrument track carrying a MIDI clip has an empty native
-    // entry and material Web Audio is voicing right now. Carrying it natively
-    // for its plugin's sake gates that Web Audio strip out of the mix, and the
-    // notes stop with no notice given.
+    // Rule 1, the bound on that half. The native programme drops an audio clip
+    // whose material is not decoded, whose expansion overruns the strip's clip
+    // ceiling, or whose frozen bake is missing, and names the strip web-voiced
+    // for it. Carrying such a strip natively for its plugin's sake gates the
+    // Web Audio strip still playing that material out of the mix.
     it('leaves a track whose clips Web Audio voices on Web Audio, however attached its plugin', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [pluginDevice({ id: 'd', name: 'Harness Tone', instanceId: 'i1' })],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([], [], ['audio-1']),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'its clips play on Web Audio' });
+    });
+
+    // Rule 1, the same bound reached without any programme entry at all. The
+    // native command vocabulary has no MIDI in it, so a MIDI track's notes are
+    // voiced on Web Audio whether the programme named the strip or not — and a
+    // clip-less instrument track is exactly the case the programme cannot name,
+    // because live keys leave no clip behind to be excluded.
+    it('leaves a clip-less MIDI track on Web Audio, however attached its instrument plugin', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [pluginDevice({ id: 'd', name: 'Harness Tone', instanceId: 'i1' })],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'MIDI plays on Web Audio' });
+    });
+
+    // The kind is read before the programme, so a MIDI track is told the reason
+    // that holds for every take rather than one about the clips it happens to
+    // carry now: delete those clips and the native engine still has no route to
+    // its notes.
+    it('names the kind rather than the clips for a web-voiced MIDI track', () => {
         const carriers = projectStripCarriers({
             stripTracks: [
                 createTrack({
@@ -186,7 +228,7 @@ describe('projectStripCarriers', () => {
             inputMonitoredTrackIds: new Set(),
         });
 
-        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'its clips play on Web Audio' });
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'MIDI plays on Web Audio' });
     });
 
     // The plugin that carries a clip-less strip past rule 1 is the *attached*

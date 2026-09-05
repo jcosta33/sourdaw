@@ -217,6 +217,9 @@ describe('projectLiveGraphProgramme', () => {
         expect(programme.exclusions).toEqual([
             { stripId: 'audio-1', subjectId: 'bake-1', reason: expect.stringContaining('baked buffer is not loaded') },
         ]);
+        // The frozen track's own clips are still on the Web Audio path, so the
+        // carrier law must not read this empty entry as nothing to sound.
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
     });
 
     it('admits a stretched clip with its projected playbackRate, alongside its unstretched neighbour', () => {
@@ -487,6 +490,9 @@ describe('projectLiveGraphProgramme — what one clip may cost', () => {
                 reason: expect.stringContaining('needs 2 of the 0 native clip slots'),
             },
         ]);
+        // The refused clip is still material, and Web Audio is the only carrier
+        // left playing it — so the strip is named alongside the clip.
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
     });
 });
 

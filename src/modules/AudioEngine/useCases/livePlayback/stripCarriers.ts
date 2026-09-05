@@ -34,6 +34,14 @@
  * it out of the mix, and the notes would stop with no notice given, so the
  * programme names those strips (`webVoicedStripIds`) and the law reads them.
  *
+ * A MIDI track is the whole of that case rather than one instance of it, for as
+ * long as this slice lasts. The native command vocabulary carries no MIDI at
+ * all (`AudioGraphCommand`), so everything such a track voices is voiced on Web
+ * Audio — the notes of a clip and the keys a musician plays live into it alike
+ * — whether or not the programme found any material to name. The law therefore
+ * reads the track's kind before it reads the programme, and that clause leaves
+ * the day the engine takes a MIDI route.
+ *
  * Buses get no entry. They are shared: a native-carried track feeds the native
  * bus while a web-carried one feeds the Web Audio bus of the same name, and the
  * two sum at the hardware output. That is what makes the split per track
@@ -158,10 +166,27 @@ function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
  * voicing. A strip whose MIDI clip the native programme never admitted is
  * playing on the Web Audio path right now, and carrying it natively would
  * silence it, so the plugin does not win it.
+ *
+ * A MIDI track is in that position whatever its programme holds, because the
+ * native engine has no MIDI route to reach it by: everything the track voices —
+ * a clip's notes through `scheduleMidiNotes`, a live key through
+ * `handleWebMidiNoteOn` — is voiced on this strip's Web Audio `gainNode`, and
+ * an empty programme entry says only that no *audio* clip was found. This
+ * clause is the boundary of the current slice rather than a property of MIDI,
+ * and it goes away the day `AudioGraphCommand` carries notes.
+ *
+ * The kind is what the clause reads, rather than whether this track is the one
+ * the live keys are pointed at: that target follows the selection
+ * (`selectTrack`), while carriers are decided when the session's topology is
+ * built, so a rule keyed on it would leave a strip on the wrong carrier the
+ * moment the musician clicks another track.
  */
 function silenceWithoutNativePlayback(track: Track, context: CarrierContext): string | null {
     if (!hostsAttachedPlugin(track, context)) {
         return 'nothing scheduled';
+    }
+    if (track.kind === 'midi') {
+        return 'MIDI plays on Web Audio';
     }
     return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
 }
@@ -241,7 +266,8 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * carrying one still has nothing scheduled. And a strip the programme left to
  * Web Audio is voiced there whatever its chain holds: an attached plugin gives
  * a strip something to sound only when nothing on the Web Audio path still
- * voices that strip.
+ * voices that strip. A MIDI track is left there on its kind alone, ahead of the
+ * programme, because no native route reaches what it voices at all.
  */
 function firstFailure(
     track: Track,
