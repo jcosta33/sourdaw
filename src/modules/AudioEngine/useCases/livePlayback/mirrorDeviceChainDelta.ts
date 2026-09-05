@@ -37,10 +37,14 @@ import { type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
 
+import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeInsertIndex } from './nativeChainIndex';
+import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
+import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 import { readNativeChain } from './readNativeChain';
+import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { recordNativeChains } from './recordNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
@@ -132,6 +136,38 @@ function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly str
     return commands;
 }
 
+/** Whether the automation pass in flight writes any parameter of this device. */
+function passWritesDevice(trackId: string, deviceId: string): boolean {
+    return (nativeLiveAutomationWriter.pass?.targets ?? []).some(
+        ({ target }) => target.kind === 'device-parameter' && target.trackId === trackId && target.deviceId === deviceId
+    );
+}
+
+/**
+ * Whether this batch changes what the automation pass in flight can carry.
+ *
+ * Two shapes of command do, and the rule names exactly those two because
+ * re-arming costs a whole lookahead of admitted stamps.
+ *
+ * An insert, only of a hosted plugin: the engine stamps a hosted plugin's
+ * parameters and nothing else's, so the pass was projected without parameters
+ * it can now carry, while a built-in insert leaves it describing exactly the
+ * same writes.
+ *
+ * A removal, only of a device the pass still targets: the next pump would name
+ * a device the graph no longer has, which `graph.rs` refuses whole as `unknown
+ * device` — and testing the pass rather than the device's kind is both the
+ * narrower rule and the exact one, because the pass's own targets are the only
+ * devices a pump can name.
+ */
+function changesWhatThePassCarries(commands: readonly AudioGraphCommand[]): boolean {
+    return commands.some(
+        (command) =>
+            (command.kind === 'insert-device' && isHostedPluginDevice(command.device)) ||
+            (command.kind === 'remove-device' && passWritesDevice(command.trackId, command.deviceId))
+    );
+}
+
 function changedDeviceNames(input: MirrorDeviceChainDeltaInput): readonly string[] {
     const { before, after } = input;
     const afterIds = new Set(idsOf(after.devices));
@@ -186,6 +222,16 @@ export function mirrorDeviceChainDelta(input: MirrorDeviceChainDeltaInput): Prom
             return { outcome: 'declined', reason: result.reason };
         }
         recordNativeChains(result.reports);
+        if (changesWhatThePassCarries(plan.commands)) {
+            // The pass in flight was projected against the chain this batch has
+            // just changed — missing a plugin's parameters, or still naming a
+            // device the engine no longer holds. Re-reading from where the
+            // engine stands is what puts it back in step.
+            rearmNativeLiveAutomationWriterInPlace({
+                provenAfterBatch: result.admittedBatch ?? null,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
+            });
+        }
         return { outcome: 'mirrored' };
     });
 }

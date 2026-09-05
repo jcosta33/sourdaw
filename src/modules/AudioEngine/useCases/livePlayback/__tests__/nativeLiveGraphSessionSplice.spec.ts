@@ -17,6 +17,7 @@ import {
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
+import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSessionSplice } from '../nativeLiveGraphSessionSplice';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 
@@ -63,6 +64,24 @@ function trackHolding(devices: readonly Device[]): Track {
     return { id: 'audio-1', name: 'Lead', devices: [...devices] } as unknown as Track;
 }
 
+/** A pass in flight, which is what makes a re-read something the writer can owe. */
+function passInFlight(): LiveAutomationWriterPass {
+    return {
+        stripTracks: [],
+        sampleRate: 48_000,
+        programmeEndSeconds: 12,
+        entrySeconds: 0,
+        provenAfterBatch: null,
+        looping: false,
+        targets: [],
+        loopTargets: null,
+        lastLoopWraps: null,
+        wrapFloorFrame: null,
+        queueFullReported: false,
+        saturatedGroups: new Set(),
+    };
+}
+
 beforeEach(() => {
     apply.mockReset();
     apply.mockResolvedValue(APPLIED);
@@ -73,6 +92,8 @@ beforeEach(() => {
     nativeLiveGraphSession.lastDeferredChainNotice = null;
     nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['device-eq']]]);
     nativeLiveGraphSession.pending = Promise.resolve();
+    nativeLiveAutomationWriter.pass = passInFlight();
+    nativeLiveAutomationWriter.pendingRearm = null;
     trackStore.set({
         tracks: [trackHolding([device('device-eq'), PLUGIN_DEVICE])],
         selectedTrackId: null,
@@ -82,6 +103,8 @@ beforeEach(() => {
 
 afterEach(() => {
     trackStore.set(null);
+    nativeLiveAutomationWriter.pass = null;
+    nativeLiveAutomationWriter.pendingRearm = null;
 });
 
 describe('nativeLiveGraphSessionSplice', () => {
@@ -155,5 +178,33 @@ describe('nativeLiveGraphSessionSplice', () => {
             'warning'
         );
         expect(nativeLiveGraphSession.nativeChainByStripId.get('audio-1')).toEqual(['device-eq']);
+    });
+
+    // The pass in flight was projected while the chain still had no body for
+    // this plugin, so its parameters are in nobody's window (#3568). The
+    // re-read is recorded rather than taken here because this splice answers
+    // the automation pump's own attach report; the playhead feed takes it on
+    // its next reading, ahead of the pump that sends the pass.
+    it('states that the pass owes a re-read, dated by the batch that spliced the plugin in', async () => {
+        apply.mockResolvedValue({ ...APPLIED, admittedBatch: 42 });
+
+        await nativeLiveGraphSessionSplice({ instanceId: 'inst-1' });
+
+        expect(nativeLiveAutomationWriter.pendingRearm).toEqual({ provenAfterBatch: 42 });
+    });
+
+    // A refused splice left the chain as it was, so the pass in flight is still
+    // a true reading of it. Re-reading anyway would throw away every stamp the
+    // engine already holds for the strips that did nothing wrong.
+    it('leaves the pass alone when the engine refuses the splice', async () => {
+        apply.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'insert-device: chain at capacity',
+        });
+
+        await nativeLiveGraphSessionSplice({ instanceId: 'inst-1' });
+
+        expect(nativeLiveAutomationWriter.pendingRearm).toBeNull();
     });
 });

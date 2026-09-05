@@ -228,7 +228,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    acceptsExternalPluginAutomationParameter: noop,
     clampDeviceParameterValue: noop,
+    clampExternalPluginAutomationValue: noop,
     isDeviceParameterAutomatable: noop,
     quantiseDeviceParameterValue: noop,
     getDeviceContractVersionForCommand: () => 'descriptor-v1:test',

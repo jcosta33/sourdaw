@@ -207,6 +207,47 @@ describe('serializeAudioGraphCommandBatch', () => {
         });
     });
 
+    /**
+     * A hosted plugin declares no parameter names. Its parameters are the
+     * plugin's own numeric ids, which the producer spells as strings (#3568),
+     * and the mapper looks the parameter up by that exact spelling. A
+     * serializer that renamed, trimmed or renumbered it would address a
+     * parameter the plugin does not have, and the write would be dropped by the
+     * engine rather than refused here.
+     */
+    it('carries a hosted plugin’s numeric parameter id onto the wire exactly as spelled', () => {
+        const batch: AudioGraphCommandBatch = {
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'write-device-parameter',
+                    target: {
+                        kind: 'device-parameter',
+                        trackId: 'track-1',
+                        deviceId: 'dev-plugin',
+                        parameterId: '7',
+                    },
+                    write: { shape: 'step', value: 0.25, time: 1.5 },
+                },
+            ],
+        };
+
+        const wire = serializeAudioGraphCommandBatch(batch);
+
+        expect(wire.commands).toEqual([
+            {
+                kind: 'write-device-parameter',
+                target: {
+                    kind: 'device-parameter',
+                    trackId: 'track-1',
+                    deviceId: 'dev-plugin',
+                    parameterId: '7',
+                },
+                write: { shape: 'step', value: 0.25, time: 1.5 },
+            },
+        ]);
+    });
+
     it('leaves an absent correlation absent — absence is meaningful in the contract', () => {
         const wire = serializeAudioGraphCommandBatch({ schemaVersion: 1, commands: [] });
 

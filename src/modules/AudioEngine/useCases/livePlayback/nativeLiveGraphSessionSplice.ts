@@ -25,6 +25,7 @@ import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeL
 import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 import { readNativeChain } from './readNativeChain';
 import { recordNativeChains } from './recordNativeChains';
+import { requestNativeLiveAutomationWriterRearm } from './requestNativeLiveAutomationWriterRearm';
 
 export type NativeLiveGraphSessionSpliceInput = Readonly<{
     /** The external plugin instance the engine has taken. */
@@ -105,6 +106,14 @@ export function nativeLiveGraphSessionSplice(
             return { outcome: 'declined', reason: result.reason };
         }
         recordNativeChains(result.reports);
+        // The plugin's parameters are the engine's to stamp from this batch on,
+        // and the pass in flight was projected before the chain held it. The
+        // re-read is requested rather than taken because this splice is reached
+        // from the automation pump's own attach report; the next playhead
+        // reading takes it, and the first pump after that carries the seeded
+        // value at the position, which is what converges a plugin that attached
+        // mid-roll.
+        requestNativeLiveAutomationWriterRearm({ provenAfterBatch: result.admittedBatch ?? null });
         return { outcome: 'spliced' };
     });
 }

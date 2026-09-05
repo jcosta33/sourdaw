@@ -190,6 +190,10 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     }
 
     nativeLiveAutomationWriter.epoch += 1;
+    // Any arm answers a re-read the outgoing pass owed: this one re-projects
+    // the whole world, so a request still standing would make the next feed
+    // reading re-arm again for a device this pass already carries.
+    nativeLiveAutomationWriter.pendingRearm = null;
     nativeLiveAutomationWriter.pass = {
         stripTracks: input.stripTracks,
         sampleRate: input.sampleRate,
@@ -205,6 +209,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         // by. `null` when nothing wraps, which silences the seam half.
         wrapFloorFrame: spans.loop ? secondsToFrames(spans.loop.endSeconds, input.sampleRate) : null,
         queueFullReported: false,
+        saturatedGroups: new Set(),
     };
 
     void pumpNativeLiveAutomationWriter({

@@ -9,6 +9,7 @@ import {
 import {
     getCompensationDelay,
     getCurrentTime,
+    isDeviceCarriedByNativeSession,
     scheduleSendAutomation,
     scheduleTrackPan,
     updateDeviceParam,
@@ -27,23 +28,13 @@ import {
     resolveDeviceAutomationTargetIndex,
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
 } from '#/utils/automationDeviceTarget';
-import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
+import { AUTOMATION_SLEW_ALPHA, AUTOMATION_SLEW_EPSILON, slewStep } from '#/utils/automationSlew';
 
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 import { appliedAutomationBases, clearAppliedAutomationBases } from './appliedAutomationBases';
 import { restoreAutomationBaseValue } from './restoreAutomationBaseValue';
 import { scheduleComposedTrackGainAutomation } from './scheduleComposedTrackGainAutomation';
-
-/**
- * Per-parameter exponential slew state for plugin automation. The IIR
- * coefficient (AUTOMATION_SLEW_ALPHA, 0.4) and its one-tick step (slewStep) are
- * the shared #/utils/automationSlew kernel the offline render replicates for
- * device-param parity (AU-2). ~95% of target reached in ~9 ticks (~90ms at
- * 100Hz). Do not re-inline the coefficient here.
- */
-/** Skip dispatch when the smoothed value has moved less than this per tick. */
-const SLEW_EPSILON = 5e-5;
 
 /**
  * Whether a lane is allowed to drive this parameter on this device.
@@ -103,8 +94,25 @@ function clampToDeclaredParameterRange(
 }
 
 const automationState: {
+    /**
+     * Per-parameter exponential slew state for plugin automation. The IIR
+     * coefficient (AUTOMATION_SLEW_ALPHA, 0.4), its one-tick step (slewStep)
+     * and the movement below which a dispatch is not worth making
+     * (AUTOMATION_SLEW_EPSILON) are the shared `#/utils/automationSlew` kernel
+     * the offline render replicates for device-param parity (AU-2), and which
+     * the native producer's segment conversion reads for the same reason. ~95%
+     * of target reached in ~9 ticks (~90ms at 100Hz). Do not re-inline them.
+     */
     pluginParamSlew: Map<string, Map<string, number>>;
     trackIndex: Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>;
+    /**
+     * Whether each device was bypassed the last tick a lane reached it. The
+     * bypassed → live edge is the one moment a carried device needs a write
+     * from here (#3568): the engine discards a stamp due at a bypassed effect,
+     * so a plugin that comes back would otherwise resume at its pre-bypass
+     * value until the curve moved far enough to stamp again.
+     */
+    lastBypassed: Map<string, boolean>;
     /**
      * The scheduler discontinuity epoch observed on the previous tick. When it
      * advances (seek, loop-wrap, follow-action jump) the next apply snaps every
@@ -122,10 +130,66 @@ const automationState: {
 } = {
     pluginParamSlew: new Map<string, Map<string, number>>(),
     trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
+    lastBypassed: new Map<string, boolean>(),
     lastDiscontinuityEpoch: undefined,
     lastTrackStoreState: undefined,
     drivingLanes: new Map(),
 };
+
+/**
+ * Whether this device has come back from bypass since the last tick a lane
+ * reached it, recording what it is now for the next one.
+ *
+ * Reading and writing in one step is deliberate: the edge exists only between
+ * two consecutive observations of the same device, so a caller that read it
+ * without recording would report the same release on every following tick.
+ *
+ * The edge is one fact about a device per *tick*, not per lane. Consuming it
+ * where each lane reaches the device would give it to whichever lane the loop
+ * happened to visit first and leave every other lane on that device — a plugin
+ * commonly carries several — reading a device that had never been bypassed. So
+ * the tick resolves each device once and then reads that answer, which
+ * `thisTick` carries.
+ */
+function takeBypassReleaseEdge(thisTick: Map<string, boolean>, deviceId: string, bypassed: boolean): boolean {
+    const resolved = thisTick.get(deviceId);
+    if (resolved !== undefined) {
+        return resolved;
+    }
+    const released = automationState.lastBypassed.get(deviceId) === true && !bypassed;
+    automationState.lastBypassed.set(deviceId, bypassed);
+    thisTick.set(deviceId, released);
+    return released;
+}
+
+/**
+ * Drop the bypass ledger's entries for devices the new track snapshot no longer
+ * holds — and only those.
+ *
+ * The ledger survives a replaced snapshot deliberately. `bypassDevice` commits
+ * through `mapAllTracks`, so *every* bypass toggle replaces the snapshot: the
+ * tick that carries an un-bypass is the tick a clear would erase the `true` the
+ * release edge is measured against, and a carried plugin whose lane is sitting
+ * still would hold its pre-bypass value with nothing left to restate it. The
+ * map is keyed by device id, which a new snapshot does not invalidate; pruning
+ * the departed ids is only what keeps it from growing across project loads.
+ *
+ * Runs after {@link automationState.trackIndex} is rebuilt, which is what makes
+ * the index the answer to "does this snapshot still hold the device".
+ */
+function forgetBypassStateOfAbsentDevices(): void {
+    const present = new Set<string>();
+    for (const track of automationState.trackIndex.values()) {
+        for (const device of track.devices) {
+            present.add(device.id);
+        }
+    }
+    for (const deviceId of automationState.lastBypassed.keys()) {
+        if (!present.has(deviceId)) {
+            automationState.lastBypassed.delete(deviceId);
+        }
+    }
+}
 
 export function applyAutomation(currentBeat: number): Set<string> {
     // Track ids whose fader gain this tick's automation composed and wrote.
@@ -136,6 +200,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // param that is both automated and modulated combines onto the value
     // automation actually applied rather than a separately recomputed one.
     clearAppliedAutomationBases();
+    // Each device's bypass-release edge, resolved on the first lane of this
+    // tick that reaches it and read by every lane after that.
+    const bypassReleaseEdges = new Map<string, boolean>();
     const autoState = automationStore.value;
     if (!autoState) {
         return gainAutomationTrackIds;
@@ -173,7 +240,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // opening another project cannot restore a same-id track with stale data.
     // A lane-only undo leaves this snapshot unchanged and reaches the removal
     // restore below.
-    if (automationState.lastTrackStoreState !== undefined && automationState.lastTrackStoreState !== trackState) {
+    const trackSnapshotReplaced =
+        automationState.lastTrackStoreState !== undefined && automationState.lastTrackStoreState !== trackState;
+    if (trackSnapshotReplaced) {
         automationState.drivingLanes.clear();
         automationState.pluginParamSlew.clear();
     }
@@ -184,6 +253,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
         for (const time of tracks) {
             automationState.trackIndex.set(time.id, time);
         }
+    }
+    if (trackSnapshotReplaced) {
+        forgetBypassStateOfAbsentDevices();
     }
 
     const currentLaneIds = new Set(autoState.lanes.map((lane) => lane.id));
@@ -380,7 +452,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // Known cost, deliberately accepted: this widens the window in
                 // which a *foreign* write to the same parameter goes
                 // un-re-asserted. The slew cannot strand a value — at α = 0.4 it
-                // clears SLEW_EPSILON within two ticks of any real movement — but
+                // clears AUTOMATION_SLEW_EPSILON within two ticks of any real movement — but
                 // `pluginParamSlew` is only dropped on a gate edge or an
                 // AutoMatch release, never on a device reload or a bypass
                 // toggle, so on a slow ramp across an index a value another
@@ -393,17 +465,37 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     paramId,
                     value: prev,
                 });
-                if (isDiscontinuity || (Math.abs(smoothed - prev) > SLEW_EPSILON && delivered !== previousDelivered)) {
-                    if (device.type === 'fermenter') {
-                        // Fermenter params use camelCase ids that must be mapped to
-                        // their snake_case DSP ids before reaching the WASM node —
-                        // the same translation the UI bridge applies. Runtime
-                        // automation bypasses UI state and persistence so the
-                        // user's manual base and CRDT history remain unchanged.
+                const moved =
+                    isDiscontinuity ||
+                    (Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
+                const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
+                if (device.type === 'fermenter') {
+                    // Fermenter params use camelCase ids that must be mapped to
+                    // their snake_case DSP ids before reaching the WASM node —
+                    // the same translation the UI bridge applies. Runtime
+                    // automation bypasses UI state and persistence so the
+                    // user's manual base and CRDT history remain unchanged.
+                    if (moved) {
                         applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
-                    } else {
-                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                     }
+                    continue;
+                }
+                // A device the native session carries has its parameters
+                // stamped on the audio thread from the engine's own queue
+                // (#3568), block-accurately and ahead of the playhead. Writing
+                // the same parameter over IPC as well would double-drive one
+                // plugin instance, and the tick-grid write would land late
+                // enough to undo the stamp that was already correct.
+                //
+                // The release from bypass is the one write a carried device
+                // still owes, and it is forced past the gate above: the engine
+                // discards a stamp due at a bypassed effect, so the plugin
+                // resumes holding whatever it held before, and the curve may sit
+                // still for a long time before it stamps again. Renderer IPC is
+                // ordered, so this write lands after the bypass release itself.
+                const carried = isDeviceCarriedByNativeSession(lane.trackId, device.id);
+                if (carried ? released : moved) {
+                    updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                 }
                 continue;
             }
@@ -460,7 +552,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 // modulus, so a slewed 12.6 builds a 12-long pattern and walks it
                 // 13 wide. Closing that needs descriptors keyed by
                 // `ProcessorType`, which is its own change; it is not closed here.
-                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                if (isDiscontinuity || Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON) {
                     updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
                 }
                 break;

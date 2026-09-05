@@ -45,6 +45,7 @@
  */
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
@@ -85,7 +86,11 @@ export function repositionNativeLiveGraphSession(
             // it would have its first writes cancelled by the very command
             // that made re-arming necessary.
             armNativeLiveAutomationWriter({
-                stripTracks: pass.stripTracks,
+                // The chain as the store holds it now, not as the pass took it:
+                // an arm claims to re-project the whole world, and a locate that
+                // re-projected the arm-time objects would leave a plugin added
+                // since then driven by neither engine.
+                stripTracks: currentStripTracks(pass.stripTracks),
                 sampleRate: pass.sampleRate,
                 programmeEndSeconds: pass.programmeEndSeconds,
                 positionSeconds: input.positionSeconds,

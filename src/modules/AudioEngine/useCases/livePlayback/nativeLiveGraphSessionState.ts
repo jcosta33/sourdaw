@@ -112,6 +112,17 @@ export type NativeLiveGraphSession = {
      * into.
      */
     nativeChainByStripId: ReadonlyMap<string, readonly string[]>;
+    /**
+     * The strips this session is sounding, as it last claimed them.
+     *
+     * The same set `setNativeCarriedTracks` shuts the Web Audio gates for, held
+     * here because the split has a second reader: the tick path has to know
+     * whether a device's parameters are being stamped by the engine before it
+     * writes them over IPC itself, and asking Web Audio's own gate state would
+     * be asking the consumer of the split what the split is (#3568). Written
+     * only by `claimCarriedStrips`, which is what keeps the two in step.
+     */
+    carriedStripIds: ReadonlySet<string>;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
@@ -131,6 +142,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     lastSilentPluginNotice: null,
     lastDeferredChainNotice: null,
     nativeChainByStripId: new Map(),
+    carriedStripIds: new Set(),
     pending: Promise.resolve(),
 };
 

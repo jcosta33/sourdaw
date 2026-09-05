@@ -104,9 +104,9 @@ import { type NativeGraphTransport } from '../../repositories/nativeGraph/native
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 import { masterGainState } from '../engineAccess/masterGainState';
-import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
@@ -468,7 +468,7 @@ function reasonOf(error: unknown): string {
  * reopening the gates here cannot double a mix the engine is already sounding.
  */
 function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBackend>): void {
-    setNativeCarriedTracks(new Set());
+    claimCarriedStrips(new Set());
     nativeLiveGraphSession.audibleCarrier = false;
     // A topology batch may already have written its chains before the throw,
     // and they describe a graph this start is walking away from.
@@ -647,7 +647,7 @@ export function startNativeLiveGraphSession(
         // Reopening the gates, and the only route that does: every decline past
         // the optimistic claim below runs through it, so no path can leave Web
         // Audio silenced for an engine that never sounded anything.
-        const releaseCarriedStrips = (): void => setNativeCarriedTracks(new Set());
+        const releaseCarriedStrips = (): void => claimCarriedStrips(new Set());
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
         const firstCommands = projectTopology(topology.attachedInstanceIds);
@@ -659,7 +659,7 @@ export function startNativeLiveGraphSession(
             // Before the first await, and only for an audible session — see the
             // header for why the claim is made ahead of the answer rather than after
             // it. A shadowed session sounds nothing, so it releases instead.
-            setNativeCarriedTracks(audible ? carriedStripIds(firstCommands) : new Set());
+            claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
             const started = await applyTopologyBatch({
                 transport: availability.transport,
                 backend,
@@ -713,7 +713,7 @@ export function startNativeLiveGraphSession(
             // can move a strip from web to native, and the optimistic claim above
             // was made before the engine held it.
             if (audible) {
-                setNativeCarriedTracks(carriedStripIds(rebound.commands));
+                claimCarriedStrips(carriedStripIds(rebound.commands));
                 notifySilentHostedPlugins({
                     stripTracks: topology.stripTracks,
                     carriers: projectStripCarriers({
