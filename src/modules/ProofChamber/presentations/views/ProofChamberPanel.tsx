@@ -19,6 +19,7 @@ import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppActionBatch, executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import {
@@ -391,7 +392,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * and the engine losing its state is not a change in truth, so it has to be
      * resynced where the loss happens.
      */
-    function selectSpace(space: SpaceType): void {
+    async function selectSpace(space: SpaceType): Promise<void> {
         const nextParams = expandSpacePreset(space);
 
         updateChamberEngine(deviceId, () => nextParams);
@@ -426,7 +427,14 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         }
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
-        void executeAppActionBatch(actions, { groupId, groupLabel });
+        const result = await executeAppActionBatch(actions, { groupId, groupLabel });
+        if (result.status === 'rejected' || result.status === 'conflicted' || result.status === 'failed') {
+            // The batch resolves rather than rejecting when it is turned away,
+            // so the click used to leave no trace at all. The toast names the
+            // outcome; the durable log keeps the reason diagnosable.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(`Could not load "${space}" space: the project can't be changed right now.`, 'warning');
+        }
     }
 
     /**

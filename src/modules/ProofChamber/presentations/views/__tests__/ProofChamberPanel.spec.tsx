@@ -1,8 +1,9 @@
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -17,6 +18,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     generateGroupId: vi.fn(() => 'group-test'),
     pushUndoEntry: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
 }));
 
 vi.mock('../../../stores/chamberStore', () => ({
@@ -100,6 +105,44 @@ describe('ProofChamberPanel', () => {
             type: 'setDeviceParameter',
             payload: { deviceId: 'test-device', paramId: 'decay_eq_2', value: 1.75 },
         });
+    });
+
+    /**
+     * The space tiles are the panel's one `executeAppActionBatch` gesture, and
+     * the batch resolves rather than rejecting when the project refuses the
+     * write, so a call site that drops the result makes the click silently do
+     * nothing on a repair-required or brief-locked project. The refusal must
+     * reach the user as exactly one warning that names the space they clicked.
+     */
+    it('warns once with the space name when the space-load batch is refused', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        // A space row's accessible name carries its mood subtitle, which is
+        // what keeps this click off the identically labelled algorithm chip.
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('plate'), 'warning');
+    });
+
+    it('stays silent when the space-load batch commits', async () => {
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        // Wait for the awaited dispatch to settle before asserting the silence,
+        // so a late notification cannot slip past the assertion.
+        await waitFor(() => {
+            expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).not.toHaveBeenCalled();
     });
 
     /**
