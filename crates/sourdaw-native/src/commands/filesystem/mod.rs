@@ -490,7 +490,7 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), Stri
 /// folders were roots here once (#3313); they are the user's, not the app's,
 /// and reach them now only through a grant the user made in a dialog.
 fn built_in_roots() -> Vec<PathBuf> {
-    let mut roots = vec![std::env::temp_dir()];
+    let mut roots = vec![ipc_temp_dir()];
 
     if let Some(data_dir) = application_data_directory() {
         roots.push(data_dir);
@@ -773,6 +773,165 @@ mod tests {
         );
     }
 
+    #[test]
+    fn renderer_temp_authority_requires_owned_scratch_or_explicit_grant() {
+        let external = TempAuthorityDir::create_external_sibling();
+        let sentinel = external.path("sentinel.txt");
+        let refused_destination = external.path("refused-write.txt");
+        let granted_destination = external.path("granted-write.txt");
+        std::fs::write(&sentinel, b"unrelated temporary data")
+            .expect("the external sentinel should be written");
+
+        let scratch = TempAuthorityDir::create_owned_scratch();
+        let scratch_relative = scratch
+            .root
+            .strip_prefix(ipc_temp_dir())
+            .expect("owned scratch should be below the IPC temp directory");
+        let scratch_file = scratch_relative.join("scratch.txt");
+
+        let (external_without_grant, scratch_without_grant) =
+            grant_registry::with_grants_for_test(Vec::new(), || {
+                crate::block_on_test(async {
+                    let external = run_file_commands(
+                        &sentinel,
+                        &external.root,
+                        &refused_destination,
+                        b"renderer replacement",
+                    )
+                    .await;
+                    let scratch = run_file_commands(
+                        &scratch_file,
+                        scratch_relative,
+                        &scratch_file,
+                        b"owned scratch data",
+                    )
+                    .await;
+                    (external, scratch)
+                })
+            });
+
+        let external_root = external
+            .root
+            .canonicalize()
+            .expect("the external directory should resolve");
+        let external_with_grant = grant_registry::with_grants_for_test(
+            vec![grant_of(external_root, GrantMode::ReadWrite, true)],
+            || {
+                crate::block_on_test(async {
+                    run_file_commands(
+                        &sentinel,
+                        &external.root,
+                        &granted_destination,
+                        b"granted temporary data",
+                    )
+                    .await
+                })
+            },
+        );
+
+        assert_eq!(
+            external_without_grant.read.unwrap_err(),
+            "Path is outside allowed native file roots"
+        );
+        assert_eq!(
+            external_without_grant.list.unwrap_err(),
+            "Path is outside allowed native file roots"
+        );
+        assert_eq!(
+            external_without_grant.write.unwrap_err(),
+            "Path is outside allowed native file roots"
+        );
+        assert_eq!(
+            std::fs::read(&sentinel).unwrap(),
+            b"unrelated temporary data",
+            "refused commands must leave unrelated temporary data untouched"
+        );
+        assert!(
+            !refused_destination.exists(),
+            "a refused write must not create an external temporary file"
+        );
+
+        scratch_without_grant
+            .write
+            .expect("relative owned scratch should remain writable");
+        assert_eq!(scratch_without_grant.read.unwrap(), b"owned scratch data");
+        assert!(scratch_without_grant
+            .list
+            .unwrap()
+            .iter()
+            .any(|entry| entry.name == "scratch.txt"));
+
+        assert_eq!(
+            external_with_grant.read.unwrap(),
+            b"unrelated temporary data"
+        );
+        assert!(external_with_grant
+            .list
+            .unwrap()
+            .iter()
+            .any(|entry| entry.name == "sentinel.txt"));
+        external_with_grant
+            .write
+            .expect("an explicit recursive read-write grant should permit writing");
+        assert_eq!(
+            std::fs::read(&granted_destination).unwrap(),
+            b"granted temporary data"
+        );
+    }
+
+    struct FileCommandOutcomes {
+        read: Result<Vec<u8>, String>,
+        list: Result<Vec<DirectoryEntry>, String>,
+        write: Result<(), String>,
+    }
+
+    async fn run_file_commands(
+        read_path: &Path,
+        list_path: &Path,
+        write_path: &Path,
+        write_data: &[u8],
+    ) -> FileCommandOutcomes {
+        let write = write_file_bytes(write_path.to_string_lossy().into_owned(), write_data).await;
+        let read = read_file_bytes(read_path.to_string_lossy().into_owned()).await;
+        let list = list_directory(list_path.to_string_lossy().into_owned()).await;
+
+        FileCommandOutcomes { read, list, write }
+    }
+
+    struct TempAuthorityDir {
+        root: PathBuf,
+    }
+
+    impl TempAuthorityDir {
+        fn create_owned_scratch() -> Self {
+            Self::create_below(&ipc_temp_dir(), "owned")
+        }
+
+        fn create_external_sibling() -> Self {
+            Self::create_below(&std::env::temp_dir(), "external")
+        }
+
+        fn create_below(parent: &Path, label: &str) -> Self {
+            let root = parent.join(format!(
+                "sourdaw-temp-authority-{label}-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&root).expect("test authority directory should be created");
+            Self { root }
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.root.join(name)
+        }
+    }
+
+    impl Drop for TempAuthorityDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
     fn private_state_path(name: &str) -> PathBuf {
         spelled_private_state_path(PRIVATE_DIR_NAME, name)
     }
@@ -909,9 +1068,9 @@ mod tests {
 
         let resolved = resolve_writable_file_path(&destination.to_string_lossy()).unwrap();
 
-        let canonical_temp = std::env::temp_dir()
+        let canonical_temp = ipc_temp_dir()
             .canonicalize()
-            .expect("the temp directory should resolve");
+            .expect("the IPC temp directory should resolve");
         assert!(
             resolved.starts_with(&canonical_temp),
             "{resolved:?} must be the canonical form, below {canonical_temp:?}"
@@ -988,7 +1147,7 @@ mod tests {
 
     impl TempExportDir {
         fn create(test_name: &str) -> Self {
-            let root = std::env::temp_dir().join(format!(
+            let root = ipc_temp_dir().join(format!(
                 "sourdaw-atomic-export-{test_name}-{}-{}",
                 std::process::id(),
                 uuid::Uuid::new_v4()
