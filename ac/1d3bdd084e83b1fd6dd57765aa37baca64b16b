@@ -1,0 +1,21 @@
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_751b7e3d3ff4e9 7082-7085
+crates/daw-engine/src/timeline.rs
+  s_9b530f08172a54::t_6062828116c903 1208-1212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ac1d3bdd084e83b1fd6dd57765aa37baca64b16b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
