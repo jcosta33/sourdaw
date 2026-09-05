@@ -1,0 +1,83 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_572fe2bcc3a26d 1343-1386
+  s_9b530f08172a54::t_969ba4e6ac6375 131-141
+  s_9b530f08172a54::t_e8772078ec7fe1 339,345-348
+src/modules/AudioEngine/useCases/livePlayback/__tests__/carryQueuedStamps.spec.ts
+  s_9b530f08172a54::t_fce6564e86dff1 168
+  s_9b530f08172a54::t_68a88f69cfc6fb 164
+  s_9b530f08172a54::t_5a91d13a987902 140-147
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_9b530f08172a54::t_5a24e0034a6570 173-181,185,187-199,203,205-212
+  s_9b530f08172a54::t_76f3276a5a4f5f 184
+  s_9b530f08172a54::t_af4331985fdde1 182-183,186,200-202,204
+  s_9b530f08172a54::t_8da4f0064d3b23 59-61,64-73
+  s_9b530f08172a54::t_bd47a47d707efb 6-7
+  s_9b530f08172a54::t_fd37e7ca65ba28 18
+  s_9b530f08172a54::t_21a55b3274c48b 74
+src/modules/AudioEngine/useCases/livePlayback/__tests__/mirrorDeviceChainDelta.spec.ts
+  s_9b530f08172a54::t_22a1a6805abc1e 344-351,361
+  s_9b530f08172a54::t_979c8da984fc5d 369
+  s_9b530f08172a54::t_22ec6250625128 106
+  s_9b530f08172a54::t_e7374931fd2100 77-93
+  s_9b530f08172a54::t_ba81a192499272 28
+  s_9b530f08172a54::t_ddfb46d6b154e1 335-343,352-360,362-368,370-377
+src/modules/AudioEngine/useCases/livePlayback/disarmNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_04b3cbb3edd3f9 23
+  s_9b530f08172a54::t_32eafecca07ebf 20-22
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_9b530f08172a54::t_88deabf6f16e14 235-238
+src/modules/AudioEngine/useCases/livePlayback/mirrorDeviceChainDelta.ts
+  s_9b530f08172a54::t_29223350b41ef7 139-145,147-155,157-161,163-166
+  s_9b530f08172a54::t_b38388f4cb5e6a 43
+  s_9b530f08172a54::t_8e9ee290c26039 226-229
+  s_9b530f08172a54::t_a797d617cf8e76 167-168
+  s_9b530f08172a54::t_7813b72e7c71dd 225
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_c1ddb5a0362a3d 231,233
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_89953b7ca713fa 139-142,147
+  s_9b530f08172a54::t_fdd3e2a30f6730 196-207,209-215
+  s_9b530f08172a54::t_25a758bc35a643 208
+  s_9b530f08172a54::t_47102a900db1ce 113-132,134-135,143-146
+  s_9b530f08172a54::t_f6b7831c6918db 167
+  s_9b530f08172a54::t_96f3fed0137067 148-149
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  s_9b530f08172a54::t_5d915282a3c08f 90-96
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_bf243312df277a 412
+  s_9b530f08172a54::t_226a74e9694eae 57
+  s_9b530f08172a54::t_31e795bc9f3fd8 368-370
+  s_9b530f08172a54::t_12962517f02095 332-350
+  s_9b530f08172a54::t_f39af98f2c7ff3 331,400-410
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_a205554fb97d1e 196
+  s_9b530f08172a54::t_e30599927d7cbe 193-195
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_9b530f08172a54::t_02201318bd8b95 596-599,609-614,620-652
+  s_9b530f08172a54::t_60b9b619a90d47 574-578
+  s_9b530f08172a54::t_f5acafe5535136 140-165
+  s_9b530f08172a54::t_0dde4f22245237 653
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_9b530f08172a54::t_1625487025f014 438
+  s_9b530f08172a54::t_df0b2e9c5ca58f 146-152,154,161
+  s_9b530f08172a54::t_706a6c3a309857 155-158
+  s_9b530f08172a54::t_9b911d89a54ec8 174-176
+src/modules/AudioEngine/useCases/offlineRender/__tests__/convertRecordedAutomationSegments.spec.ts
+  s_9b530f08172a54::t_525c351e65aa69 23-40,46,52,56-67,74,78,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6b575b6d6b8f95571c7f05f7ecb165025990a34f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
