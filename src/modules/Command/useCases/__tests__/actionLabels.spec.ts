@@ -23,12 +23,16 @@ describe('ACTION_LABELS', () => {
         expect(ACTION_LABELS.duplicateClipToNextBar).toBe('Duplicate clip to next bar');
     });
 
-    it('labels every app action a keystroke can dispatch', () => {
+    it('labels every app action the shortcut pipeline can dispatch', () => {
         // Admission refusals describe through `ACTION_LABELS[type] ?? type`
-        // (see describeRefusal in executeUserAppAction), so any action type a
-        // keystroke can reach on the executeUserAppAction seam and a
-        // project-kind handler can refuse must carry a label, or the warning
-        // shows the raw token.
+        // (see describeRefusal in executeUserAppAction), so every action type
+        // dispatched on that seam needs a label or the warning shows the raw
+        // token. This pin derives only the SHORTCUT PIPELINE: the store's
+        // `appAction` definitions, the `callbackAppActionTypes` table below,
+        // and the four AI-chord literals. Component-keyboard seams (e.g. the
+        // track-list row Delete dispatching removeTrack) and the
+        // command-palette Enter dispatch sit OUTSIDE this pin — tracked
+        // separately in #3829.
         const definitions = realShortcutStores.shortcutStore.value?.definitions ?? [];
 
         // Shortcut definitions that dispatch an app action directly.
