@@ -278,7 +278,13 @@ export const Fader = ({
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (!draggingRef.current) {
+        // A second pointer (touch or pen) can move while the first pointer's
+        // drag is still open — its capture belongs to the first pointer, but
+        // React's synthetic pointer events still bubble from the element to
+        // this handler regardless of which pointer moved. Without this check
+        // a second finger sliding across the fader would steer the cap out
+        // from under the pointer that actually owns the gesture.
+        if (!draggingRef.current || event.pointerId !== activePointerIdRef.current) {
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -296,7 +302,26 @@ export const Fader = ({
         onChange(clamped, true);
     };
 
-    const handlePointerUp = () => {
+    // A second pointer's own pointerup/pointercancel must not close the first
+    // pointer's still-open gesture: bound to the same element, it bubbles
+    // here just as readily as the owning pointer's release. Compare against
+    // the captured pointer before finalizing. When no drag is open,
+    // `activePointerIdRef.current` is `null` and every real `pointerId`
+    // fails the comparison, which is the same no-op `finalizeDrag` already
+    // produced by guarding on `draggingRef.current`.
+    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        if (event.pointerId !== activePointerIdRef.current) {
+            return;
+        }
+        finalizeDrag();
+    };
+
+    // `lostpointercapture` and the window/document blur & visibility paths
+    // finalize unconditionally: they fire for the pointer that was actually
+    // captured, or for the window rather than any pointer at all (`blur` and
+    // `visibilitychange` carry no `pointerId`), so there is nothing to
+    // compare against `activePointerIdRef.current`.
+    const handleForceFinalize = (): void => {
         finalizeDrag();
     };
 
@@ -392,8 +417,8 @@ export const Fader = ({
             onPointerUp={handlePointerUp}
             // audit M-082: every non-pointerup end of a drag, not just the happy path.
             onPointerCancel={handlePointerUp}
-            onLostPointerCapture={handlePointerUp}
-            onBlur={handlePointerUp}
+            onLostPointerCapture={handleForceFinalize}
+            onBlur={handleForceFinalize}
             onKeyDown={handleKeyDown}
             onDoubleClick={handleDoubleClick}
         >

@@ -393,20 +393,19 @@ describe('Fader', () => {
 
     /**
      * A second pointer (touch or pen; a mouse cannot repeat a `pointerdown`
-     * under capture) pressing while a drag is already open used to reset
-     * `hasEmittedTransient` and steal `activePointerIdRef` in
-     * `handlePointerDown`. `handlePointerUp`/`handlePointerMove` do not filter
-     * by `pointerId` — that is a separate, pre-existing characteristic of this
-     * component and out of scope here — so a second pointer's own release
-     * still closes the open gesture. What the fix changes is whether that
-     * closure commits: before, the reset flag made `finalizeDrag` emit no
-     * settle at all, so the engine and cap froze on the last transient with
-     * project truth never updated. After, the interrupted gesture's last
-     * transient value settles correctly, and the first pointer's own later
-     * moves and release are safe no-ops rather than corrupting state.
+     * under capture) pressing while a drag is already open is blocked
+     * outright in `handlePointerDown` — the already-captured pointer keeps
+     * the gesture exclusively. `handlePointerMove` and `handlePointerUp`
+     * (which also backs `onPointerCancel`) now compare `event.pointerId`
+     * against `activePointerIdRef.current` too: a second pointer's own moves
+     * can no longer steer the cap, and its own release can no longer
+     * finalize — let alone settle — the first pointer's still-open gesture.
+     * `onLostPointerCapture` and the blur/visibility paths are unaffected:
+     * they finalize unconditionally, because they fire for the captured
+     * pointer or for the window rather than for an arbitrary second pointer.
      */
     describe('second pointer during an open drag', () => {
-        it('should settle at the interrupted pointer’s last value instead of losing the gesture', () => {
+        it('should keep the gesture under the first pointer while a second pointer presses, moves, and lifts', () => {
             const onChange = vi.fn();
             render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
             const slider = screen.getByRole('slider');
@@ -420,16 +419,34 @@ describe('Fader', () => {
             fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50 });
             expect(onChange.mock.calls).toHaveLength(1);
 
-            // Pointer 2 lifts: this still closes the gesture (unrelated to the
-            // fix), but it must now settle rather than vanish.
-            fireEvent.pointerUp(slider, { pointerId: 2 });
-            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[4, false]]);
+            // Pointer 2 moves: its pointerId does not match the captured
+            // pointer, so it must not steer the cap. With `startY`/`startValue`
+            // still pointer 1's, this delta would compute 6 if the check were
+            // missing — that value must never appear among the transients.
+            fireEvent.pointerMove(slider, { pointerId: 2, clientY: 20 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+            expect(onChange.mock.calls).toHaveLength(1);
 
-            // The gesture already closed, so pointer 1's own later move and
-            // release are inert — no crash, no double settle, no corruption.
-            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 35 });
+            // Pointer 2 lifts: its pointerId does not match the captured
+            // pointer either, so it must not finalize — let alone settle —
+            // pointer 1's still-open gesture.
+            fireEvent.pointerUp(slider, { pointerId: 2 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            // Pointer 1 is still driving the gesture: its own next move keeps
+            // emitting transients under its own value.
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 43 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([
+                [4, true],
+                [5.5, true],
+            ]);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            // Pointer 1's own release settles the gesture exactly once, at
+            // pointer 1's own last value.
             fireEvent.pointerUp(slider, { pointerId: 1 });
-            expect(onChange.mock.calls).toHaveLength(2);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[5.5, false]]);
+            expect(onChange.mock.calls).toHaveLength(3);
         });
 
         it('should ignore an alt-click reset from a second pointer during an open drag', () => {
