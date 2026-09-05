@@ -132,6 +132,30 @@ pub trait NativePlugin: Any + Send {
     /// than wrong.
     fn process_capture_input(&mut self, _block: CaptureInputBlock<'_>) {}
 
+    /// Queue one of this plugin's own parameters for its next process call.
+    ///
+    /// Audio-thread only, and bound by the audio thread's law: it must not
+    /// allocate, lock, or block. The scheduler calls it from
+    /// `apply_due_device_params`, which runs before the chain renders the span
+    /// that reached the stamp, so the write is drained by the next process call
+    /// this plugin actually receives — normally this same block's. A hosted
+    /// plugin's process path takes the access seam it shares with the control
+    /// path and skips the block outright rather than waiting when the control
+    /// path holds it, so a control operation landing on this block pushes the
+    /// drain to a later one. An effect driven by its audio bridge is always one
+    /// callback late whatever the seam does: `AudioThread::render` runs
+    /// `process_audio_bridges` — the only path that hands such an effect a
+    /// block — before the `process_block` this call happens inside, so the
+    /// write waits for the next callback's bridge pass.
+    ///
+    /// `true` means the write is queued. `false` refuses it, and the caller
+    /// counts the refusal as an unmapped parameter call — the default, because
+    /// a plugin body with no addressable parameters (a built-in wrapper, a
+    /// fixture) has nothing to queue the write against.
+    fn apply_parameter_on_audio_thread(&mut self, _id: u32, _value: f64) -> bool {
+        false
+    }
+
     /// Get the plugin's name (for logging).
     fn name(&self) -> &str;
 

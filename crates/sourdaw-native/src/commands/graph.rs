@@ -153,8 +153,8 @@ use daw_engine::scheduler::{
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
-    ClipPlayback, DeviceKind, DeviceParam, RampShape, RouteTarget, TimelineBus, TimelineClip,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack, AUTOMATION_QUEUE_CAPACITY,
+    ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, RampShape, RouteTarget, TimelineBus,
+    TimelineClip, TimelineRtDiagnosticsSnapshot, TimelineTrack, AUTOMATION_QUEUE_CAPACITY,
     DEVICE_PARAM_QUEUE_CAPACITY, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS,
     MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
 };
@@ -1245,6 +1245,24 @@ pub(crate) fn seconds_to_frames(seconds: f64, sample_rate: f32, what: &str) -> R
     Ok((seconds * f64::from(sample_rate)).round() as u64)
 }
 
+/// Read a hosted plugin's own parameter id off the wire.
+///
+/// The producer carries the plugin's `u32` id as a string, because a lane id is
+/// a string everywhere above this boundary. Nothing here can check that the
+/// plugin actually exposes that id — only the plugin resolves its own
+/// parameters — so this refuses exactly what is not an id at all: a built-in's
+/// name, or a number past `u32`. A stamp built from either would reach the
+/// audio thread only to be counted as an unmapped call, and refusing whole is
+/// this module's law.
+fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
+    parameter_id.parse().map_err(|_| {
+        format!(
+            "write-device-parameter: parameter '{parameter_id}' is not a hosted plugin \
+             parameter id"
+        )
+    })
+}
+
 fn frames_u32(frames: u64, what: &str) -> Result<u32, String> {
     u32::try_from(frames).map_err(|_| format!("{what} does not fit a ramp span"))
 }
@@ -2125,9 +2143,10 @@ fn map_command(
             // A retirement takes the device's `DeviceParamQueue` with it,
             // pending changes and all, and graph effect ids are never reused
             // (the allocator is monotonic) — so the ledger's window for this
-            // effect is exactly gone, not guessed gone. An engine-owned device
-            // holds no window to close: `write-device-parameter` refuses one, so
-            // nothing was ever charged against its id.
+            // effect is exactly gone, not guessed gone. That holds whichever
+            // kind of body the device was: a hosted plugin's stamps are charged
+            // against the same per-effect window and leave with the same
+            // retirement.
             budgets.device_params.remove(&device.native_effect_id);
             registry
                 .strips
@@ -2157,23 +2176,27 @@ fn map_command(
                     "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            if device.engine_owned {
-                // The engine's device-parameter vocabulary is the built-in's.
-                // A hosted plugin's parameters are its own and travel on the
-                // plugin's control path, so a write addressed here would either
-                // refuse by name or — worse, when a name happens to collide —
-                // queue a stamp the engine can only count as an unmapped call.
-                return Err(format!(
-                    "write-device-parameter: device '{device_id}' is a hosted plugin; its \
-                     parameters are written through the plugin, not the graph"
-                ));
-            }
-            let param = DeviceParam::from_name(parameter_id.as_str()).ok_or_else(|| {
-                format!("write-device-parameter: parameter '{parameter_id}' has no native address")
-            })?;
+            // The address a stamp carries is decided by what the device is, not
+            // by the name it was written under: a built-in's parameters are the
+            // engine's closed vocabulary, and a hosted plugin's are the
+            // plugin's own numeric ids, which only the plugin can resolve.
+            let param = if device.engine_owned {
+                DeviceParamTarget::Hosted {
+                    id: hosted_parameter_id(parameter_id)?,
+                }
+            } else {
+                DeviceParamTarget::Builtin(
+                    DeviceParam::from_name(parameter_id.as_str()).ok_or_else(|| {
+                        format!(
+                            "write-device-parameter: parameter '{parameter_id}' has no native \
+                             address"
+                        )
+                    })?,
+                )
+            };
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
-            let value = finite(*value, "write-device-parameter value")? as f32;
+            let value = finite(*value, "write-device-parameter value")?;
             let effect_id = device.native_effect_id;
             budgets
                 .charge_device_param(effect_id, at_frame)
@@ -4700,8 +4723,8 @@ mod tests {
 
     /// The ledger is per parameter, not per batch: full queues on two strips,
     /// on two parameters of one strip, and on a device queue beside them must
-    /// not pool into one count — and the ninth device write must refuse on
-    /// its own queue's law.
+    /// not pool into one count — and the write past the device window must
+    /// refuse on its own queue's law.
     #[test]
     fn queue_budgets_do_not_conflate_distinct_parameters_strips_or_devices() {
         let mut commands = vec![
@@ -4748,7 +4771,7 @@ mod tests {
             &sample_pool(),
             48_000.0,
         )
-        .expect_err("the ninth pending device write must refuse the batch");
+        .expect_err("the pending device write past the window must refuse the batch");
         assert!(refusal.contains("device-param-queue-capacity"));
     }
 
@@ -4851,8 +4874,8 @@ mod tests {
     /// than either fixed queue holds, against one device parameter and one
     /// automation parameter, with the engine draining between batches. Every
     /// batch admits, because the progress echo releases what landed — under
-    /// the old monotonic ledger the ninth device write refused for the life
-    /// of the session.
+    /// the old monotonic ledger the first device write past the window refused
+    /// for the life of the session.
     #[test]
     fn landed_writes_release_the_ledger_for_later_batches() {
         let samples = sample_pool();
@@ -4904,7 +4927,13 @@ mod tests {
     fn the_ledger_never_releases_ahead_of_the_echo() {
         let samples = sample_pool();
         let mut registry = GraphRegistry::default();
-        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        // The largest batch this test sends is a full device-parameter window
+        // behind its batch fence, and `OfflineRenderer::render` drains the ring
+        // before that batch is pushed — so the strip setup ahead of it has
+        // already left. A literal would silently cap the batch the moment the
+        // window grows, and the test would then fail on the ring rather than on
+        // the ledger it is about.
+        let mut renderer = OfflineRenderer::new(48_000.0, DEVICE_PARAM_QUEUE_CAPACITY + 1);
 
         admit_and_send(
             &mut registry,
@@ -7396,13 +7425,8 @@ mod tests {
         );
     }
 
-    /// A hosted plugin's parameters are the plugin's own, written through it
-    /// rather than through the graph. A device-parameter write addressed at one
-    /// must refuse: the engine's device-parameter vocabulary is the built-in's,
-    /// and a name that happened to collide would queue a stamp the engine could
-    /// only count as an unmapped call.
-    #[test]
-    fn a_device_parameter_write_addressed_at_an_engine_owned_device_refuses() {
+    /// A strip carrying one bound hosted plugin, ready to be written at.
+    fn registry_holding_a_bound_hosted_plugin() -> GraphRegistry {
         let mut registry = GraphRegistry::default();
         map_batch(
             &batch(hosted_plugin_strip(true, false)),
@@ -7412,23 +7436,136 @@ mod tests {
             &attached("inst-1", 1_007),
         )
         .expect("the strip binds");
+        registry
+    }
 
-        let refusal = map_batch(
-            &batch(json!([{
-                "kind": "write-device-parameter",
-                "target": { "kind": "device-parameter", "trackId": "lead",
-                            "deviceId": "d-plugin", "parameterId": "shift_semitones" },
-                "write": { "shape": "step", "value": 5.0, "time": 0.0 }
-            }])),
+    fn hosted_parameter_write(parameter_id: &str) -> GraphBatchPayload {
+        batch(json!([{
+            "kind": "write-device-parameter",
+            "target": { "kind": "device-parameter", "trackId": "lead",
+                        "deviceId": "d-plugin", "parameterId": parameter_id },
+            "write": { "shape": "step", "value": 0.5, "time": 1.0 }
+        }]))
+    }
+
+    fn device_param_stamps(ops: &[GraphCommand]) -> Vec<(usize, DeviceParamTarget, f64, u64)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::AutomateDeviceParam {
+                    effect_id,
+                    param,
+                    value,
+                    at_frame,
+                } => Some((*effect_id, *param, *value, *at_frame)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A hosted plugin's parameters are the plugin's own numeric ids, opaque to
+    /// this module — so the mapper carries the id through rather than resolving
+    /// it, and charges the same per-device window a built-in's stamp takes. An
+    /// uncharged stamp would overrun the engine's fixed queue and be dropped
+    /// render-side with nothing but a counter.
+    #[test]
+    fn a_hosted_parameter_write_maps_to_a_hosted_stamp() {
+        let mut registry = registry_holding_a_bound_hosted_plugin();
+
+        let mapped = map_batch(
+            &hosted_parameter_write("42"),
             &mut registry,
             &sample_pool(),
             48_000.0,
             &attached("inst-1", 1_007),
         )
-        .expect_err("a hosted plugin's parameters are not the graph's to write");
-        assert!(
-            refusal.contains("written through the plugin"),
-            "the refusal says where the write belongs, got: {refusal}"
+        .expect("a hosted plugin parameter is the graph's to stamp");
+
+        assert_eq!(
+            device_param_stamps(&mapped.ops),
+            vec![(1_007, DeviceParamTarget::Hosted { id: 42 }, 0.5, 48_000)]
+        );
+        assert_eq!(
+            registry.device_param_pending.get(&1_007).map(Vec::len),
+            Some(1),
+            "the stamp is charged against the device's pending window"
+        );
+    }
+
+    /// Nothing here can check that the plugin exposes a given id, but it can
+    /// check that the string is an id at all. A built-in's name, or a number
+    /// past `u32`, would otherwise reach the audio thread as a stamp no plugin
+    /// can resolve — a write the producer believes landed and the mix never
+    /// heard.
+    #[test]
+    fn a_hosted_parameter_write_refuses_a_non_numeric_id() {
+        for parameter_id in ["shift_semitones", "4294967296"] {
+            let mut registry = registry_holding_a_bound_hosted_plugin();
+
+            let refusal = map_batch(
+                &hosted_parameter_write(parameter_id),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+                &attached("inst-1", 1_007),
+            )
+            .expect_err("a string that is not a parameter id must refuse");
+
+            assert!(
+                refusal.contains(parameter_id) && refusal.contains("hosted plugin parameter id"),
+                "the refusal names the parameter and what it is not, got: {refusal}"
+            );
+        }
+    }
+
+    /// The built-in keeps its closed vocabulary. A device-parameter write at a
+    /// knead device still resolves through `DeviceParam::from_name`, so the
+    /// named and addressed paths cannot drift, and it must not fall into the
+    /// hosted branch — where `shift_semitones` is only a string that fails to
+    /// parse.
+    #[test]
+    fn a_knead_parameter_write_still_maps_to_the_builtin() {
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [
+                    { "id": "d-knead", "name": "Knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
+                ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a knead device has a native body");
+
+        let mapped = map_unbound_batch(
+            &batch(json!([{
+                "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": "t1",
+                            "deviceId": "d-knead", "parameterId": "shift_semitones" },
+                "write": { "shape": "step", "value": 0.5, "time": 1.0 }
+            }])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a knead parameter is written through the graph");
+
+        let stamps = device_param_stamps(&mapped.ops);
+        assert_eq!(stamps.len(), 1);
+        assert_eq!(
+            (stamps[0].1, stamps[0].2, stamps[0].3),
+            (
+                DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
+                0.5,
+                48_000
+            )
         );
     }
 

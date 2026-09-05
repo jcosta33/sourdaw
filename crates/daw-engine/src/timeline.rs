@@ -152,6 +152,22 @@ impl DeviceParam {
     }
 }
 
+/// The body a time-stamped device-parameter change is addressed at.
+///
+/// A built-in's parameters are a closed set the engine itself names, so they
+/// travel as a [`DeviceParam`] address and the named and the addressed paths
+/// cannot drift into meaning different things. A hosted plugin's parameters
+/// are the plugin's own `u32` ids: opaque to the engine, resolved by the
+/// plugin when it processes the block, and impossible to enumerate here. The
+/// two are separate variants rather than one id space so a stamp aimed at the
+/// wrong kind of body is a mismatch the audio thread counts rather than a
+/// number it silently misreads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DeviceParamTarget {
+    Builtin(DeviceParam),
+    Hosted { id: u32 },
+}
+
 /// Counters for every timeline command the graph refused, published off the
 /// audio thread through a [`triple_buffer`] exactly as the MIDI counters are.
 ///
@@ -603,13 +619,25 @@ impl RampedParam {
 
 /// Time-stamped device-parameter changes one effect holds before its earliest
 /// unlanded change is refused.
-pub const DEVICE_PARAM_QUEUE_CAPACITY: usize = 8;
+///
+/// The window is per *effect*, not per parameter, and a hosted plugin exposes
+/// as many parameters as it likes — so one plugin with a batch writing several
+/// automation lanes at once spends the window several times over, and the batch
+/// refuses whole. It is sized at what one process call of a hosted body can
+/// take: such a body accepts a bounded number of parameter writes per call, and
+/// a window wider than that would only move the refusal off the batch — which
+/// refuses whole and can be resent — onto the body, which drops the excess with
+/// nothing left to retry.
+pub const DEVICE_PARAM_QUEUE_CAPACITY: usize = 64;
 
-/// One time-stamped change to a built-in device parameter.
+/// One time-stamped change to a device parameter.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DeviceParamEvent {
-    pub param: DeviceParam,
-    pub value: f32,
+    pub param: DeviceParamTarget,
+    /// The value the parameter takes. `f64` because a hosted plugin parameter
+    /// is `f64` on the CLAP and VST3 wire, so an `f32` round trip here would
+    /// move the value the plugin displays. A built-in narrows it at apply.
+    pub value: f64,
     /// Absolute timeline frame at which the change takes effect. A device owns
     /// its own parameter smoothing, so the change lands on the first block
     /// whose span reaches the stamp rather than at a sample offset inside it.
@@ -618,7 +646,7 @@ pub struct DeviceParamEvent {
 
 impl DeviceParamEvent {
     const SETTLED: Self = Self {
-        param: DeviceParam::ShiftSemitones,
+        param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
         value: 0.0,
         at_frame: 0,
     };
@@ -2686,12 +2714,12 @@ mod tests {
         let mut queue = DeviceParamQueue::new();
         assert!(queue.is_empty());
         assert!(queue.schedule(DeviceParamEvent {
-            param: DeviceParam::RetuneSpeedMs,
+            param: DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs),
             value: 20.0,
             at_frame: 8,
         }));
         assert!(queue.schedule(DeviceParamEvent {
-            param: DeviceParam::ShiftSemitones,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
             value: 5.0,
             at_frame: 4,
         }));
@@ -2702,12 +2730,12 @@ mod tests {
         assert_eq!(queue.pop_due(3), None);
         assert_eq!(
             queue.pop_due(4).map(|event| (event.param, event.value)),
-            Some((DeviceParam::ShiftSemitones, 5.0))
+            Some((DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones), 5.0))
         );
         assert_eq!(queue.pop_due(4), None);
         assert_eq!(
             queue.pop_due(9).map(|event| (event.param, event.value)),
-            Some((DeviceParam::RetuneSpeedMs, 20.0))
+            Some((DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs), 20.0))
         );
         assert!(queue.is_empty());
     }
@@ -2717,14 +2745,14 @@ mod tests {
         let mut queue = DeviceParamQueue::new();
         for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
             assert!(queue.schedule(DeviceParamEvent {
-                param: DeviceParam::ShiftSemitones,
+                param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
                 value: 1.0,
                 at_frame: index as u64,
             }));
         }
 
         assert!(!queue.schedule(DeviceParamEvent {
-            param: DeviceParam::ShiftSemitones,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
             value: 1.0,
             at_frame: 100,
         }));
