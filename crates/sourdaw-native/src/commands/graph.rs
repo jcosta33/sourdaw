@@ -759,6 +759,15 @@ impl GraphRegistry {
         self.batches_sent
     }
 
+    /// How many fences this registry has committed onto the engine's ring.
+    ///
+    /// Only a send the ring took advances it, so it is what separates a batch
+    /// the engine was handed from one it refused.
+    #[cfg(test)]
+    pub(crate) fn fenced_batches(&self) -> u64 {
+        self.batches_sent
+    }
+
     fn allocate_node_id(&mut self) -> usize {
         let id = self.next_node_id;
         self.next_node_id += 1;
@@ -879,6 +888,11 @@ impl GraphRegistry {
     /// registered it, and the retirement this release precedes is
     /// `RemovePluginWithBridge`'s.
     ///
+    /// The mutation is unconditional and knows nothing about whether the ops
+    /// it returns ever reach the ring, so a caller whose send may be refused
+    /// runs this on a working clone and commits the clone only once the engine
+    /// has taken the batch — the law `map_batch` already follows.
+    ///
     /// Usually one entry, possibly none when no strip holds the instance. The
     /// loop over several is defensive — `map_device` refuses a device id that
     /// is already in a chain, so one instance cannot be bound twice — and the
@@ -907,6 +921,22 @@ impl GraphRegistry {
             strip.device_ids.retain(|id| id != &device_id);
         }
         ops
+    }
+
+    /// Whether this registry still maps `device_id` onto an engine effect.
+    #[cfg(test)]
+    pub(crate) fn holds_device(&self, device_id: &str) -> bool {
+        self.devices.contains_key(device_id)
+    }
+
+    /// A strip's realized insert chain, in chain order. Empty for a strip this
+    /// registry does not hold.
+    #[cfg(test)]
+    pub(crate) fn strip_chain(&self, strip_id: &str) -> &[String] {
+        self.strips
+            .get(strip_id)
+            .map(|strip| strip.device_ids.as_slice())
+            .unwrap_or_default()
     }
 
     /// Subtract from the ledger exactly what the engine's progress echo
