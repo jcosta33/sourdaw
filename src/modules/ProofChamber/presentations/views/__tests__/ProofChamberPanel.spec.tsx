@@ -1,8 +1,9 @@
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -17,6 +18,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     generateGroupId: vi.fn(() => 'group-test'),
     pushUndoEntry: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
 }));
 
 vi.mock('../../../stores/chamberStore', () => ({
@@ -100,6 +105,174 @@ describe('ProofChamberPanel', () => {
             type: 'setDeviceParameter',
             payload: { deviceId: 'test-device', paramId: 'decay_eq_2', value: 1.75 },
         });
+    });
+
+    /**
+     * The refusal wording, pinned against the three sibling-outcome messages
+     * that also satisfy a bare once/space-name/'warning' probe: the ambiguous
+     * hedge, the degraded-history warning, and the failed toast.
+     */
+    function expectRefusalWording(message: string | undefined): void {
+        expect(message).toContain('plate');
+        expect(message).toContain("can't be changed right now");
+        expect(message).not.toContain('reload the project');
+        expect(message).not.toContain('undo history');
+        expect(message).not.toContain('see logs for details');
+    }
+
+    /**
+     * The space tiles are the panel's one `executeAppActionBatch` gesture, and
+     * the batch resolves rather than rejecting when the project refuses the
+     * write, so a call site that drops the result makes the click silently do
+     * nothing on a repair-required or brief-locked project. The refusal must
+     * reach the user as exactly one warning carrying the refusal wording: the
+     * hedged and degraded-history messages satisfy a loose
+     * once/space-name/'warning' probe just as well, so the wording is asserted
+     * against those outcomes rather than left to whichever branch answers.
+     */
+    it('warns once with the refusal wording when the space-load batch is conflicted', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        // A space row's accessible name carries its mood subtitle, which is
+        // what keeps this click off the identically labelled algorithm chip.
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining("can't be changed right now"), 'warning');
+        const [conflictedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expectRefusalWording(conflictedMessage);
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    /**
+     * `rejected` and `conflicted` are the two refusal statuses and route to the
+     * same branch, so a wording regression there must fail on both fixtures —
+     * exercising only `conflicted` would leave `rejected` an untested promise
+     * that the shared branch keeps them worded alike.
+     */
+    it('warns once with the same refusal wording when the space-load batch is rejected', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'rejected',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining("can't be changed right now"), 'warning');
+        const [rejectedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expectRefusalWording(rejectedMessage);
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    it('stays silent when the space-load batch commits', async () => {
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        // Wait for the awaited dispatch to settle before asserting the silence,
+        // so a late notification cannot slip past the assertion.
+        await waitFor(() => {
+            expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A `committed-with-warning` batch did land the space, but post-commit
+     * history work failed — the grouped one-history-step undo entry this
+     * gesture promises is missing or partial, and the next undo may step past
+     * the whole load. Silence would keep the promise the history no longer
+     * holds, so the load must surface as exactly one warning naming the space
+     * and the undo consequence.
+     */
+    it('warns once about degraded undo history when the space-load batch commits with a warning', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'committed-with-warning',
+            warning: 'history observer unavailable',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('undo'), 'warning');
+        const [committedWarningMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expect(committedWarningMessage).toContain('plate');
+        expect(committedWarningMessage).not.toContain("can't be changed");
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    /**
+     * An ambiguous batch may have persisted the space and may not have — the
+     * storage transaction's commit state is unknown — so the warning hedges
+     * rather than claiming the refusal the batch never issued. The hedge points
+     * at a project reload, the one truth-derived view that distinguishes the
+     * outcomes: the Space tray renders the optimistic engine store written
+     * before the batch and never resynced, so it shows the load as active even
+     * when nothing persisted. A silent branch would leave the click's outcome
+     * unknowable; a refusal toast would name a false cause.
+     */
+    it('hedges with one warning pointing at a project reload when the space-load batch is ambiguous', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'ambiguous',
+            reason: 'unknown commit state',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('reload the project'), 'warning');
+        const [ambiguousMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expect(ambiguousMessage).toContain('plate');
+        expect(ambiguousMessage).toContain('may not have persisted');
+        expect(ambiguousMessage).not.toContain("can't be changed");
+        expect(ambiguousMessage).not.toContain('Space tray');
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    /**
+     * A `failed` batch is a handler or storage throw, not a project refusal:
+     * the toast must stay cause-neutral and point at the logs, never at the
+     * "project can't be changed" refusal text, which would launder the real
+     * failure into a false cause.
+     */
+    it('errors once with a cause-neutral message when the space-load batch fails', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'handler threw',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('see logs for details'), 'error');
+        const [failedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expect(failedMessage).toContain('plate');
+        expect(failedMessage).not.toContain("can't be changed");
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'warning');
     });
 
     /**

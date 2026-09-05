@@ -19,6 +19,7 @@ import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppActionBatch, executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
 import {
@@ -391,7 +392,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
      * and the engine losing its state is not a change in truth, so it has to be
      * resynced where the loss happens.
      */
-    function selectSpace(space: SpaceType): void {
+    async function selectSpace(space: SpaceType): Promise<void> {
         const nextParams = expandSpacePreset(space);
 
         updateChamberEngine(deviceId, () => nextParams);
@@ -426,7 +427,50 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         }
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
-        void executeAppActionBatch(actions, { groupId, groupLabel });
+        const result = await executeAppActionBatch(actions, { groupId, groupLabel });
+        if (result.status === 'committed-with-warning') {
+            // The project write landed, but post-commit history work failed, so
+            // the grouped one-history-step undo entry this gesture promises is
+            // missing or partial — the next undo may step past the whole load.
+            // Every sibling batch consumer surfaces this status; silence here
+            // would keep promising one-step undo the history no longer holds.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.warning}`);
+            notifyUser(
+                `The "${space}" space loaded with degraded undo history — the next undo may step past it.`,
+                'warning'
+            );
+            return;
+        }
+        if (result.status === 'ambiguous') {
+            // The write may or may not have persisted — the storage transaction's
+            // commit state is unknown — so the toast hedges instead of naming an
+            // outcome the batch never reported. The hedge points at reloading the
+            // project because that is the one truth-derived view: the Space tray
+            // renders the optimistic engine store written before the batch and
+            // never resynced, so it shows the load as active even when nothing
+            // persisted.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(
+                `The "${space}" space load may not have persisted — reload the project to confirm before retrying.`,
+                'warning'
+            );
+            return;
+        }
+        if (result.status === 'failed') {
+            // A handler or storage throw, not a project refusal: the refusal
+            // message here would name a false cause, so the toast stays
+            // cause-neutral and the durable log keeps the reason diagnosable.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(`Could not load "${space}" space — see logs for details.`, 'error');
+            return;
+        }
+        if (result.status === 'rejected' || result.status === 'conflicted') {
+            // The batch resolves rather than rejecting when it is turned away,
+            // so the click used to leave no trace at all. The toast names the
+            // outcome; the durable log keeps the reason diagnosable.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(`Could not load "${space}" space: the project can't be changed right now.`, 'warning');
+        }
     }
 
     /**
