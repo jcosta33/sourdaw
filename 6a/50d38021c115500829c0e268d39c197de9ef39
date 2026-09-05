@@ -1,0 +1,32 @@
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_9b530f08172a54::t_b9b1eaa61040ea 30-40,43-59
+  s_9b530f08172a54::t_b2162e4aecf5f1 88-97,103
+  s_9b530f08172a54::t_13dc3cecfe4d0e 130,133-134,139
+  s_9b530f08172a54::t_6a5e22f2176fcf 106-107,140,142
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_9b530f08172a54::t_149520b78a54ed 312-363,365-373,380-412,417-458
+  s_9b530f08172a54::t_7bc7ee3b6102ed 364
+  s_9b530f08172a54::t_98c7c56a9160e9 379
+  s_9b530f08172a54::t_70cfdb099015e4 413-416
+  s_9b530f08172a54::t_8e81dd0ad44aa0 287-288
+  s_9b530f08172a54::t_2abf2513616d3d 289,294
+  s_9b530f08172a54::t_f9ea557447a23c 275
+  s_9b530f08172a54::t_de68bdc49e76a4 291-293,295
+  s_9b530f08172a54::t_e81914c4be8353 374-378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6a50d38021c115500829c0e268d39c197de9ef39",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
