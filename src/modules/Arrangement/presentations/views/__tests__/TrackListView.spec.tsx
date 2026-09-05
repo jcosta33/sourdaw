@@ -382,6 +382,21 @@ describe('TrackListView', () => {
         expect(setWorkspaceMode).toHaveBeenCalledWith('clip');
     });
 
+    it('claims Enter so the window-level shortcut layer never sees the keydown', async () => {
+        // #3620 — Enter there is bound to transport.stopPlayback; one
+        // keystroke must switch mode without also stopping playback.
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Enter' });
+
+        expect(setWorkspaceMode).toHaveBeenCalledWith('clip');
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+    });
+
     it('removes the selected track on Delete after user confirmation', async () => {
         const { removeTrack } = await import('../../../useCases/removeTrack');
         const { executeUserAppAction } = await import('#/modules/Command/useCases');
