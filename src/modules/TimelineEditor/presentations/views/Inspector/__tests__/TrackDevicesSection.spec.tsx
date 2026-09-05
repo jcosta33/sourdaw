@@ -501,7 +501,7 @@ describe('TrackDevicesSection', () => {
         expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
     });
 
-    it('surfaces a degraded plugin that activated without a running native engine', () => {
+    it('surfaces a degraded plugin that activated without a running native engine and keeps its editor control', () => {
         // Activation records the degradation on an 'active' entry, and the rack
         // discriminates on 'error' alone — so a plugin that loaded but
         // processes no audio used to render as a healthy one.
@@ -541,6 +541,7 @@ describe('TrackDevicesSection', () => {
         );
         // Still not 'unavailable': it loaded, and the retry path is for failures.
         expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Open editor for Dormant CLAP')).toBeInTheDocument();
     });
 
     it('leaves a healthy device without a degradation tooltip', () => {
