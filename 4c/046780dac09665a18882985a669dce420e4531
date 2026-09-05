@@ -1,0 +1,54 @@
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_9b530f08172a54::t_b67f1ec999f3e6 206-214
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_87f0e8a7fd4dbe 473,475,479-480
+  s_9b530f08172a54::t_87d6b6b6934772 36-43
+  s_9b530f08172a54::t_363f66c9e413b3 438-444,446-447
+  s_9b530f08172a54::t_110d8a545e8849 360-437,445,448-472,474,476-478,481-499,501-521,529-531,537-542,545-549,553
+  s_9b530f08172a54::t_f210c06582c6cd 551
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_04e24e15179e55 171-186
+  s_9b530f08172a54::t_469ec2d20ab108 262-269
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_9b530f08172a54::t_e07a1e9f09eec0 682-711
+  s_9b530f08172a54::t_dbb85c3a804da6 161-170
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_b6cd0ce52cada5 47
+  s_9b530f08172a54::t_3694f3a8c7d98e 1407-1409,1422,1429-1432,1441
+  s_9b530f08172a54::t_e444711f4df8b1 1418-1421
+  s_9b530f08172a54::t_d80420b3cd98d3 1389-1406,1410-1417,1423-1428,1433-1440,1442-1443
+  s_9b530f08172a54::t_49425e611e0455 1284-1290
+  s_9b530f08172a54::t_a8daf7f7ab9938 31
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSessionSplice.spec.ts
+  s_9b530f08172a54::t_92582862dfc654 81
+src/modules/AudioEngine/useCases/livePlayback/currentStripTracks.ts
+  s_9b530f08172a54::t_5e481b39bea2b8 1-25
+src/modules/AudioEngine/useCases/livePlayback/repositionNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_4d4f58827e9110 89-92
+  s_9b530f08172a54::t_733fa3bb64b888 48
+  s_9b530f08172a54::t_22e4e63755e50a 93
+src/modules/AudioEngine/useCases/livePlayback/rearmNativeLiveAutomationWriterInPlace.ts
+  s_9b530f08172a54::t_3bcb57d359964c 23
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_d7e87d5da7cb7a 212
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  s_9b530f08172a54::t_fa98bf3802388b 37
+  s_9b530f08172a54::t_10cb1fd1d6758f 2-9
+  s_9b530f08172a54::t_3b51bac3a7dbf7 214-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4c046780dac09665a18882985a669dce420e4531",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
