@@ -5,8 +5,8 @@ title: CLAP-first native plugin hosting
 status: draft
 owner: The Sourdaw team
 sources:
-  - intake/implementation-gaps.md
-  - intake/audit-deferred-fixes.md
+    - intake/implementation-gaps.md
+    - intake/audit-deferred-fixes.md
 ---
 
 # CLAP-first native plugin hosting
@@ -44,10 +44,10 @@ Verify with: `pnpm cargo:test -- -p daw-plugin-host sandbox_crash_isolation`
 
 ### AC-003 — SAB audio transport, no per-block IPC
 
-The native plugin bridge worklet must exchange audio via shared-memory ring buffers
-and a separate param queue, with zero `tauriInvoke` calls inside `process()`.
+**Superseded 2026-09-05 (#3071).** The SAB transport was deleted; external plugins are
+engine-hosted and run inline on the engine callback with no per-block IPC and no second cadence.
 
-Verify with: `pnpm test:run -- nativePluginBridge`
+Verify with: `pnpm cargo:test --package daw-engine hosted_plugin`
 
 ### AC-004 — Format-agnostic host trait
 
@@ -100,65 +100,62 @@ Verify with: `pnpm test:run -- pluginPicker`
 
 ### AC-011 — Native bridge sizes the SAB rings and uses a separate param queue
 
-The native plugin bridge must allocate one shared-memory ring per direction
-(input frames, output frames) sized `4 × blockSize` per channel, and route
-control-rate parameter updates through a separate lock-free SPSC param queue
-(small SAB or `Atomics`-managed Int32 ring) — not the audio rings.
+**Superseded 2026-09-05 (#3071).** The SAB transport was deleted; external plugins are
+engine-hosted and run inline on the engine callback with no per-block IPC and no second cadence.
 
-Verify with: `pnpm test:run -- nativePluginBridge`
+Verify with: `pnpm cargo:test --package daw-engine hosted_plugin`
 
 ### AC-012 — Bridge under-run fills zero and counts a glitch
 
-When the output ring has no ready frames, the native bridge worklet `process()`
-must fill the output with zero and increment a glitch counter exposed via telemetry
-(never block or allocate).
+**Superseded 2026-09-05 (#3071).** The SAB transport was deleted; external plugins are
+engine-hosted and run inline on the engine callback with no per-block IPC and no second cadence.
 
-Verify with: `pnpm test:run -- nativePluginBridge`
+Verify with: `pnpm cargo:test --package daw-engine a_bypassed_hosted_effect_discards_midi_queued_while_bypassed`
 
 ## Open questions
 
 - [ ] (non-blocking) Whether the Rust-side cpal consumer of the bridge SAB ships in the
-  same change as the worklet side, or follows. Default: worklet-side first, Rust consumer follow-up.
-  (deferred-gap from intake/audit-deferred-fixes.md, I-01) The Rust side runs a
-  cpal-driven loop reading the input SAB and writing the output SAB; block size matches
-  the worklet's `process()` frame size; initial implementation latency is `2 × blockSize`
-  (one block in each direction) and must be documented. The SAB ring layout must follow
-  the same conventions as the recording pipeline (`recording.ts`) so platform-host work
-  has one pattern, not two. Rejected alternatives: MessagePort with structured cloning,
-  and one-SAB-per-block allocated on demand — both allocate per block and are blocked by
-  the RT no-alloc rule.
+      same change as the worklet side, or follows. Default: worklet-side first, Rust consumer follow-up.
+      (deferred-gap from intake/audit-deferred-fixes.md, I-01) The Rust side runs a
+      cpal-driven loop reading the input SAB and writing the output SAB; block size matches
+      the worklet's `process()` frame size; initial implementation latency is `2 × blockSize`
+      (one block in each direction) and must be documented. The SAB ring layout must follow
+      the same conventions as the recording pipeline (`recording.ts`) so platform-host work
+      has one pattern, not two. Rejected alternatives: MessagePort with structured cloning,
+      and one-SAB-per-block allocated on demand — both allocate per block and are blocked by
+      the RT no-alloc rule.
 - [ ] (non-blocking) (deferred-gap from intake/audit-deferred-fixes.md, Group D — Audio
-  engine architecture) This bridge's SAB transport (I-01 / AC-003, AC-011, AC-012) is one
-  of four engine-architecture fixes that share a substrate but are tracked against the
-  audio engine, not this spec. The full Group D scope is:
-  **D1 (I-05) `EngineDeviceNode`** — a structural type in
-  `src/modules/AudioEngine/engine/contracts/EngineDeviceNode.ts` with
-  `{ id, inputNode, outputNode, setParam({param,value,sampleFrame?}), setBypass(bool),
-  getLatencySamples(), dispose() }`; each plugin module exports its own
-  `create<Plugin>EngineNode(...)`; `TrackNode` holds an `EngineDeviceNode[]` and iterates
-  it (no per-plugin branches in `updateParam`/`updateBypass`/`removeDevice`/`dispose`); the
-  `unregisterLevainDevice`/`unregisterProofDevice` cross-module imports are removed.
-  **D2 (I-19) parameter-only bypass** — each node builds an internal parallel dry/wet
-  two-`GainNode` topology; `setBypass(true)` schedules `wet=0, dry=1` and `setBypass(false)`
-  the inverse, with `setTargetAtTime` ramps over ~5 ms; `TrackNode.updateBypass` no longer
-  calls `rebuildChain()`.
-  **D3 (I-06) PDC** — `TrackNode.getCompensationDelaySamples()` sums `getLatencySamples()`
-  across the chain; recording offsets the writer pointer by it; automation subtracts the
-  offset; a `getProjectPdcMap()` use case returns `Record<TrackId, number>`; latency stays
-  runtime-side, never written to project truth.
-  **D4 (I-01)** — the native plugin SAB transport this spec implements as AC-003/AC-011/AC-012.
-  D1 is the largest refactor and should be done piecewise, one plugin at a time, with
-  `pnpm deps:validate` and `pnpm typecheck` green after each migration. Non-blocking here
-  because the bridge can deliver its worklet-side SAB path against AC-003 ahead of the
-  broader engine refactor.
+      engine architecture) This bridge's SAB transport (I-01 / AC-003, AC-011, AC-012) is one
+      of four engine-architecture fixes that share a substrate but are tracked against the
+      audio engine, not this spec. The full Group D scope is:
+      **D1 (I-05) `EngineDeviceNode`** — a structural type in
+      `src/modules/AudioEngine/engine/contracts/EngineDeviceNode.ts` with
+      `{ id, inputNode, outputNode, setParam({param,value,sampleFrame?}), setBypass(bool),
+getLatencySamples(), dispose() }`; each plugin module exports its own
+      `create<Plugin>EngineNode(...)`; `TrackNode` holds an `EngineDeviceNode[]` and iterates
+      it (no per-plugin branches in `updateParam`/`updateBypass`/`removeDevice`/`dispose`); the
+      `unregisterLevainDevice`/`unregisterProofDevice` cross-module imports are removed.
+      **D2 (I-19) parameter-only bypass** — each node builds an internal parallel dry/wet
+      two-`GainNode` topology; `setBypass(true)` schedules `wet=0, dry=1` and `setBypass(false)`
+      the inverse, with `setTargetAtTime` ramps over ~5 ms; `TrackNode.updateBypass` no longer
+      calls `rebuildChain()`.
+      **D3 (I-06) PDC** — `TrackNode.getCompensationDelaySamples()` sums `getLatencySamples()`
+      across the chain; recording offsets the writer pointer by it; automation subtracts the
+      offset; a `getProjectPdcMap()` use case returns `Record<TrackId, number>`; latency stays
+      runtime-side, never written to project truth.
+      **D4 (I-01)** — the native plugin SAB transport this spec implements as AC-003/AC-011/AC-012.
+      D1 is the largest refactor and should be done piecewise, one plugin at a time, with
+      `pnpm deps:validate` and `pnpm typecheck` green after each migration. Non-blocking here
+      because the bridge can deliver its worklet-side SAB path against AC-003 ahead of the
+      broader engine refactor. **Resolved 2026-09-05 (#3071): the bridge was deleted; plugins are engine-hosted.**
 - [ ] (non-blocking) ARA 2 host integration sequencing — out of v1 scope; confirm the
-  trait shape leaves room for it.
+      trait shape leaves room for it.
 
 ## Affected areas
 
 - `crates/daw-plugin-host/` (CLAP host, sandbox, host trait, streaming)
 - `crates/daw-engine/` (audio thread priority)
-- `src/modules/AudioEngine/` (NativePluginBridgeNode SAB path)
+- `src/modules/AudioEngine/` (live graph path for an engine-hosted plugin)
 - `docs/licensing/third-party.md` and `.agents/skills/plugin-hosting/SKILL.md` (AU non-goal + rationale, AC-009)
 - the plugin-picker UI (AU not offered as a filter type, AC-010)
 

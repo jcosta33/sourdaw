@@ -82,9 +82,7 @@ function readNumber(value: unknown, field: string): number {
  *
  * Absent is empty, not malformed: the field is carried only by an applied batch
  * that ran a start, and a payload without one attached nothing. An entry that
- * does not name an instance and a bridge depth is dropped rather than guessed
- * at — the depth is added to a latency figure, and a substituted zero is a
- * compensation error nothing downstream can see.
+ * does not name an instance is dropped rather than guessed at.
  */
 function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[] {
     if (!Array.isArray(value)) {
@@ -93,14 +91,10 @@ function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[
     return value.flatMap((entry) => {
         const attached = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
         const instanceId = attached?.instanceId;
-        const bridgeRoundTripFrames = attached?.bridgeRoundTripFrames;
-        if (typeof instanceId !== 'string' || typeof bridgeRoundTripFrames !== 'number') {
+        if (typeof instanceId !== 'string') {
             return [];
         }
-        if (!Number.isFinite(bridgeRoundTripFrames)) {
-            return [];
-        }
-        return [{ instanceId, bridgeRoundTripFrames }];
+        return [{ instanceId }];
     });
 }
 

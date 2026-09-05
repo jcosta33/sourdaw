@@ -77,7 +77,6 @@ export const EXPOSED_COMMANDS = [
     'open_provider_gateway_session',
     'open_push_transport',
     'parse_scl',
-    'process_plugin_audio',
     'provider_gateway_request',
     'read_file_bytes',
     'register_timeline_sample',

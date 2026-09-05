@@ -55,7 +55,6 @@ describe('Project session PluginHost retirement boundary', () => {
             parameters: [],
             latency_samples: 0,
             latency_ms: 0,
-            bridge_round_trip_frames: 0,
             engine_plugin_id: 1,
         });
         runtime.unloadPlugin.mockReset().mockResolvedValue([[], []]);

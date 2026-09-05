@@ -862,7 +862,6 @@ class AudioEngineImpl implements AudioEngine {
     private async loadWorklets(generation: number): Promise<void> {
         await Promise.all([
             this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js'),
-            this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js'),
             this.context.audioWorklet.addModule(recordingProcessorUrl),
             this.context.audioWorklet.addModule(meteringProcessorUrl),
             this.context.audioWorklet.addModule(bitcrusherRateProcessorUrl),

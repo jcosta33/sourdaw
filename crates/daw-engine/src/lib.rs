@@ -1,4 +1,3 @@
-pub mod audio_bridge;
 pub mod audio_thread;
 pub mod capture;
 pub(crate) mod device;
@@ -133,7 +132,7 @@ pub struct EngineHandle {
     /// public [`GraphCommand`] batch registers consumers too. An id joins on a
     /// registration, and leaves on an unregistration or on any command that
     /// finally drops its effect — exactly the set [`final_dropped_effect_id`]
-    /// names, which is `RemovePluginWithBridge` together with the retired
+    /// names, which is `RemovePlugin` together with the retired
     /// track- and bus-device variants, not plugin removals alone. That mirrors
     /// the callback, which prunes the bus inside its own final drop.
     ///
@@ -162,9 +161,6 @@ pub struct EngineHandle {
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
-    /// What the render callback last published as the bridge's settled round
-    /// trip, in frames. Written by the audio thread, read here.
-    bridge_round_trip_frames: Arc<AtomicUsize>,
     /// What the capture ring published as its settled latency, in frames, or
     /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
@@ -280,7 +276,6 @@ impl EngineHandle {
             engine_events: engine_event_rx,
             capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
-            bridge_round_trip_frames: spawned.bridge_round_trip_frames,
             input_latency_frames: spawned.input_latency_frames,
             capture_refusal: spawned.capture_refusal,
         })
@@ -289,25 +284,6 @@ impl EngineHandle {
     /// The sample rate the running stream renders at.
     pub const fn sample_rate(&self) -> f32 {
         self.sample_rate
-    }
-
-    /// Frames of latency the worklet↔plugin audio bridge adds, as the render
-    /// callback last measured its own device period.
-    ///
-    /// The bridge's depth is decided by that period and nothing else, so this
-    /// is the only place the number is known; a host compensating a bridged
-    /// plugin adds it to the latency the plugin reports for itself. Seeded from
-    /// the negotiated period until the first callback runs, because a handle is
-    /// usable before the device has called back and a plugin loaded in that
-    /// window would otherwise be compensated at zero for as long as it lives.
-    ///
-    /// Published every callback, but read once — at load — and never revised.
-    /// A device or period change mid-session therefore leaves an already-loaded
-    /// instance compensating the old period. No revision machinery is being
-    /// built for it: jcosta33/sourdaw#2230 replaces the relay with the native
-    /// graph, and the whole round trip this reports goes with it.
-    pub fn bridge_round_trip_frames(&self) -> usize {
-        self.bridge_round_trip_frames.load(Ordering::Relaxed)
     }
 
     /// Frames of latency the capture path is currently adding — the block the
@@ -638,9 +614,9 @@ impl EngineHandle {
     ///
     /// A bypassed entry keeps its instance and its state — the professional
     /// convention, so re-enabling it does not reload the plugin — but stops
-    /// processing: bridged audio is returned untouched, and MIDI queued while
-    /// bypassed is discarded rather than banked into a burst of stale note-ons
-    /// at the moment it is re-enabled.
+    /// processing: the signal passes through the device's own latency, and
+    /// MIDI queued while bypassed is discarded rather than banked into a burst
+    /// of stale note-ons at the moment it is re-enabled.
     pub fn set_bypass(&mut self, id: usize, bypassed: bool) -> Result<(), String> {
         self.push(GraphCommand::SetBypass(id, bypassed))
     }
@@ -669,19 +645,24 @@ impl EngineHandle {
         self.push(GraphCommand::AddPlugin(id, plugin))
     }
 
-    /// Add a native plugin and its audio bridge with one scheduler command.
-    pub fn add_plugin_with_bridge(
+    /// Register a hosted plugin instance, homed detached.
+    ///
+    /// A hosted instance belongs to the load that created it, not to the
+    /// master insert chain: homed there it would render the whole mix through
+    /// the instance the moment a user took it off a strip. Homing it detached
+    /// means releasing it from a chain returns it to a placement that runs
+    /// nowhere.
+    pub fn add_hosted_plugin(
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
-        bridge: audio_bridge::PluginAudioBridge,
     ) -> Result<(), String> {
-        self.push(GraphCommand::AddPluginWithBridge(id, plugin, bridge))
+        self.push(GraphCommand::AddHostedPlugin(id, plugin))
     }
 
     /// Remove a native plugin from the audio thread.
     pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
-        self.push(GraphCommand::RemovePluginWithBridge(id))
+        self.push(GraphCommand::RemovePlugin(id))
     }
 
     /// State how many frames a registered device delays its own output by, so
@@ -963,7 +944,7 @@ impl EngineHandle {
     /// more registrations.
     ///
     /// A producer that has other state to set up — a plugin instance to keep
-    /// in a side map, an audio bridge to publish — calls this *before* it
+    /// in a side map — calls this *before* it
     /// registers any of it, so a full table is reported as an `Err` the user
     /// sees rather than as a registration that appears to succeed and then
     /// dies on the callback. [`EngineHandle::push`] enforces the same ceiling
@@ -1063,13 +1044,12 @@ impl EngineHandle {
     /// anything, so a batch that would overflow either one is refused whole
     /// rather than reported as [`GraphBatchError::Partial`] after part of it
     /// already crossed the ring. The effect-table pre-check belongs to the
-    /// caller that builds other state before it pushes — a plugin instance,
-    /// a bridge — not to the typed method:
-    /// [`Self::ensure_effect_table_headroom`] has to run before that id and
-    /// that bridge exist, so `commands/plugins.rs` is the route that calls
-    /// it today, ahead of [`Self::reserve_plugin_id`] and the bridge it
-    /// builds from the id. [`Self::add_plugin_with_id`] and
-    /// [`Self::add_plugin_with_bridge`] push straight through with no check
+    /// caller that builds other state before it pushes — a plugin instance —
+    /// not to the typed method: [`Self::ensure_effect_table_headroom`] has to
+    /// run before that id and that instance exist, so `commands/plugins.rs` is
+    /// the route that calls it today, ahead of [`Self::reserve_plugin_id`].
+    /// [`Self::add_plugin_with_id`] and
+    /// [`Self::add_hosted_plugin`] push straight through with no check
     /// of their own, exactly as [`Self::register_capture_consumer`] does;
     /// all three rely on this push as the ceiling, regardless of whether a
     /// caller checked first.
@@ -1142,11 +1122,9 @@ fn effect_table_full_error() -> String {
 /// the callback would have taken.
 fn final_dropped_effect_id(command: &GraphCommand) -> Option<usize> {
     match command {
-        GraphCommand::RemovePluginWithBridge(id) => Some(*id),
+        GraphCommand::RemovePlugin(id) => Some(*id),
         GraphCommand::RemoveTrackDeviceRetired { effect_id, .. }
         | GraphCommand::RemoveBusDeviceRetired { effect_id, .. } => Some(*effect_id),
-        #[cfg(test)]
-        GraphCommand::RemovePlugin(id) => Some(*id),
         _ => None,
     }
 }
@@ -1233,8 +1211,6 @@ fn engine_handle_fixture(
         engine_events,
         capture_events,
         sample_rate: 48_000.0,
-        // Seeded exactly as a real stream is before its first callback.
-        bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
         input_latency_frames: audio_thread::new_input_latency_slot(),
         capture_refusal,
     }
@@ -1288,7 +1264,6 @@ mod tests {
         engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
         GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
-    use crate::audio_bridge::create_audio_bridge;
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
@@ -1311,22 +1286,6 @@ mod tests {
     /// its own — the rate below is the one the capture handle reports.
     fn knead_instance() -> PluginCore {
         PluginCore::builtin(BuiltinEffectType::Knead, 48_000.0)
-    }
-
-    /// A handle exists and takes plugin loads before its device has called back
-    /// once. Reporting zero there would compensate every instance loaded in
-    /// that window at zero for as long as it lives, because the load reads this
-    /// number once and never revisits it.
-    #[test]
-    fn a_handle_whose_stream_has_not_called_back_still_reports_a_round_trip() {
-        let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
-
-        assert_eq!(
-            engine.bridge_round_trip_frames(),
-            crate::audio_bridge::settled_round_trip_frames(
-                crate::audio_thread::PREFERRED_BUFFER_FRAMES as usize
-            )
-        );
     }
 
     /// Overwrites whatever it is handed, so a block it never touched is
@@ -1358,26 +1317,24 @@ mod tests {
     /// audio thread to mean anything: the whole point is that the plugin keeps
     /// its instance and its state while its audio passes it by.
     #[test]
-    fn set_bypass_reaches_the_scheduler_and_returns_bridged_audio_untouched() {
+    fn set_bypass_reaches_the_scheduler_and_leaves_the_block_untouched() {
         let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
         let (retired_tx, _retired_rx) = RingBuffer::new(16);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
-        let (bridge, mut bridge_handle) = create_audio_bridge(42);
 
         engine
-            .add_plugin_with_bridge(42, Box::new(OverwritingPlugin), bridge)
+            .add_plugin_with_id(42, Box::new(OverwritingPlugin))
             .expect("the plugin should reach the graph");
         engine
             .set_bypass(42, true)
             .expect("the bypass should reach the graph");
         scheduler.update_graph();
 
-        assert!(bridge_handle.push_input(&[0.5; 4], &[0.5; 4]));
-        scheduler.process_audio_bridges(512);
-        let bypassed = bridge_handle.pop_output().expect("the bypassed block");
+        let mut left = [0.5f32; 4];
+        let mut right = [0.5f32; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(
-            &bypassed.left[..4],
-            &[0.5; 4],
+            &left, &[0.5; 4],
             "a bypassed plugin must not process the block"
         );
 
@@ -1388,10 +1345,10 @@ mod tests {
             .expect("the bypass release should reach the graph");
         scheduler.update_graph();
 
-        assert!(bridge_handle.push_input(&[0.5; 4], &[0.5; 4]));
-        scheduler.process_audio_bridges(512);
-        let processed = bridge_handle.pop_output().expect("the processed block");
-        assert_eq!(&processed.left[..4], &[0.25; 4]);
+        let mut left = [0.5f32; 4];
+        let mut right = [0.5f32; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(&left, &[0.25; 4]);
     }
 
     /// A full-project sync can exceed any fixed ring, and splitting it would
@@ -1601,7 +1558,7 @@ mod tests {
         ));
         assert!(matches!(
             command_rx.pop(),
-            Ok(GraphCommand::RemovePluginWithBridge(7))
+            Ok(GraphCommand::RemovePlugin(7))
         ));
         assert!(matches!(
             command_rx.pop(),
@@ -1817,7 +1774,7 @@ mod tests {
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
 
         // The pre-check a producer with state to unwind consults *before* it
-        // reserves an id or publishes a bridge.
+        // reserves an id.
         let refused = engine
             .ensure_effect_table_headroom(1)
             .expect_err("a table filled by devices must refuse the next plugin");
@@ -1828,9 +1785,8 @@ mod tests {
 
         // And the ledger refuses the registration itself, so a producer that
         // never calls the pre-check still cannot get past the ceiling.
-        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         let registration = engine
-            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .add_hosted_plugin(9_000, Box::new(OverwritingPlugin))
             .expect_err("the registration itself must be refused, not just the pre-check");
         assert_eq!(registration, refused);
 
@@ -1853,9 +1809,8 @@ mod tests {
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY - 1);
-        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         engine
-            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .add_hosted_plugin(9_000, Box::new(OverwritingPlugin))
             .expect("the last slot takes the plugin");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
         assert!(engine.ensure_effect_table_headroom(1).is_err());
@@ -1865,9 +1820,8 @@ mod tests {
             .expect("a retirement is never refused for capacity");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY - 1);
 
-        let (replacement, _replacement_handle) = create_audio_bridge(9_001);
         engine
-            .add_plugin_with_bridge(9_001, Box::new(OverwritingPlugin), replacement)
+            .add_hosted_plugin(9_001, Box::new(OverwritingPlugin))
             .expect("the retired slot must be available again");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
         drained(&mut command_rx);
@@ -1883,9 +1837,8 @@ mod tests {
         let (mut engine, mut command_rx, _retired_adoption_rx) =
             engine_handle_for_command_capture(EFFECT_TABLE_CAPACITY + 8);
 
-        // The unbridged fill is the cheap one and exercises the same ledger:
-        // what matters is that the table is full, not which population filled
-        // it — a bridged fill would also cost ~288 KiB of rings per slot.
+        // What matters is that the table is full, not which population
+        // filled it.
         fill_with_cheap_registrations(&mut engine, EFFECT_TABLE_CAPACITY);
         assert_eq!(drained(&mut command_rx), EFFECT_TABLE_CAPACITY);
 
@@ -2018,14 +1971,13 @@ mod tests {
         engine.add_track(2).expect("the track registers");
         engine.add_bus(51).expect("the bus registers");
 
-        // Seven registrations: six built-in devices and one bridged plugin,
+        // Seven registrations: six built-in devices and one hosted plugin,
         // which take their slots from the same table.
         for id in 7..=12 {
             engine.add_effect(id, "knead").expect("device registers");
         }
-        let (bridge, _bridge_handle) = create_audio_bridge(9_000);
         engine
-            .add_plugin_with_bridge(9_000, Box::new(OverwritingPlugin), bridge)
+            .add_hosted_plugin(9_000, Box::new(OverwritingPlugin))
             .expect("the plugin registers");
 
         // Placements. A splice moves an effect between chains; it registers
@@ -2219,18 +2171,11 @@ mod tests {
 
         // Two plugins that will leave through a strip retirement, and one that
         // leaves by name. The reserve is smaller than that, so they cycle.
-        // The bridge handles stay alive for the whole stream: dropping one
-        // would tear its plugin down for a reason the classification under
-        // test has nothing to do with.
-        let _bridge_handles: Vec<_> = (7..=9usize)
-            .map(|id| {
-                let (bridge, bridge_handle) = create_audio_bridge(id);
-                engine
-                    .add_plugin_with_bridge(id, Box::new(OverwritingPlugin), bridge)
-                    .expect("the plugin registers");
-                bridge_handle
-            })
-            .collect();
+        for id in 7..=9usize {
+            engine
+                .add_hosted_plugin(id, Box::new(OverwritingPlugin))
+                .expect("the plugin registers");
+        }
         engine
             .insert_track_device(
                 1,

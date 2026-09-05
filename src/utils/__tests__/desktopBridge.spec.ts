@@ -195,20 +195,27 @@ describe('desktopBridge', () => {
     describe('byte payload routing', () => {
         it('should route a trailing byte payload through invokeBinary with the preceding args as meta', async () => {
             const bridge = installBridge();
-            const audioBytes = new Uint8Array([9, 8, 7]);
+            const pcm = new Uint8Array([9, 8, 7]);
 
-            await desktopInvoke('process_plugin_audio', { instanceId: 'inst-1', audioBytes });
+            await desktopInvoke('register_timeline_sample', {
+                sampleId: 'sample-1',
+                sampleRate: 48000,
+                channels: 2,
+                pcm,
+            });
 
-            expect(bridge.invokeBinary).toHaveBeenCalledWith('process_plugin_audio', ['inst-1'], audioBytes);
+            expect(bridge.invokeBinary).toHaveBeenCalledWith('register_timeline_sample', ['sample-1', 48000, 2], pcm);
             expect(bridge.invoke).not.toHaveBeenCalled();
         });
 
         it('should return the binary command result rather than dropping it', async () => {
             installBridge();
 
-            const result = await desktopInvoke('process_plugin_audio', {
-                instanceId: 'inst-1',
-                audioBytes: new Uint8Array([1]),
+            const result = await desktopInvoke('register_timeline_sample', {
+                sampleId: 'sample-1',
+                sampleRate: 48000,
+                channels: 2,
+                pcm: new Uint8Array([1]),
             });
 
             expect(result).toBe('binary-result');

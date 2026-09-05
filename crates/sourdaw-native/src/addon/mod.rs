@@ -685,22 +685,6 @@ impl SourdawNative {
     }
 
     #[napi]
-    pub async fn process_plugin_audio(
-        &self,
-        instance_id: String,
-        audio_bytes: Buffer,
-    ) -> Result<Buffer> {
-        Ok(Buffer::from(reason(
-            commands::plugins::process_plugin_audio(
-                instance_id,
-                audio_bytes.to_vec(),
-                &self.singletons.app_state,
-            )
-            .await,
-        )?))
-    }
-
-    #[napi]
     pub async fn engine_rt_diagnostics(&self) -> Result<Value> {
         json(reason(
             commands::engine_diagnostics::engine_rt_diagnostics(&self.singletons.app_state).await,

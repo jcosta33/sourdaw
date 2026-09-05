@@ -4,12 +4,12 @@ Third-party plugin hosting runtime: manages native plugin discovery (VST3, CLAP,
 
 ## Domain Ownership
 
-Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading/unloading, IPC audio bridge, native GUI window management, parameter/preset synchronization) and the Faust dynamic DSP JIT compiler. Does not own WebAudio graph nodes or track channel strips (AudioEngine), or device chain models in the arrangement (Arrangement).
+Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading/unloading, native GUI window management, parameter/preset synchronization) and the Faust dynamic DSP JIT compiler. Does not own WebAudio graph nodes or track channel strips (AudioEngine), or device chain models in the arrangement (Arrangement).
 
 ## Public Contract Surface
 
 - **`useCases`**:
-    - **Plugin lifecycle & bridge**: `loadPlugin`, `unloadPlugin`, `openPluginGui`, `processAudioIPC`, `setPluginParameter`, `setPluginBypass`, `readPluginState`, `restorePluginState`, `activateExternalPlugin`, `clearLoadedExternalPlugins`, `refreshExternalPluginParameters`.
+    - **Plugin lifecycle & bridge**: `loadPlugin`, `unloadPlugin`, `openPluginGui`, `setPluginParameter`, `setPluginBypass`, `readPluginState`, `restorePluginState`, `activateExternalPlugin`, `clearLoadedExternalPlugins`, `refreshExternalPluginParameters`.
     - **Scanning & discovery**: `findPluginByName`, `findSupportedPlugin`, `SUPPORTED_PLUGIN_FORMATS`, `isSupportedPluginFormat`, `getExternalPluginContractVersionForCommand`, `getAgentDeviceFactoryManifest`, `startPluginScan`, `addScanPath`, `removeScanPath`.
     - **Faust DSP**: `registerBuiltinFaustDSP`, `registerFaustDSP`, `compileFaustDSP`, `createFaustNode`, `isFaustModule`, `getFaustModuleLatencyMs`, `isFaustInstrumentModule`.
     - **Handler maps**: `getPluginHostHandlers`.
@@ -20,7 +20,7 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 
 ## Key Subsystems
 
-- **`repositories/pluginBridge/`**: Desktop IPC bridge for native plugin host processes (`scanPlugins.ts`, `loadPlugin.ts`, `unloadPlugin.ts`, `openPluginGui.ts`, `closePluginGui.ts`, `processAudioIPC.ts`, `setPluginParameter.ts`, `setPluginBypass.ts`, `getPluginState.ts`, `setPluginState.ts`, `onPluginLatencyChanged.ts`).
+- **`repositories/pluginBridge/`**: Desktop IPC bridge for native plugin host processes (`scanPlugins.ts`, `loadPlugin.ts`, `unloadPlugin.ts`, `openPluginGui.ts`, `closePluginGui.ts`, `setPluginParameter.ts`, `setPluginBypass.ts`, `getPluginState.ts`, `setPluginState.ts`, `onPluginLatencyChanged.ts`).
 - **`stores/`**: `pluginScanStore.ts` (discovered plugins, scan paths, progress), `externalPluginActivationStore.ts` (activation status and loaded instances).
 - **`useCases/faustEngine/`**: Dynamic Faust DSP WebAssembly compiler and builtin effects (`compileFaustDSP.ts`, `builtinDSP.ts`).
 
@@ -29,7 +29,7 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 - **Native scan root security**: Plugin scanner enforces strict platform scan roots (macOS, Windows, Linux default directories). Custom roots require native authorization; symlinks and symlinked ancestor directories are rejected to prevent path traversal.
 - **No leaked native handles**: Raw library handles, plugin pointers, and OS window handles stay behind the native desktop boundary; only serializable DTOs and instance IDs cross IPC.
 - **Faust synchronization**: Faust is wired in PluginHost and AudioEngine; updates to Faust DSP types or node interfaces must remain synchronized across both modules.
-- **Real-time IPC safety**: Native plugin audio processing (`processAudioIPC`) uses shared memory and lock-free ring buffers; audio threads must never block on main-process desktop IPC.
+- **External plugins are engine-hosted**: the native engine processes a hosted plugin inline on its own audio callback. No command carries per-block audio across the desktop IPC boundary, and the Web Audio graph holds a unity pass-through where such a device sits.
 
 ## Verification
 

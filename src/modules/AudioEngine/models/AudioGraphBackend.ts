@@ -617,14 +617,13 @@ export type AudioGraphStripReport = Readonly<{
 /**
  * One external plugin instance a batch handed to the engine.
  *
- * The bridge round trip is the reason the caller is given anything beyond the
- * id: it is frames the worklet↔plugin bridge adds on top of the plugin's own
- * latency, known only to the engine that took the instance, and the caller adds
- * it when compensating that device.
+ * The instance id is the whole payload. A hosted plugin runs inline on the
+ * engine's own clock, so it adds nothing to the device's latency beyond what
+ * the plugin itself declares, and the caller needs only to know which instances
+ * the start took over.
  */
 export type AudioGraphAttachedPlugin = Readonly<{
     instanceId: string;
-    bridgeRoundTripFrames: number;
 }>;
 
 /**

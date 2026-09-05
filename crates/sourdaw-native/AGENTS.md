@@ -38,12 +38,9 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   `retired_engine_plugins` (`state.rs`).
 - If non-RT control owns a plugin wrapper's mutex, the RT path bypasses it rather than waiting
   (`host/native_bridge.rs`).
-- WebAudio↔Rust audio crosses `PluginAudioBridge` (rtrb SPSC rings sized from
-  `MAX_CALLBACK_FRAMES`, 36 blocks × up to 512 frames stereo), relayed from the worklet via
-  main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`). Capacity is headroom,
-  not latency: the callback holds the round trip within twice the device period by processing a
-  block and then withholding it from the return ring, so latency settles at that depth instead of
-  ratcheting up to the ring. Never shed a block before the plugin sees it.
+- A hosted plugin processes only the audio the engine renders, on the engine's own callback, and no
+  command relays audio across the process boundary for it. There is one clock: never reintroduce a
+  path that feeds a plugin from the app at a cadence the callback does not set.
 - Recorded input is the engine's own capture tap, never render scratch. A slot that records
   registers as a capture consumer and takes its audio in `process_capture_input`
   (`host/native_bridge.rs`); the buffers every other `NativePlugin` method is handed are output,
@@ -64,10 +61,10 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   _released_ from its chain, never retired — retiring it would free a plugin a panel, an editor and
   a parameter path are all still holding. Its parameters are the plugin's own and travel on the
   plugin's control path; the graph carries only its bypass and its place in the chain.
-- One plugin instance is processed once per block. While the monitor is shadowed the bridge drives
-  it and the chain skips it; while the monitor is audible the chain runs it over the strip's signal
-  and the bridge's blocks are drained unprocessed rather than left to fill a ring that would refuse
-  every later push. Neither side may be made to process without the other being made to stop.
+- One plugin instance is processed once per block, by the chain that holds it, whether or not the
+  monitor is shadowed: the shadow decides what the device is handed, never what a strip renders. A
+  hosted instance no chain holds runs nowhere — it is registered homed detached, so releasing it
+  from a chain returns it there rather than onto the master mix.
 - No instance can be bound where no engine holds one: an offline render, and any batch mapped before
   its own attach ran, map with an empty lookup and fall back on the degradation law.
 

@@ -7,7 +7,6 @@ import {
     externalPluginParameterStore,
 } from '../../stores/externalPluginParameterStore';
 
-import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
     externalPluginActivationEpoch,
@@ -28,7 +27,6 @@ import { loadedExternalInstances } from './loadedExternalInstances';
 export function clearLoadedExternalPlugins(): void {
     loadedExternalInstances.clear();
     externalLatencyReporters.clear();
-    externalBridgeFramesReporters.clear();
     externalPluginActivationEpoch.current += 1;
     externalPluginActivationTasks.clear();
     externalPluginActivationOutcomes.clear();

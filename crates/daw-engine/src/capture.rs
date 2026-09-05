@@ -42,9 +42,8 @@
 //! shorter than another is *not* refused — the ring is a sample FIFO, and
 //! absorbing a device that jitters its block size is what it is for.
 //!
-//! **The settle law.** Mirrored from [`crate::audio_bridge`], because the
-//! shape of the problem is the same: a producer and a consumer on cadences
-//! nothing locks together, and a depth that only ever grows if left alone. The
+//! **The settle law.** A producer and a consumer on cadences nothing locks
+//! together leave a depth that only ever grows if left alone. The
 //! depth the ring settles at covers the read twice over plus a block of slack
 //! either side. The reader fills to that depth before it hands anything out,
 //! then takes exactly the slice it was given per callback. A depth above the
@@ -66,8 +65,7 @@
 //! turn between them. The render callback does exactly that above
 //! [`crate::audio_thread::MAX_CALLBACK_FRAMES`], and the depth covers the read
 //! twice over, so an output period past twice that limit can underrun its
-//! third chunk. That is the same class of device the plugin bridge already
-//! counts as over reach, no backend advertises one, and the failure is a
+//! third chunk. No backend advertises such a device, and the failure is a
 //! counted shortfall rather than corruption — so it is disclosed here and
 //! carries no code.
 //!
@@ -109,16 +107,19 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-/// Input blocks of slack the ring carries above what the settle law needs.
-/// Mirrors the four blocks [`crate::audio_bridge`] carries, for the same
-/// reason: ordinary jitter must not reach the refusal path.
+/// Input blocks of slack the ring carries above what the settle law needs, so
+/// that ordinary jitter never reaches the refusal path.
 const RING_SLACK_BLOCKS: usize = 4;
 
 /// The depth the ring settles at for one observed cadence, in frames.
 ///
-/// The law of [`crate::audio_bridge::target_depth_blocks`], with the block the
-/// device delivered standing where the render quantum stands: the read covered
-/// twice over, plus a block of slack either side.
+/// The read covered twice over, plus a block of slack either side, counted in
+/// the blocks the device delivered. Nothing locks the writer's cadence to the
+/// reader's, so the phase between them wanders across a whole read; a target
+/// of one read would shed on every crossing, and each shed costs the reader a
+/// block. Two reads absorb the whole slip, and beyond that is latency the user
+/// hears — so the target stays proportional to the read rather than growing to
+/// the ring's capacity.
 pub(crate) const fn target_depth_frames(block_frames: usize, read_frames: usize) -> usize {
     (read_frames.div_ceil(block_frames) * 2 + 2) * block_frames
 }
@@ -437,9 +438,8 @@ impl CaptureRingReader {
     }
 
     /// Shorten a ring that has drifted above its settled depth by one observed
-    /// block, the way the bridge sheds one block per pass: a drift correction
-    /// spread over successive callbacks, never a jump that takes a whole
-    /// device period of audio out at once.
+    /// block: a drift correction spread over successive callbacks, never a
+    /// jump that takes a whole device period of audio out at once.
     #[inline]
     fn shed_above_target(&mut self, target_depth_samples: usize, block_samples: usize) {
         let depth = self.consumer.slots();
@@ -508,7 +508,6 @@ mod tests {
     use super::{
         capture_ring, target_depth_frames, CaptureRingReader, CaptureRingWriter, CaptureShape,
     };
-    use crate::audio_bridge::{target_depth_blocks, RENDER_QUANTUM_FRAMES};
     use crate::audio_thread::MAX_CALLBACK_FRAMES;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -543,15 +542,25 @@ mod tests {
         vec![0.0; frames * CHANNELS]
     }
 
+    /// The law itself, pinned as frames rather than re-derived from the
+    /// expression under test: the read covered twice over plus a block of
+    /// slack either side, counted in whole delivered blocks. One row per
+    /// cadence, so an arithmetic slip of a single block is named by the row it
+    /// breaks.
     #[test]
-    fn the_settled_depth_follows_the_bridge_law_for_the_observed_cadence() {
-        // Same arithmetic as the round trip the plugin bridge settles at, with
-        // the block the device delivered standing where the render quantum
-        // stands.
-        assert_eq!(
-            target_depth_frames(RENDER_QUANTUM_FRAMES, READ),
-            target_depth_blocks(READ) * RENDER_QUANTUM_FRAMES
-        );
+    fn the_settled_depth_covers_the_read_twice_over_plus_a_block_of_slack_either_side() {
+        // 512 takes four 128-frame blocks: (4 * 2 + 2) * 128.
+        assert_eq!(target_depth_frames(128, 512), 1280);
+        // 256 takes two: (2 * 2 + 2) * 128.
+        assert_eq!(target_depth_frames(128, 256), 768);
+        // A block as large as the read still owes the slack: (1 * 2 + 2) * 512.
+        assert_eq!(target_depth_frames(512, 512), 2048);
+        // A read that does not divide the block rounds up: 512 takes two
+        // 480-frame blocks, so (2 * 2 + 2) * 480.
+        assert_eq!(target_depth_frames(480, 512), 2880);
+        // A small block deepens the target in that block's own units:
+        // 512 takes eight 64-frame blocks, so (8 * 2 + 2) * 64.
+        assert_eq!(target_depth_frames(64, 512), 1152);
     }
 
     #[test]

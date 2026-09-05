@@ -3,7 +3,6 @@
 //! Handles both built-in DSP effects (Knead) and external plugins (CLAP/VST3)
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
-use crate::audio_bridge::{self, PluginAudioBridge, RENDER_QUANTUM_FRAMES};
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
@@ -267,8 +266,7 @@ pub enum GraphCommand {
     // Built-in effects
     /// Register a built-in effect, already built control-side
     /// ([`PluginCore::builtin`]), on the master insert chain — the crate's
-    /// original chain, and where the plugin-bridge path still runs a built-in
-    /// it registers standalone.
+    /// original chain.
     ///
     /// The command owns the instance from the push to the apply, on the same
     /// contract as [`GraphCommand::AddPlugin`]: the audio thread installs it
@@ -306,17 +304,17 @@ pub enum GraphCommand {
 
     // External plugins (CLAP/VST3/AU)
     AddPlugin(usize, Box<dyn NativePlugin>),
-    AddPluginWithBridge(usize, Box<dyn NativePlugin>, PluginAudioBridge),
-    /// Remove a plugin without retiring its audio bridge.
+    /// Register a hosted plugin instance, homed detached rather than on the
+    /// master insert chain.
     ///
-    /// Production removes a plugin only through `RemovePluginWithBridge`, so
-    /// this variant would strand the bridge if anything reached for it. The
-    /// saturation test still needs the shape: it fills the command queue with
-    /// removals to prove that every retirement, live or at shutdown, is handed
-    /// off the callback thread rather than dropped on it.
-    #[cfg(test)]
+    /// A hosted instance belongs to the load that created it. Homed on the
+    /// master chain it would render the whole mix through that instance the
+    /// moment a user took it off a strip; homed detached, releasing it from a
+    /// chain returns it to a placement that runs nowhere.
+    AddHostedPlugin(usize, Box<dyn NativePlugin>),
+    /// Retire a registered plugin, handing the instance off the callback
+    /// thread.
     RemovePlugin(usize),
-    RemovePluginWithBridge(usize),
 
     // MIDI events (routed to a specific plugin by ID)
     SendMidiNote(usize, MidiNoteEvent),
@@ -479,8 +477,7 @@ pub enum GraphCommand {
     /// deleted strip device over the whole mix. This variant removes and
     /// retires atomically, so a graph-owned effect is never observable on the
     /// master chain. The retirement crosses the retirement channel exactly as
-    /// `RemovePluginWithBridge`'s does — the final drop stays off the
-    /// callback thread.
+    /// `RemovePlugin`'s does — the final drop stays off the callback thread.
     RemoveTrackDeviceRetired {
         track_id: usize,
         effect_id: usize,
@@ -612,17 +609,6 @@ pub enum GraphCommand {
     /// no-op, so an unregister that races the plugin's own removal is not an
     /// error.
     UnregisterCaptureConsumer(usize),
-
-    /// Register an audio bridge that no plugin answers for.
-    ///
-    /// Production registers and retires a bridge only alongside its plugin
-    /// (`AddPluginWithBridge` / `RemovePluginWithBridge`), so this state is
-    /// unreachable there. The real-time drain still has to survive it — a
-    /// bridge nobody processes must return its blocks and keep its ring
-    /// moving, or the app is left on permanent dry fallback — and this is how
-    /// a test puts the scheduler in that state.
-    #[cfg(test)]
-    RegisterAudioBridge(PluginAudioBridge),
 }
 
 impl GraphCommand {
@@ -643,8 +629,8 @@ impl GraphCommand {
     /// count of whichever producers someone remembered.
     ///
     /// Every retirement is classified `-1`, and every retirement is
-    /// conditional on the callback finding its target:
-    /// `RemovePluginWithBridge` frees nothing for an id the table does not
+    /// conditional on the callback finding its target: `RemovePlugin` frees
+    /// nothing for an id the table does not
     /// hold, and the two `*Retired` variants free nothing when the strip they
     /// name does not hold the effect they name. The classification is exact
     /// under two control-side preconditions, one per direction of drift.
@@ -677,10 +663,8 @@ impl GraphCommand {
             Self::AddEffect(..)
             | Self::AddDetachedEffect(..)
             | Self::AddPlugin(..)
-            | Self::AddPluginWithBridge(..) => 1,
-            #[cfg(test)]
-            Self::RemovePlugin(..) => -1,
-            Self::RemovePluginWithBridge(..)
+            | Self::AddHostedPlugin(..) => 1,
+            Self::RemovePlugin(..)
             | Self::RemoveTrackDeviceRetired { .. }
             | Self::RemoveBusDeviceRetired { .. } => -1,
             // `RemoveTrack`, `RemoveBus`, `RemoveTrackDevice` and
@@ -728,8 +712,6 @@ impl GraphCommand {
             // takes no slot of its own.
             | Self::RegisterCaptureConsumer(..)
             | Self::UnregisterCaptureConsumer(..) => 0,
-            #[cfg(test)]
-            Self::RegisterAudioBridge(..) => 0,
         }
     }
 
@@ -769,8 +751,6 @@ impl GraphCommand {
             // An effect leaving the table stops contributing its latency to
             // whatever chain still lists it, so its departure moves arrivals
             // exactly as taking it out of the chain would.
-            Self::RemovePluginWithBridge(..) => true,
-            #[cfg(test)]
             Self::RemovePlugin(..) => true,
             // A registration always arrives at zero declared latency — the
             // latency is stated afterwards, by `SetEffectLatency` — so no
@@ -778,7 +758,7 @@ impl GraphCommand {
             Self::AddEffect(..)
             | Self::AddDetachedEffect(..)
             | Self::AddPlugin(..)
-            | Self::AddPluginWithBridge(..)
+            | Self::AddHostedPlugin(..)
             | Self::SetParam(..)
             | Self::SetBypass(..)
             | Self::SendMidiNote(..)
@@ -806,8 +786,6 @@ impl GraphCommand {
             | Self::AutomateDeviceParam { .. }
             | Self::RegisterCaptureConsumer(..)
             | Self::UnregisterCaptureConsumer(..) => false,
-            #[cfg(test)]
-            Self::RegisterAudioBridge(..) => false,
         }
     }
 }
@@ -939,23 +917,21 @@ pub const TIMELINE_CHAIN_SLOT_BUDGET: usize =
     MAX_TIMELINE_TRACKS * MAX_TRACK_DEVICES + MAX_TIMELINE_BUSES * MAX_BUS_DEVICES;
 
 /// The session's reserve for engine-owned hosted plugin instances: the
-/// `AddPlugin`/`AddPluginWithBridge` registrations `load_plugin` makes, one
-/// per external-plugin device in the project.
+/// `AddHostedPlugin` registrations `load_plugin` makes, one per
+/// external-plugin device in the project.
 ///
 /// No ceiling on them is enumerable from this crate: the host holds them in an
 /// unbounded map keyed by instance id, and an external-plugin device list has
 /// no per-strip cap of its own. So the engine states the limit itself: 128
-/// instances at once, the number the bridge table has enforced since bridges
-/// existed, now named here and checked control-side by `load_plugin`
+/// instances at once, named here and checked control-side by `load_plugin`
 /// (`sourdaw-native`) where the refusal reaches the user instead of dying as
 /// a counter on the callback. A session past 128 hosted plugins is past any
-/// professional session's scale — each instance is a native plugin library
-/// plus roughly 288 KiB of bridge rings — and the refusal names the limit.
+/// professional session's scale — each instance is a native plugin library —
+/// and the refusal names the limit.
 pub const HOSTED_PLUGIN_RESERVE: usize = 128;
 
-/// The session's reserve for Crumbs input-capture slots: the
-/// `AddPluginWithBridge` registration `create_crumbs` makes for the panel's
-/// record feed, one per live instance.
+/// The session's reserve for Crumbs input-capture slots: the registration
+/// `create_crumbs` makes for the panel's record feed, one per live instance.
 ///
 /// The app renders exactly one Crumbs panel, and re-pointing it at another
 /// device tears the old instance down asynchronously while the new one is
@@ -1003,30 +979,6 @@ pub const CRUMBS_CAPTURE_RESERVE: usize = 2;
 /// public.
 pub const EFFECT_TABLE_CAPACITY: usize =
     TIMELINE_CHAIN_SLOT_BUDGET + HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
-
-/// The fixed capacity of the bridge table. Bridges exist only for the two
-/// registrations that carry one — hosted plugin instances and Crumbs capture
-/// slots — so the table is sized to exactly their reserves; timeline chain
-/// devices never take a bridge.
-///
-/// The reserves are enforced by map-gated control-side checks, and the maps
-/// count entries, not live bridges. Bridges sit outside those gates in the
-/// teardown conditions the reserve docs disclose: a destroy removes its map
-/// entry before the removal is pushed, and between that push and its
-/// application on the callback the bridge is draining but uncounted — a
-/// gate-admitted create's registration can already be in the ring beside its
-/// removal; and a removal whose push failed leaks the engine slot and its
-/// bridge-table entry past the gate permanently. In those states the table
-/// holds checks-admitted bridges plus ones the gates can no longer see, and a
-/// registration both gates admitted can still reach this capacity arm on the
-/// callback, where its refusal is a counter nothing hands back — the exact
-/// failure the effect-table ledger exists to remove, binding here at the
-/// reserves' sum, 6144 slots sooner than the effect table's own last line.
-/// That callback-time bridge-table refusal is the last line for this table,
-/// named as such, exactly as the effect table's docs name theirs; the gates
-/// above are what keep it out of ordinary sessions.
-pub(crate) const AUDIO_BRIDGE_TABLE_CAPACITY: usize =
-    HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE;
 
 /// One node of [`IdSlotIndex`]'s fixed-depth binary radix trie. Child and slot
 /// handles are one-based, keeping zero available as the empty sentinel.
@@ -1339,7 +1291,6 @@ impl MasterWorkList {
 /// constructors stay crate-private.
 pub struct RetiredGraphObjects {
     effect: Option<ActiveEffect>,
-    audio_bridge: Option<PluginAudioBridge>,
     midi_fx: Option<Box<dyn MidiFx>>,
     /// A track, bus, or clip the graph gave up. Each owns sample buffers, so
     /// dropping one on the callback is exactly the free ADR 0020 forbids.
@@ -1348,26 +1299,19 @@ pub struct RetiredGraphObjects {
     /// vectors, so they leave on the same contract as everything else here.
     transport_maps: Option<Box<TransportMaps>>,
     remaining_effects: Vec<ActiveEffect>,
-    remaining_audio_bridges: Vec<PluginAudioBridge>,
     remaining_timeline: Option<TimelineGraph>,
     queued_commands: Vec<GraphCommand>,
     command_rx: Option<Consumer<GraphCommand>>,
 }
 
 impl RetiredGraphObjects {
-    fn removed(
-        effect: Option<ActiveEffect>,
-        audio_bridge: Option<PluginAudioBridge>,
-        midi_fx: Option<Box<dyn MidiFx>>,
-    ) -> Self {
+    fn removed(effect: Option<ActiveEffect>, midi_fx: Option<Box<dyn MidiFx>>) -> Self {
         Self {
             effect,
-            audio_bridge,
             midi_fx,
             timeline_object: None,
             transport_maps: None,
             remaining_effects: Vec::new(),
-            remaining_audio_bridges: Vec::new(),
             remaining_timeline: None,
             queued_commands: Vec::new(),
             command_rx: None,
@@ -1375,32 +1319,21 @@ impl RetiredGraphObjects {
     }
 
     fn timeline(object: RetiredTimelineObject) -> Self {
-        let mut retired = Self::removed(None, None, None);
+        let mut retired = Self::removed(None, None);
         retired.timeline_object = Some(object);
         retired
     }
 
     fn effect(effect: ActiveEffect) -> Self {
-        Self::removed(Some(effect), None, None)
-    }
-
-    fn effect_with_bridge(
-        effect: Option<ActiveEffect>,
-        audio_bridge: Option<PluginAudioBridge>,
-    ) -> Option<Self> {
-        if effect.is_none() && audio_bridge.is_none() {
-            return None;
-        }
-
-        Some(Self::removed(effect, audio_bridge, None))
+        Self::removed(Some(effect), None)
     }
 
     fn midi_fx(midi_fx: Box<dyn MidiFx>) -> Self {
-        Self::removed(None, None, Some(midi_fx))
+        Self::removed(None, Some(midi_fx))
     }
 
     fn transport_maps(maps: Box<TransportMaps>) -> Self {
-        let mut retired = Self::removed(None, None, None);
+        let mut retired = Self::removed(None, None);
         retired.transport_maps = Some(maps);
         retired
     }
@@ -1409,7 +1342,7 @@ impl RetiredGraphObjects {
     /// dropped control-side when the swap was published, so the reclaimer's
     /// drain-until-abandoned loop terminates promptly.
     fn swapped_consumer(command_rx: Consumer<GraphCommand>) -> Self {
-        let mut retired = Self::removed(None, None, None);
+        let mut retired = Self::removed(None, None);
         retired.command_rx = Some(command_rx);
         retired
     }
@@ -1417,21 +1350,18 @@ impl RetiredGraphObjects {
     fn shutdown(
         pending: Option<Self>,
         remaining_effects: Vec<ActiveEffect>,
-        remaining_audio_bridges: Vec<PluginAudioBridge>,
         remaining_timeline: TimelineGraph,
         queued_commands: Vec<GraphCommand>,
         command_rx: Option<Consumer<GraphCommand>>,
     ) -> Self {
-        let mut pending = pending.unwrap_or_else(|| Self::removed(None, None, None));
+        let mut pending = pending.unwrap_or_else(|| Self::removed(None, None));
 
         Self {
             effect: pending.effect.take(),
-            audio_bridge: pending.audio_bridge.take(),
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
             transport_maps: pending.transport_maps.take(),
             remaining_effects,
-            remaining_audio_bridges,
             remaining_timeline: Some(remaining_timeline),
             queued_commands,
             command_rx,
@@ -1450,7 +1380,6 @@ impl Drop for RetiredGraphObjects {
         for effect in self.remaining_effects.drain(..) {
             effect.reclaim();
         }
-        self.remaining_audio_bridges.clear();
         if let Some(timeline) = self.remaining_timeline.take() {
             drop_safely(timeline);
         }
@@ -1570,27 +1499,23 @@ impl ActiveEffect {
         }
     }
 
-    /// Whether no path in this callback runs this effect at all: it is
-    /// detached, and no bridge feeds it.
+    /// Whether no path in this callback runs this effect at all.
     ///
-    /// A detached effect is skipped by the master chain and reached by no strip
-    /// chain, so the only path left that can run one is its audio bridge —
-    /// which is why `bridged` is a parameter rather than a field: the bridge
-    /// index lives on the scheduler.
+    /// A detached effect is skipped by the master chain and reached by no
+    /// strip chain, so no path hands it a block.
     #[inline]
-    fn runs_nowhere(&self, bridged: bool) -> bool {
-        !bridged && self.placement == EffectPlacement::Detached
+    fn runs_nowhere(&self) -> bool {
+        self.placement == EffectPlacement::Detached
     }
 
     /// Whether nothing will hand this effect a block on this callback.
     ///
-    /// Either it runs nowhere, or it is bypassed — every chain and the bridge
-    /// drain skip a bypassed device rather than processing it. Work queued for
-    /// a body no block reaches has no drain, so it is discarded rather than
-    /// banked.
+    /// Either it runs nowhere, or it is bypassed — every chain skips a
+    /// bypassed device rather than processing it. Work queued for a body no
+    /// block reaches has no drain, so it is discarded rather than banked.
     #[inline]
-    fn receives_no_block(&self, bridged: bool) -> bool {
-        self.bypassed || self.runs_nowhere(bridged)
+    fn receives_no_block(&self) -> bool {
+        self.bypassed || self.runs_nowhere()
     }
 
     #[inline]
@@ -1614,10 +1539,6 @@ pub struct AudioScheduler {
     pending_midi_work: SlotWorkSet,
     /// The explicit, deterministic order of master insert processing.
     master_work: MasterWorkList,
-    audio_bridges: Vec<PluginAudioBridge>,
-    /// Plugin id → slot into `audio_bridges`, on the same contract as
-    /// `effect_index`.
-    bridge_index: IdSlotIndex,
     /// Effect ids the render callback hands captured device audio to.
     ///
     /// Reserved once at [`CRUMBS_CAPTURE_RESERVE`] and never grown: it is
@@ -1750,8 +1671,6 @@ impl AudioScheduler {
             parameter_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
-            audio_bridges: Vec::with_capacity(AUDIO_BRIDGE_TABLE_CAPACITY),
-            bridge_index: IdSlotIndex::reserved(AUDIO_BRIDGE_TABLE_CAPACITY),
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             pdc_dirty: false,
             timeline: TimelineGraph::new(),
@@ -2031,15 +1950,8 @@ impl AudioScheduler {
                 GraphCommand::AddDetachedEffect(id, instance) => {
                     self.add_builtin_effect(id, instance, EffectPlacement::Detached)
                 }
-                #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
-                }
-                GraphCommand::RemovePluginWithBridge(id) => {
-                    RetiredGraphObjects::effect_with_bridge(
-                        self.remove_effect(id),
-                        self.remove_audio_bridge(id),
-                    )
                 }
                 GraphCommand::SetParam(id, param, value) => {
                     if let Some(slot) = self.effect_index.lookup(id) {
@@ -2107,34 +2019,25 @@ impl AudioScheduler {
                         None
                     }
                 }
-                // The registration is detached and homed detached. A hosted
-                // plugin belongs to the load that created it, not to the master
-                // insert chain: placed there it would render the whole mix
-                // through an instance the app is also driving over its bridge,
-                // and released there it would do the same the moment a user
-                // took it off a strip.
-                GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
+                // The registration is homed detached. A hosted plugin
+                // belongs to the load that created it, not to the master
+                // insert chain: homed there it would render the whole mix
+                // through the instance the moment a user took it off a strip.
+                GraphCommand::AddHostedPlugin(id, plugin) => {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
-                            Some(bridge),
-                        )
-                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY
-                        || self.audio_bridges.len() == AUDIO_BRIDGE_TABLE_CAPACITY
-                    {
-                        // Both tables must have room, or neither takes the
-                        // registration: the plugin without its bridge is a
-                        // dry-fallback instance, the bridge without its plugin
-                        // returns blocks nothing processes.
+                        Some(RetiredGraphObjects::effect(ActiveEffect::detached(
+                            id,
+                            PluginCore::Native(plugin),
+                        )))
+                    } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
-                            Some(bridge),
-                        )
+                        Some(RetiredGraphObjects::effect(ActiveEffect::detached(
+                            id,
+                            PluginCore::Native(plugin),
+                        )))
                     } else {
                         self.push_effect(ActiveEffect::detached(id, PluginCore::Native(plugin)));
-                        self.push_bridge(bridge);
                         None
                     }
                 }
@@ -2309,10 +2212,8 @@ impl AudioScheduler {
                     // refused removal could final-drop an effect another chain
                     // is running.
                     if self.timeline.remove_track_device(track_id, effect_id) {
-                        RetiredGraphObjects::effect_with_bridge(
-                            self.remove_effect(effect_id),
-                            self.remove_audio_bridge(effect_id),
-                        )
+                        self.remove_effect(effect_id)
+                            .map(RetiredGraphObjects::effect)
                     } else {
                         None
                     }
@@ -2337,10 +2238,8 @@ impl AudioScheduler {
                 }
                 GraphCommand::RemoveBusDeviceRetired { bus_id, effect_id } => {
                     if self.timeline.remove_bus_device(bus_id, effect_id) {
-                        RetiredGraphObjects::effect_with_bridge(
-                            self.remove_effect(effect_id),
-                            self.remove_audio_bridge(effect_id),
-                        )
+                        self.remove_effect(effect_id)
+                            .map(RetiredGraphObjects::effect)
                     } else {
                         None
                     }
@@ -2459,16 +2358,6 @@ impl AudioScheduler {
                     self.unregister_capture_consumer(id);
                     None
                 }
-                #[cfg(test)]
-                GraphCommand::RegisterAudioBridge(bridge) => {
-                    if self.audio_bridges.len() == AUDIO_BRIDGE_TABLE_CAPACITY {
-                        self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::removed(None, Some(bridge), None))
-                    } else {
-                        self.push_bridge(bridge);
-                        None
-                    }
-                }
                 GraphCommand::BeginBatch { .. } => {
                     // A loose fence is consumed by `update_graph` before it
                     // reaches here; a fence inside a batch body is a producer
@@ -2575,20 +2464,6 @@ impl AudioScheduler {
         if placement == EffectPlacement::MasterChain {
             self.master_work.append(slot);
         }
-    }
-
-    /// Append a bridge and map its plugin id at the slot it took, on the same
-    /// precondition and the same unconditional-insert law as
-    /// [`Self::push_effect`].
-    fn push_bridge(&mut self, bridge: PluginAudioBridge) {
-        let slot = self.audio_bridges.len();
-        let plugin_id = bridge.plugin_id;
-        self.audio_bridges.push(bridge);
-        let inserted = self.bridge_index.insert(plugin_id, slot);
-        debug_assert!(
-            inserted,
-            "push_bridge is only reached after the collision check refused the id"
-        );
     }
 
     /// Register a built-in effect — whose instance the command carried
@@ -2718,16 +2593,6 @@ impl AudioScheduler {
         Some(removed)
     }
 
-    /// Remove a bridge on the same swap-remove law as [`Self::remove_effect`].
-    fn remove_audio_bridge(&mut self, plugin_id: usize) -> Option<PluginAudioBridge> {
-        let slot = self.bridge_index.delete(plugin_id)?;
-        let removed = self.audio_bridges.swap_remove(slot);
-        if let Some(moved) = self.audio_bridges.get(slot) {
-            self.bridge_index.set_slot(moved.plugin_id, slot);
-        }
-        Some(removed)
-    }
-
     /// Put an id on the input bus, or refuse and count it.
     ///
     /// Two refusals, both last-line: the bus is reserved once at
@@ -2831,198 +2696,6 @@ impl AudioScheduler {
         }
     }
 
-    /// Process ring-buffer audio bridges — reads input blocks from main thread,
-    /// processes through plugins, writes output back for main thread to return to worklet.
-    ///
-    /// `callback_frames` is what the device asked for this period. Each bridge
-    /// may spend that plus one render quantum of catch-up, so a backlog left
-    /// by a main-thread stall is worked off over successive callbacks rather
-    /// than rendered in one spike on the thread with the deadline.
-    #[inline]
-    pub fn process_audio_bridges(&mut self, callback_frames: usize) {
-        // A device period the bridge cannot carry would starve every plugin
-        // permanently rather than intermittently, so it is counted rather than
-        // left to look like ordinary jitter.
-        if callback_frames > MAX_CALLBACK_FRAMES {
-            self.midi_rt_diagnostics
-                .record_callback_frames_over_bridge_reach(1);
-        }
-        let callback_frames = callback_frames.min(MAX_CALLBACK_FRAMES);
-        let frame_budget = callback_frames.saturating_add(RENDER_QUANTUM_FRAMES);
-        // One derivation, shared with the host side that has to compensate for
-        // the depth it settles at — see `audio_bridge::target_depth_blocks`.
-        let target_depth_blocks = audio_bridge::target_depth_blocks(callback_frames);
-
-        // The bridge table holds at most `AUDIO_BRIDGE_TABLE_CAPACITY`
-        // entries, so walking it in order is bounded and may stay linear;
-        // what must not be linear is the per-bridge effect resolution, which
-        // goes through the id index.
-        for bridge in &mut self.audio_bridges {
-            let plugin_id = bridge.plugin_id;
-
-            let effect = self
-                .effect_index
-                .lookup(plugin_id)
-                .and_then(|slot| self.effects.get_mut(slot));
-
-            // A bridge with no plugin able to process its audio — no effect
-            // under that id at all (registered on its own through
-            // `RegisterAudioBridge`, or outliving its plugin), or an effect
-            // with no bridged path, such as a built-in Knead — used to be left
-            // untouched. Its input ring then filled and stayed full, so every
-            // later push was refused and the app was left on permanent dry
-            // fallback with nothing recorded. Return the blocks untouched
-            // instead: the app keeps its audio, the ring keeps moving, and the
-            // count says no plugin took them.
-            let unprocessable = match effect {
-                None => true,
-                Some(ref effect) => !matches!(effect.instance, PluginCore::Native(_)),
-            };
-
-            if unprocessable {
-                let drain =
-                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
-                        let _ = (left, right, n);
-                    });
-                self.midi_rt_diagnostics
-                    .record_unmatched_bridge_blocks(drain.blocks_processed as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-                if let Some(effect) = effect {
-                    effect.pending_midi.clear();
-                }
-                continue;
-            }
-
-            let Some(effect) = effect else {
-                continue;
-            };
-
-            // While the monitor is audible, a plugin a track or bus chain holds
-            // is processed inline by that chain over the strip's own signal
-            // (`TrackDeviceChain::run_device`). Its bridge still has to move —
-            // an input ring left to fill refuses every later push for good — so
-            // the blocks are returned exactly as they arrived. `pending_midi` is
-            // deliberately left alone: the chain is what consumes it this
-            // callback, and clearing it here would take the events away from the
-            // path that is going to deliver them.
-            if !self.monitor_shadowed
-                && matches!(
-                    effect.placement,
-                    EffectPlacement::Track(_) | EffectPlacement::Bus(_)
-                )
-            {
-                let drain =
-                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
-                        let _ = (left, right, n);
-                    });
-                self.midi_rt_diagnostics
-                    .record_bridge_blocks_passed_chain_bound(drain.blocks_processed as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-                continue;
-            }
-
-            if effect.bypassed {
-                // Drain input without processing (passthrough)
-                let drain =
-                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
-                        // output = input (already in the block)
-                        let _ = (left, right, n);
-                    });
-                self.midi_rt_diagnostics
-                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-                self.midi_rt_diagnostics
-                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-                // A bypassed effect discards incoming MIDI rather than
-                // banking it: without this, notes queued via SendMidiNote
-                // while bypassed would accumulate toward the fixed
-                // 128-slot ceiling and then flush as one stale burst —
-                // old note-ons with no note-offs behind them — the
-                // instant the effect is un-bypassed.
-                effect.pending_midi.clear();
-                continue;
-            }
-
-            let PluginCore::Native(ref mut plugin) = effect.instance else {
-                continue;
-            };
-
-            let probability_evaluator = &mut effect.probability_evaluator;
-            let midi_fx = &mut effect.midi_fx;
-            let pending_midi = &mut effect.pending_midi;
-            let transport = self.transport;
-            let sample_rate = self.sample_rate;
-
-            let diagnostics = &mut self.midi_rt_diagnostics;
-            // The MIDI chain belongs to the callback, not to the block.
-            // Several blocks are normally waiting, and running the chain
-            // once per block would re-evaluate authored probability and
-            // re-emit every queued note once per block — the same note-on
-            // delivered to the plugin two, three, four times. It runs on
-            // the first block of the pass, the earliest audio in the
-            // callback.
-            let mut events_delivered = false;
-
-            let drain = bridge.drain_process(
-                frame_budget,
-                target_depth_blocks,
-                |left, right, num_samples| {
-                    if events_delivered {
-                        plugin.process_bridged_audio(left, right, num_samples);
-                        return;
-                    }
-
-                    probability_evaluator.process_midi_with_diagnostics(
-                        pending_midi,
-                        &transport,
-                        sample_rate,
-                        num_samples,
-                        diagnostics,
-                    );
-                    for fx in midi_fx.iter_mut() {
-                        fx.process_midi_with_diagnostics(
-                            pending_midi,
-                            &transport,
-                            sample_rate,
-                            num_samples,
-                            diagnostics,
-                        );
-                    }
-                    events_delivered = true;
-
-                    if pending_midi.is_empty() {
-                        plugin.process_bridged_audio(left, right, num_samples);
-                    } else {
-                        plugin.process_bridged_with_events(
-                            left,
-                            right,
-                            num_samples,
-                            pending_midi.as_slice(),
-                            &transport,
-                        );
-                    }
-                },
-            );
-
-            // Only clear pending MIDI when the closure actually ran and
-            // consumed it. When the input ring was empty this cycle (the
-            // render callback beating the worklet's push, guaranteed at
-            // bridge startup and on any cadence jitter), the events must
-            // survive to the next cycle rather than being dropped.
-            if drain.blocks_processed > 0 {
-                pending_midi.clear();
-            }
-            diagnostics.record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
-            diagnostics.record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
-        }
-        self.remove_empty_pending_midi_work();
-    }
-
     fn remove_empty_pending_midi_work(&mut self) {
         let mut index = 0;
         while index < self.pending_midi_work.slots.len() {
@@ -3063,8 +2736,7 @@ impl AudioScheduler {
                 visits += 1;
             }
             let effect = &mut self.effects[slot];
-            let bridged = self.bridge_index.lookup(effect.id).is_some();
-            let receives_no_block = effect.receives_no_block(bridged);
+            let receives_no_block = effect.receives_no_block();
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match (&mut effect.instance, event.param) {
                     (PluginCore::Knead(engine), DeviceParamTarget::Builtin(param)) => {
@@ -3081,10 +2753,9 @@ impl AudioScheduler {
                     // again, which may be never — so the write can freeze the
                     // instance for the rest of its life. The stamp is therefore
                     // popped and dropped, on the same contract a bypassed or
-                    // detached device's `pending_midi` follows in
-                    // `process_audio_bridges`, in both chain arms and in the
-                    // detached sweep: queued where nothing consumes it is
-                    // discarded, never banked.
+                    // detached device's `pending_midi` follows in the chain
+                    // arms and in the detached sweep: queued where nothing
+                    // consumes it is discarded, never banked.
                     //
                     // A `Builtin` stamp is deliberately not dropped. The knead
                     // engine holds its parameters in its own struct, written
@@ -3147,23 +2818,17 @@ impl AudioScheduler {
             timeline,
             effects,
             effect_index,
-            audio_bridges,
-            bridge_index,
             midi_rt_diagnostics,
             transport,
             sample_rate,
-            monitor_shadowed,
             ..
         } = self;
         let mut devices = TrackDeviceChain {
             effects,
             effect_index,
-            audio_bridges,
-            bridge_index,
             midi_rt_diagnostics,
             transport: *transport,
             sample_rate: *sample_rate,
-            monitor_shadowed: *monitor_shadowed,
         };
 
         timeline.render(
@@ -3356,34 +3021,6 @@ impl AudioScheduler {
                 continue;
             }
 
-            // A bridged plugin is driven by `process_audio_bridges` above, from
-            // real worklet audio. This standalone chain runs over zeroed
-            // scratch, so processing a bridged plugin here would push phantom
-            // silence through a stateful plugin (corrupting its tails, envelope
-            // followers and delay lines) and emit its output on a second,
-            // uncontrolled path straight into the device's output buffer.
-            //
-            // `pending_midi` is deliberately left untouched here: ownership of
-            // clearing it belongs entirely to `process_audio_bridges`, which
-            // already ran earlier in this same callback and already decided
-            // whether to clear (a block was processed) or not (the input ring
-            // was empty this cycle, or the effect is bypassed). Clearing again
-            // here would wipe out exactly the events `process_audio_bridges`
-            // just chose to keep for the next cycle, undoing that fix within
-            // the same callback. Accumulation while bypassed or unfed is
-            // bounded by the fixed 128-slot buffer itself — `try_push` refuses
-            // once full and records `scheduler_event_buffer_overflows` — so
-            // leaving it alone is a deliberate, observable tradeoff, not an
-            // unbounded leak.
-            //
-            // Its dry line is fed all the same. The device is skipped here
-            // rather than bypassed, and a line left standing over the skip
-            // would hand back audio from whenever it last ran.
-            if self.bridge_index.lookup(effect.id).is_some() {
-                feed_dry_delay(effect, left, right, num_samples);
-                continue;
-            }
-
             if effect.bypassed {
                 run_dry_delay(effect, left, right, num_samples);
                 effect.pending_midi.clear();
@@ -3433,10 +3070,9 @@ impl AudioScheduler {
         }
 
         // The master list intentionally contains only master members. Detached
-        // effects still need their unbridged MIDI discarded, but following the
-        // compact pending set keeps that cleanup proportional to queued events
-        // rather than the table's capacity. Bridged effects stay untouched:
-        // their bridge owns the unfed/bypassed retention decision.
+        // effects still need their MIDI discarded, but following the compact
+        // pending set keeps that cleanup proportional to queued events rather
+        // than the table's capacity.
         self.remove_empty_pending_midi_work();
         let mut pending_index = 0;
         while pending_index < self.pending_midi_work.slots.len() {
@@ -3446,8 +3082,7 @@ impl AudioScheduler {
                 self.rt_work.pending_midi_work_visits += 1;
             }
             let effect = &mut self.effects[slot];
-            let bridged = self.bridge_index.lookup(effect.id).is_some();
-            if effect.runs_nowhere(bridged) {
+            if effect.runs_nowhere() {
                 effect.pending_midi.clear();
                 self.pending_midi_work.remove(slot);
             } else {
@@ -3508,23 +3143,17 @@ fn feed_dry_delay(effect: &mut ActiveEffect, left: &[f32], right: &[f32], frames
 
 /// Runs one track's device chain over that track's signal.
 ///
-/// The effects stay in the scheduler's id-indexed table alongside their
-/// bridges and their MIDI state, so the graph borrows them for the length of
-/// one render rather than owning them — and resolves each chain entry by id
-/// in O(1), because this runs once per device per callback and a table scan
-/// per entry was the cost the derived capacity made deadline-fatal.
+/// The effects stay in the scheduler's id-indexed table alongside their MIDI
+/// state, so the graph borrows them for the length of one render rather than
+/// owning them — and resolves each chain entry by id in O(1), because this
+/// runs once per device per callback and a table scan per entry was the cost
+/// the derived capacity made deadline-fatal.
 struct TrackDeviceChain<'a> {
     effects: &'a mut Vec<ActiveEffect>,
     effect_index: &'a IdSlotIndex,
-    audio_bridges: &'a [PluginAudioBridge],
-    bridge_index: &'a IdSlotIndex,
     midi_rt_diagnostics: &'a mut ActiveMidiRtDiagnostics,
     transport: TransportState,
     sample_rate: f32,
-    /// Whether the app is still monitoring its own Web Audio graph, read as a
-    /// plain flag rather than looked up: it decides which of the two paths owns
-    /// a bridged plugin this block, once per device per callback.
-    monitor_shadowed: bool,
 }
 
 impl DeviceChain for TrackDeviceChain<'_> {
@@ -3537,19 +3166,6 @@ impl DeviceChain for TrackDeviceChain<'_> {
         let Some(effect) = self.effects.get_mut(slot) else {
             return;
         };
-
-        // While the monitor is shadowed the app is what the user hears, and a
-        // bridged plugin is driven from the app's own audio in
-        // `process_audio_bridges`. Running it here as well would push the
-        // strip's signal through the same stateful instance on a second path.
-        // Once the monitor is audible this chain owns the instance instead, and
-        // the bridge returns its blocks untouched. The dry line is fed over the
-        // skip all the same: a line left standing hands back audio from
-        // whenever it last ran.
-        if self.monitor_shadowed && self.bridge_index.lookup(effect_id).is_some() {
-            feed_dry_delay(effect, left, right, frames);
-            return;
-        }
 
         if effect.bypassed {
             // Same contract as the master chain: a bypassed device passes its
@@ -3622,7 +3238,6 @@ impl Drop for AudioScheduler {
         let retired = RetiredGraphObjects::shutdown(
             self.pending_retirement.take(),
             std::mem::take(&mut self.effects),
-            std::mem::take(&mut self.audio_bridges),
             std::mem::replace(&mut self.timeline, TimelineGraph::vacated()),
             std::mem::take(&mut self.shutdown_commands),
             command_rx,
@@ -4040,9 +3655,8 @@ mod tests {
     }
 
     #[test]
-    fn master_work_preserves_explicit_order_across_place_release_bridge_remove_and_slot_move() {
+    fn master_work_preserves_explicit_order_across_place_release_remove_and_slot_move() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(20);
         for (id, plugin) in [
             (
                 10,
@@ -4064,13 +3678,12 @@ mod tests {
                 .unwrap();
         }
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 20,
                 Box::new(AffinePlugin {
                     factor: 11.0,
                     offset: 7.0,
                 }),
-                bridge,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4091,9 +3704,7 @@ mod tests {
             "release appends after existing master members"
         );
 
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(30))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(30)).unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
@@ -4104,9 +3715,7 @@ mod tests {
             "swap-moving id 10 must preserve its list position"
         );
 
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(20))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(20)).unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
@@ -4114,7 +3723,7 @@ mod tests {
         assert_eq!(
             left,
             [3.0],
-            "removing a bridged member must not disturb id 10"
+            "removing a hosted member must not disturb id 10"
         );
         assert_eq!(
             scheduler.master_work.head, 1,
@@ -4139,9 +3748,7 @@ mod tests {
         // Remove the tail itself, then render the complete surviving chain.
         // Adding another effect must reuse that vacated table and link slot
         // without leaving a stale tail endpoint behind.
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(40))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(40)).unwrap();
         scheduler.update_graph();
         left[0] = 1.0;
         right[0] = 1.0;
@@ -4186,28 +3793,24 @@ mod tests {
     }
 
     #[test]
-    fn add_plugin_with_bridge_registers_plugin_and_bridge_atomically() {
+    fn add_hosted_plugin_registers_the_instance_detached() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
 
         assert!(command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
             ))
             .is_ok());
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), 1);
-        assert_eq!(scheduler.audio_bridges.len(), 1);
         assert_eq!(scheduler.effects[0].id, 42);
-        assert_eq!(scheduler.audio_bridges[0].plugin_id, 42);
+        assert_eq!(scheduler.effects[0].placement, EffectPlacement::Detached);
+        assert_eq!(scheduler.effects[0].home, EffectPlacement::Detached);
 
-        // The standalone chain must leave a bridged plugin alone. It runs over
-        // zeroed scratch, so processing the plugin here would both corrupt its
-        // internal state with phantom silence and write its output into the
-        // device's output buffer on a path nothing controls.
+        // The master insert chain runs over zeroed scratch and is the whole
+        // mix, so a hosted instance no strip claims must not be reached there.
         let mut left = [0.0; 4];
         let mut right = [0.0; 4];
         scheduler.process_block(&mut left, &mut right, 4);
@@ -4216,320 +3819,23 @@ mod tests {
     }
 
     #[test]
-    fn a_bridged_plugin_processes_only_the_audio_that_arrived_over_its_bridge() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        // Real worklet audio arrives over the bridge and is processed.
-        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges(512);
-        let processed = handle.pop_output().expect("the bridged block");
-        assert_eq!(processed.frames, 4);
-        assert_eq!(&processed.left[..4], &[0.25; 4]);
-
-        // A standalone callback in the same cycle must not run the plugin a
-        // second time over its silent scratch.
-        let mut left = [0.0; 4];
-        let mut right = [0.0; 4];
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(left, [0.0; 4]);
-
-        // And an unbridged plugin still runs on the standalone chain, so the
-        // guard is scoped to bridged instances rather than disabling the path.
-        command_tx
-            .push(GraphCommand::AddPlugin(
-                7,
-                Box::new(FakeNativePlugin { value: 0.5 }),
-            ))
-            .unwrap();
-        scheduler.update_graph();
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(left, [0.5; 4]);
-    }
-
-    #[test]
-    fn bridged_plugin_midi_survives_a_callback_that_finds_the_input_ring_empty() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-        let received_event_count = Arc::new(AtomicUsize::new(0));
-        let received_channel_sum = Arc::new(AtomicUsize::new(0));
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(MidiRecordingPlugin {
-                    received_event_count: Arc::clone(&received_event_count),
-                    received_channel_sum,
-                }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        command_tx
-            .push(GraphCommand::SendMidiNote(
-                42,
-                MidiNoteEvent {
-                    note: 60,
-                    velocity: 100,
-                    channel: 0,
-                    is_note_on: true,
-                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                    project_probability_seed: 0,
-                    clip_id_hash: 0,
-                    event_id_hash: 0,
-                    absolute_occurrence_index: 0,
-                },
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        let mut left = [0.0; 4];
-        let mut right = [0.0; 4];
-
-        // Drive both calls in sequence, the way audio_thread.rs's render
-        // callback does every cycle: process_audio_bridges() first, then
-        // process_block() over the standalone chain's zeroed scratch. The
-        // render callback beats the worklet's input push here — the bridge's
-        // input ring is empty, so drain_process's closure never runs this
-        // cycle — and process_block must not wipe the note that
-        // process_audio_bridges deliberately left queued for next cycle.
-        scheduler.process_audio_bridges(512);
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
-
-        // A later callback: the worklet's audio has now arrived. The note
-        // queued on the earlier, empty-ring cycle must still be delivered —
-        // an unconditional clear in either process_audio_bridges or
-        // process_block would have discarded it forever on the first cycle.
-        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges(512);
-        scheduler.process_block(&mut left, &mut right, 4);
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn a_bypassed_bridged_effect_discards_midi_queued_while_bypassed() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-        let received_event_count = Arc::new(AtomicUsize::new(0));
-        let received_channel_sum = Arc::new(AtomicUsize::new(0));
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(MidiRecordingPlugin {
-                    received_event_count: Arc::clone(&received_event_count),
-                    received_channel_sum,
-                }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        command_tx.push(GraphCommand::SetBypass(42, true)).unwrap();
-        scheduler.update_graph();
-
-        let mut left = [0.0; 4];
-        let mut right = [0.0; 4];
-
-        // Queue MIDI across several callbacks while bypassed. A bypassed
-        // effect should discard incoming MIDI, not accumulate it toward the
-        // 128-slot ceiling and flush it all the instant it is un-bypassed.
-        for note in 60..=65 {
-            command_tx
-                .push(GraphCommand::SendMidiNote(
-                    42,
-                    MidiNoteEvent {
-                        note,
-                        velocity: 100,
-                        channel: 0,
-                        is_note_on: true,
-                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                        project_probability_seed: 0,
-                        clip_id_hash: 0,
-                        event_id_hash: 0,
-                        absolute_occurrence_index: 0,
-                    },
-                ))
-                .unwrap();
-            scheduler.update_graph();
-            assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-            scheduler.process_audio_bridges(512);
-            scheduler.process_block(&mut left, &mut right, 4);
-        }
-
-        // Un-bypass and drive a fresh callback: no stale burst of the notes
-        // queued during bypass should reach the plugin.
-        command_tx.push(GraphCommand::SetBypass(42, false)).unwrap();
-        scheduler.update_graph();
-        assert!(handle.push_input(&[0.0; 4], &[0.0; 4]));
-        scheduler.process_audio_bridges(512);
-        scheduler.process_block(&mut left, &mut right, 4);
-
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn one_callback_processes_every_block_the_app_queued_since_the_last_one() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        // The device buffer spans several render quanta — a 512-frame render
-        // callback at 48 kHz covers four 128-frame worklet quanta — so four
-        // blocks are already waiting when the callback runs. Taking one per
-        // callback leaves the rest to fill the ring, after which the app's
-        // pushes are refused for good and the plugin hears a fraction of its
-        // input.
-        for _ in 0..4 {
-            assert!(handle.push_input(&[0.1; 128], &[0.1; 128]));
-        }
-
-        scheduler.process_audio_bridges(512);
-
-        let mut returned = 0;
-        while let Some(block) = handle.pop_output() {
-            assert_eq!(block.frames, 128);
-            assert_eq!(block.left[0], 0.25);
-            returned += 1;
-        }
-        assert_eq!(returned, 4, "a block left in the ring is lost audio");
-    }
-
-    #[test]
-    fn a_burst_of_blocks_delivers_each_queued_note_to_the_plugin_once() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(42);
-        let received_event_count = Arc::new(AtomicUsize::new(0));
-        let received_channel_sum = Arc::new(AtomicUsize::new(0));
-
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                42,
-                Box::new(MidiRecordingPlugin {
-                    received_event_count: Arc::clone(&received_event_count),
-                    received_channel_sum,
-                }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        command_tx
-            .push(GraphCommand::SendMidiNote(
-                42,
-                MidiNoteEvent {
-                    note: 60,
-                    velocity: 100,
-                    channel: 0,
-                    is_note_on: true,
-                    probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
-                    project_probability_seed: 0,
-                    clip_id_hash: 0,
-                    event_id_hash: 0,
-                    absolute_occurrence_index: 0,
-                },
-            ))
-            .unwrap();
-        scheduler.update_graph();
-
-        for _ in 0..3 {
-            assert!(handle.push_input(&[0.0; 128], &[0.0; 128]));
-        }
-        scheduler.process_audio_bridges(512);
-
-        // The MIDI queue belongs to the callback, not to the block. Running
-        // the chain once per drained block would hand the plugin the same
-        // note-on three times — three stacked voices from one key press.
-        assert_eq!(received_event_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn blocks_on_a_bridge_with_no_plugin_are_returned_and_counted() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        let (bridge, mut handle) = crate::audio_bridge::create_audio_bridge(77);
-
-        command_tx
-            .push(GraphCommand::RegisterAudioBridge(bridge))
-            .unwrap();
-        scheduler.update_graph();
-        assert!(scheduler.effects.is_empty());
-
-        // Fill the input ring the way a running worklet does.
-        let mut pushed = 0;
-        while handle.push_input(&[0.4; 64], &[0.4; 64]) {
-            pushed += 1;
-        }
-        assert!(pushed > 0);
-
-        // Successive callbacks, each spending its own budget.
-        let mut returned = 0;
-        for _ in 0..pushed {
-            scheduler.process_audio_bridges(512);
-            while let Some(block) = handle.pop_output() {
-                assert_eq!(block.left[0], 0.4, "an unprocessed block must be intact");
-                returned += 1;
-            }
-        }
-
-        // A ring filled to capacity is deeper than the device period needs, so
-        // the oldest blocks are shed to bring the round trip back to its
-        // target. Every block is accounted for: returned or shed, none left
-        // sitting in a ring that never drains again.
-        let snapshot = scheduler.midi_rt_diagnostics.snapshot();
-        assert_eq!(
-            returned as u64 + snapshot.bridge_backlog_blocks_shed,
-            pushed as u64
-        );
-        assert_eq!(snapshot.unmatched_bridge_blocks, pushed as u64);
-
-        // The ring keeps moving. Skipping the bridge left it full forever, so
-        // every later push was refused and the app never processed again.
-        assert!(handle.push_input(&[0.4; 64], &[0.4; 64]));
-    }
-
-    #[test]
-    fn remove_plugin_with_bridge_removes_plugin_and_bridge_atomically() {
+    fn remove_plugin_retires_the_instance_off_the_callback_thread() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
 
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
             ))
             .unwrap();
         scheduler.update_graph();
 
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(42))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(42)).unwrap();
         scheduler.update_graph();
 
         assert!(scheduler.effects.is_empty());
-        assert!(scheduler.audio_bridges.is_empty());
-        let retired = retired_rx.pop().expect("plugin and bridge retirement");
+        let retired = retired_rx.pop().expect("the plugin retirement");
         assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
     }
 
     #[test]
@@ -4600,25 +3906,22 @@ mod tests {
     }
 
     #[test]
-    fn add_plugin_with_bridge_with_a_colliding_id_retires_both_without_inserting() {
+    fn add_hosted_plugin_with_a_colliding_id_retires_the_instance_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
             .push(GraphCommand::AddEffect(7, knead_instance()))
             .unwrap();
         scheduler.update_graph();
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(7);
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 7,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
             ))
             .unwrap();
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), 1);
-        assert!(scheduler.audio_bridges.is_empty());
         assert_eq!(
             scheduler
                 .midi_rt_diagnostics
@@ -4626,9 +3929,8 @@ mod tests {
                 .effect_id_collisions,
             1
         );
-        let retired = retired_rx.pop().expect("the rejected plugin and bridge");
+        let retired = retired_rx.pop().expect("the rejected plugin");
         assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
     }
 
     #[test]
@@ -4736,7 +4038,7 @@ mod tests {
     /// fails this test at compile time rather than leaving a `Copy` bound on
     /// some other type still satisfied.
     ///
-    /// `AddEffect`, `AddDetachedEffect`, `AddPlugin`, `AddPluginWithBridge`
+    /// `AddEffect`, `AddDetachedEffect`, `AddPlugin`, `AddHostedPlugin`
     /// and `AddMidiFx` used to share this pin as `Copy` type addresses or
     /// kind tags; they now carry the built instance itself, pre-built
     /// control-side, and their contract — the drain installs it into a
@@ -4830,15 +4132,6 @@ mod tests {
                 + HOSTED_PLUGIN_RESERVE
                 + CRUMBS_CAPTURE_RESERVE
         );
-        // Bridges exist only for the two non-timeline registrations, so the
-        // bridge table covers exactly their reserves: no less, or the ledger
-        // would admit registrations the bridge table silently refuses on the
-        // callback; no more, or the bridge table would stop mirroring the
-        // populations it actually holds.
-        assert_eq!(
-            AUDIO_BRIDGE_TABLE_CAPACITY,
-            HOSTED_PLUGIN_RESERVE + CRUMBS_CAPTURE_RESERVE
-        );
     }
 
     /// The id index and the table must agree through a swap-remove: the entry
@@ -4864,9 +4157,7 @@ mod tests {
         assert_eq!(scheduler.effect_index.lookup(12), Some(2));
 
         // Remove the middle entry: the tail swaps into slot 1.
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(11))
-            .unwrap();
+        command_tx.push(GraphCommand::RemovePlugin(11)).unwrap();
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), 2);
@@ -4894,40 +4185,6 @@ mod tests {
         scheduler.update_graph();
         assert_eq!(scheduler.effect_index.lookup(11), Some(2));
         assert_eq!(scheduler.effects[2].id, 11);
-    }
-
-    /// The bridge index follows the same swap-remove law for the bridge
-    /// table, and a bridged registration removes both of its entries
-    /// together: a removed plugin id resolves in neither table, and the
-    /// bridge that swapped into the vacated slot resolves at that slot.
-    #[test]
-    fn the_bridge_index_resolves_the_swapped_bridge_at_its_new_slot() {
-        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
-        for id in [30, 31] {
-            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(id);
-            command_tx
-                .push(GraphCommand::AddPluginWithBridge(
-                    id,
-                    Box::new(FakeNativePlugin { value: 0.0 }),
-                    bridge,
-                ))
-                .unwrap();
-            scheduler.update_graph();
-        }
-        assert_eq!(scheduler.bridge_index.lookup(30), Some(0));
-        assert_eq!(scheduler.bridge_index.lookup(31), Some(1));
-
-        command_tx
-            .push(GraphCommand::RemovePluginWithBridge(30))
-            .unwrap();
-        scheduler.update_graph();
-
-        assert_eq!(scheduler.audio_bridges.len(), 1);
-        assert_eq!(scheduler.audio_bridges[0].plugin_id, 31);
-        assert_eq!(scheduler.bridge_index.lookup(31), Some(0));
-        assert_eq!(scheduler.bridge_index.lookup(30), None);
-        assert_eq!(scheduler.effect_index.lookup(30), None);
-        assert_eq!(scheduler.effect_index.lookup(31), Some(0));
     }
 
     #[test]
@@ -4984,7 +4241,7 @@ mod tests {
         // drain and the command ring fills.
         for id in (0..512).step_by(2) {
             command_tx
-                .push(GraphCommand::RemovePluginWithBridge(id + 5_000))
+                .push(GraphCommand::RemovePlugin(id + 5_000))
                 .unwrap();
             scheduler.update_graph();
             while retired_rx.pop().is_ok() {}
@@ -5132,13 +4389,11 @@ mod tests {
             .is_some());
     }
 
-    /// A full effect table refuses `AddPluginWithBridge` on its own, with the
-    /// bridge table empty — the ordinary state, since `AddEffect`/`AddPlugin`
-    /// fill `effects` without touching `audio_bridges`. Without the effect
-    /// disjunct of that guard the push reallocates the effect table on the
-    /// callback, moving every live `ActiveEffect` with it.
+    /// A full effect table refuses `AddHostedPlugin`. Without that guard the
+    /// push reallocates the effect table on the callback, moving every live
+    /// `ActiveEffect` with it.
     #[test]
-    fn a_plugin_with_bridge_is_refused_when_only_the_effect_table_is_full() {
+    fn a_hosted_plugin_is_refused_when_the_effect_table_is_full() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         // Cheap fill, as above: the arm under test sees only a full table.
         for id in 0..EFFECT_TABLE_CAPACITY {
@@ -5151,81 +4406,22 @@ mod tests {
             scheduler.update_graph();
         }
         assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
-        assert!(scheduler.audio_bridges.is_empty());
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(EFFECT_TABLE_CAPACITY);
         command_tx
-            .push(GraphCommand::AddPluginWithBridge(
+            .push(GraphCommand::AddHostedPlugin(
                 EFFECT_TABLE_CAPACITY,
                 Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
             ))
             .unwrap();
         scheduler.update_graph();
 
         assert_eq!(scheduler.effects.len(), EFFECT_TABLE_CAPACITY);
         assert_eq!(scheduler.effects.capacity(), EFFECT_TABLE_CAPACITY);
-        assert!(scheduler.audio_bridges.is_empty());
         assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
         let retired = retired_rx
             .pop()
-            .expect("the refused plugin and its bridge must be handed off");
+            .expect("the refused plugin must be handed off");
         assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
-    }
-
-    #[test]
-    fn a_bridge_past_the_tables_capacity_refuses_the_whole_registration() {
-        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-        for id in 0..AUDIO_BRIDGE_TABLE_CAPACITY {
-            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(id);
-            command_tx
-                .push(GraphCommand::RegisterAudioBridge(bridge))
-                .unwrap();
-            scheduler.update_graph();
-        }
-        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
-
-        // A full bridge table refuses the plugin with its bridge: installing
-        // the plugin alone would leave a dry-fallback instance nothing drives,
-        // and growing the vector would allocate inside the audio deadline.
-        let (bridge, _handle) =
-            crate::audio_bridge::create_audio_bridge(AUDIO_BRIDGE_TABLE_CAPACITY);
-        command_tx
-            .push(GraphCommand::AddPluginWithBridge(
-                AUDIO_BRIDGE_TABLE_CAPACITY,
-                Box::new(FakeNativePlugin { value: 0.25 }),
-                bridge,
-            ))
-            .unwrap();
-        scheduler.update_graph();
-        assert!(scheduler.effects.is_empty());
-        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
-        assert_eq!(
-            scheduler.audio_bridges.capacity(),
-            AUDIO_BRIDGE_TABLE_CAPACITY
-        );
-        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 1);
-        let retired = retired_rx
-            .pop()
-            .expect("the refused plugin and bridge must be handed off");
-        assert!(retired.effect.is_some());
-        assert!(retired.audio_bridge.is_some());
-
-        // A standalone bridge past the same ceiling is refused on its own arm.
-        let (bridge, _handle) =
-            crate::audio_bridge::create_audio_bridge(AUDIO_BRIDGE_TABLE_CAPACITY + 1);
-        command_tx
-            .push(GraphCommand::RegisterAudioBridge(bridge))
-            .unwrap();
-        scheduler.update_graph();
-        assert_eq!(scheduler.audio_bridges.len(), AUDIO_BRIDGE_TABLE_CAPACITY);
-        assert_eq!(scheduler.timeline().diagnostics().capacity_refusals, 2);
-        assert!(retired_rx
-            .pop()
-            .expect("the refused bridge must be handed off")
-            .audio_bridge
-            .is_some());
     }
 
     #[test]
@@ -5682,14 +4878,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn removing_a_plugin_with_its_bridge_takes_it_off_the_capture_bus() {
-        assert_removal_prunes_the_capture_bus(
-            Vec::new(),
-            GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID),
-        );
-    }
-
     /// The bus admits an id before the graph holds it, so a registration whose
     /// `AddPlugin` never arrived is an ordinary state — and the removal that
     /// abandons it is the only thing that will ever clear it. Pruning behind
@@ -5705,7 +4893,7 @@ mod tests {
         assert!(scheduler.capture_consumers.contains(&TAP_CONSUMER_ID));
 
         command_tx
-            .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+            .push(GraphCommand::RemovePlugin(TAP_CONSUMER_ID))
             .unwrap();
         scheduler.update_graph();
 
@@ -5776,7 +4964,7 @@ mod tests {
     ///
     /// The guards cover the built-in add arms (issue #2547: the apply used to
     /// construct `KneadEngine` — some twenty zero-filled heap allocations —
-    /// on the callback), the already-repaired `AddPlugin`/`AddPluginWithBridge`
+    /// on the callback), the already-repaired `AddPlugin`/`AddHostedPlugin`
     /// arms, and the MIDI FX arms on the same law (issue #2548: `AddMidiFx`
     /// used to box the arpeggiator into a zero-capacity `Vec` on the callback
     /// and grow it there, and `SetMidiFxParam` used to drop a `String` name
@@ -5826,7 +5014,7 @@ mod tests {
             });
 
             command_tx
-                .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+                .push(GraphCommand::RemovePlugin(TAP_CONSUMER_ID))
                 .unwrap();
             assert_no_alloc(|| {
                 scheduler.update_graph();
@@ -6055,9 +5243,7 @@ mod tests {
                 .push(GraphCommand::BeginBatch { commands: removals })
                 .unwrap();
             for id in 0..removals {
-                command_tx
-                    .push(GraphCommand::RemovePluginWithBridge(id))
-                    .unwrap();
+                command_tx.push(GraphCommand::RemovePlugin(id)).unwrap();
             }
 
             assert_no_alloc(|| {
@@ -6161,9 +5347,8 @@ mod tests {
         }
 
         #[test]
-        fn add_plugin_and_add_plugin_with_bridge_apply_without_allocating() {
+        fn add_plugin_and_add_hosted_plugin_apply_without_allocating() {
             let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
-            let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
             command_tx
                 .push(GraphCommand::AddPlugin(
                     41,
@@ -6171,10 +5356,9 @@ mod tests {
                 ))
                 .unwrap();
             command_tx
-                .push(GraphCommand::AddPluginWithBridge(
+                .push(GraphCommand::AddHostedPlugin(
                     42,
                     Box::new(FakeNativePlugin { value: 0.25 }),
-                    bridge,
                 ))
                 .unwrap();
 
@@ -6183,7 +5367,7 @@ mod tests {
             });
 
             assert_eq!(scheduler.effects.len(), 2);
-            assert_eq!(scheduler.audio_bridges.len(), 1);
+            assert_eq!(scheduler.effects[1].placement, EffectPlacement::Detached);
 
             // The already-repaired arms stay guarded: a collision refusal
             // hands its carried plugin off allocation-free.
@@ -6578,18 +5762,17 @@ mod timeline_tests {
         }
     }
 
-    /// One engine-owned hosted plugin, its bridge, and its call counters,
-    /// spliced onto a track that plays a constant.
+    /// One engine-owned hosted plugin and its call counters, spliced onto a
+    /// track that plays a constant.
     struct ChainBoundPlugin {
-        handle: crate::audio_bridge::PluginAudioBridgeHandle,
         calls: Arc<AtomicUsize>,
         midi_events: Arc<AtomicUsize>,
     }
 
     /// A track playing a constant `1.0`, carrying an engine-owned plugin
     /// registered exactly as `register_runtime_with_engine` registers one:
-    /// `AddPluginWithBridge`, then a chain splice.
-    fn track_carrying_a_bridged_plugin(
+    /// `AddHostedPlugin`, then a chain splice.
+    fn track_carrying_a_hosted_plugin(
         harness: &mut Harness,
         track_id: usize,
         effect_id: usize,
@@ -6597,17 +5780,15 @@ mod timeline_tests {
     ) -> ChainBoundPlugin {
         let calls = Arc::new(AtomicUsize::new(0));
         let midi_events = Arc::new(AtomicUsize::new(0));
-        let (bridge, handle) = crate::audio_bridge::create_audio_bridge(effect_id);
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
-        harness.send(GraphCommand::AddPluginWithBridge(
+        harness.send(GraphCommand::AddHostedPlugin(
             effect_id,
             Box::new(CountingOffsetPlugin {
                 offset,
                 calls: Arc::clone(&calls),
                 midi_events: Arc::clone(&midi_events),
             }),
-            bridge,
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id,
@@ -6615,29 +5796,7 @@ mod timeline_tests {
             index: 0,
         });
 
-        ChainBoundPlugin {
-            handle,
-            calls,
-            midi_events,
-        }
-    }
-
-    fn bridge_blocks_passed_chain_bound(harness: &Harness) -> u64 {
-        harness
-            .scheduler
-            .midi_rt_diagnostics
-            .snapshot()
-            .bridge_blocks_passed_chain_bound
-    }
-
-    /// Push one block of `value` over the bridge and let the callback's bridge
-    /// pass run, the way a render callback does before it renders the graph.
-    fn relay_one_block(plugin: &mut ChainBoundPlugin, harness: &mut Harness, value: f32) {
-        assert!(
-            plugin.handle.push_input(&[value; 4], &[value; 4]),
-            "the bridge input ring should have room"
-        );
-        harness.scheduler.process_audio_bridges(512);
+        ChainBoundPlugin { calls, midi_events }
     }
 
     fn note_on(note: u8) -> MidiNoteEvent {
@@ -7705,8 +6864,8 @@ mod timeline_tests {
         );
     }
 
-    /// A detached effect is handed no block either: no chain claims it, and
-    /// without a bridge no path reaches it at all. A stamp queued on the plugin
+    /// A detached effect is handed no block either: no chain claims it, so no
+    /// path reaches it at all. A stamp queued on the plugin
     /// there would never drain — and unlike bypass, nothing has to end that
     /// state, so the plugin's state read and its parameter polls would stay
     /// refused for the rest of the instance's life.
@@ -7754,78 +6913,6 @@ mod timeline_tests {
                 .unmapped_set_param_calls,
             0,
             "a stamp the engine discards is not a call the plugin refused"
-        );
-    }
-
-    /// The half of `runs_nowhere` the bridge owns. An off-chain plugin the app
-    /// still feeds over its audio bridge is handed a block every callback that
-    /// bridge carries one, so its pending-parameter queue has a drain behind it
-    /// and the stamp must reach it. Drop the bridge test from the predicate and
-    /// every plugin the app drives off a chain — a panel device, a monitored
-    /// instrument between splices — silently loses its automation writes.
-    #[test]
-    fn a_hosted_stamp_on_a_bridged_detached_effect_still_reaches_the_plugin() {
-        let mut harness = Harness::new(32);
-        harness.playing();
-        let (plugin, queued) = parameter_recording_plugin(true);
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(7);
-        track_with_constant_clip(&mut harness, 1, 101, 1.0, 4);
-        harness.send(GraphCommand::AddPluginWithBridge(7, plugin, bridge));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
-        harness.send(GraphCommand::RemoveTrackDevice {
-            track_id: 1,
-            effect_id: 7,
-        });
-        harness.send(GraphCommand::AutomateDeviceParam {
-            effect_id: 7,
-            param: DeviceParamTarget::Hosted { id: 4 },
-            value: 0.25,
-            at_frame: 6,
-        });
-        let slot = harness
-            .scheduler
-            .effect_index
-            .lookup(7)
-            .expect("the removal must not unload the plugin");
-        assert_eq!(
-            harness.scheduler.effects[slot].placement,
-            EffectPlacement::Detached
-        );
-        assert!(
-            harness.scheduler.bridge_index.lookup(7).is_some(),
-            "the bridge outlives the chain that held the plugin, which is what \
-             keeps this effect reachable"
-        );
-
-        harness.render(4);
-        assert!(
-            queued.lock().expect("the parameter log").is_empty(),
-            "a stamp ahead of the playhead must not land early, detached or not"
-        );
-
-        harness.render(4);
-        assert_eq!(
-            queued.lock().expect("the parameter log").as_slice(),
-            &[(4, 0.25)],
-            "a detached effect its bridge still feeds takes the stamp exactly \
-             once, because the bridge drains what the stamp queues"
-        );
-        assert!(
-            harness.scheduler.effects[slot].pending_params.is_empty(),
-            "the applied stamp leaves the queue"
-        );
-        assert_eq!(
-            harness
-                .scheduler
-                .midi_rt_diagnostics
-                .snapshot()
-                .unmapped_set_param_calls,
-            0,
-            "a stamp the plugin accepted is not an unmapped call"
         );
     }
 
@@ -8314,143 +7401,56 @@ mod timeline_tests {
         assert_eq!(received.load(Ordering::Relaxed), 1);
     }
 
-    /// The shadowed default: the app is what the user hears, the relay drives
-    /// the plugin from the app's own audio, and the strip chain must leave the
-    /// instance alone. Anything else runs one stateful plugin twice a block and
-    /// emits its output on a path the app is not monitoring.
+    /// A hosted plugin a strip holds is run by that strip's chain, and the
+    /// monitor shadow says nothing about it: the shadow decides only what the
+    /// device is handed, and a chain that skipped its device under it would
+    /// drop the plugin out of the strip's own signal.
     #[test]
-    fn a_shadowed_monitor_leaves_a_chain_bound_plugin_to_its_bridge() {
+    fn a_chain_bound_hosted_plugin_runs_inline_whether_or_not_the_monitor_is_shadowed() {
         let mut harness = Harness::new(32);
         harness.playing();
         harness.send(GraphCommand::SetMonitorShadow(true));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        let plugin = track_carrying_a_hosted_plugin(&mut harness, 1, 7, 0.5);
 
-        relay_one_block(&mut plugin, &mut harness, 0.25);
-        let bridged = plugin
-            .handle
-            .pop_output()
-            .expect("the bridge returns a block");
+        let (shadowed, right) = harness.render(4);
         assert_eq!(
-            &bridged.left[..4],
-            &[0.75; 4],
-            "the relay path must still process the app's audio while shadowed"
-        );
-        let after_the_bridge = plugin.calls.load(Ordering::Relaxed);
-        assert_eq!(after_the_bridge, 1);
-
-        let (left, right) = harness.render(4);
-        assert_eq!(
-            left,
-            vec![1.0; 4],
-            "a shadowed monitor must leave the track's own output untouched"
-        );
-        assert_eq!(right, left);
-        assert_eq!(
-            plugin.calls.load(Ordering::Relaxed),
-            after_the_bridge,
-            "the chain must make no inline call while the monitor is shadowed"
-        );
-        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 0);
-    }
-
-    /// The audible side of the same session: the chain owns the instance, the
-    /// bridge keeps moving but returns its blocks exactly as they arrived, and
-    /// the plugin is driven once — not once per path.
-    #[test]
-    fn an_audible_monitor_runs_a_chain_bound_plugin_inline_and_passes_its_bridge_through() {
-        let mut harness = Harness::new(32);
-        harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
-
-        relay_one_block(&mut plugin, &mut harness, 0.25);
-        assert_eq!(
-            plugin.calls.load(Ordering::Relaxed),
-            0,
-            "the relay must not process a plugin the chain is going to run"
-        );
-        let passed = plugin
-            .handle
-            .pop_output()
-            .expect("the bridge returns a block");
-        assert_eq!(
-            &passed.left[..4],
-            &[0.25; 4],
-            "a passed-through block is the app's own audio, unprocessed"
-        );
-        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 1);
-
-        let (left, right) = harness.render(4);
-        assert_eq!(
-            left,
+            shadowed,
             vec![1.5; 4],
-            "an audible monitor renders the plugin over the track's own signal"
+            "a shadowed monitor must not take the plugin out of the strip's chain"
         );
-        assert_eq!(right, left);
+        assert_eq!(right, shadowed);
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 1);
+
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (audible, _) = harness.render(4);
+        assert_eq!(
+            audible,
+            vec![1.5; 4],
+            "the audible side renders the same chain, once"
+        );
         assert_eq!(
             plugin.calls.load(Ordering::Relaxed),
-            1,
-            "exactly one process call for the block that was rendered"
+            2,
+            "exactly one process call per rendered block, on one path"
         );
-    }
-
-    /// The switch itself. A plugin driven twice in the block the gate moves —
-    /// or not at all — is a click on the cutover, so the count is checked per
-    /// block on both sides of the toggle rather than only at the ends.
-    #[test]
-    fn toggling_the_monitor_shadow_hands_a_bridged_plugin_over_one_block_at_a_time() {
-        let mut harness = Harness::new(32);
-        harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(true));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
-
-        let mut expected_calls = 0;
-        for block in 0..6 {
-            if block == 3 {
-                harness.send(GraphCommand::SetMonitorShadow(false));
-            }
-            let shadowed = block < 3;
-
-            relay_one_block(&mut plugin, &mut harness, 0.25);
-            harness.send(GraphCommand::SeekFrames(0));
-            let (left, _) = harness.render(4);
-
-            expected_calls += 1;
-            assert_eq!(
-                plugin.calls.load(Ordering::Relaxed),
-                expected_calls,
-                "block {block} must drive the plugin exactly once, on one path"
-            );
-            let expected_output = if shadowed { 1.0 } else { 1.5 };
-            assert_eq!(
-                left,
-                vec![expected_output; 4],
-                "block {block} must be rendered by the path the gate names"
-            );
-            let returned = plugin
-                .handle
-                .pop_output()
-                .expect("the bridge returns a block");
-            let expected_return = if shadowed { 0.75 } else { 0.25 };
-            assert_eq!(
-                &returned.left[..4],
-                &[expected_return; 4],
-                "block {block} must return the app's audio from the path the gate names"
-            );
-        }
-
-        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 3);
     }
 
     /// A hosted plugin taken off a strip goes back to running nowhere, not onto
     /// the master insert chain: its lifetime belongs to the load that created
     /// it, and the master chain is the whole mix.
     #[test]
-    fn a_bridged_plugin_taken_off_a_chain_runs_nowhere_rather_than_on_the_master_mix() {
+    fn a_hosted_plugin_taken_off_a_chain_runs_nowhere_rather_than_on_the_master_mix() {
         let mut harness = Harness::new(32);
         harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(true));
-        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        let plugin = track_carrying_a_hosted_plugin(&mut harness, 1, 7, 0.5);
+
+        // The strip runs it while it is spliced, so the silence below is a
+        // released instance rather than one that never processed at all.
+        harness.send(GraphCommand::SeekFrames(0));
+        let (spliced, _) = harness.render(4);
+        assert_eq!(spliced, vec![1.5; 4]);
+        let calls_on_the_chain = plugin.calls.load(Ordering::Relaxed);
 
         harness.send(GraphCommand::RemoveTrackDevice {
             track_id: 1,
@@ -8466,27 +7466,19 @@ mod timeline_tests {
             EffectPlacement::Detached
         );
 
-        // The mix is guarded twice over, and the placement above is the guard
-        // this test owns: the master walk also skips a bridged effect, so these
-        // two renders hold the same law from the other side — the whole mix
-        // stays the track's own signal on either side of the gate.
         harness.send(GraphCommand::SeekFrames(0));
-        let (shadowed, _) = harness.render(4);
-        assert_eq!(shadowed, vec![1.0; 4]);
-
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        harness.send(GraphCommand::SeekFrames(0));
-        let (audible, _) = harness.render(4);
+        let (released, right) = harness.render(4);
         assert_eq!(
-            audible,
+            released,
             vec![1.0; 4],
             "a released hosted plugin must not process the master mix"
         );
-
-        // Its bridge still drains, so the app keeps its audio and the ring
-        // keeps moving for a plugin no chain holds.
-        relay_one_block(&mut plugin, &mut harness, 0.25);
-        assert!(plugin.handle.pop_output().is_some());
+        assert_eq!(right, released);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            calls_on_the_chain,
+            "no path may hand a released hosted plugin a block"
+        );
     }
 
     /// Bypass is the professional convention on the inline path too: the
@@ -8494,11 +7486,10 @@ mod timeline_tests {
     /// and discards MIDI queued while it was bypassed rather than banking a
     /// burst of stale note-ons for the moment it is enabled.
     #[test]
-    fn a_bypassed_chain_bound_plugin_passes_the_strip_through_and_discards_queued_midi() {
+    fn a_bypassed_hosted_effect_discards_midi_queued_while_bypassed() {
         let mut harness = Harness::new(32);
         harness.playing();
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        let plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        let plugin = track_carrying_a_hosted_plugin(&mut harness, 1, 7, 0.5);
         harness.send(GraphCommand::SetBypass(7, true));
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
 
@@ -9517,61 +8508,6 @@ mod timeline_tests {
         assert_eq!(right, left);
     }
 
-    /// While the monitor is shadowed the app owns a bridged instance, so the
-    /// strip chain skips the device — and that skip is the only thing keeping
-    /// its dry line current. Un-shadowing onto a bypass is what reads the line
-    /// back, and it has to hand over the signal the strip carries now.
-    #[test]
-    fn a_shadowed_bridged_device_keeps_its_dry_line_current_for_the_bypass_that_reads_it() {
-        const LATENCY: usize = 7;
-        const ONSET: u64 = 64;
-        let mut harness = Harness::new(32);
-        harness.playing();
-        track_with_onset_clip(&mut harness, 1, 101, ONSET, 192);
-
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
-        let declared = Arc::new(AtomicUsize::new(LATENCY));
-        harness.send(GraphCommand::AddPluginWithBridge(
-            900,
-            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
-            bridge,
-        ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
-        harness.send(set_latency(900, LATENCY));
-
-        // Bypassed and audible over the silent passage: the line fills with
-        // silence, which is what the last bypass leaves in it.
-        harness.send(GraphCommand::SetBypass(900, true));
-        harness.render(16);
-        harness.render(16);
-
-        // Shadowed and running: the chain skips the instance, so only the feed
-        // over that skip carries the line across the onset.
-        harness.send(GraphCommand::SetBypass(900, false));
-        harness.send(GraphCommand::SetMonitorShadow(true));
-        for _ in 0..4 {
-            harness.render(16);
-        }
-
-        // Handed back to the strip while bypassed, which is the pass that
-        // reads the line.
-        harness.send(GraphCommand::SetBypass(900, true));
-        harness.send(GraphCommand::SetMonitorShadow(false));
-        let (left, right) = harness.render(16);
-
-        assert_eq!(
-            left,
-            vec![1.0; 16],
-            "the strip hands back the signal it carries now, not the silence the line \
-             held before the shadow"
-        );
-        assert_eq!(right, left);
-    }
-
     /// A route line holding nothing is written all the same. Skipped, it
     /// freezes with the audio it held when its hold was dropped, and the next
     /// hold the graph aims it at bursts that era into every sibling route.
@@ -9680,12 +8616,10 @@ mod timeline_tests {
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 256);
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
         let declared = Arc::new(AtomicUsize::new(LATENCY));
-        harness.send(GraphCommand::AddPluginWithBridge(
+        harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
-            bridge,
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
@@ -9743,12 +8677,10 @@ mod timeline_tests {
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 101, 1.0, MAX_COMPENSATION_FRAMES + 128);
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
         let declared = Arc::new(AtomicUsize::new(DETACHED_AT));
-        harness.send(GraphCommand::AddPluginWithBridge(
+        harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
-            bridge,
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
@@ -9807,12 +8739,10 @@ mod timeline_tests {
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 101, 1.0, MAX_COMPENSATION_FRAMES + 128);
 
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
         let declared = Arc::new(AtomicUsize::new(DETACHED_AT));
-        harness.send(GraphCommand::AddPluginWithBridge(
+        harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
-            bridge,
         ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 1,
@@ -10334,16 +9264,14 @@ mod timeline_tests {
         harness.playing();
         track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
 
-        // A bridged registration is homed detached, so it is registered
+        // A hosted registration is homed detached, so it is registered
         // without any chain holding it.
-        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
-        harness.send(GraphCommand::AddPluginWithBridge(
+        harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(
                 Arc::new(AtomicUsize::new(declared)),
                 LATENT_PLUGIN_CAPACITY,
             )),
-            bridge,
         ));
         harness.send(set_latency(900, declared));
         harness.render(16);

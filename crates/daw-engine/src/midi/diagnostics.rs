@@ -4,7 +4,7 @@ use triple_buffer::{Input, Output};
 pub struct ActiveMidiRtDiagnosticsSnapshot {
     pub scheduler_event_buffer_overflows: u64,
     pub arpeggiator_active_note_exhaustions: u64,
-    /// An `AddEffect`/`AddPlugin`/`AddPluginWithBridge` command named an id
+    /// An `AddEffect`/`AddPlugin`/`AddHostedPlugin` command named an id
     /// already held by another effect or plugin. The command is rejected
     /// rather than silently misrouting later `SetParam`/`SetBypass`/
     /// `SendMidiNote`/etc. commands to whichever entry was inserted first.
@@ -36,29 +36,6 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// due while its effect is bypassed is dropped rather than refused, because
     /// a bypassed plugin is never handed the block that would drain it.
     pub unmapped_set_param_calls: u64,
-    /// A processed audio block the app never received because its return ring
-    /// was full. The plugin's output for that block is gone.
-    pub bridge_output_blocks_dropped: u64,
-    /// Audio blocks drained from a bridge with no plugin registered under its
-    /// id. They are returned to the app unprocessed rather than left to fill
-    /// the ring, which would refuse every later push for good — except any the
-    /// pass shed to hold its depth, which are counted in
-    /// `bridge_backlog_blocks_shed`.
-    pub unmatched_bridge_blocks: u64,
-    /// Stale blocks discarded to hold a bridge's round trip at the depth the
-    /// device period needs. Each one is a quantum of dry signal traded for
-    /// latency that would otherwise never come back down.
-    pub bridge_backlog_blocks_shed: u64,
-    /// Blocks returned to the app unprocessed because the plugin the bridge
-    /// names is on a track or bus device chain and the monitor is audible: that
-    /// chain runs the instance over the strip's own signal, so processing the
-    /// bridge's blocks as well would drive one stateful plugin twice a block.
-    /// The bridge is still drained, because a ring left to fill refuses every
-    /// later push for good.
-    pub bridge_blocks_passed_chain_bound: u64,
-    /// Callbacks asking for more frames than the bridge can carry in one pass.
-    /// Above that the app's pushes are refused every period, not occasionally.
-    pub callback_frames_over_bridge_reach: u64,
     /// A `RegisterCaptureConsumer` the input bus would not take: its table was
     /// full, or the id was already on it. The control side holds its own
     /// ledger against the same reserve and refuses first, where the caller
@@ -107,11 +84,6 @@ impl ActiveMidiRtDiagnostics {
                 effect_id_collisions: 0,
                 unsupported_effect_additions: 0,
                 unmapped_set_param_calls: 0,
-                bridge_output_blocks_dropped: 0,
-                unmatched_bridge_blocks: 0,
-                bridge_backlog_blocks_shed: 0,
-                bridge_blocks_passed_chain_bound: 0,
-                callback_frames_over_bridge_reach: 0,
                 capture_consumer_refusals: 0,
                 capture_blocks_dropped: 0,
                 capture_input_underruns: 0,
@@ -152,39 +124,6 @@ impl ActiveMidiRtDiagnostics {
     pub fn record_unmapped_set_param_call(&mut self, count: u64) {
         self.snapshot.unmapped_set_param_calls =
             self.snapshot.unmapped_set_param_calls.saturating_add(count);
-    }
-
-    pub fn record_bridge_output_blocks_dropped(&mut self, count: u64) {
-        self.snapshot.bridge_output_blocks_dropped = self
-            .snapshot
-            .bridge_output_blocks_dropped
-            .saturating_add(count);
-    }
-
-    pub fn record_unmatched_bridge_blocks(&mut self, count: u64) {
-        self.snapshot.unmatched_bridge_blocks =
-            self.snapshot.unmatched_bridge_blocks.saturating_add(count);
-    }
-
-    pub fn record_bridge_backlog_blocks_shed(&mut self, count: u64) {
-        self.snapshot.bridge_backlog_blocks_shed = self
-            .snapshot
-            .bridge_backlog_blocks_shed
-            .saturating_add(count);
-    }
-
-    pub fn record_bridge_blocks_passed_chain_bound(&mut self, count: u64) {
-        self.snapshot.bridge_blocks_passed_chain_bound = self
-            .snapshot
-            .bridge_blocks_passed_chain_bound
-            .saturating_add(count);
-    }
-
-    pub fn record_callback_frames_over_bridge_reach(&mut self, count: u64) {
-        self.snapshot.callback_frames_over_bridge_reach = self
-            .snapshot
-            .callback_frames_over_bridge_reach
-            .saturating_add(count);
     }
 
     pub fn record_capture_consumer_refusal(&mut self, count: u64) {

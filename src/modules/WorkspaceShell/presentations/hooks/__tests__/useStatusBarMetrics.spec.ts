@@ -120,7 +120,6 @@ function makeEngineHealth(detectedUnderrunBlocks = 0): ReturnType<typeof getEngi
             detectedUnderrunBlocks,
             silentFrames: detectedUnderrunBlocks * 128,
             lastUnderrunAtFrame: detectedUnderrunBlocks > 0 ? 96_000 : 0,
-            bridgeDroppedBlocks: 0,
         },
     };
 }

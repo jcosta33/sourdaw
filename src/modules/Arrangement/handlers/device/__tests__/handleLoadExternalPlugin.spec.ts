@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
     findSupportedPlugin: vi.fn(),
     getTrackStoreState: vi.fn(),
     reportLatency: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => 96_000),
     activateExternalPlugin: vi.fn(),
 }));
@@ -25,7 +24,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
-    reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,
 }));
 
@@ -228,9 +226,6 @@ describe('handleLoadExternalPlugin', () => {
         expect(activation?.onLatencyMs).toEqual(expect.any(Function));
         activation?.onLatencyMs?.(9);
         expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 9);
-        expect(activation?.onBridgeRoundTripFrames).toEqual(expect.any(Function));
-        activation?.onBridgeRoundTripFrames?.(1408);
-        expect(mocks.reportBridgeRoundTripFrames).toHaveBeenCalledWith('device-1', 1408);
     });
 
     it('refuses to activate at a guessed rate while the engine renders no audio', async () => {

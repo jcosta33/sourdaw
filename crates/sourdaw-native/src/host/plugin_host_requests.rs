@@ -624,8 +624,6 @@ mod tests {
                 parameters: vec![fixture_parameter(1)],
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
-                bridge: None,
-                relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,
             },
         );

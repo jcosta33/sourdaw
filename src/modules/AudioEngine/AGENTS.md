@@ -16,7 +16,7 @@ Owns the WebAudio runtime graph (`AudioContext`, track/bus strips, send/sidechai
 
 ## Key Subsystems
 
-- **`engine/`**: Runtime graph nodes (`TrackNode`, `BusNode`, `AdjustmentBusNode`, `AdjustmentLayerRuntime`, built-in WASM device nodes: `BacteriaNode`, `CrumbsNode`, `CrustNode`, `FermenterNode`, `GlutenNode`, `GrandBouleNode`, `GrinderNode`, `KneadNode`, `LevainNode`, `NativePluginBridgeNode`, `ProofChamberNode`, `ProofNode`, `ScoringNode`, `ToasterNode`), `audioDeviceRuntimeSink.ts`, `wasmDeviceRegistry.ts`, `telemetryAllocator.ts`, `dropoutCounter.ts`. (Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module).
+- **`engine/`**: Runtime graph nodes (`TrackNode`, `BusNode`, `AdjustmentBusNode`, `AdjustmentLayerRuntime`, built-in WASM device nodes: `BacteriaNode`, `CrumbsNode`, `CrustNode`, `FermenterNode`, `GlutenNode`, `GrandBouleNode`, `GrinderNode`, `KneadNode`, `LevainNode`, `ProofChamberNode`, `ProofNode`, `ScoringNode`, `ToasterNode`), `audioDeviceRuntimeSink.ts`, `wasmDeviceRegistry.ts`, `telemetryAllocator.ts`, `dropoutCounter.ts`. (Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module).
 - **`wasm/`**: Generated JS glue for compiled Rust WASM crates (`crates/{daw-dsp,proof-chamber,scoring,daw-wasm-decoder}`).
 - **`worklets/`**: AudioWorklet processors and node wrappers.
 - **`workers/`**: Background workers (e.g. Grand Boule Worker behind SharedArrayBuffer ring).
@@ -35,7 +35,7 @@ Owns the WebAudio runtime graph (`AudioContext`, track/bus strips, send/sidechai
 - **Worklet boundaries**: Worklets import nothing from app modules, helpers, or desktop IPC. Depcruise `worklets-no-*` rules match `src/modules/<M>/worklets/**` only; raw processors in `public/audio/worklets/` must be manually isolated. `worker.format: 'iife'` in `vite.config.ts` allows worklet blob URLs to load bundles.
 - **Single AudioContext**: Exactly one live `AudioContext` app-wide.
 - **Faust synchronization**: Faust is wired in AudioEngine and PluginHost; changes in one require matching updates in the other.
-- **Native plugin bridge**: Native-plugin bridge worklets are raw JS in `public/audio/worklets/`, separate from the WASM glue.
+- **External plugins are engine-hosted**: the native engine processes a hosted plugin inline on its own audio callback, inside the chain that holds it. The Web Audio graph carries a unity pass-through where such a device sits, so it adds no latency of its own and no audio crosses the process boundary per block.
 - **Live topology attach state**: An `external-plugin` device has a native body exactly when the engine reports its instance attached, so the live topology producer takes that attach state as an input (read from PluginHost's parameter store) rather than deriving it from the device. `apply_graph_commands` captures its plugin lookup before mapping and attaches dormant instances behind the fence, so the batch that attaches an instance is always mapped before the engine holds it: binding it takes one further batch. A session start therefore sends its topology a second time when the first batch reports attachments — once, never in a loop, and only while the engine is parked, because a `replaceTopology` batch tears every strip down inside one fence and must never reach a rolling engine.
 
 ## Verification

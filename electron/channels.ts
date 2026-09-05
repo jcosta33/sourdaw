@@ -130,10 +130,10 @@ export type MessageDialogOptions = {
  * - `invokeBinaryResponse` — bytes come back, guaranteed as a `Uint8Array`
  *   rather than the JSON number array a wire-shape change would produce.
  *
- * The overlap is deliberate: `process_plugin_audio` runs once per render
- * quantum with a buffer in and a buffer out, and a bridge where that shape had
- * to be assembled from two calls, or where one of them silently dropped the
- * answer, would show up as a plugin rendering silence rather than as an error.
+ * The overlap is deliberate: a command that takes bytes and answers with
+ * something the caller reads is served by one call, and a bridge where that
+ * shape had to be assembled from two, or where one of them silently dropped the
+ * answer, would surface as a missing result rather than as an error.
  */
 export type SourdawBridge = {
     /**

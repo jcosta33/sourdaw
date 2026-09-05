@@ -309,44 +309,6 @@ describe('activateExternalPlugin', () => {
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p', 'inst-1', 44_100);
     });
 
-    it('reports the bridge round trip the host measured for this instance', async () => {
-        // Separate from the plugin's own latency and reported alongside it:
-        // the two are compensated together, and only the host knows the second.
-        mocks.loadPluginRepo.mockResolvedValueOnce({
-            instance_id: 'inst-1',
-            parameters: [],
-            latency_samples: 0,
-            latency_ms: 5,
-            bridge_round_trip_frames: 1408,
-        });
-        const onBridgeRoundTripFrames = vi.fn<(frames: number) => void>();
-
-        activateExternalPlugin({
-            engineSampleRate: ENGINE_SAMPLE_RATE,
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            onBridgeRoundTripFrames,
-        });
-
-        await vi.waitFor(() => expect(onBridgeRoundTripFrames).toHaveBeenCalledWith(1408));
-        expect(onBridgeRoundTripFrames).toHaveBeenCalledTimes(1);
-    });
-
-    it('does not report a bridge round trip when instantiation fails', async () => {
-        mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
-        const onBridgeRoundTripFrames = vi.fn<(frames: number) => void>();
-
-        activateExternalPlugin({
-            engineSampleRate: ENGINE_SAMPLE_RATE,
-            pluginId: 'p',
-            instanceId: 'inst-1',
-            onBridgeRoundTripFrames,
-        });
-
-        await vi.waitFor(() => expect(loadedExternalInstances.has('inst-1')).toBe(false));
-        expect(onBridgeRoundTripFrames).not.toHaveBeenCalled();
-    });
-
     it('routes a mid-session latency change from the native host to the sink', async () => {
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',

@@ -183,16 +183,16 @@ describe('computeCounterDeltas', () => {
     it('subtracts the first reading from the last for every named monotonic counter', () => {
         expect(
             computeCounterDeltas(
-                { bridgeOutputBlocksDropped: 3, unmatchedBridgeBlocks: 1 },
-                { bridgeOutputBlocksDropped: 9, unmatchedBridgeBlocks: 1 }
+                { captureBlocksDropped: 3, captureInputUnderruns: 1 },
+                { captureBlocksDropped: 9, captureInputUnderruns: 1 }
             )
-        ).toEqual({ ...zeroedCounterDeltas, bridgeOutputBlocksDropped: 6, unmatchedBridgeBlocks: 0 });
+        ).toEqual({ ...zeroedCounterDeltas, captureBlocksDropped: 6, captureInputUnderruns: 0 });
     });
 
     it('treats a named counter absent from a reading as having started or ended at zero', () => {
-        expect(computeCounterDeltas({}, { bridgeBacklogBlocksShed: 5 })).toEqual({
+        expect(computeCounterDeltas({}, { captureConsumerRefusals: 5 })).toEqual({
             ...zeroedCounterDeltas,
-            bridgeBacklogBlocksShed: 5,
+            captureConsumerRefusals: 5,
         });
     });
 

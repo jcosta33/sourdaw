@@ -11,7 +11,8 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 ## Real-Time Invariants (Hard)
 
 - **Zero Allocation & Zero Locks**: Audio render callbacks (`audio_thread.rs`) must execute with zero heap allocations, zero mutex locks, and zero blocking syscalls (`assert_no_alloc` in debug tests).
-- **Headroom over Latency**: SPSC ring buffers must decouple the audio callback from asynchronous command processing without dropping blocks before native plugins process them.
+- **Headroom over Latency**: SPSC ring buffers must decouple the audio callback from asynchronous command processing, so control-thread work never blocks the callback and no queued command is silently dropped.
+- **One clock**: every plugin the engine hosts runs inline on the audio callback, inside the chain that holds it. A hosted instance is registered homed detached — releasing it from a chain returns it to a placement that runs nowhere — and nothing renders it on a second cadence.
 - **Teardown Order**: Audio streams must stop and drain before dropping downstream DSP nodes or CLAP plugin instances.
 
 ## Plugin Delay Compensation

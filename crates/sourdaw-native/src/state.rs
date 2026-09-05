@@ -1,6 +1,5 @@
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
-use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
 use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::ScannedPlugin;
@@ -18,7 +17,6 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 #[cfg(test)]
 use std::ffi::c_void;
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
@@ -68,28 +66,6 @@ impl PluginInstanceData {
     }
 }
 
-/// Preallocated de-interleave scratch for one instance's worklet↔engine relay.
-///
-/// `process_plugin_audio` runs once per render quantum per bridged plugin, so a
-/// `Vec` allocated inside it is allocator churn on the path that services the
-/// audio relay. Both buffers are sized once to the largest block the bridge
-/// accepts (`MAX_BLOCK_FRAMES`) and refilled in place: the relay clears and
-/// pushes, never grows. A block larger than that capacity is refused by
-/// `push_input` anyway, so the relay never has a reason to reallocate.
-pub struct PluginRelayScratch {
-    pub left: Vec<f32>,
-    pub right: Vec<f32>,
-}
-
-impl Default for PluginRelayScratch {
-    fn default() -> Self {
-        Self {
-            left: Vec::with_capacity(MAX_BLOCK_FRAMES),
-            right: Vec::with_capacity(MAX_BLOCK_FRAMES),
-        }
-    }
-}
-
 pub struct EnginePluginInstanceData {
     pub engine_plugin_id: usize,
     pub runtime: Arc<SharedHostedPlugin>,
@@ -103,14 +79,6 @@ pub struct EnginePluginInstanceData {
     /// reads it back at splice time so an instrument replaces nothing and a
     /// plain effect still does.
     pub chain_kind: DeviceKind,
-    /// Main-thread end of this instance's audio bridge.
-    ///
-    /// Held on the instance record, not in a second map keyed by engine plugin
-    /// id, so the relay resolves an instance id to its ring in one lock and one
-    /// lookup — and so the ring cannot outlive, or go missing from, the record
-    /// that owns it.
-    pub bridge: Option<PluginAudioBridgeHandle>,
-    pub relay_scratch: PluginRelayScratch,
     /// The queue this plugin writes its own parameter edits into.
     ///
     /// Cloned off the runtime once at load and held here rather than reached
@@ -305,11 +273,6 @@ pub struct AppState {
     /// the scheduler has released its own `Arc` — see that method for the
     /// invariant.
     pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedHostedPlugin>>>>,
-    /// Input blocks `process_plugin_audio` could not hand to a bridge because
-    /// its input ring was full. Each one is audio the hosted plugin never saw,
-    /// so the refusal is counted and reported through `engine_rt_diagnostics`
-    /// rather than discarded with the block.
-    pub bridge_input_blocks_refused: Arc<AtomicU64>,
     /// Decoded timeline material, keyed by the app's stable source id.
     ///
     /// This is the native realisation of `AudioGraphClipSource.sourceId`
@@ -602,7 +565,6 @@ impl Default for AppState {
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
-            bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
             timeline_samples: Arc::new(Mutex::new(TimelineSamplePool::default())),
             graph: Arc::new(Mutex::new(crate::commands::graph::GraphRegistry::default())),
             graph_mapping_sessions: Arc::new(Mutex::new(
@@ -1330,8 +1292,6 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
-                    bridge: None,
-                    relay_scratch: PluginRelayScratch::default(),
                     parameter_events: None,
                 },
             );
