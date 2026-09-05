@@ -31,14 +31,29 @@ vi.mock('#/components/daw/DawChannelStripShell', () => ({
     ),
 }));
 
+// `data-transient` lets a test drive the mock as either a mid-drag sample or a
+// settled commit: `Fader`'s real contract is a second `onChange` argument, which
+// a bare `<input onChange>` has no room to carry, so the test sets the attribute
+// on the node before firing `change` and the mock reads it back off.
 vi.mock('#/components/daw/Fader', () => ({
-    Fader: ({ value, onChange, max }: { value: number; onChange: (val: number) => void; max?: number }) => (
+    Fader: ({
+        value,
+        onChange,
+        max,
+    }: {
+        value: number;
+        onChange: (val: number, isTransient?: boolean) => void;
+        max?: number;
+    }) => (
         <input
             type="range"
             data-testid="fader"
             data-max={max}
             value={value}
-            onChange={(event) => onChange(parseFloat(event.target.value))}
+            onChange={(event) => {
+                const isTransient = event.target.dataset.transient === 'true';
+                onChange(parseFloat(event.target.value), isTransient);
+            }}
         />
     ),
 }));
@@ -73,7 +88,27 @@ describe('MasterChannelStrip', () => {
         fireEvent.change(fader, { target: { value: '0.5' } });
 
         const { setMasterGain } = await import('#/modules/Transport/useCases');
-        expect(setMasterGain).toHaveBeenCalledWith(50);
+        expect(setMasterGain).toHaveBeenCalledWith(50, false);
+    });
+
+    it('drives the fader from the gesture value while the drag is transient, then commits settled', async () => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+
+        expect(setMasterGain).toHaveBeenCalledWith(50, true);
+        // The store mock never moves off `masterGain: 80` — the rendered fader
+        // tracking the transient sample instead of 0.8 can only come from the
+        // component's own gesture-local display state.
+        expect(screen.getByTestId('fader')).toHaveValue('0.5');
+
+        fader.removeAttribute('data-transient');
+        fireEvent.change(fader, { target: { value: '0.55' } });
+
+        expect(setMasterGain).toHaveBeenCalledWith(expect.closeTo(55, 5), false);
     });
 
     it('should display correct dB value for gain 80', () => {

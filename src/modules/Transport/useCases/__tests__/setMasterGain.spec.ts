@@ -31,6 +31,24 @@ describe('setMasterGain', () => {
         expect(setMasterGainValue).toHaveBeenCalledWith(0.5);
     });
 
+    it('writes only the engine for a transient sample, not the store', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setMasterGain(50, true);
+
+        expect(setMasterGainValue).toHaveBeenCalledWith(0.5);
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
+
+    it('writes both the engine and the store for an explicitly settled call', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        setMasterGain(50, false);
+
+        expect(setMasterGainValue).toHaveBeenCalledWith(0.5);
+        expect(updateTransportState).toHaveBeenCalledWith({ masterGain: 50 });
+    });
+
     it('should not update when transport state is missing', () => {
         vi.mocked(getTransportState).mockReturnValue(null);
 

@@ -18,6 +18,13 @@ import { MAX_MASTER_GAIN } from '../stores/transportStore';
  * scale — a value above it changes nothing audible (both the store and the
  * engine clamp there independently) and only pollutes stored/undo state.
  * `NaN` and negative inputs clamp to 0, the field's floor.
+ *
+ * `isTransient` mirrors `setTrackGain`'s contract: a transient sample (every
+ * value emitted while the master fader's cap is under the pointer) drives
+ * only the engine, and the settled value (the one sample emitted once the
+ * gesture ends) additionally writes `transportStore` — the durable, undoable
+ * value. Without the split, every pointermove wrote project truth, turning
+ * one fader drag into dozens of undo-history entries.
  */
 const MIN_MASTER_GAIN = 0;
 
@@ -28,12 +35,14 @@ function clampMasterGain(value: number): number {
     return Math.min(MAX_MASTER_GAIN, Math.max(MIN_MASTER_GAIN, value));
 }
 
-export function setMasterGain(storeValue: number): void {
+export function setMasterGain(storeValue: number, isTransient = false): void {
     const state = getTransportState();
     if (!state) {
         return;
     }
     const clamped = clampMasterGain(storeValue);
-    updateTransportState({ masterGain: clamped });
     setMasterGainValue(clamped / 100);
+    if (!isTransient) {
+        updateTransportState({ masterGain: clamped });
+    }
 }
