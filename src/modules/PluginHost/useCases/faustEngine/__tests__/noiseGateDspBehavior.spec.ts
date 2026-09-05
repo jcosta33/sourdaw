@@ -109,4 +109,20 @@ describe('noise-gate.dsp behavior (offline render)', () => {
 
         expect(ratio(output, 1.9, 2.0)).toBeLessThan(0.05);
     });
+
+    it('sustains open when hold is 0 while input stays above threshold, then closes after release', async () => {
+        const output = await renderGate(generator, 0);
+
+        expect(ratio(output, 0.05, 0.111)).toBeGreaterThan(0.95);
+        expect(ratio(output, 0.9, 1.0)).toBeGreaterThan(0.95);
+        expect(ratio(output, 1.9, 2.0)).toBeLessThan(0.05);
+    });
+
+    it('sustains open when hold is sub-sample while input stays above threshold', async () => {
+        const output = await renderGate(generator, 0.00001);
+
+        expect(ratio(output, 0.05, 0.111)).toBeGreaterThan(0.95);
+        expect(ratio(output, 0.9, 1.0)).toBeGreaterThan(0.95);
+        expect(ratio(output, 1.9, 2.0)).toBeLessThan(0.05);
+    });
 });
