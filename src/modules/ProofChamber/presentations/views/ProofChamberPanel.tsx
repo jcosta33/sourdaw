@@ -428,7 +428,26 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
         const { groupId, groupLabel } = generateGroupId(`Load ${space} space`);
         const result = await executeAppActionBatch(actions, { groupId, groupLabel });
-        if (result.status === 'rejected' || result.status === 'conflicted' || result.status === 'failed') {
+        if (result.status === 'ambiguous') {
+            // The write may or may not have persisted — the storage transaction's
+            // commit state is unknown — so the toast hedges instead of naming an
+            // outcome the batch never reported.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(
+                `The "${space}" space load outcome is unknown. Check the Space tray before retrying.`,
+                'warning'
+            );
+            return;
+        }
+        if (result.status === 'failed') {
+            // A handler or storage throw, not a project refusal: the refusal
+            // message here would name a false cause, so the toast stays
+            // cause-neutral and the durable log keeps the reason diagnosable.
+            logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            notifyUser(`Could not load "${space}" space — see logs for details.`, 'error');
+            return;
+        }
+        if (result.status === 'rejected' || result.status === 'conflicted') {
             // The batch resolves rather than rejecting when it is turned away,
             // so the click used to leave no trace at all. The toast names the
             // outcome; the durable log keeps the reason diagnosable.

@@ -146,6 +146,59 @@ describe('ProofChamberPanel', () => {
     });
 
     /**
+     * An ambiguous batch may have persisted the space and may not have — the
+     * storage transaction's commit state is unknown — so the warning hedges
+     * rather than claiming the refusal the batch never issued. A silent branch
+     * would leave the click's outcome unknowable; a refusal toast would name a
+     * false cause.
+     */
+    it('hedges with one warning that the load outcome is unknown when the space-load batch is ambiguous', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'ambiguous',
+            reason: 'unknown commit state',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('outcome is unknown'), 'warning');
+        const [ambiguousMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expect(ambiguousMessage).toContain('plate');
+        expect(ambiguousMessage).not.toContain("can't be changed");
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    /**
+     * A `failed` batch is a handler or storage throw, not a project refusal:
+     * the toast must stay cause-neutral and point at the logs, never at the
+     * "project can't be changed" refusal text, which would launder the real
+     * failure into a false cause.
+     */
+    it('errors once with a cause-neutral message when the space-load batch fails', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'failed',
+            reason: 'handler threw',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('see logs for details'), 'error');
+        const [failedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expect(failedMessage).toContain('plate');
+        expect(failedMessage).not.toContain("can't be changed");
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'warning');
+    });
+
+    /**
      * The algorithm chips are the only surface that writes `algorithm`, and the
      * number they write is persisted and replayed verbatim on load. Reverse
      * carries 6 rather than 4, because 4 and 5 are reserved for the two
