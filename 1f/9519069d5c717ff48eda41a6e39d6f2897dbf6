@@ -1,0 +1,23 @@
+crates/sourdaw-native/src/host/plugin_scan_policy.rs
+  s_9b530f08172a54::t_3b4d8bdbe73950 143-158
+  s_9b530f08172a54::t_cf126b2520b8f3 458-481
+  s_9b530f08172a54::t_bb4cefee0a07f4 454-457
+  s_9b530f08172a54::t_d5bfce8fd1bd31 65-72
+  s_9b530f08172a54::t_522db3f2344071 88-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1f9519069d5c717ff48eda41a6e39d6f2897dbf6",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
