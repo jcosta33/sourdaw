@@ -1,0 +1,28 @@
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_9b530f08172a54::t_d3ff59eb59f35c 144-151
+src/components/daw/Fader.tsx
+  s_9b530f08172a54::t_5725b32935e3ff 222-228
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+  s_9b530f08172a54::t_da07f76022c8b9 243-247
+  s_9b530f08172a54::t_a9df1a1a0012c2 178-185
+  s_9b530f08172a54::t_edcea479088e98 160-177,186-202
+  s_9b530f08172a54::t_06923fdb99045c 133-135,137,139-141
+src/components/daw/__tests__/Fader.spec.tsx
+  s_9b530f08172a54::t_728d9b5cf23acb 274-308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f9e0f97b1b3ea3dbe4891c2573317579f3836e8b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
