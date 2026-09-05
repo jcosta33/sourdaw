@@ -1,0 +1,25 @@
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  s_9b530f08172a54::t_ebac7e85d0ac0e 457,474
+src/modules/Arrangement/presentations/views/__tests__/AdjustmentLayerStrip.spec.tsx
+  s_9b530f08172a54::t_20278c7c38311f 176-204,212-218
+src/modules/MixerConsole/presentations/views/MixerPanel.tsx
+  s_9b530f08172a54::t_11c3cb42ae0e67 153
+src/modules/MixerConsole/presentations/views/__tests__/MixerPanel.spec.tsx
+  s_9b530f08172a54::t_80184860be7407 102-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "618b4318a0b97057a7e218fb74520845967cfada",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
