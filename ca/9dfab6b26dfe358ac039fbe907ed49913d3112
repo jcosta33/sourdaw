@@ -1,0 +1,19 @@
+src/modules/Synth/engine/__tests__/scheduleBuiltinSynthNote.spec.ts
+  s_5700b967b670f2::t_f6777098de6e06 214-232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ca9dfab6b26dfe358ac039fbe907ed49913d3112",
+  "prompts": {},
+  "sessions": {
+    "s_5700b967b670f2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a087019ab18afb4fc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
