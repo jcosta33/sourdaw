@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
 import { describeAction, ACTION_LABELS } from '../actionLabels';
+
+// The real store carries the shipped default bindings; the derivation below
+// must never observe a mock, so it reaches for the actual module.
+const realShortcutStores = await vi.importActual<typeof import('#/modules/CommandInterface/stores')>(
+    '#/modules/CommandInterface/stores'
+);
 
 describe('ACTION_LABELS', () => {
     it('contains labels for core action types', () => {
@@ -15,6 +21,50 @@ describe('ACTION_LABELS', () => {
         expect(ACTION_LABELS.copyClip).toBe('Copy clip');
         expect(ACTION_LABELS.pasteClip).toBe('Paste clip');
         expect(ACTION_LABELS.duplicateClipToNextBar).toBe('Duplicate clip to next bar');
+    });
+
+    it('labels every app action a keystroke can dispatch', () => {
+        // Admission refusals describe through `ACTION_LABELS[type] ?? type`
+        // (see describeRefusal in executeUserAppAction), so any action type a
+        // keystroke can reach on the executeUserAppAction seam and a
+        // project-kind handler can refuse must carry a label, or the warning
+        // shows the raw token.
+        const definitions = realShortcutStores.shortcutStore.value?.definitions ?? [];
+
+        // Shortcut definitions that dispatch an app action directly.
+        const fromDefinitions = definitions.flatMap((def) =>
+            def.action.type === 'appAction' ? [def.action.action.type] : []
+        );
+
+        // Callback definitions whose handleKeydown branch settles into an
+        // executeUserAppAction dispatch. Keyed by callback id; keep in sync
+        // with the callback switch in handleKeydown.ts. Every other callback
+        // calls a domain use case directly instead of the action seam, so
+        // admission can never refuse it and it needs no label.
+        const callbackAppActionTypes: Record<string, string[]> = {
+            // `deleteSelection` deletes the selected clips through
+            // executeUserAppAction({ type: 'removeClip' }).
+            deleteSelection: ['removeClip'],
+        };
+        const fromCallbacks = definitions.flatMap((def) =>
+            def.action.type === 'callback' ? (callbackAppActionTypes[def.action.id] ?? []) : []
+        );
+
+        // The `g`-leader AI chord resolves in `dispatchAiChord` in
+        // handleKeydown.ts, not in a shortcut definition, so its action types
+        // cannot be derived from the store. Pinned here; keep in sync with
+        // `dispatchAiChord`.
+        const aiChordActionTypes = [
+            'generateBassline',
+            'generateDrumPattern',
+            'generateMelody',
+            'generateChordProgression',
+        ];
+
+        const reachableTypes = new Set([...fromDefinitions, ...fromCallbacks, ...aiChordActionTypes]);
+        const unlabeled = [...reachableTypes].filter((type) => ACTION_LABELS[type] === undefined);
+
+        expect(unlabeled, 'keystroke-reachable action types missing from ACTION_LABELS').toEqual([]);
     });
 });
 
