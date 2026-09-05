@@ -1408,6 +1408,29 @@ impl ActiveEffect {
         }
     }
 
+    /// Whether no path in this callback runs this effect at all: it is
+    /// detached, and no bridge feeds it.
+    ///
+    /// A detached effect is skipped by the master chain and reached by no strip
+    /// chain, so the only path left that can run one is its audio bridge —
+    /// which is why `bridged` is a parameter rather than a field: the bridge
+    /// index lives on the scheduler.
+    #[inline]
+    fn runs_nowhere(&self, bridged: bool) -> bool {
+        !bridged && self.placement == EffectPlacement::Detached
+    }
+
+    /// Whether nothing will hand this effect a block on this callback.
+    ///
+    /// Either it runs nowhere, or it is bypassed — every chain and the bridge
+    /// drain skip a bypassed device rather than processing it. Work queued for
+    /// a body no block reaches has no drain, so it is discarded rather than
+    /// banked.
+    #[inline]
+    fn receives_no_block(&self, bridged: bool) -> bool {
+        self.bypassed || self.runs_nowhere(bridged)
+    }
+
     #[inline]
     fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
         // Drop the newest event when the fixed block-local buffer is full.
@@ -2770,31 +2793,38 @@ impl AudioScheduler {
                 visits += 1;
             }
             let effect = &mut self.effects[slot];
-            let bypassed = effect.bypassed;
+            let bridged = self.bridge_index.lookup(effect.id).is_some();
+            let receives_no_block = effect.receives_no_block(bridged);
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match (&mut effect.instance, event.param) {
                     (PluginCore::Knead(engine), DeviceParamTarget::Builtin(param)) => {
                         apply_knead_param(engine, param, event.value as f32);
                     }
-                    // A bypassed hosted plugin is never handed a block — the
-                    // master chain and every track chain skip it — so nothing
-                    // would drain a write from its pending-parameter queue.
-                    // Queueing one anyway holds that queue non-empty until the
-                    // effect is un-bypassed, and a non-empty queue refuses the
-                    // plugin's state read (so a project save skips its chunk)
-                    // and every parameter poll (so its cache freezes). The
-                    // stamp is therefore popped and dropped, on the same
-                    // contract a bypassed device's `pending_midi` follows in
-                    // `process_audio_bridges` and in both chain arms: queued
-                    // while bypassed is discarded, never banked.
+                    // A hosted plugin only ever receives a write through a
+                    // process call, so a stamp queued on one no block reaches
+                    // is never drained: it holds the plugin's
+                    // pending-parameter queue non-empty, and a non-empty queue
+                    // refuses the plugin's state read (so a project save skips
+                    // its chunk) and every parameter poll (so its cache
+                    // freezes). Neither condition has to end on its own — a
+                    // detached effect stays detached until some chain claims it
+                    // again, which may be never — so the write can freeze the
+                    // instance for the rest of its life. The stamp is therefore
+                    // popped and dropped, on the same contract a bypassed or
+                    // detached device's `pending_midi` follows in
+                    // `process_audio_bridges`, in both chain arms and in the
+                    // detached sweep: queued where nothing consumes it is
+                    // discarded, never banked.
                     //
                     // A `Builtin` stamp is deliberately not dropped. The knead
                     // engine holds its parameters in its own struct, written
                     // here and needing no process call to receive them, so the
                     // value has to be current the moment the effect is
-                    // un-bypassed. A hosted plugin cannot be written to at all
-                    // while bypassed — that is the whole of the asymmetry.
-                    (PluginCore::Native(_), DeviceParamTarget::Hosted { .. }) if bypassed => {}
+                    // un-bypassed or placed on a chain again. A hosted plugin
+                    // cannot be written to at all until it is handed a block —
+                    // that is the whole of the asymmetry.
+                    (PluginCore::Native(_), DeviceParamTarget::Hosted { .. })
+                        if receives_no_block => {}
                     (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
                         if !plugin.apply_parameter_on_audio_thread(id, event.value) {
                             self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
@@ -3147,7 +3177,7 @@ impl AudioScheduler {
             }
             let effect = &mut self.effects[slot];
             let bridged = self.bridge_index.lookup(effect.id).is_some();
-            if !bridged && effect.placement == EffectPlacement::Detached {
+            if effect.runs_nowhere(bridged) {
                 effect.pending_midi.clear();
                 self.pending_midi_work.remove(slot);
             } else {
@@ -7189,6 +7219,107 @@ mod timeline_tests {
                 .unmapped_set_param_calls,
             0,
             "a stamp the engine discards is not a call the plugin refused"
+        );
+    }
+
+    /// A detached effect is handed no block either: no chain claims it, and
+    /// without a bridge no path reaches it at all. A stamp queued on the plugin
+    /// there would never drain — and unlike bypass, nothing has to end that
+    /// state, so the plugin's state read and its parameter polls would stay
+    /// refused for the rest of the instance's life.
+    #[test]
+    fn a_hosted_stamp_on_a_detached_effect_is_discarded() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(3),
+            index: 0,
+        });
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 6,
+        });
+        harness.send(GraphCommand::RemoveTrack(1));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+
+        harness.render(4);
+        harness.render(4);
+
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a stamp due while the effect runs nowhere must never reach the plugin"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_params.is_empty(),
+            "the discarded stamp leaves the queue rather than banking until the \
+             effect is placed again"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the engine discards is not a call the plugin refused"
+        );
+    }
+
+    /// The other side of the asymmetry, and the reason the discard is matched
+    /// on the target rather than taken before the match: a knead engine holds
+    /// its parameters in its own struct, written straight through here, so a
+    /// bypassed one still takes the stamp and is already current when the user
+    /// un-bypasses it. Gate this arm on the same condition the hosted arm uses
+    /// and the parameter silently keeps its old value instead.
+    #[test]
+    fn a_builtin_stamp_still_applies_while_the_effect_is_bypassed() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.send(GraphCommand::AddEffect(7, knead_instance()));
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
+            value: 5.0,
+            at_frame: 6,
+        });
+
+        harness.render(4);
+        match &harness.scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(
+                engine.shift_semitones, 0.0,
+                "a change stamped ahead of the playhead must not land early, \
+                 bypassed or not"
+            ),
+            PluginCore::Native(_) => panic!("expected the knead effect"),
+        }
+
+        harness.render(4);
+        match &harness.scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(
+                engine.shift_semitones, 5.0,
+                "a built-in takes its stamp while bypassed: the value must be \
+                 current the moment the effect is un-bypassed"
+            ),
+            PluginCore::Native(_) => panic!("expected the knead effect"),
+        }
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the built-in applied is not an unmapped call"
         );
     }
 

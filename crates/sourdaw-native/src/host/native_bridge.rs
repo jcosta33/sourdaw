@@ -49,6 +49,15 @@ const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events per block for the event-conversion scratch array.
 const MAX_MIDI_EVENTS: usize = 64;
 /// Bounded pending parameter capacity, matched to ClapWrapper's process-event scratch.
+///
+/// The engine's per-effect stamp window,
+/// [`daw_engine::timeline::DEVICE_PARAM_QUEUE_CAPACITY`], is sized at what one
+/// process call of a hosted body can take, which is this number. The engine
+/// states that rationale without naming this constant — it sits downstream of
+/// the engine and must stay unknown to it — so the equality is recorded here,
+/// where the dependency runs the right way: raising this leaves the engine's
+/// window merely conservative, while lowering it lets a batch the engine admits
+/// whole overrun this ring, which drops the excess with nothing left to resend.
 const PENDING_PARAMETER_CAPACITY: usize = 64;
 
 const PLUGIN_ACCESS_IDLE: u8 = 0;
@@ -278,10 +287,12 @@ impl PendingParameterQueue {
     /// of them the audio thread, so the overlap is real rather than
     /// theoretical.
     ///
-    /// The write that survives a preset load is delivered after the preset
-    /// rather than being dropped with the rest. That is the automation's truth:
-    /// the write was issued against the timeline, and the value the lane holds
-    /// at this frame is the value the parameter should end at.
+    /// So a write caught mid-publish survives the load and is delivered after
+    /// the preset. What the compare-exchange guarantees is only that: a slot's
+    /// owner republishes whatever coalescing left in it, which may be its own
+    /// value or an editor write it folded a stale value into — the queue does
+    /// not record which path a pending value came from, and this is not a rule
+    /// about automation outranking the preset.
     fn clear(&self) {
         for slot in &self.slots {
             let _ = slot.state.compare_exchange(
@@ -459,8 +470,10 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// It skips each of them for a reason rather than for speed. The lifecycle
     /// and activation checks are already enforced where they bind — an
     /// unloading or inactive instance is never handed a block, because
-    /// [`Self::with_process`] refuses it, and the queue an unload leaves behind
-    /// is cleared by the path that owns the unload. The editor is not told,
+    /// [`Self::with_process`] refuses it. Nothing clears the queue an unload
+    /// leaves behind, and nothing needs to: the writes it holds are never
+    /// delivered once the lifecycle closes, and the retirement sweep drops the
+    /// instance whole, queue included. The editor is not told,
     /// because an automated parameter is not a host-side edit: the plugin moves
     /// its own parameter and reports it back through its own parameter events,
     /// which is how every format expects a processor-side change to reach the

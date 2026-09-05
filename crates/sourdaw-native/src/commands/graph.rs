@@ -4927,12 +4927,13 @@ mod tests {
     fn the_ledger_never_releases_ahead_of_the_echo() {
         let samples = sample_pool();
         let mut registry = GraphRegistry::default();
-        // The largest batch this test sends is a full device-parameter window,
-        // so the offline ring is derived from that window plus room for the
-        // batch fence and the strip setup that precedes it. A literal would
-        // silently cap the batch the moment the window grows, and the test
-        // would then fail on the ring rather than on the ledger it is about.
-        let mut renderer = OfflineRenderer::new(48_000.0, DEVICE_PARAM_QUEUE_CAPACITY + 16);
+        // The largest batch this test sends is a full device-parameter window
+        // behind its batch fence, and `OfflineRenderer::render` drains the ring
+        // before that batch is pushed — so the strip setup ahead of it has
+        // already left. A literal would silently cap the batch the moment the
+        // window grows, and the test would then fail on the ring rather than on
+        // the ledger it is about.
+        let mut renderer = OfflineRenderer::new(48_000.0, DEVICE_PARAM_QUEUE_CAPACITY + 1);
 
         admit_and_send(
             &mut registry,
