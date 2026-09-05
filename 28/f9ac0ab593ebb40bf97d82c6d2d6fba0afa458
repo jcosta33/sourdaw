@@ -1,0 +1,29 @@
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_67a9fae9a03847::t_78e5f03e35bc0e 431-443,447-451,454
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_9b530f08172a54::t_1f1d48072f3861 148-175,179-184,186,199,202,204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "28f9ac0ab593ebb40bf97d82c6d2d6fba0afa458",
+  "prompts": {},
+  "sessions": {
+    "s_67a9fae9a03847": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49200e7f-c5f8-4fc1-861c-c74fd1a6c90d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
