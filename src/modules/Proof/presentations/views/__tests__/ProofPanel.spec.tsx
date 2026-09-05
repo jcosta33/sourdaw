@@ -1585,16 +1585,21 @@ describe('ProofPanel', () => {
         expect(bridge.setParam).toHaveBeenCalledWith('lim_bypass', 1);
     });
 
-    it('establishes min-height floor and allows bottom drawer scrolling without overflow-auto or overflow-hidden', () => {
+    it('lets the faceplate scroll instead of clipping the desk when the panel is smaller than it', () => {
         const { container } = render(<ProofPanel deviceId="proof-1" />);
         const faceplate = container.querySelector<HTMLElement>('.proof-faceplate');
         expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[440px]');
-        expect(faceplate?.className).not.toContain('overflow-auto');
-        expect(faceplate?.className).not.toContain('overflow-hidden');
+        expect(faceplate).toHaveClass('overflow-auto');
+        expect(faceplate).not.toHaveClass('overflow-hidden');
+        expect(faceplate?.className).not.toContain('min-h-[440px]');
+    });
 
+    it('keeps the grid row min-h-0 so rails and the desk window own their own overflow instead of the row growing past the faceplate', () => {
+        const { container } = render(<ProofPanel deviceId="proof-1" />);
+        const faceplate = container.querySelector<HTMLElement>('.proof-faceplate');
         const grid = faceplate?.querySelector<HTMLElement>('.grid');
         expect(grid).not.toBeNull();
-        expect(grid?.className).toContain('min-h-[440px]');
+        expect(grid).toHaveClass('min-h-0');
+        expect(grid?.className).not.toContain('min-h-[440px]');
     });
 });

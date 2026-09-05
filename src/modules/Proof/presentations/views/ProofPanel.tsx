@@ -472,13 +472,18 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
     return (
-        <div className="proof-faceplate h-full min-h-[440px] rounded-[26px] p-3">
+        <div className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3">
             {/* The desk column never shrinks below the EQ surface (500px
                 canvas plus section and desk padding); when the panel is
                 smaller than the rails plus that minimum, the faceplate
                 scrolls like a plugin window in any host instead of
-                crushing the controls into unreachable slivers. */}
-            <div className="grid h-full min-h-[440px] grid-cols-[15rem_minmax(34rem,1fr)_16rem] gap-3">
+                crushing the controls into unreachable slivers. That scroll
+                is Proof's whole no-crush guarantee, so unlike Crumbs,
+                ProofChamber and Tuner it carries no min-height floor: a
+                floor on top of it (39e2fcef5) pushed the rail's scrolled-to
+                target chips under the fixed toast layer, which
+                tests/e2e/proofStreamingTargetTestId.spec.ts observes. */}
+            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(34rem,1fr)_16rem] gap-3">
                 <DawPluginRail>
                     <SideCard
                         title="Mission"
