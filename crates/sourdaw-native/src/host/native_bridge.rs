@@ -267,9 +267,29 @@ impl PendingParameterQueue {
             .any(|slot| slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_EMPTY)
     }
 
+    /// Drop every write this queue holds, leaving any slot mid-publish to the
+    /// producer that owns it.
+    ///
+    /// A slot in `WRITING` belongs to whoever won the CAS into it, and storing
+    /// `EMPTY` over one hands its address to the next producer while its owner
+    /// is still writing the value: the owner's later store of the value lands
+    /// on the id the new producer just put there, and the plugin is handed one
+    /// parameter carrying another's value. Two producers reach this queue, one
+    /// of them the audio thread, so the overlap is real rather than
+    /// theoretical.
+    ///
+    /// The write that survives a preset load is delivered after the preset
+    /// rather than being dropped with the rest. That is the automation's truth:
+    /// the write was issued against the timeline, and the value the lane holds
+    /// at this frame is the value the parameter should end at.
     fn clear(&self) {
         for slot in &self.slots {
-            slot.state.store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+            let _ = slot.state.compare_exchange(
+                PENDING_PARAMETER_READY,
+                PENDING_PARAMETER_EMPTY,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            );
         }
     }
 }
@@ -451,10 +471,17 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// serialises the control-thread producer against the audio thread's drain,
     /// and it serialises two producers by exactly the same transitions: a slot
     /// is owned by whoever won the CAS into `WRITING`. Coalescing keeps at most
-    /// one pending value per parameter id, and the value that survives is the
-    /// one with the later sequence number, so a control write and an audio
-    /// write of the same parameter before one process call collapse to the
-    /// later of the two rather than to both.
+    /// one pending value per parameter id: where a write meets a pending one
+    /// for the same id, the later sequence number survives, so a control write
+    /// and an audio write of the same parameter before one process call
+    /// collapse to the later of the two rather than to both.
+    ///
+    /// That ordering is what coalescing guarantees, and only that. A producer
+    /// takes its sequence number before it reaches a slot, so one descheduled
+    /// for longer than a block between taking a sequence and publishing it
+    /// finds no pending value left to fold into and publishes an older write
+    /// after newer ones have already drained — a window the queue does not
+    /// close, and one the control path's own lock keeps to a single writer.
     ///
     /// A non-finite value is refused without touching the queue, mirroring the
     /// control path: `NaN` reaching the plugin is a parameter the host can
@@ -1369,6 +1396,98 @@ mod tests {
             *processed.lock().expect("the process log"),
             vec![Vec::new()],
             "the refused write reached neither the queue nor the plugin"
+        );
+    }
+
+    /// Coalescing keeps the later sequence, not the later arrival. The two
+    /// producers take their sequence numbers before they reach a slot, so a
+    /// write can arrive after one already issued behind it; folding it in
+    /// regardless would hand the plugin a value the automation had already
+    /// moved past. The pending write here carries a sequence the queue has not
+    /// even issued yet, so the arriving one is unambiguously older.
+    #[test]
+    fn coalesce_keeps_the_newer_sequence_over_a_later_arrival() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let queue = &shared.pending_parameters;
+
+        queue.slots[0].param_id.store(3, Ordering::Relaxed);
+        queue.slots[0]
+            .value_bits
+            .store(0.9f64.to_bits(), Ordering::Relaxed);
+        queue.slots[0].sequence.store(
+            queue.next_sequence.load(Ordering::Relaxed) + 1,
+            Ordering::Relaxed,
+        );
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.1));
+        render_one_block(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(3, 0.9)]],
+            "the newer sequence's value survives the write that arrived after it"
+        );
+    }
+
+    /// `clear` drops accepted writes; it must not drop a slot's *address*. A
+    /// slot mid-publish belongs to the producer that won the CAS into it, and
+    /// freeing that slot lets the next producer claim it while its owner is
+    /// still storing a value — the owner's value then lands under the new
+    /// producer's parameter id, and the plugin is moved on a parameter nobody
+    /// wrote.
+    #[test]
+    fn clear_leaves_a_slot_mid_write_to_its_owner() {
+        let queue = PendingParameterQueue::new();
+
+        // The audio-thread producer wins slot 0 and stores its id: exactly the
+        // state `enqueue` is in between claiming a slot and publishing it.
+        let mid_write_sequence = queue.next_sequence.fetch_add(1, Ordering::Relaxed);
+        assert!(queue.slots[0]
+            .state
+            .compare_exchange(
+                PENDING_PARAMETER_EMPTY,
+                PENDING_PARAMETER_WRITING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok());
+        queue.slots[0].param_id.store(7, Ordering::Relaxed);
+
+        queue.clear();
+        assert!(queue.enqueue(9, 0.1).is_ok());
+
+        // The interrupted producer finishes its publish.
+        queue.slots[0]
+            .value_bits
+            .store(0.9f64.to_bits(), Ordering::Relaxed);
+        queue.slots[0]
+            .sequence
+            .store(mid_write_sequence, Ordering::Relaxed);
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        assert_eq!(
+            queue.drain(&mut drained),
+            2,
+            "the mid-write slot and the write made after the clear are both delivered"
+        );
+        assert_eq!(
+            drained[..2],
+            [
+                PendingParameterUpdate {
+                    param_id: 7,
+                    value: 0.9,
+                },
+                PendingParameterUpdate {
+                    param_id: 9,
+                    value: 0.1,
+                },
+            ]
         );
     }
 

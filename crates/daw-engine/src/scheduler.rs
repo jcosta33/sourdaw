@@ -2770,11 +2770,31 @@ impl AudioScheduler {
                 visits += 1;
             }
             let effect = &mut self.effects[slot];
+            let bypassed = effect.bypassed;
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match (&mut effect.instance, event.param) {
                     (PluginCore::Knead(engine), DeviceParamTarget::Builtin(param)) => {
                         apply_knead_param(engine, param, event.value as f32);
                     }
+                    // A bypassed hosted plugin is never handed a block — the
+                    // master chain and every track chain skip it — so nothing
+                    // would drain a write from its pending-parameter queue.
+                    // Queueing one anyway holds that queue non-empty until the
+                    // effect is un-bypassed, and a non-empty queue refuses the
+                    // plugin's state read (so a project save skips its chunk)
+                    // and every parameter poll (so its cache freezes). The
+                    // stamp is therefore popped and dropped, on the same
+                    // contract a bypassed device's `pending_midi` follows in
+                    // `process_audio_bridges` and in both chain arms: queued
+                    // while bypassed is discarded, never banked.
+                    //
+                    // A `Builtin` stamp is deliberately not dropped. The knead
+                    // engine holds its parameters in its own struct, written
+                    // here and needing no process call to receive them, so the
+                    // value has to be current the moment the effect is
+                    // un-bypassed. A hosted plugin cannot be written to at all
+                    // while bypassed — that is the whole of the asymmetry.
+                    (PluginCore::Native(_), DeviceParamTarget::Hosted { .. }) if bypassed => {}
                     (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
                         if !plugin.apply_parameter_on_audio_thread(id, event.value) {
                             self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
@@ -6991,12 +7011,24 @@ mod timeline_tests {
     /// the block whose span reaches the stamp and on no other: applied early it
     /// moves the parameter before the music does, applied every block it would
     /// fight the plugin's own smoothing.
+    ///
+    /// One stamp sits mid-block and one on a block's own first frame. The
+    /// boundary stamp is what pins the span's inclusive last frame: a span
+    /// reaching `block_start + frames` instead of `block_start + frames - 1`
+    /// carries a mid-block stamp identically but pulls the boundary one a whole
+    /// block early.
     #[test]
     fn a_hosted_stamp_lands_on_the_block_that_reaches_it() {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
         harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 4 },
+            value: 0.5,
+            at_frame: 4,
+        });
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
             param: DeviceParamTarget::Hosted { id: 7 },
@@ -7007,16 +7039,22 @@ mod timeline_tests {
         harness.render(4);
         assert!(
             queued.lock().expect("the parameter log").is_empty(),
-            "a stamp ahead of the playhead must not reach the plugin early"
+            "the block spanning frames 0..=3 reaches neither stamp: a stamp on \
+             the next block's first frame belongs to that block, not to this one"
         );
-
-        harness.render(4);
-        assert_eq!(*queued.lock().expect("the parameter log"), vec![(7, 0.25)]);
 
         harness.render(4);
         assert_eq!(
             *queued.lock().expect("the parameter log"),
-            vec![(7, 0.25)],
+            vec![(4, 0.5), (7, 0.25)],
+            "the block starting on frame 4 lands the stamp on its own first \
+             frame and the one inside its span, in stamp order"
+        );
+
+        harness.render(4);
+        assert_eq!(
+            *queued.lock().expect("the parameter log"),
+            vec![(4, 0.5), (7, 0.25)],
             "a landed stamp leaves the queue rather than reapplying every block"
         );
         assert_eq!(
@@ -7109,6 +7147,48 @@ mod timeline_tests {
                 .snapshot()
                 .unmapped_set_param_calls,
             2
+        );
+    }
+
+    /// A bypassed hosted plugin never gets a block, so nothing would drain a
+    /// write from its queue: the write would sit there until un-bypass, and
+    /// while it sits the plugin refuses its own state read and every parameter
+    /// poll. So the stamp is discarded outright, exactly as MIDI queued at a
+    /// bypassed device is — and discarding is not a refusal, so it is not
+    /// counted unmapped either.
+    #[test]
+    fn a_hosted_stamp_on_a_bypassed_effect_is_discarded() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::SetBypass(3, true));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 6,
+        });
+
+        harness.render(4);
+        harness.render(4);
+
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a stamp due while the effect is bypassed must never reach the plugin"
+        );
+        assert!(
+            harness.scheduler.effects[0].pending_params.is_empty(),
+            "the discarded stamp leaves the queue rather than banking until un-bypass"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the engine discards is not a call the plugin refused"
         );
     }
 

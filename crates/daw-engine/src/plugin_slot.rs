@@ -137,8 +137,12 @@ pub trait NativePlugin: Any + Send {
     /// Audio-thread only, and bound by the audio thread's law: it must not
     /// allocate, lock, or block. The scheduler calls it from
     /// `apply_due_device_params`, which runs before the chain renders the span
-    /// that reached the stamp, so a write queued here is drained by that same
-    /// block's process call rather than by the block after it.
+    /// that reached the stamp, so the write is drained by the next process call
+    /// this plugin actually receives — normally this same block's. A hosted
+    /// plugin's process path takes the access seam it shares with the control
+    /// path and skips the block outright rather than waiting when the control
+    /// path holds it, so a control operation landing on this block pushes the
+    /// drain to a later one.
     ///
     /// `true` means the write is queued. `false` refuses it, and the caller
     /// counts the refusal as an unmapped parameter call — the default, because

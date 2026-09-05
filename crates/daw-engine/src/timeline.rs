@@ -619,7 +619,16 @@ impl RampedParam {
 
 /// Time-stamped device-parameter changes one effect holds before its earliest
 /// unlanded change is refused.
-pub const DEVICE_PARAM_QUEUE_CAPACITY: usize = 8;
+///
+/// The window is per *effect*, not per parameter, and a hosted plugin exposes
+/// as many parameters as it likes — so one plugin with a batch writing several
+/// automation lanes at once spends the window several times over, and the batch
+/// refuses whole. It is sized at the hosted plugin's own pending-parameter ring
+/// (`PENDING_PARAMETER_CAPACITY` in `sourdaw-native`): a hosted plugin cannot
+/// receive more than that in one process call whatever this queue admits, so a
+/// larger window here would only move the refusal to a place with no batch to
+/// refuse.
+pub const DEVICE_PARAM_QUEUE_CAPACITY: usize = 64;
 
 /// One time-stamped change to a device parameter.
 #[derive(Clone, Copy, Debug, PartialEq)]

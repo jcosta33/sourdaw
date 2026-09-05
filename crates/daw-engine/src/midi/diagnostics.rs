@@ -19,9 +19,22 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// published because the diagnostics surface is a contract; this engine
     /// reads zero on it.
     pub unsupported_effect_additions: u64,
-    /// A `SetParam` command addressed a plugin whose parameters are not routed
-    /// there (a native plugin; the built-in's own mapping is total, and an
-    /// unrecognized name is refused control-side by `DeviceParam::from_name`).
+    /// A parameter write the engine could not deliver. Three routes feed it:
+    ///
+    /// - a `SetParam` command addressed a plugin whose parameters are not
+    ///   routed there (a native plugin; the built-in's own mapping is total,
+    ///   and an unrecognized name is refused control-side by
+    ///   `DeviceParam::from_name`);
+    /// - a hosted plugin refused an `AutomateDeviceParam` stamp aimed at one of
+    ///   its own parameters — only the plugin knows whether it can take the
+    ///   write, and a refusal is a value missing from the mix;
+    /// - an `AutomateDeviceParam` stamp reached a body its address does not fit
+    ///   (a built-in address on a hosted plugin, or a hosted id on a built-in),
+    ///   which is a producer that lost track of what an effect id holds.
+    ///
+    /// A stamp the engine itself discards is not counted here: a hosted stamp
+    /// due while its effect is bypassed is dropped rather than refused, because
+    /// a bypassed plugin is never handed the block that would drain it.
     pub unmapped_set_param_calls: u64,
     /// A processed audio block the app never received because its return ring
     /// was full. The plugin's output for that block is gone.

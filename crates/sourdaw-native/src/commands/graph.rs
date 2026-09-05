@@ -4723,8 +4723,8 @@ mod tests {
 
     /// The ledger is per parameter, not per batch: full queues on two strips,
     /// on two parameters of one strip, and on a device queue beside them must
-    /// not pool into one count — and the ninth device write must refuse on
-    /// its own queue's law.
+    /// not pool into one count — and the write past the device window must
+    /// refuse on its own queue's law.
     #[test]
     fn queue_budgets_do_not_conflate_distinct_parameters_strips_or_devices() {
         let mut commands = vec![
@@ -4771,7 +4771,7 @@ mod tests {
             &sample_pool(),
             48_000.0,
         )
-        .expect_err("the ninth pending device write must refuse the batch");
+        .expect_err("the pending device write past the window must refuse the batch");
         assert!(refusal.contains("device-param-queue-capacity"));
     }
 
@@ -4874,8 +4874,8 @@ mod tests {
     /// than either fixed queue holds, against one device parameter and one
     /// automation parameter, with the engine draining between batches. Every
     /// batch admits, because the progress echo releases what landed — under
-    /// the old monotonic ledger the ninth device write refused for the life
-    /// of the session.
+    /// the old monotonic ledger the first device write past the window refused
+    /// for the life of the session.
     #[test]
     fn landed_writes_release_the_ledger_for_later_batches() {
         let samples = sample_pool();
@@ -4927,7 +4927,12 @@ mod tests {
     fn the_ledger_never_releases_ahead_of_the_echo() {
         let samples = sample_pool();
         let mut registry = GraphRegistry::default();
-        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        // The largest batch this test sends is a full device-parameter window,
+        // so the offline ring is derived from that window plus room for the
+        // batch fence and the strip setup that precedes it. A literal would
+        // silently cap the batch the moment the window grows, and the test
+        // would then fail on the ring rather than on the ledger it is about.
+        let mut renderer = OfflineRenderer::new(48_000.0, DEVICE_PARAM_QUEUE_CAPACITY + 16);
 
         admit_and_send(
             &mut registry,
