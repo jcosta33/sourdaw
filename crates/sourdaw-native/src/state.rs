@@ -1,6 +1,7 @@
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
 use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
+use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::ScannedPlugin;
 // The trait, the resizer and the raw handle are how a plugin's editor is
@@ -35,11 +36,15 @@ use std::time::Duration;
 /// `name`, `parameters` and `has_gui` mirror `EnginePluginInstanceData`: they
 /// are what the load read off the plugin, and the attach registers the instance
 /// under exactly those rather than asking a plugin that has since been edited.
+/// `chain_kind` mirrors it too: read once off the registry entry the load
+/// resolved, and carried through the attach so the strip splice matches what
+/// the load already decided.
 pub struct PluginInstanceData {
     pub plugin: HostedRuntime,
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
+    pub chain_kind: DeviceKind,
 }
 
 impl PluginInstanceData {
@@ -48,13 +53,16 @@ impl PluginInstanceData {
     /// The load path spells the three fields out instead, from the values it
     /// already read while the plugin was in its hands — it is the load's own
     /// reading that the attach must register under. This is for the tests that
-    /// park a fixture runtime and care about none of them.
+    /// park a fixture runtime and care about none of them, so `chain_kind`
+    /// defaults to `Effect` rather than reading a registry entry no such test
+    /// resolves.
     #[cfg(test)]
     pub fn dormant_fixture(plugin: HostedRuntime) -> Self {
         Self {
             name: plugin.get_name().to_string(),
             parameters: plugin.get_parameters(),
             has_gui: plugin.has_gui(),
+            chain_kind: DeviceKind::Effect,
             plugin,
         }
     }
@@ -88,6 +96,13 @@ pub struct EnginePluginInstanceData {
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
+    /// How this instance splices into a strip chain — read once off the
+    /// registry entry the load resolved (`PluginRegistryEntry::chain_kind`)
+    /// and registered under exactly that, the same way `name` is: frozen at
+    /// load, and no rescan updates it. `map_device` (`commands/graph.rs`)
+    /// reads it back at splice time so an instrument replaces nothing and a
+    /// plain effect still does.
+    pub chain_kind: DeviceKind,
     /// Main-thread end of this instance's audio bridge.
     ///
     /// Held on the instance record, not in a second map keyed by engine plugin
@@ -509,6 +524,11 @@ pub struct PluginRegistryEntry {
     pub num_outputs: u32,
     pub has_custom_ui: bool,
     pub capability_metadata_reason: Option<String>,
+    /// How this plugin splices into a native strip chain — [`DeviceKind::Generator`]
+    /// for an instrument, [`DeviceKind::Effect`] for everything else. Read once
+    /// at load (`commands::plugins::load_plugin`) and carried onto the
+    /// instance record so a chain splice never has to re-read the registry.
+    pub chain_kind: DeviceKind,
 }
 
 impl PluginRegistryEntry {
@@ -533,7 +553,25 @@ impl PluginRegistryEntry {
             num_outputs: plugin.num_outputs,
             has_custom_ui: plugin.has_custom_ui,
             capability_metadata_reason: plugin.capability_metadata_reason.clone(),
+            chain_kind: chain_kind_for_category(&plugin.category),
         }
+    }
+}
+
+/// The chain splice a scanned category resolves to.
+///
+/// The browser routes on the category string; the native chain splices on
+/// this kind. Both read the same scan answer so they cannot disagree about
+/// what one plugin is. `"instrument"` is the one category the scanner emits
+/// for CLAP's `instrument`/`synthesizer`/`sampler` features and VST3's
+/// `Instrument` sub-categories (`scanner.rs`, `vst3_scanner.rs`); every other
+/// category — including a note effect or an unqueried default — replaces the
+/// chain signal rather than joining it.
+fn chain_kind_for_category(category: &str) -> DeviceKind {
+    if category == "instrument" {
+        DeviceKind::Generator
+    } else {
+        DeviceKind::Effect
     }
 }
 
@@ -1291,6 +1329,7 @@ mod tests {
                     name: "Live Fixture".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
+                    chain_kind: DeviceKind::Effect,
                     bridge: None,
                     relay_scratch: PluginRelayScratch::default(),
                     parameter_events: None,
@@ -1353,6 +1392,54 @@ mod tests {
                     .expect("retirement lock")
                     .is_empty(),
                 "cycling load/unload must not accumulate retired runtimes"
+            );
+        }
+    }
+
+    fn scanned_plugin_with_category(category: &str) -> ScannedPlugin {
+        ScannedPlugin {
+            id: "scanned-instance".to_string(),
+            name: "Scanned Plugin".to_string(),
+            vendor: "Vendor".to_string(),
+            format: "clap".to_string(),
+            category: category.to_string(),
+            path: "/plugins/scanned-instance.clap".to_string(),
+            version: "1.0.0".to_string(),
+            descriptor_id: "com.sourdaw.scanned-instance".to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 0,
+            has_custom_ui: false,
+            parameters: None,
+            parameter_metadata_reason: None,
+            capability_metadata_reason: None,
+        }
+    }
+
+    /// The browser's `"instrument"` category is the one scan answer that must
+    /// splice as a generator: nothing else in `from_scanned` reads it, so a
+    /// dropped mapping here would leave every instrument replacing its strip's
+    /// signal instead of joining it.
+    #[test]
+    fn an_instrument_registry_entry_splices_as_a_generator() {
+        let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category("instrument"));
+
+        assert_eq!(entry.chain_kind, DeviceKind::Generator);
+    }
+
+    /// Every category besides `"instrument"` — a plain effect, a specific
+    /// effect type, and the empty string a scan that read no category leaves
+    /// behind — must default to `Effect`, or a chain would splice something
+    /// other than an instrument as if it produced signal of its own.
+    #[test]
+    fn an_effect_registry_entry_splices_as_an_effect() {
+        for category in ["effect", "reverb", ""] {
+            let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category(category));
+
+            assert_eq!(
+                entry.chain_kind,
+                DeviceKind::Effect,
+                "category '{category}' must not splice as a generator"
             );
         }
     }

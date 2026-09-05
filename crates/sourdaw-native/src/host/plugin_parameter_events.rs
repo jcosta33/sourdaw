@@ -369,6 +369,7 @@ pub fn start(events: Arc<dyn EventSink>, engine_plugins: EnginePlugins) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
 
     /// Both hints are process-wide, so any test that pushes an event or arms a
@@ -466,6 +467,7 @@ mod tests {
                 name: "Drain Fixture".to_string(),
                 parameters: Vec::new(),
                 has_gui: false,
+                chain_kind: DeviceKind::Effect,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: Some(Arc::clone(&queue)),

@@ -13,6 +13,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
+use daw_engine::timeline::DeviceKind;
 use daw_plugin_host::scanner::{
     self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
     ScannedPlugin,
@@ -1469,6 +1470,7 @@ async fn load_plugin_under_runtime_gate(
                 &name,
                 &params,
                 has_gui,
+                entry.chain_kind,
             ) {
                 Ok(registration) => EngineHandover::Registered(registration),
                 Err(refusal) => EngineHandover::Refused(refusal),
@@ -1520,6 +1522,7 @@ async fn load_plugin_under_runtime_gate(
                     name: name.clone(),
                     parameters: params.clone(),
                     has_gui,
+                    chain_kind: entry.chain_kind,
                 },
             );
             (None, bridge_round_trip_frames(None))
@@ -1816,6 +1819,7 @@ fn register_runtime_with_engine(
     name: &str,
     parameters: &[PluginParameter],
     has_gui: bool,
+    chain_kind: DeviceKind,
 ) -> Result<EngineRegistration, RegistrationRefusal> {
     // The load refuses an unactivated plugin before anything is parked, so
     // reaching this is a runtime that lost its activation after it was built.
@@ -1864,6 +1868,7 @@ fn register_runtime_with_engine(
             name: name.to_string(),
             parameters: parameters.to_vec(),
             has_gui,
+            chain_kind,
             bridge: Some(bridge_handle),
             relay_scratch: crate::state::PluginRelayScratch::default(),
             parameter_events,
@@ -2072,6 +2077,7 @@ fn attach_one_dormant_plugin(
         name,
         parameters,
         has_gui,
+        chain_kind,
     } = dormant;
 
     let registration = {
@@ -2088,6 +2094,7 @@ fn attach_one_dormant_plugin(
                 &name,
                 &parameters,
                 has_gui,
+                chain_kind,
             ),
             None => Err(RegistrationRefusal::parked(
                 "no native engine is running".to_string(),
@@ -2123,6 +2130,7 @@ fn attach_one_dormant_plugin(
                             name,
                             parameters,
                             has_gui,
+                            chain_kind,
                         },
                     );
             }
@@ -2961,6 +2969,7 @@ mod tests {
                 name: "Engine Owned Fixture".to_string(),
                 parameters,
                 has_gui: true,
+                chain_kind: DeviceKind::Effect,
                 bridge,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,
@@ -3408,6 +3417,7 @@ mod tests {
             name: "Reloaded Fixture".to_string(),
             parameters,
             has_gui: true,
+            chain_kind: DeviceKind::Effect,
             bridge: None,
             relay_scratch: crate::state::PluginRelayScratch::default(),
             parameter_events: None,
@@ -3968,6 +3978,7 @@ mod tests {
                 name: "Re-check Fixture".to_string(),
                 parameters: Vec::new(),
                 has_gui: false,
+                chain_kind: DeviceKind::Effect,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,
@@ -4041,6 +4052,7 @@ mod tests {
             "Recovered Fixture",
             &[],
             false,
+            DeviceKind::Effect,
         )
         .err()
         .expect("a session at its ceiling must refuse the record insert");
@@ -4344,6 +4356,107 @@ mod tests {
         );
     }
 
+    /// A load resolves the registry entry the scan wrote, and an `"instrument"`
+    /// category is the one scan answer that must carry through registration as
+    /// `Generator`: the engine-owned record this load produces is exactly what
+    /// `commands::graph::map_device` reads back when the panel later splices
+    /// this instance into a strip, so a dropped kind here is a silenced clip
+    /// two modules away.
+    #[test]
+    fn a_loaded_instrument_registers_its_generator_kind() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[ScannedPlugin {
+                category: "instrument".to_string(),
+                ..scanned("instrument1111", "com.vendor.synth", "clap")
+            }],
+        );
+
+        crate::block_on_test(load_plugin_with_backend(
+            PluginId("instrument1111".to_string()),
+            PluginInstanceId("instrument-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                Ok(HostedRuntime::from(
+                    ClapWrapper::new_engine_owned_command_fixture(
+                        "Synth Fixture",
+                        Vec::new(),
+                        false,
+                    ),
+                ))
+            },
+        ))
+        .expect("an instrument load against a running engine must succeed");
+
+        assert_eq!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .get("instrument-instance")
+                .expect("the load must have registered the instance")
+                .chain_kind,
+            DeviceKind::Generator,
+            "an instrument's registry category must carry through to the engine record"
+        );
+    }
+
+    /// The dormant-attach path is a second route onto the engine record the
+    /// load path above already covers: an instance parked in `state.plugins`
+    /// before an engine existed carries its own scanned `chain_kind`, and
+    /// `attach_one_dormant_plugin` must carry that through to the engine
+    /// record exactly as `register_runtime_with_engine` does for a fresh
+    /// load, or a project reopened before the engine started would silence
+    /// every instrument it holds the moment it attaches.
+    #[test]
+    fn a_dormant_instrument_attaches_as_a_generator() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Dormant Synth", Vec::new(), false);
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                "dormant-instrument".to_string(),
+                PluginInstanceData {
+                    plugin: HostedRuntime::from(wrapper),
+                    name: "Dormant Synth".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    chain_kind: DeviceKind::Generator,
+                },
+            );
+
+        attach_dormant_plugins(&state, 1).expect("the dormant instance must reach the engine");
+
+        assert_eq!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .get("dormant-instrument")
+                .expect("the attach must have registered the instance")
+                .chain_kind,
+            DeviceKind::Generator,
+            "a dormant instrument's chain kind must carry through the attach"
+        );
+    }
+
     /// And the attach path does the same, for the same reason.
     ///
     /// It is the worse of the two: `apply_graph_commands` holds the graph
@@ -4385,6 +4498,7 @@ mod tests {
                     name: "Wake Attached".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -5193,6 +5307,7 @@ mod tests {
                     num_outputs: 2,
                     has_custom_ui: true,
                     capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
                 },
             );
     }
@@ -5338,6 +5453,7 @@ mod tests {
                     num_outputs: 2,
                     has_custom_ui: false,
                     capability_metadata_reason: None,
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -6973,6 +7089,7 @@ mod tests {
                     capability_metadata_reason: Some(
                         scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                     ),
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
@@ -7044,6 +7161,7 @@ mod tests {
                         capability_metadata_reason: Some(
                             scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                         ),
+                        chain_kind: DeviceKind::Effect,
                     },
                 );
 
@@ -7137,6 +7255,7 @@ mod tests {
                     capability_metadata_reason: Some(
                         scanner::CAPABILITY_METADATA_UNAVAILABLE_REASON.to_string(),
                     ),
+                    chain_kind: DeviceKind::Effect,
                 },
             );
 
