@@ -1571,16 +1571,21 @@ fn insert_device_op(
     entry: ChainEntry,
     index: usize,
 ) -> GraphCommand {
+    // The generator's input hold is built here, mapping-side, for the reason
+    // every other line the graph runs is: the audio thread may not allocate.
+    let hold = entry.input_hold();
     match kind {
         StripKind::Track => GraphCommand::InsertTrackDevice {
             track_id: native_id,
             entry,
             index,
+            hold,
         },
         StripKind::Bus => GraphCommand::InsertBusDevice {
             bus_id: native_id,
             entry,
             index,
+            hold,
         },
     }
 }

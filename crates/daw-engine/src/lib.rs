@@ -765,6 +765,10 @@ impl EngineHandle {
     }
 
     /// Splice an already registered effect into a track's device chain.
+    ///
+    /// The line that holds a generator to the depth of the strip's input is
+    /// built here, on the control thread, because the audio thread may not
+    /// allocate one.
     pub fn insert_track_device(
         &mut self,
         track_id: usize,
@@ -775,6 +779,7 @@ impl EngineHandle {
             track_id,
             entry,
             index,
+            hold: entry.input_hold(),
         })
     }
 
@@ -788,7 +793,8 @@ impl EngineHandle {
     }
 
     /// Splice an already registered effect into a bus's device chain — the
-    /// reverb or delay a send bus exists to host.
+    /// reverb or delay a send bus exists to host, or the instrument a bus
+    /// holds on the same terms a track does, input hold included.
     pub fn insert_bus_device(
         &mut self,
         bus_id: usize,
@@ -799,6 +805,7 @@ impl EngineHandle {
             bus_id,
             entry,
             index,
+            hold: entry.input_hold(),
         })
     }
 

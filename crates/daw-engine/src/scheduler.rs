@@ -15,10 +15,10 @@ use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue, DeviceParamTarget,
-    RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
-    TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
-    MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    ClipPlayback, CompensationDevices, DeviceChain, DeviceParam, DeviceParamEvent,
+    DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget, SendTap, TimelineBus,
+    TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES,
+    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::knead::engine::KneadEngine;
@@ -454,10 +454,19 @@ pub enum GraphCommand {
     /// Splice an effect into a track's device chain at `index`, clamped to the
     /// chain's length. The effect itself is added by `AddEffect`/`AddPlugin`;
     /// this is the ordering and the splice point.
+    ///
+    /// `hold` is the line that holds a generator back to the depth of the
+    /// strip's input — `Some` exactly for a `Generator` entry, built on the
+    /// control thread by [`ChainEntry::input_hold`] because the audio thread
+    /// may neither build one nor free one (ADR 0020). The entry and its line
+    /// travel together, so no caller can splice an instrument onto a group
+    /// without the line that aligns it. A line this splice displaces, and one
+    /// a refused splice never installs, leave over the retirement channel.
     InsertTrackDevice {
         track_id: usize,
         entry: ChainEntry,
         index: usize,
+        hold: Option<Box<CompensationDelay>>,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
     /// returns to its home placement — the master insert chain for everything
@@ -483,12 +492,14 @@ pub enum GraphCommand {
         effect_id: usize,
     },
     /// Splice an effect into a *bus's* device chain, on the same contract as
-    /// [`GraphCommand::InsertTrackDevice`]. A send bus that cannot host a
-    /// reverb is not a send bus.
+    /// [`GraphCommand::InsertTrackDevice`], `hold` included: a bus hosts an
+    /// instrument on the same terms a track does. A send bus that cannot host
+    /// a reverb is not a send bus.
     InsertBusDevice {
         bus_id: usize,
         entry: ChainEntry,
         index: usize,
+        hold: Option<Box<CompensationDelay>>,
     },
     /// Take an effect out of a bus's chain, on the same contract as
     /// [`GraphCommand::RemoveTrackDevice`]: the effect stays registered and
@@ -890,6 +901,16 @@ struct ActiveEffect {
     /// engine owns. Built on the control thread and carried in by
     /// [`GraphCommand::SetEffectLatency`].
     dry_delay: Option<Box<CompensationDelay>>,
+    /// This device's hold on the depth of its strip's input, run over its
+    /// output before that output joins the chain signal.
+    ///
+    /// `None` for an effect, which transforms a signal that reached it already
+    /// aligned. A generator produces its material on the strip instead, at
+    /// zero, so it meets what is routed in exactly the way the strip's own
+    /// clips do — held back by that input's depth. Built on the control thread
+    /// and carried in by the splice that placed the device
+    /// ([`ChainEntry::input_hold`]).
+    input_hold: Option<Box<CompensationDelay>>,
     placement: EffectPlacement,
     /// Where a strip returns this effect when it releases it.
     ///
@@ -1447,6 +1468,7 @@ impl ActiveEffect {
             bypassed: false,
             latency_frames: 0,
             dry_delay: None,
+            input_hold: None,
             probability_evaluator: ProbabilityEvaluator,
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
@@ -1497,6 +1519,26 @@ impl ActiveEffect {
             // held leaves rather than being dropped here.
             _ => std::mem::replace(&mut self.dry_delay, shipped),
         }
+    }
+
+    /// Take the input hold the splice that placed this device shipped, and
+    /// hand back the line left over for retirement.
+    ///
+    /// The shipped line is installed rather than re-aimed, which is the
+    /// opposite of what [`Self::aim_dry_line`] does with a dry line, because
+    /// the two lines are current at different moments. A dry line is fed on
+    /// every block the chain visits its device, so the ring the device runs
+    /// holds audio worth keeping. An input hold is written only while a chain
+    /// holds the device: a splice is a device arriving on a strip, with
+    /// nothing behind it but whatever some earlier strip put there, so the
+    /// fresh silent ring is the one that owes no replay. An effect ships no
+    /// line, so splicing a device back in as one retires the hold it ran as a
+    /// generator instead of leaving a line nothing feeds.
+    fn take_input_hold(
+        &mut self,
+        shipped: Option<Box<CompensationDelay>>,
+    ) -> Option<Box<CompensationDelay>> {
+        std::mem::replace(&mut self.input_hold, shipped)
     }
 
     /// Whether no path in this callback runs this effect at all.
@@ -2181,16 +2223,25 @@ impl AudioScheduler {
                     track_id,
                     entry,
                     index,
+                    hold,
                 } => {
                     // Only claim the effect when the chain actually took it: a
                     // refused splice must leave the effect where it was rather
-                    // than silence it.
-                    if !self.effect_id_exists(entry.effect_id) {
+                    // than silence it — and must hand its line back rather than
+                    // free it here.
+                    let spliced = if !self.effect_id_exists(entry.effect_id) {
                         self.timeline.record_unknown_target();
+                        false
                     } else if self.timeline.insert_track_device(track_id, entry, index) {
                         self.place_effect(entry.effect_id, EffectPlacement::Track(track_id));
-                    }
-                    None
+                        true
+                    } else {
+                        false
+                    };
+                    self.spare_input_hold(entry.effect_id, spliced, hold)
+                        .map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
                 }
                 GraphCommand::RemoveTrackDevice {
                     track_id,
@@ -2222,13 +2273,21 @@ impl AudioScheduler {
                     bus_id,
                     entry,
                     index,
+                    hold,
                 } => {
-                    if !self.effect_id_exists(entry.effect_id) {
+                    let spliced = if !self.effect_id_exists(entry.effect_id) {
                         self.timeline.record_unknown_target();
+                        false
                     } else if self.timeline.insert_bus_device(bus_id, entry, index) {
                         self.place_effect(entry.effect_id, EffectPlacement::Bus(bus_id));
-                    }
-                    None
+                        true
+                    } else {
+                        false
+                    };
+                    self.spare_input_hold(entry.effect_id, spliced, hold)
+                        .map(|delay| {
+                            RetiredGraphObjects::timeline(RetiredTimelineObject::Delay(delay))
+                        })
                 }
                 GraphCommand::RemoveBusDevice { bus_id, effect_id } => {
                     if self.timeline.remove_bus_device(bus_id, effect_id) {
@@ -2392,10 +2451,10 @@ impl AudioScheduler {
 
     /// Re-aim every route's compensation delay at the graph as it now stands.
     ///
-    /// The topology walk belongs to the graph and the declared latencies
-    /// belong to this table, so the graph is handed a reader for one chain's
-    /// latency rather than a copy of the table. Bypassed devices count: bypass
-    /// keeps latency, so an A/B never moves the mix.
+    /// The topology walk belongs to the graph while the declared latencies and
+    /// the generators' input holds belong to this table, so the graph is handed
+    /// a borrow of the table rather than a copy of it. Bypassed devices count:
+    /// bypass keeps latency, so an A/B never moves the mix.
     ///
     /// The declared figures are also what says whether the ceiling cut a dry
     /// line short, and the graph never sees them — it sees what a chain sums
@@ -2419,15 +2478,35 @@ impl AudioScheduler {
             .filter(|effect| effect.latency_frames > MAX_COMPENSATION_FRAMES)
             .count();
 
-        timeline.compensate(clamped_devices, |chain| {
-            chain.iter().fold(0, |latency, entry| {
-                latency
-                    + effect_index
-                        .lookup(entry.effect_id)
-                        .and_then(|slot| effects.get(slot))
-                        .map_or(0, |effect| effect.latency_frames)
-            })
-        });
+        timeline.compensate(
+            clamped_devices,
+            &mut CompensationTable {
+                effects,
+                effect_index,
+            },
+        );
+    }
+
+    /// Install the input hold a splice shipped on the device that splice
+    /// placed, and answer with whichever line is now spare.
+    ///
+    /// A splice that was refused, or that named an effect the table does not
+    /// hold, installs nothing: its line is spare on arrival. Either way the
+    /// spare leaves over the retirement channel rather than being freed on the
+    /// callback (ADR 0020).
+    fn spare_input_hold(
+        &mut self,
+        effect_id: usize,
+        spliced: bool,
+        hold: Option<Box<CompensationDelay>>,
+    ) -> Option<Box<CompensationDelay>> {
+        if !spliced {
+            return hold;
+        }
+        match self.effect_mut(effect_id) {
+            Some(effect) => effect.take_input_hold(hold),
+            None => hold,
+        }
     }
 
     /// Whether an id already names a live effect, resolved through the id
@@ -2504,12 +2583,13 @@ impl AudioScheduler {
     /// that no chain holds it any more.
     ///
     /// A detached effect is in no strip chain and not on the master walk, so
-    /// nothing feeds its dry line and nothing reads it for as long as it waits.
-    /// That is the one break in the rule that every line is written on every
-    /// block it renders, and so the one place a line still owes silence: left
+    /// nothing feeds the lines it owns — its dry line, and the input hold a
+    /// generator runs — and nothing reads them for as long as it waits. That
+    /// is the one break in the rule that every line is written on every block
+    /// it renders, and so the one place a line still owes silence: left
     /// standing, it would hand the audio of the strip it left back over the
-    /// first `latency` frames after some chain takes the device again. It stays
-    /// silent until that placement starts feeding it.
+    /// first held frames after some chain takes the device again. Both stay
+    /// silent until that placement starts feeding them.
     ///
     /// Every route into `Detached` restarts it, because every route leaves the
     /// device in the same state: a strip torn down under it, and a hosted
@@ -2530,8 +2610,12 @@ impl AudioScheduler {
             self.master_work.append(slot);
         }
         if placement == EffectPlacement::Detached {
-            if let Some(delay) = self.effects[slot].dry_delay.as_mut() {
+            let effect = &mut self.effects[slot];
+            if let Some(delay) = effect.dry_delay.as_mut() {
                 delay.restart_from_silence();
+            }
+            if let Some(hold) = effect.input_hold.as_mut() {
+                hold.restart_from_silence();
             }
         }
     }
@@ -3141,6 +3225,42 @@ fn feed_dry_delay(effect: &mut ActiveEffect, left: &[f32], right: &[f32], frames
     }
 }
 
+/// Answers one compensation pass over the scheduler's device table.
+///
+/// The pass reads a declared latency and re-aims a generator's input hold, so
+/// it borrows the table once rather than through two closures that would need
+/// the shared and the exclusive borrow of it at the same time.
+struct CompensationTable<'a> {
+    effects: &'a mut Vec<ActiveEffect>,
+    effect_index: &'a IdSlotIndex,
+}
+
+impl CompensationTable<'_> {
+    fn effect_mut(&mut self, effect_id: usize) -> Option<&mut ActiveEffect> {
+        let slot = self.effect_index.lookup(effect_id)?;
+        self.effects.get_mut(slot)
+    }
+}
+
+impl CompensationDevices for CompensationTable<'_> {
+    fn chain_latency(&self, chain: &[ChainEntry]) -> usize {
+        chain.iter().fold(0, |latency, entry| {
+            latency
+                + self
+                    .effect_index
+                    .lookup(entry.effect_id)
+                    .and_then(|slot| self.effects.get(slot))
+                    .map_or(0, |effect| effect.latency_frames)
+        })
+    }
+
+    fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool {
+        self.effect_mut(effect_id)
+            .and_then(|effect| effect.input_hold.as_mut())
+            .is_some_and(|hold| hold.set_delay(depth))
+    }
+}
+
 /// Runs one track's device chain over that track's signal.
 ///
 /// The effects stay in the scheduler's id-indexed table alongside their MIDI
@@ -3154,6 +3274,61 @@ struct TrackDeviceChain<'a> {
     midi_rt_diagnostics: &'a mut ActiveMidiRtDiagnostics,
     transport: TransportState,
     sample_rate: f32,
+}
+
+/// Run a device's own pass: the MIDI it is holding, then its audio.
+///
+/// The counterpart to [`run_dry_delay`], and exactly one of the two runs per
+/// device per block — a bypassed device passes its dry line through in place
+/// of everything here.
+#[inline]
+fn process_device(
+    effect: &mut ActiveEffect,
+    transport: &TransportState,
+    sample_rate: f32,
+    midi_rt_diagnostics: &mut ActiveMidiRtDiagnostics,
+    left: &mut [f32],
+    right: &mut [f32],
+    frames: usize,
+) {
+    feed_dry_delay(effect, left, right, frames);
+
+    effect.probability_evaluator.process_midi_with_diagnostics(
+        &mut effect.pending_midi,
+        transport,
+        sample_rate,
+        frames,
+        midi_rt_diagnostics,
+    );
+    for fx in effect.midi_fx.iter_mut() {
+        fx.process_midi_with_diagnostics(
+            &mut effect.pending_midi,
+            transport,
+            sample_rate,
+            frames,
+            midi_rt_diagnostics,
+        );
+    }
+
+    match &mut effect.instance {
+        PluginCore::Knead(engine) => {
+            engine.process_block(left, right);
+        }
+        PluginCore::Native(plugin) => {
+            if effect.pending_midi.is_empty() {
+                plugin.process_audio(left, right, frames);
+            } else {
+                plugin.process_with_events(
+                    left,
+                    right,
+                    frames,
+                    effect.pending_midi.as_slice(),
+                    transport,
+                );
+                effect.pending_midi.clear();
+            }
+        }
+    }
 }
 
 impl DeviceChain for TrackDeviceChain<'_> {
@@ -3173,46 +3348,31 @@ impl DeviceChain for TrackDeviceChain<'_> {
             // bypassed rather than banking it into a burst of stale note-ons.
             run_dry_delay(effect, left, right, frames);
             effect.pending_midi.clear();
-            return;
-        }
-
-        feed_dry_delay(effect, left, right, frames);
-
-        effect.probability_evaluator.process_midi_with_diagnostics(
-            &mut effect.pending_midi,
-            &self.transport,
-            self.sample_rate,
-            frames,
-            self.midi_rt_diagnostics,
-        );
-        for fx in effect.midi_fx.iter_mut() {
-            fx.process_midi_with_diagnostics(
-                &mut effect.pending_midi,
+        } else {
+            process_device(
+                effect,
                 &self.transport,
                 self.sample_rate,
-                frames,
                 self.midi_rt_diagnostics,
+                left,
+                right,
+                frames,
             );
         }
 
-        match &mut effect.instance {
-            PluginCore::Knead(engine) => {
-                engine.process_block(left, right);
-            }
-            PluginCore::Native(plugin) => {
-                if effect.pending_midi.is_empty() {
-                    plugin.process_audio(left, right, frames);
-                } else {
-                    plugin.process_with_events(
-                        left,
-                        right,
-                        frames,
-                        effect.pending_midi.as_slice(),
-                        &self.transport,
-                    );
-                    effect.pending_midi.clear();
-                }
-            }
+        // Last, over whatever the pass above left in the buffer: a generator's
+        // material starts at zero on a strip whose input has already waited,
+        // so it is held back to meet what landed there before it joins the
+        // chain signal. An effect owns no such line — what reached it arrived
+        // aligned.
+        //
+        // Whichever pass ran, bypass included: the chain clears the pair it
+        // hands an instrument, so a bypassed generator feeds its line silence
+        // and the tail it was holding drains out on schedule. Skipped over the
+        // bypassed blocks, the line would stand still and hand back the
+        // material from before the switch when the device came back.
+        if let Some(hold) = effect.input_hold.as_mut() {
+            hold.run(left, right, frames);
         }
     }
 }
@@ -4915,6 +5075,7 @@ mod tests {
                         kind: DeviceKind::Effect,
                     },
                     index: 0,
+                    hold: None,
                 },
             ],
             GraphCommand::RemoveTrackDeviceRetired {
@@ -4936,6 +5097,7 @@ mod tests {
                         kind: DeviceKind::Effect,
                     },
                     index: 0,
+                    hold: None,
                 },
             ],
             GraphCommand::RemoveBusDeviceRetired {
@@ -5504,6 +5666,66 @@ mod tests {
                 .expect("the refused instance must be handed off");
             assert!(retired.midi_fx.is_some());
         }
+
+        /// A generator's splice carries the line that holds it to the depth of
+        /// its strip's input, and a ceiling-sized ring is the whole of that
+        /// line's heap. Building one on the callback is the allocation ADR
+        /// 0020 forbids, and a refused splice freeing one is the matching
+        /// free — so both arms run under the guard.
+        #[test]
+        fn a_generator_insert_applies_without_allocating() {
+            let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+            let entry = ChainEntry {
+                effect_id: 7,
+                kind: DeviceKind::Generator,
+            };
+            // Built control-side: the strip, the instrument and the two lines
+            // are the allocations this guard exists to keep off the callback.
+            command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(1)))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::AddHostedPlugin(
+                    7,
+                    Box::new(FakeNativePlugin { value: 0.25 }),
+                ))
+                .unwrap();
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+            // A second splice naming a strip the graph does not hold: refused,
+            // and its line has to leave rather than be dropped here.
+            command_tx
+                .push(GraphCommand::InsertTrackDevice {
+                    track_id: 2,
+                    entry,
+                    index: 0,
+                    hold: entry.input_hold(),
+                })
+                .unwrap();
+
+            assert_no_alloc(|| {
+                scheduler.update_graph();
+            });
+
+            // The guarded drain did real work: the accepted splice installed
+            // its line on the placed device, and the refused one handed its
+            // own back.
+            assert_eq!(scheduler.effects[0].placement, EffectPlacement::Track(1));
+            assert!(scheduler.effects[0].input_hold.is_some());
+            let retired = retired_rx
+                .pop()
+                .expect("the refused splice must hand its line off");
+            assert!(matches!(
+                &retired.timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ));
+        }
     }
 }
 
@@ -5611,6 +5833,68 @@ mod timeline_tests {
 
         fn name(&self) -> &str {
             "tail-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// An instrument: it emits material of its own and overwrites whatever
+    /// buffer it is handed, which is why a chain sums a generator's output in
+    /// rather than running it in place.
+    struct ConstantGenerator {
+        value: f32,
+    }
+
+    impl NativePlugin for ConstantGenerator {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                left[index] = self.value;
+                right[index] = self.value;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "constant-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// An instrument whose sample names the frame it was produced on, counting
+    /// from the first frame it processed.
+    ///
+    /// A constant emits the same number for ever, so it can show when a hold
+    /// opened but not which frame came out of it. Two constants on one strip
+    /// look identical to two lines sharing one; a ramp does not.
+    #[derive(Default)]
+    struct RampGenerator {
+        next_frame: usize,
+    }
+
+    impl NativePlugin for RampGenerator {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                let value = self.next_frame as f32;
+                left[index] = value;
+                right[index] = value;
+                self.next_frame += 1;
+            }
+        }
+
+        fn name(&self) -> &str {
+            "ramp-generator"
         }
 
         fn as_any(&self) -> &dyn Any {
@@ -5790,11 +6074,7 @@ mod timeline_tests {
                 midi_events: Arc::clone(&midi_events),
             }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id,
-            entry: effect(effect_id),
-            index: 0,
-        });
+        harness.send(insert_track_device(track_id, effect(effect_id), 0));
 
         ChainBoundPlugin { calls, midi_events }
     }
@@ -5876,6 +6156,37 @@ mod timeline_tests {
         }
     }
 
+    /// An instrument's entry: it produces material of its own, so it is summed
+    /// into the chain rather than transforming what reached it.
+    fn generator(effect_id: usize) -> ChainEntry {
+        ChainEntry {
+            effect_id,
+            kind: DeviceKind::Generator,
+        }
+    }
+
+    /// The splice the control thread builds for a track chain: the entry and
+    /// the input hold a generator waits on travel together, so no test can
+    /// place an instrument on a group without the line that aligns it.
+    fn insert_track_device(track_id: usize, entry: ChainEntry, index: usize) -> GraphCommand {
+        GraphCommand::InsertTrackDevice {
+            track_id,
+            entry,
+            index,
+            hold: entry.input_hold(),
+        }
+    }
+
+    /// The same splice for a bus chain, on the same contract.
+    fn insert_bus_device(bus_id: usize, entry: ChainEntry, index: usize) -> GraphCommand {
+        GraphCommand::InsertBusDevice {
+            bus_id,
+            entry,
+            index,
+            hold: entry.input_hold(),
+        }
+    }
+
     fn chain_ids(chain: &[ChainEntry]) -> Vec<usize> {
         chain.iter().map(|entry| entry.effect_id).collect()
     }
@@ -5912,6 +6223,18 @@ mod timeline_tests {
         effect_id: usize,
         latency: usize,
     ) -> Arc<AtomicUsize> {
+        insert_latent_device_at(harness, track_id, effect_id, latency, 0)
+    }
+
+    /// The same device at a named splice point, for a chain whose order is
+    /// what the assertion is about.
+    fn insert_latent_device_at(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        latency: usize,
+        index: usize,
+    ) -> Arc<AtomicUsize> {
         let declared = Arc::new(AtomicUsize::new(latency));
         harness.send(GraphCommand::AddPlugin(
             effect_id,
@@ -5920,13 +6243,36 @@ mod timeline_tests {
                 LATENT_PLUGIN_CAPACITY,
             )),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id,
-            entry: effect(effect_id),
-            index: 0,
-        });
+        harness.send(insert_track_device(track_id, effect(effect_id), index));
         harness.send(set_latency(effect_id, latency));
         declared
+    }
+
+    /// Register an instrument and splice it onto a track, the way a hosted
+    /// instrument arrives: homed detached, so releasing it from the chain
+    /// returns it to a placement that runs nowhere rather than putting an
+    /// instrument the user took off one strip onto the whole mix.
+    fn insert_track_generator(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        instrument: Box<dyn NativePlugin>,
+        index: usize,
+    ) {
+        harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
+        harness.send(insert_track_device(track_id, generator(effect_id), index));
+    }
+
+    /// The same instrument on a bus, which hosts one on the same terms.
+    fn insert_bus_generator(
+        harness: &mut Harness,
+        bus_id: usize,
+        effect_id: usize,
+        instrument: Box<dyn NativePlugin>,
+        index: usize,
+    ) {
+        harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
+        harness.send(insert_bus_device(bus_id, generator(effect_id), index));
     }
 
     /// A track carrying one mono clip whose sample at frame `t` is `t + 1`.
@@ -6309,11 +6655,7 @@ mod timeline_tests {
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
         harness.send(GraphCommand::SetTrackMute(2, true));
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
@@ -6379,11 +6721,7 @@ mod timeline_tests {
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 2,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(2, effect(7), 0));
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(2)));
 
         // Both clips reach track 2's input, so the whole sum is halved by the
@@ -6422,11 +6760,7 @@ mod timeline_tests {
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
 
         // One track halved plus one untouched. The same device left on the
         // master insert chain would have halved the sum instead, giving 1.0.
@@ -6462,11 +6796,7 @@ mod timeline_tests {
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
         harness.send(GraphCommand::SeekFrames(0));
 
@@ -6876,11 +7206,7 @@ mod timeline_tests {
         let (plugin, queued) = parameter_recording_plugin(true);
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddPlugin(3, plugin));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(3),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(3), 0));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
             param: DeviceParamTarget::Hosted { id: 7 },
@@ -7222,11 +7548,7 @@ mod timeline_tests {
             7,
             Box::new(TailPlugin { value: 0.25 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
 
         // The playhead stands still while the transport is stopped, so a clip
         // rendered anyway would repeat the same span every callback — a
@@ -7257,16 +7579,8 @@ mod timeline_tests {
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 2,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.send(insert_track_device(2, effect(7), 0));
 
         // One instance spliced into two chains would run its state over two
         // unrelated streams interleaved, and its single-valued placement could
@@ -7318,11 +7632,7 @@ mod timeline_tests {
             "an effect whose splice has not landed must not touch the master output"
         );
 
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         assert_eq!(
             harness.scheduler.effects[0].placement,
             EffectPlacement::Track(1)
@@ -7364,11 +7674,7 @@ mod timeline_tests {
                 received: Arc::clone(&received),
             }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
         assert_eq!(
             harness.scheduler.effects[0].placement,
@@ -7386,11 +7692,7 @@ mod timeline_tests {
         // Placing it back on a chain must not fire the note queued while it
         // ran nowhere: a banked note-on has no note-off behind it.
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 2,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_track_device(2, effect(7), 0));
         harness.render(4);
         assert_eq!(received.load(Ordering::Relaxed), 0);
 
@@ -7568,11 +7870,7 @@ mod timeline_tests {
             level: 1.0,
             delay: uncompensated(),
         });
-        harness.send(GraphCommand::InsertBusDevice {
-            bus_id: 50,
-            entry: effect(7),
-            index: 0,
-        });
+        harness.send(insert_bus_device(50, effect(7), 0));
 
         // The effect runs on the bus, not on the master chain: the track's own
         // output reaches the sum untouched and only the send is halved. A bus
@@ -8588,11 +8886,7 @@ mod timeline_tests {
         // The same device on a new track, still bypassed, so the line is what
         // hands the strip's signal on.
         track_with_constant_clip(&mut harness, 1, 102, 1.0, 256);
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
 
         let (left, right) = harness.render(16);
         let mut expected = vec![1.0; 16];
@@ -8621,11 +8915,7 @@ mod timeline_tests {
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, LATENCY));
 
         // Runs, so the line fills with the track's material.
@@ -8640,11 +8930,7 @@ mod timeline_tests {
 
         // Back on the same strip, still bypassed, so the line is what hands
         // the strip's signal on.
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
 
         let (left, right) = harness.render(16);
         let mut expected = vec![1.0; 16];
@@ -8682,11 +8968,7 @@ mod timeline_tests {
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DETACHED_AT));
 
         // Feed the whole ring, so the region a deeper hold reads back holds
@@ -8704,11 +8986,7 @@ mod timeline_tests {
         // The watcher still addresses the registered instance, and the figure
         // it publishes is deeper than the one the detachment cleared.
         harness.send(set_latency(900, DEEPENED_TO));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(GraphCommand::SetBypass(900, true));
 
         let (left, right) = harness.render(16);
@@ -8744,11 +9022,7 @@ mod timeline_tests {
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DETACHED_AT));
 
         // Feed the whole ring, so the region a deeper hold reads back holds
@@ -8764,11 +9038,7 @@ mod timeline_tests {
         harness.render(16);
 
         // Placed first, deepened second: nothing has fed the line in between.
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DEEPENED_TO));
         harness.send(GraphCommand::SetBypass(900, true));
 
@@ -8800,11 +9070,7 @@ mod timeline_tests {
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
         ));
-        harness.send(GraphCommand::InsertBusDevice {
-            bus_id: 50,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_bus_device(50, effect(900), 0));
         harness.send(set_latency(900, LATENCY));
 
         // Runs, so the line fills with what the bus is carrying.
@@ -8817,11 +9083,7 @@ mod timeline_tests {
         // A new bus under the same id, taking the same device back while it
         // is still bypassed.
         harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
-        harness.send(GraphCommand::InsertBusDevice {
-            bus_id: 50,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_bus_device(50, effect(900), 0));
 
         let (left, right) = harness.render(16);
         let mut expected = vec![1.0; 16];
@@ -9114,11 +9376,7 @@ mod timeline_tests {
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
         ));
-        harness.send(GraphCommand::InsertBusDevice {
-            bus_id: 50,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_bus_device(50, effect(900), 0));
         harness.send(set_latency(900, BUS_LATENCY));
 
         assert_eq!(
@@ -9151,11 +9409,7 @@ mod timeline_tests {
             900,
             Box::new(ScalingPlugin { factor: 1.0 }),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, declared));
 
         assert_eq!(
@@ -9217,11 +9471,7 @@ mod timeline_tests {
                 LATENT_PLUGIN_CAPACITY,
             )),
         ));
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, declared));
         harness.render(16);
 
@@ -9282,11 +9532,7 @@ mod timeline_tests {
             "a device no chain holds runs no line the ceiling can cut short"
         );
 
-        harness.send(GraphCommand::InsertTrackDevice {
-            track_id: 1,
-            entry: effect(900),
-            index: 0,
-        });
+        harness.send(insert_track_device(1, effect(900), 0));
         harness.render(16);
         assert_eq!(
             harness.diagnostics().pdc_clamped_routes,
@@ -9385,6 +9631,286 @@ mod timeline_tests {
         );
     }
 
+    /// The depth every generator fixture below waits on: the latency of the
+    /// device on the track routed into the strip under test, and so the depth
+    /// of that strip's input.
+    const INPUT_DEPTH: usize = 64;
+
+    /// A track carrying a constant behind a genuinely late device, routed into
+    /// `into` — the material an instrument on that strip has to meet.
+    fn latent_track_routed_into(harness: &mut Harness, into: RouteTarget) {
+        track_with_constant_clip(harness, 1, 101, 1.0, 512);
+        harness.send(GraphCommand::SetTrackOutput(1, into));
+        insert_latent_device(harness, 1, 900, INPUT_DEPTH);
+    }
+
+    /// A group's own clips wait for what is routed into it, and an instrument
+    /// on that group is the same kind of source: it produces at zero where the
+    /// route has already waited. Unheld, a synth on a drum group would sound a
+    /// device's latency ahead of the drums feeding it — the alignment the
+    /// group exists to make.
+    #[test]
+    fn a_generator_on_a_group_waits_for_the_latent_track_routed_into_it() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument on the group sounds on the frame the track routed into it does, not before"
+        );
+    }
+
+    /// A bus hosts an instrument on the same terms a track does, and its input
+    /// is a summing point of exactly the same kind. Aiming only the tracks
+    /// would leave a synth on a bus early by the depth of everything routed
+    /// into it.
+    #[test]
+    fn a_generator_on_a_bus_waits_for_the_latent_track_routed_into_it() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        latent_track_routed_into(&mut harness, RouteTarget::Bus(50));
+        insert_bus_generator(
+            &mut harness,
+            50,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument on the bus sounds on the frame the track routed into it does, not before"
+        );
+    }
+
+    /// One strip can carry several instruments — the fan-in the app's chain
+    /// builds — and each holds its own material. A line shared between two of
+    /// them would take both signals in and hand back an interleaving of the
+    /// two, which a ramp shows and a pair of constants would hide.
+    #[test]
+    fn two_generators_on_one_strip_each_wait_their_own_hold() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(&mut harness, 3, 901, Box::<RampGenerator>::default(), 0);
+        insert_track_generator(
+            &mut harness,
+            3,
+            902,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(128);
+        let expected: Vec<f32> = (0..128usize)
+            .map(|frame| match frame.checked_sub(INPUT_DEPTH) {
+                // The routed-in constant, the second instrument's constant,
+                // and the first instrument's own frame number.
+                Some(produced) => produced as f32 + 2.0,
+                None => 0.0,
+            })
+            .collect();
+        assert_eq!(
+            left, expected,
+            "each instrument's own material comes back out of its own line, in order"
+        );
+    }
+
+    /// The hold is the depth of what arrives at the strip's input, and nothing
+    /// else. A strip's own chain latency is behind the instrument, not ahead of
+    /// it: counting it would hold the instrument by that latency twice and put
+    /// it late against the very route it is meeting.
+    #[test]
+    fn a_generator_hold_is_aimed_by_input_depth_not_the_strips_own_latency() {
+        const OWN_LATENCY: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+        insert_latent_device_at(&mut harness, 3, 902, OWN_LATENCY, 1);
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + OWN_LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument leaves the group's own device on the frame the routed-in material does"
+        );
+    }
+
+    /// A device released from a chain runs nowhere, so nothing feeds or reads
+    /// the hold it was running: left standing it would hand the material it
+    /// produced on the old strip back over the first held frames after some
+    /// chain takes it again.
+    #[test]
+    fn a_reinserted_generator_restarts_its_hold_from_silence() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        // Long enough that the hold is full of the instrument's own material
+        // rather than of the silence it was built with.
+        harness.render(128);
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 3,
+            effect_id: 901,
+        });
+        harness.send(insert_track_device(3, generator(901), 0));
+
+        let (left, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(1.0);
+        assert_eq!(
+            left, expected,
+            "the re-spliced instrument owes silence for its hold, and only the routed-in track sounds meanwhile"
+        );
+    }
+
+    /// A bypassed instrument is a device the chain still visits, so its hold
+    /// takes its pass like every other line: over the silence the chain clears
+    /// for the instrument, which drains the tail the hold was carrying and
+    /// fills it with the silence the un-bypass then hands back. Skipped
+    /// through the bypass, the line would stand still and replay the material
+    /// from before the switch — the burst of stale audio the rule that every
+    /// line is written on every block it renders exists to prevent.
+    #[test]
+    fn a_bypassed_generator_keeps_its_hold_flowing() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        // Past the onset both sources are up, so what the switch does is a
+        // change in a steady mix rather than a difference from silence.
+        let (settled, _) = harness.render(128);
+        assert_eq!(
+            settled[INPUT_DEPTH..],
+            vec![2.0; 128 - INPUT_DEPTH][..],
+            "the instrument and the track routed into it are both sounding before the switch"
+        );
+
+        harness.send(GraphCommand::SetBypass(901, true));
+        let (bypassed, _) = harness.render(128);
+        let mut expected = vec![1.0; 128];
+        expected[..INPUT_DEPTH].fill(2.0);
+        assert_eq!(
+            bypassed, expected,
+            "the material the instrument produced before the bypass drains out of its hold on schedule, and only the routed-in track sounds after it"
+        );
+
+        harness.send(GraphCommand::SetBypass(901, false));
+        let (restored, _) = harness.render(128);
+        let mut expected = vec![2.0; 128];
+        expected[..INPUT_DEPTH].fill(1.0);
+        assert_eq!(
+            restored, expected,
+            "the silence the hold was fed while the instrument was bypassed comes back out before the instrument does"
+        );
+    }
+
+    /// A splice the graph refuses still arrived carrying a line, and the line
+    /// is heap: freeing it on the callback is exactly the drop ADR 0020
+    /// forbids, so it leaves over the retirement channel like every other
+    /// buffer the graph gives up.
+    #[test]
+    fn a_refused_generator_insert_retires_the_shipped_hold() {
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddHostedPlugin(
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+        ));
+
+        // No track 7 in the graph, so the splice is refused with its line
+        // still on it.
+        harness.send(insert_track_device(7, generator(901), 0));
+
+        let retired = harness
+            .retired_rx
+            .pop()
+            .expect("the refused splice must hand its line off, never free it on the callback");
+        assert!(
+            matches!(
+                &retired.timeline_object,
+                Some(RetiredTimelineObject::Delay(_))
+            ),
+            "the refused splice's own line is what leaves"
+        );
+    }
+
+    /// An instrument on a group waits on the same input its clips do, so the
+    /// ceiling cutting both short is one summing point the graph could not
+    /// align — not two. Counting each line would report a project with more
+    /// misaligned routes than it has.
+    #[test]
+    fn a_clamped_generator_hold_counts_once_with_its_strips_source_line() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 3, 103, 1.0, 64);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(3)));
+        insert_latent_device(&mut harness, 1, 900, declared);
+
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            2,
+            "the group's source line and the device's own dry line are what the ceiling cut short"
+        );
+
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            2,
+            "the instrument waits on the input its strip's clips wait on, so the strip still counts once"
+        );
+    }
+
     /// A group aligns the strips meeting on its input against each other, and
     /// what it then sums at is a further point again: a track going straight
     /// to the master waits for the whole hop.
@@ -9455,11 +9981,7 @@ mod timeline_tests {
                 effect_id,
                 Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
             ));
-            harness.send(GraphCommand::InsertBusDevice {
-                bus_id,
-                entry: effect(effect_id),
-                index: 0,
-            });
+            harness.send(insert_bus_device(bus_id, effect(effect_id), 0));
             harness.send(set_latency(effect_id, latency));
         }
 
@@ -9509,11 +10031,7 @@ mod timeline_tests {
             901,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
         ));
-        harness.send(GraphCommand::InsertBusDevice {
-            bus_id: 51,
-            entry: effect(901),
-            index: 0,
-        });
+        harness.send(insert_bus_device(51, effect(901), 0));
         harness.send(set_latency(901, SECOND_HOP));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
