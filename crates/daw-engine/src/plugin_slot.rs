@@ -132,6 +132,22 @@ pub trait NativePlugin: Any + Send {
     /// than wrong.
     fn process_capture_input(&mut self, _block: CaptureInputBlock<'_>) {}
 
+    /// Queue one of this plugin's own parameters for its next process call.
+    ///
+    /// Audio-thread only, and bound by the audio thread's law: it must not
+    /// allocate, lock, or block. The scheduler calls it from
+    /// `apply_due_device_params`, which runs before the chain renders the span
+    /// that reached the stamp, so a write queued here is drained by that same
+    /// block's process call rather than by the block after it.
+    ///
+    /// `true` means the write is queued. `false` refuses it, and the caller
+    /// counts the refusal as an unmapped parameter call — the default, because
+    /// a plugin body with no addressable parameters (a built-in wrapper, a
+    /// fixture) has nothing to queue the write against.
+    fn apply_parameter_on_audio_thread(&mut self, _id: u32, _value: f64) -> bool {
+        false
+    }
+
     /// Get the plugin's name (for logging).
     fn name(&self) -> &str;
 

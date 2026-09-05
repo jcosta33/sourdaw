@@ -33,7 +33,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip,
+    ClipPlayback, DeviceParam, DeviceParamTarget, RouteTarget, SendTap, TimelineBus, TimelineClip,
     TimelineRtDiagnosticsReader, TimelineRtDiagnosticsSnapshot, TimelineTrack,
 };
 
@@ -923,8 +923,8 @@ impl EngineHandle {
     ) -> Result<(), String> {
         self.push(GraphCommand::AutomateDeviceParam {
             effect_id,
-            param,
-            value,
+            param: DeviceParamTarget::Builtin(param),
+            value: f64::from(value),
             at_frame,
         })
     }

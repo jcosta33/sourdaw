@@ -15,7 +15,7 @@ use crate::midi_fx::{
 use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue,
+    ClipPlayback, DeviceChain, DeviceParam, DeviceParamEvent, DeviceParamQueue, DeviceParamTarget,
     RetiredTimelineObject, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineGraph,
     TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES,
     MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
@@ -559,16 +559,19 @@ pub enum GraphCommand {
         value: f32,
         smoothing: f32,
     },
-    /// A time-stamped change to a built-in device parameter, addressed without
-    /// a name so consuming the command frees nothing on the audio thread.
+    /// A time-stamped change to a device parameter — a built-in's, addressed
+    /// without a name, or a hosted plugin's, addressed by the plugin's own id
+    /// ([`DeviceParamTarget`]) — so consuming the command frees nothing on the
+    /// audio thread.
     ///
     /// Unlike [`GraphCommand::AutomateParam`] this applies at the block
     /// boundary rather than at a sample offset: a device owns its own
-    /// parameter smoothing, and no built-in exposes a sample-addressed set.
+    /// parameter smoothing, and neither a built-in nor a hosted plugin's
+    /// queue exposes a sample-addressed set.
     AutomateDeviceParam {
         effect_id: usize,
-        param: DeviceParam,
-        value: f32,
+        param: DeviceParamTarget,
+        value: f64,
         at_frame: u64,
     },
 
@@ -2768,13 +2771,20 @@ impl AudioScheduler {
             }
             let effect = &mut self.effects[slot];
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
-                match &mut effect.instance {
-                    PluginCore::Knead(engine) => {
-                        apply_knead_param(engine, event.param, event.value);
+                match (&mut effect.instance, event.param) {
+                    (PluginCore::Knead(engine), DeviceParamTarget::Builtin(param)) => {
+                        apply_knead_param(engine, param, event.value as f32);
                     }
-                    // Addressed device parameters have a mapped target only on
-                    // the built-in effect, exactly as `SetParam` does.
-                    PluginCore::Native(_) => {
+                    (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
+                        if !plugin.apply_parameter_on_audio_thread(id, event.value) {
+                            self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                        }
+                    }
+                    // A stamp addressed at the other kind of body: the mapper
+                    // resolves the address from the device it is written at, so
+                    // this is a producer that lost track of what the effect id
+                    // holds, not a value the engine may guess at.
+                    _ => {
                         self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                     }
                 }
@@ -3583,7 +3593,7 @@ mod tests {
         command_tx
             .push(GraphCommand::AutomateDeviceParam {
                 effect_id: 0,
-                param: DeviceParam::ShiftSemitones,
+                param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
                 value: 7.0,
                 at_frame: 0,
             })
@@ -5492,7 +5502,7 @@ mod tests {
             command_tx
                 .push(GraphCommand::AutomateDeviceParam {
                     effect_id: 2,
-                    param: DeviceParam::ShiftSemitones,
+                    param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
                     value: 3.0,
                     at_frame: 0,
                 })
@@ -5967,7 +5977,52 @@ mod timeline_tests {
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    /// Stands in for a hosted plugin's parameter queue: it records every write
+    /// the audio thread hands it, and answers the way the test needs — a plugin
+    /// that took the write, or one that refused it.
+    struct ParameterRecordingPlugin {
+        queued: Arc<Mutex<Vec<(u32, f64)>>>,
+        accepts: bool,
+    }
+
+    impl NativePlugin for ParameterRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64) -> bool {
+            self.queued
+                .lock()
+                .expect("the parameter log")
+                .push((id, value));
+            self.accepts
+        }
+
+        fn name(&self) -> &str {
+            "parameter-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn parameter_recording_plugin(
+        accepts: bool,
+    ) -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<(u32, f64)>>>) {
+        let queued = Arc::new(Mutex::new(Vec::new()));
+        (
+            Box::new(ParameterRecordingPlugin {
+                queued: Arc::clone(&queued),
+                accepts,
+            }),
+            queued,
+        )
+    }
 
     /// Scales whatever it is handed, so a chain's position in the graph is
     /// visible in the mix rather than only in the graph's own bookkeeping.
@@ -6910,7 +6965,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddEffect(7, knead_instance()));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 7,
-            param: DeviceParam::ShiftSemitones,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
             value: 5.0,
             at_frame: 6,
         });
@@ -6929,6 +6984,132 @@ mod timeline_tests {
             PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 5.0),
             PluginCore::Native(_) => panic!("expected the knead effect"),
         }
+    }
+
+    /// A hosted plugin's parameters are the plugin's own, so a stamp aimed at
+    /// one is queued on the plugin rather than resolved here. It must land on
+    /// the block whose span reaches the stamp and on no other: applied early it
+    /// moves the parameter before the music does, applied every block it would
+    /// fight the plugin's own smoothing.
+    #[test]
+    fn a_hosted_stamp_lands_on_the_block_that_reaches_it() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 6,
+        });
+
+        harness.render(4);
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a stamp ahead of the playhead must not reach the plugin early"
+        );
+
+        harness.render(4);
+        assert_eq!(*queued.lock().expect("the parameter log"), vec![(7, 0.25)]);
+
+        harness.render(4);
+        assert_eq!(
+            *queued.lock().expect("the parameter log"),
+            vec![(7, 0.25)],
+            "a landed stamp leaves the queue rather than reapplying every block"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a write the plugin queued is not an unmapped call"
+        );
+    }
+
+    /// Only the plugin knows whether it can take the write — its queue may be
+    /// full, or the id may name nothing it exposes. A refusal is the one thing
+    /// the engine can do about it: count it, so the shortfall is visible rather
+    /// than silently absent from the mix.
+    #[test]
+    fn a_hosted_stamp_the_plugin_refuses_is_counted_unmapped() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(false);
+        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 3,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 0,
+        });
+
+        harness.render(4);
+
+        assert_eq!(
+            *queued.lock().expect("the parameter log"),
+            vec![(7, 0.25)],
+            "the stamp reached the plugin, which refused it"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            1
+        );
+    }
+
+    /// The address and the body must agree. A built-in address carries a name
+    /// no hosted plugin answers to, and a hosted id is a number no built-in
+    /// parameter has — so a stamp that reaches the wrong kind of body is a
+    /// producer that lost track of what an effect id holds, and applying it
+    /// either way would move some other parameter.
+    #[test]
+    fn a_stamp_addressed_at_the_wrong_body_is_counted_unmapped() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        harness.send(GraphCommand::AddEffect(1, knead_instance()));
+        let (plugin, queued) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(2, plugin));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 1,
+            param: DeviceParamTarget::Hosted { id: 7 },
+            value: 0.25,
+            at_frame: 0,
+        });
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 2,
+            param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
+            value: 5.0,
+            at_frame: 0,
+        });
+
+        harness.render(4);
+
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a built-in address must not reach a hosted plugin's queue"
+        );
+        match &harness.scheduler.effects[0].instance {
+            PluginCore::Knead(engine) => assert_eq!(
+                engine.shift_semitones, 0.0,
+                "a hosted id must not move a built-in parameter"
+            ),
+            PluginCore::Native(_) => panic!("expected the knead effect"),
+        }
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            2
+        );
     }
 
     #[test]
