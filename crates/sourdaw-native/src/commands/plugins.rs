@@ -705,11 +705,19 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
 /// make the ordinary state of a machine look like a failed scan. A root under
 /// one — a folder the user added — is still refused by name: the user typed it,
 /// so its absence is theirs to see and fix.
+///
+/// Two requested roots that authorize to the same canonical folder — a Linux
+/// distribution's `/usr/lib64 -> /usr/lib` symlink hands out exactly this —
+/// keep only the first: pushing both would walk that folder's bundles twice
+/// before `retain_first_candidate_per_path` runs, and a large-enough folder
+/// walked twice exhausts `MAX_SCAN_CANDIDATES` on its own duplicate and drops
+/// every root behind it.
 fn authorize_scan_roots(
     policy: &PluginScanPolicy,
     requested: Vec<PathBuf>,
 ) -> (Vec<PathBuf>, Vec<String>) {
     let mut authorized = Vec::new();
+    let mut already_authorized = HashSet::new();
     let mut errors = Vec::new();
 
     for path in requested {
@@ -724,6 +732,9 @@ fn authorize_scan_roots(
             if !policy.is_platform_default_root(&canonical) {
                 errors.push(format!("Not a directory: {}", path.display()));
             }
+            continue;
+        }
+        if !already_authorized.insert(canonical.clone()) {
             continue;
         }
         authorized.push(canonical);
@@ -6431,6 +6442,39 @@ mod tests {
         assert!(
             errors.iter().any(|error| error.contains("Not a directory")),
             "{errors:?}"
+        );
+    }
+
+    /// A Linux distribution's `/usr/lib64 -> /usr/lib` symlink authorizes
+    /// `/usr/lib/vst3` and `/usr/lib64/vst3` to the same canonical folder.
+    /// Walking that folder twice before dedup-by-path runs is what let a
+    /// 130-bundle real install exhaust `MAX_SCAN_CANDIDATES` on its own
+    /// duplicate and drop every scan root behind it.
+    #[cfg(unix)]
+    #[test]
+    fn authorize_scan_roots_dedupes_two_requests_that_share_a_canonical_root() {
+        let temp_root = unique_temp_scan_root("authorize-scan-roots-dedupe");
+        let real_root = temp_root.join("real");
+        let real_vst3 = real_root.join("VST3");
+        let linked_root = temp_root.join("linked");
+        std::fs::create_dir_all(&real_vst3).expect("real VST3 root should be created");
+        std::os::unix::fs::symlink(&real_root, &linked_root)
+            .expect("linked root symlink should be created");
+
+        let linked_vst3 = linked_root.join("VST3");
+        let policy =
+            PluginScanPolicy::with_allowed_roots(vec![real_vst3.clone(), linked_vst3.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(&policy, vec![real_vst3.clone(), linked_vst3]);
+
+        let expected = std::fs::canonicalize(&real_vst3).expect("real VST3 root should resolve");
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            ordered,
+            vec![expected],
+            "both roots resolve to the same canonical folder and must be walked once"
         );
     }
 
