@@ -26,6 +26,17 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   own clips are the side that waits, held back to meet them, so a group never leads the tracks
   feeding it. Live input monitored through that track is not held: hearing yourself late is the one
   alignment a DAW must not make.
+- **A generator on a strip waits with that strip's own material**: an instrument produces at zero
+  wherever it sits, so a generator is held before its output joins the chain signal, and meets the
+  routed-in material exactly as a clip does. Its material is summed at its own place in the chain,
+  where the signal has already taken the latency of the devices ahead of it, so the hold is the
+  depth of the strip's input plus that declared prefix — aimed at the input's depth alone, an
+  instrument behind a latent device would lead the very route it was placed to meet. The hold is a
+  line built control-side and shipped with the splice that places the device, and it takes its pass
+  on every block the chain visits that device, bypassed or not — the silence a bypassed instrument
+  is handed is what drains the hold on schedule. Every splice ships a fresh silent line and the
+  device installs it, so a generator arriving on a strip owes its hold's worth of silence there
+  without any line ever being cleared in place.
 - **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
   bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
   the project — the common professional convention, and the reason the dry line is built with the
@@ -44,11 +55,13 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   hold's worth of silence. Swapping a fresh ring in would empty the line the graph has been keeping
   current, which is the very thing the rule above exists to prevent.
 - **A detached device's line restarts from silence**: a device can be left holding no placement at
-  all — the strip it sat on removed under it, or a hosted plugin taken off the strip that borrowed
-  it — and nothing then feeds or reads its line. That is the one break in the rule above, so it is
-  the one place a line is cleared, and it stays silent until a chain takes the device again and
-  starts feeding it. The clear is taken on every transition into detachment, bounded by the latency
-  declared then.
+  all — the strip it sat on removed under it, or a hosted plugin taken off the strip that
+  borrowed it — and nothing then feeds or reads its dry line. That is the one break in the rule
+  above, so it is the one place the dry line is cleared, and it stays silent until a chain
+  takes the device again and starts feeding it. The clear is taken on every transition into
+  detachment, bounded by the latency declared then. A generator's input hold is never cleared
+  in place: the splice that places the device ships a fresh silent line and installs it, so
+  the hold a detached generator still owns is replaced, not restarted.
 - **A hold is only as deep as the history behind the write head**: a device goes on declaring while
   it waits, and a figure can also arrive a block after a strip has taken it back but before that
   strip has fed its line. Either way a hold reaching further back than the last restart lands on

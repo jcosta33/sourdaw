@@ -2709,6 +2709,7 @@ mod compensation_render_alloc_guards {
                 kind: DeviceKind::Effect,
             },
             index: 0,
+            hold: None,
         });
         // A group: the latent track sums into track 2's input, which puts
         // track 2's source line at a non-zero delay and so on the render this

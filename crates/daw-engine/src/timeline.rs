@@ -89,6 +89,26 @@ pub struct ChainEntry {
     pub kind: DeviceKind,
 }
 
+impl ChainEntry {
+    /// The input hold a splice of this entry ships with, built control-side
+    /// because the audio thread may neither allocate a line nor free one
+    /// (ADR 0020).
+    ///
+    /// A generator starts at zero on a strip whose input has already waited,
+    /// so it is held back to meet what lands there exactly as the strip's own
+    /// clips are. An effect transforms a signal that arrived aligned already
+    /// and needs no line of its own. The line is sized at the ceiling like
+    /// every other, so a recompensation only ever re-aims it.
+    pub fn input_hold(&self) -> Option<Box<CompensationDelay>> {
+        match self.kind {
+            DeviceKind::Effect => None,
+            DeviceKind::Generator => {
+                Some(Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)))
+            }
+        }
+    }
+}
+
 /// How a time-stamped parameter change travels from its current value to its
 /// target.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1298,6 +1318,32 @@ pub(crate) trait DeviceChain {
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize);
 }
 
+/// What one compensation pass asks of the same device table.
+///
+/// The topology walk belongs to the graph and the devices belong to the
+/// scheduler, so the pass borrows the table for the length of one walk exactly
+/// as [`DeviceChain`] borrows it for the length of one render. It is one
+/// borrow rather than two callbacks because a pass both reads a declared
+/// latency and re-aims a generator's line: two closures over one table cannot
+/// hold the shared and the exclusive borrow at once.
+pub(crate) trait CompensationDevices {
+    /// What one device declares, bypassed or not: bypass keeps latency, so an
+    /// A/B never moves the mix.
+    fn device_latency(&self, effect_id: usize) -> usize;
+
+    /// Aim one generator's input hold at `depth`, and answer whether the
+    /// ceiling cut that hold short.
+    fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool;
+
+    /// What a whole chain declares — the figure a strip's output arrives at.
+    fn chain_latency(&self, chain: &[ChainEntry]) -> usize {
+        chain
+            .iter()
+            .map(|entry| self.device_latency(entry.effect_id))
+            .sum()
+    }
+}
+
 /// What one removal hands back to the retirement channel, so the audio thread
 /// never runs a destructor.
 pub(crate) enum RetiredTimelineObject {
@@ -2135,11 +2181,12 @@ impl TimelineGraph {
     /// Re-aim every route's compensation delay so that each summing point
     /// receives every contributor at the same latency.
     ///
-    /// `chain_latency` answers what one strip's device chain declares; the
-    /// effects themselves live on the scheduler, so the graph asks rather than
-    /// owning the figure. Bypassed devices are included, because a bypassed
-    /// device keeps its latency — see [`TimelineTrack`]'s strip order for why
-    /// a change that shifted alignment would click.
+    /// `devices` answers what one strip's device chain declares and aims the
+    /// generators on it; the effects themselves live on the scheduler, so the
+    /// graph asks rather than owning either. Bypassed devices count towards a
+    /// chain's latency, because a bypassed device keeps its latency — see
+    /// [`TimelineTrack`]'s strip order for why a change that shifted alignment
+    /// would click.
     ///
     /// `clamped_devices` is the other half of the clamp count this pass
     /// reports: how many devices declare more latency than the ceiling holds,
@@ -2150,15 +2197,20 @@ impl TimelineGraph {
     /// It is a figure handed in rather than one this pass accumulates, so the
     /// total is restated by each pass instead of latched.
     ///
+    /// A strip counts once in that total however many of its input's lines the
+    /// ceiling cut short: what the count names is a summing point the graph
+    /// could not align, and one strip's input is one such point whether its
+    /// clips, its generators, or both were held short of it.
+    ///
     /// The walk is [`Self::mix_order`], which puts every contributor ahead of
     /// what it feeds, so one pass settles every summing point's depth — a
     /// bus's input, a track's input, the master sum — and a second aims the
-    /// delays at it. O(strips + sends), and nothing here allocates: every
-    /// buffer it touches was sized on the control thread.
+    /// delays at it. O(strips + sends + devices), and nothing here allocates:
+    /// every buffer it touches was sized on the control thread.
     pub(crate) fn compensate(
         &mut self,
         clamped_devices: usize,
-        chain_latency: impl Fn(&[ChainEntry]) -> usize,
+        devices: &mut impl CompensationDevices,
     ) {
         let Self {
             tracks,
@@ -2187,7 +2239,8 @@ impl TimelineGraph {
                     // been visited, so its own chain starts from the deepest of
                     // them — the law a bus follows, because a track fed by
                     // other strips is the same kind of summing point.
-                    let arrival = track_summing_depth[index] + chain_latency(&tracks[index].chain);
+                    let arrival =
+                        track_summing_depth[index] + devices.chain_latency(&tracks[index].chain);
                     track_arrival[index] = arrival;
                     for send in &tracks[index].sends {
                         if let Some(bus) = buses.iter().position(|bus| bus.id == send.bus_id) {
@@ -2197,7 +2250,8 @@ impl TimelineGraph {
                     (arrival, tracks[index].output)
                 }
                 MixNode::Bus(index) => {
-                    let arrival = bus_summing_depth[index] + chain_latency(&buses[index].chain);
+                    let arrival =
+                        bus_summing_depth[index] + devices.chain_latency(&buses[index].chain);
                     bus_arrival[index] = arrival;
                     (arrival, buses[index].output)
                 }
@@ -2225,9 +2279,15 @@ impl TimelineGraph {
             }
 
             // This track's own clips start at zero, so they wait the whole
-            // depth of what arrives at its input.
+            // depth of what arrives at its input. An instrument on its chain
+            // waits that depth plus the latency the chain declares ahead of
+            // it, because its material joins where the signal already took
+            // that latency. One summing point, so one clamp however many of
+            // its lines the ceiling cut short.
             let depth = track_summing_depth[index];
-            clamped += usize::from(tracks[index].source_delay.set_delay(depth));
+            let mut input_clamped = tracks[index].source_delay.set_delay(depth);
+            input_clamped |= aim_chain_generators(&tracks[index].chain, depth, devices);
+            clamped += usize::from(input_clamped);
 
             let output = tracks[index].output;
             let hold = hold_for(
@@ -2243,6 +2303,14 @@ impl TimelineGraph {
         }
         for index in 0..bus_count {
             let arrival = bus_arrival[index];
+
+            // A bus has no clips, so its input hold is the generators on its
+            // chain and nothing else — an instrument on a bus is the same
+            // contributor a track's is: its input depth plus the latency the
+            // chain declares ahead of it.
+            let depth = bus_summing_depth[index];
+            clamped += usize::from(aim_chain_generators(&buses[index].chain, depth, devices));
+
             let output = buses[index].output;
             let hold = hold_for(
                 output,
@@ -2612,6 +2680,35 @@ fn run_device_chain(
             }
         }
     }
+}
+
+/// Aim every generator on one chain at the input its strip sums at, and answer
+/// whether the ceiling cut any of those holds short.
+///
+/// [`run_device_chain`] sums a generator's material at that generator's own
+/// index, so what it joins there has already taken the latency every effect
+/// ahead of it declares. The hold is therefore that prefix on top of the
+/// input's depth: aimed at the depth alone, an instrument spliced behind a
+/// latent device would lead the routed-in material it was placed to meet by
+/// exactly the latency standing in front of it. Only an effect contributes to
+/// the prefix — a generator ahead of another is summed in rather than run over
+/// the signal, so it delays nothing passing through.
+fn aim_chain_generators(
+    chain: &[ChainEntry],
+    depth: usize,
+    devices: &mut impl CompensationDevices,
+) -> bool {
+    let mut clamped = false;
+    let mut prefix = 0;
+    for entry in chain {
+        match entry.kind {
+            DeviceKind::Effect => prefix += devices.device_latency(entry.effect_id),
+            DeviceKind::Generator => {
+                clamped |= devices.aim_generator(entry.effect_id, depth + prefix);
+            }
+        }
+    }
+    clamped
 }
 
 /// Where one route's audio is summed with everything else arriving there.
