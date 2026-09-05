@@ -37,6 +37,16 @@ pub struct CompensationDelay {
     /// [`Self::delay`], so re-aiming the line costs an offset and nothing else.
     write: usize,
     delay: usize,
+    /// Frames of valid history behind [`Self::write`]: how far back a read
+    /// offset may reach and still land on audio this line itself carried.
+    ///
+    /// A ring is built silent, so the whole of it counts from the start, and
+    /// every frame written adds one until the ring is full again. A restart
+    /// resets it to the silence that restart laid down. What it decides is
+    /// whether a hold is covered: a hold deeper than this reads slots that
+    /// predate the last restart, which still hold whatever the line carried
+    /// before it.
+    covered: usize,
 }
 
 impl std::fmt::Debug for CompensationDelay {
@@ -65,6 +75,10 @@ impl CompensationDelay {
             right: vec![0.0; slots],
             write: 0,
             delay: 0,
+            // A fresh ring is silence all the way round, and silence is valid
+            // history: any hold aimed at it reads zeroes back rather than
+            // another route's audio.
+            covered: capacity,
         }
     }
 
@@ -103,16 +117,29 @@ impl CompensationDelay {
     /// line holds. Returns whether it clamped, so a route the ceiling cut short
     /// is counted rather than left silently misaligned.
     ///
-    /// Nothing is cleared, on any transition. Every line is written on every
-    /// block the strip owning it renders — at zero delay too, where its caller
-    /// feeds it instead of processing it — so the ring always holds the last
-    /// `capacity` frames of that route's signal. Re-aiming one is therefore a
-    /// read-offset jump into audio that is already current, and silence here
-    /// would open a hole rather than close one.
+    /// Nothing is cleared while the hold stays inside the history behind the
+    /// write head. Every line is written on every block the strip owning it
+    /// renders — at zero delay too, where its caller feeds it instead of
+    /// processing it — so the ring holds the last [`Self::covered`] frames of
+    /// that route's signal. Re-aiming inside them is a read-offset jump into
+    /// audio that is already current, and silence there would open a hole
+    /// rather than close one.
+    ///
+    /// A hold deeper than that history is the other case: the slots it reaches
+    /// back to predate the last restart and still carry whatever the line held
+    /// before it, so the line restarts at the hold it is now pointed at. Only
+    /// a line whose history was cut short pays that, because a restart is the
+    /// one thing that shortens it: a route line, and a dry line that has been
+    /// fed since it was built, never reach this branch, and the fill a line
+    /// coming out of a detachment does reach is bounded by the newly declared
+    /// hold rather than by the ring.
     pub(crate) fn set_delay(&mut self, frames: usize) -> bool {
         let capacity = self.capacity();
         let clamped = frames > capacity;
         self.delay = frames.min(capacity);
+        if self.delay > self.covered {
+            self.restart_from_silence();
+        }
         clamped
     }
 
@@ -133,11 +160,27 @@ impl CompensationDelay {
     /// [`MAX_COMPENSATION_FRAMES`] so that it can be re-aimed anywhere, and a
     /// full fill would pay two ceiling-sized memsets on the callback to
     /// silence the handful of frames a device actually declares.
+    ///
+    /// That bound is also the whole of the history the line then has: the
+    /// silence just laid down is valid, everything further back belongs to the
+    /// era the line is leaving, and [`Self::covered`] is what records the
+    /// difference.
     pub(crate) fn restart_from_silence(&mut self) {
         let slots = self.left.len();
         self.left[slots - self.delay..].fill(0.0);
         self.right[slots - self.delay..].fill(0.0);
         self.write = 0;
+        self.covered = self.delay;
+    }
+
+    /// Record `frames` of freshly written audio behind the write head.
+    ///
+    /// Shared by both passes over the ring, so a fed line and a processed one
+    /// cannot account for their history differently. It saturates at the
+    /// capacity, because a ring holds no more than it holds.
+    #[inline]
+    fn advance_covered(&mut self, frames: usize) {
+        self.covered = self.covered.saturating_add(frames).min(self.capacity());
     }
 
     /// One step round the ring: the only branch either pass over it takes per
@@ -176,6 +219,7 @@ impl CompensationDelay {
             read = Self::step(slots, read);
         }
         self.write = write;
+        self.advance_covered(frames);
     }
 
     /// Write `frames` of stereo audio into the line and read nothing back.
@@ -198,6 +242,7 @@ impl CompensationDelay {
             write = Self::step(slots, write);
         }
         self.write = write;
+        self.advance_covered(frames);
     }
 
     /// Take this line's one pass over a block: read the hold back when it
@@ -223,6 +268,14 @@ impl CompensationDelay {
     #[cfg(test)]
     fn ring(&self) -> (&[f32], &[f32]) {
         (&self.left, &self.right)
+    }
+
+    /// Where the next frame lands, for a test that has to prove a re-aiming
+    /// left the write head standing rather than restarting the line. Internal
+    /// for the same reason [`Self::ring`] is.
+    #[cfg(test)]
+    const fn write_position(&self) -> usize {
+        self.write
     }
 }
 
@@ -484,5 +537,102 @@ mod tests {
             "and the hold taken up after it reads the frames that ran through while it held nothing"
         );
         assert_eq!(held_right, held);
+    }
+
+    /// What decides whether a re-aiming may be taken in place is the history
+    /// behind the write head, not where the line's device happens to sit. A
+    /// line whose history was cut short by a restart owes silence for any hold
+    /// reaching past that restart, because those slots still carry the era it
+    /// left.
+    #[test]
+    fn a_hold_deeper_than_the_history_behind_the_write_head_restarts_the_line() {
+        let mut delay = CompensationDelay::new(8);
+        delay.feed(&ramp(8), &ramp(8), 8);
+
+        // Fed its whole capacity, so every hold the ring admits is covered.
+        delay.set_delay(4);
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 0.0].as_slice(),
+            "a covered hold leaves the ring exactly as the feed left it"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(
+            delay.write_position(),
+            8,
+            "and leaves the write head where it stood"
+        );
+
+        let mut left = vec![-1.0; 4];
+        let mut right = vec![-1.0; 4];
+        delay.process(&mut left, &mut right, 4);
+        assert_eq!(
+            left,
+            vec![5.0, 6.0, 7.0, 8.0],
+            "so the hold reads the material four frames behind the write head"
+        );
+        assert_eq!(right, left);
+
+        // A detachment cuts the history back to the silence it laid down.
+        delay.restart_from_silence();
+        delay.feed(&[9.0; 2], &[9.0; 2], 2);
+
+        // Four frames of restart silence plus two fed: a six-frame hold is the
+        // deepest one still covered.
+        delay.set_delay(6);
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [9.0, 9.0, -1.0, 4.0, 5.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "a hold the history exactly covers is taken in place"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(delay.write_position(), 2);
+
+        delay.set_delay(7);
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [9.0, 9.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "one frame deeper reaches past the restart, so the line restarts at the new hold"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(delay.write_position(), 0);
+    }
+
+    /// The cost is paid only where it is owed. A ring is built silent, and
+    /// silence is history a hold may read, so no line pays a restart for its
+    /// first aiming however deep it is — which is every dry line the control
+    /// thread ships.
+    #[test]
+    fn a_fresh_line_takes_any_hold_without_restarting() {
+        let mut delay = CompensationDelay::new(8);
+        delay.feed(&ramp(3), &ramp(3), 3);
+
+        delay.set_delay(8);
+
+        assert_eq!(
+            delay.write_position(),
+            3,
+            "the deepest hold the ring admits leaves the write head where the feed left it"
+        );
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "and the frames already fed still stand"
+        );
+        assert_eq!(ring_right, ring_left);
+
+        let mut left = vec![-1.0; 3];
+        let mut right = vec![-1.0; 3];
+        delay.process(&mut left, &mut right, 3);
+        assert_eq!(
+            left,
+            vec![0.0; 3],
+            "the hold reads the ring's own silence, which is what made it covered"
+        );
+        assert_eq!(right, left);
     }
 }

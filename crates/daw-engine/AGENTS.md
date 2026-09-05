@@ -46,15 +46,21 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   all — the strip it sat on removed under it, or a hosted plugin taken off the strip that borrowed
   it — and nothing then feeds or reads its line. That is the one break in the rule above, so it is
   the one place a line is cleared, and it stays silent until a chain takes the device again and
-  starts feeding it. A detached line owes that silence for whatever hold it is aimed at, not only
-  for the one it was detached with: a device still declares while it waits, and deepening its line
-  in place would expose the slots between the two figures, which hold the audio of the strip it
-  left. So the clear is taken on every transition into detachment and on every re-aiming while
-  detached, bounded each time by the latency then declared.
+  starts feeding it. The clear is taken on every transition into detachment, bounded by the latency
+  declared then.
+- **A hold is only as deep as the history behind the write head**: a device goes on declaring while
+  it waits, and a figure can also arrive a block after a strip has taken it back but before that
+  strip has fed its line. Either way a hold reaching further back than the last restart lands on
+  slots that still carry the audio of the strip the device left, so a line owes silence for any hold
+  deeper than the frames fed since that restart — wherever its device sits when the figure arrives.
+  The line itself owns that rule, so no caller can aim one past its own history; a route line and a
+  dry line fed since it was built are covered to their capacity and never pay it.
 - **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
   real-time diagnostics, alongside the deepest arrival the graph was asked for. The count covers
   every line the ceiling cut short — a route line, and the dry line of a device declaring past it,
-  which a strip aligning every route perfectly still runs. A hold that could not be taken is
+  which a strip aligning every route perfectly still runs. Only a placed device runs such a line: a
+  detached one is fed and read by nothing and adds nothing to any summing point's depth, so its
+  declaration is counted once a chain takes it and not before. A hold that could not be taken is
   reported, never silently misaligned.
 - **Lines are built control-side**: every delay line reaches the callback owning its buffers, and one
   the callback declines or gives up leaves over the ADR 0020 retirement route. A latency figure and

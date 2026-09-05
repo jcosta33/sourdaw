@@ -1538,33 +1538,29 @@ impl ActiveEffect {
     /// instead would hand the next bypassed pass a hold's worth of silence,
     /// every time a plugin moved its reported latency.
     ///
-    /// A detached device is the exception, because nothing feeds its line
-    /// while it waits: that line owes silence for whatever hold it is aimed
-    /// at, not only for the one it was detached with. Deepening it in place
-    /// would expose the slots between the old figure and the new one, which
-    /// still hold the audio of the strip the device left, and the first
-    /// bypassed pass after some chain takes the device again would replay
-    /// exactly that difference. So a re-aiming while detached restarts the
-    /// line at the hold it is now pointed at.
+    /// A hold reaching back past the line's history is the exception, and the
+    /// line itself owns it: a detachment restarts the ring, so the slots
+    /// further back than that restart still hold the audio of the strip the
+    /// device left, and deepening the hold onto them would replay exactly that
+    /// difference on the first bypassed pass after some chain takes the device
+    /// again. What decides it is the history fed since the last restart, not
+    /// where the device sits when the figure arrives: a device re-placed and
+    /// then deepened before its new chain has fed it that far owes the same
+    /// silence a still-detached one does.
     ///
     /// The control thread cannot see which of the two cases it is in, so it
     /// ships a line whenever the figure is non-zero and the spare leaves over
-    /// the retirement route. Nothing here allocates or frees (ADR 0020), and
-    /// the restart costs the newly declared latency, exactly as the one the
-    /// detachment itself takes costs the latency standing then.
+    /// the retirement route. Nothing here allocates or frees (ADR 0020), and a
+    /// restart costs the newly declared latency rather than the ring.
     fn aim_dry_line(
         &mut self,
         latency_frames: usize,
         shipped: Option<Box<CompensationDelay>>,
     ) -> Option<Box<CompensationDelay>> {
         self.latency_frames = latency_frames;
-        let detached = self.placement == EffectPlacement::Detached;
         match self.dry_delay.as_mut() {
             Some(line) if latency_frames > 0 => {
                 line.set_delay(latency_frames);
-                if detached {
-                    line.restart_from_silence();
-                }
                 shipped
             }
             // A device that declares nothing runs no line at all, and one that
@@ -2517,6 +2513,9 @@ impl AudioScheduler {
     /// to. A strip carrying one device past the ceiling clamps no route line
     /// at all, so the count is started here, from the table that holds the
     /// declarations, and recounted on every pass so it falls again with them.
+    /// Only a placed device runs a line the ceiling can cut short: a detached
+    /// one is fed and read by no chain and adds nothing to any summing point's
+    /// depth, so its declaration is a claim about a line nothing is running.
     fn recompute_compensation(&mut self) {
         let Self {
             effects,
@@ -2527,6 +2526,7 @@ impl AudioScheduler {
 
         let clamped_devices = effects
             .iter()
+            .filter(|effect| effect.placement != EffectPlacement::Detached)
             .filter(|effect| effect.latency_frames > MAX_COMPENSATION_FRAMES)
             .count();
 
@@ -9790,6 +9790,69 @@ mod timeline_tests {
         assert_eq!(right, left);
     }
 
+    /// The same exposure, reached with the device already back on a strip: the
+    /// host's latency watcher reports the deeper figure a block after the
+    /// re-placement rather than a block before it, so the line is placed when
+    /// the figure lands but has been fed nothing since its detachment cleared
+    /// it. What it owes is decided by the history behind its write head, not
+    /// by where its device sits, so it owes the whole of the new hold here
+    /// exactly as it does while detached.
+    #[test]
+    fn a_line_deepened_right_after_re_placement_owes_silence_for_its_whole_new_hold() {
+        const DETACHED_AT: usize = 7;
+        const DEEPENED_TO: usize = 11;
+        const FILL_BLOCKS: usize = MAX_COMPENSATION_FRAMES / MAX_CALLBACK_FRAMES;
+
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, MAX_COMPENSATION_FRAMES + 128);
+
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
+        let declared = Arc::new(AtomicUsize::new(DETACHED_AT));
+        harness.send(GraphCommand::AddPluginWithBridge(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            bridge,
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(900),
+            index: 0,
+        });
+        harness.send(set_latency(900, DETACHED_AT));
+
+        // Feed the whole ring, so the region a deeper hold reads back holds
+        // the strip's material rather than the ring's own initial silence.
+        for _ in 0..FILL_BLOCKS {
+            harness.render(MAX_CALLBACK_FRAMES);
+        }
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 900,
+        });
+        harness.render(16);
+
+        // Placed first, deepened second: nothing has fed the line in between.
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(900),
+            index: 0,
+        });
+        harness.send(set_latency(900, DEEPENED_TO));
+        harness.send(GraphCommand::SetBypass(900, true));
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..DEEPENED_TO].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "a line deepened before its new chain has fed it that far owes silence \
+             for the whole hold, not only for the one it was detached with"
+        );
+        assert_eq!(right, left);
+    }
+
     /// A bus is torn down under its inserts exactly as a track is, and the
     /// devices it held stop processing rather than falling back onto the
     /// master mix. Their lines owe the same silence.
@@ -10256,6 +10319,62 @@ mod timeline_tests {
             harness.diagnostics().pdc_clamped_routes,
             0,
             "a declaration the ceiling holds exactly is not clamped"
+        );
+    }
+
+    /// A registered but unplaced device declares like any other, and a host's
+    /// latency watcher goes on addressing it. No chain feeds or reads its dry
+    /// line and it adds nothing to any summing point's depth, so the ceiling
+    /// cuts nothing short until a strip takes it — and counting it meanwhile
+    /// would report a misaligned line the mix does not contain.
+    #[test]
+    fn a_detached_device_declaring_past_the_ceiling_is_not_counted_until_a_strip_takes_it() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+
+        // A bridged registration is homed detached, so it is registered
+        // without any chain holding it.
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
+        harness.send(GraphCommand::AddPluginWithBridge(
+            900,
+            Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(declared)),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+            bridge,
+        ));
+        harness.send(set_latency(900, declared));
+        harness.render(16);
+
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "a device no chain holds runs no line the ceiling can cut short"
+        );
+
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(900),
+            index: 0,
+        });
+        harness.render(16);
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            1,
+            "the strip taking it puts the clamped dry line into the mix, and the count says so"
+        );
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 900,
+        });
+        harness.render(16);
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            0,
+            "and the strip letting it go takes it back out"
         );
     }
 
