@@ -1,0 +1,67 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_a5b0e8683484c2 315
+src/app/__tests__/main.spec.tsx
+  s_9b530f08172a54::t_97cc7e185305b0 144
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_9b530f08172a54::t_200ff4c5ba3581 6,396,406,703,708,712,717
+src/modules/CommandInterface/useCases/commands/AiCommands.ts
+  s_9b530f08172a54::t_6f62bac2d170b3 2,76,85,94,103,112,137,149,161,173
+src/modules/CommandInterface/useCases/commands/AutomationCommands.ts
+  s_9b530f08172a54::t_146a598a5ba454 2,16,28,40
+src/modules/CommandInterface/useCases/commands/ClipCommands.ts
+  s_9b530f08172a54::t_0e217a93ae239c 3,62,74,86,102,123
+src/modules/CommandInterface/useCases/commands/ElasticCommands.ts
+  s_9b530f08172a54::t_3d5e19d3fc902d 1,15,27,39
+src/modules/CommandInterface/useCases/commands/MidiCommands.ts
+  s_9b530f08172a54::t_530c1764f10fa5 1,16,28,40,52,64,76,88,100
+src/modules/CommandInterface/useCases/commands/MiscCommands.ts
+  s_9b530f08172a54::t_8824c4b85fdc3d 1,255,324
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  s_9b530f08172a54::t_913baf2798f911 3,87,100,112,124,136,148,160,172,185,200,229
+src/modules/CommandInterface/useCases/commands/ViewCommands.ts
+  s_9b530f08172a54::t_71743da87bc045 2,132,147,162,177
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  s_9b530f08172a54::t_27900323352a2b 4,45,61,73
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  s_9b530f08172a54::t_1e6b27755e9d34 5,20,72,81,90,99,108,117,126,135,144,153,165,177
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_9b530f08172a54::t_226892273db0d1 21,53,134,146,157,172,180,199,456,468,552,569
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_9b530f08172a54::t_3da53744633467 23,55,273,282,288,305,311,325,351,356
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_9b530f08172a54::t_52e63afe0f41e4 26,197,585,600,704,858
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  s_36dffbf33d0205::t_9ffbef173d4018 20,230,306,330,338,342,346,350,354,358,363
+src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx
+  s_36dffbf33d0205::t_4ce19c3828ce9b 9,158,198,210,229
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_36dffbf33d0205::t_5fb4b31b4b272c 8,126,206
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_36dffbf33d0205::t_31bfb4a584ffe3 24,273
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_36dffbf33d0205::t_ce75b7e2fd9821 29,195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "aada361224c99218ff22738545e92d280758b893",
+  "prompts": {},
+  "sessions": {
+    "s_36dffbf33d0205": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac02e448de07894c5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
