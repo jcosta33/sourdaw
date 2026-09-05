@@ -143,8 +143,9 @@ function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
  * The rule-1 reason a strip with no native playback stays on Web Audio, or
  * `null` when rule 1 passes it. Read in the order the code checks it:
  *
- * - No attached plugin on the chain: `'nothing scheduled'` — nothing native or
- *   web-hosted gives the strip a body.
+ * - No attached plugin on the chain: `'nothing scheduled'` — nothing native is
+ *   scheduled and no attached plugin gives the strip a native body, so Web
+ *   Audio keeps whatever the strip plays and no plugin notice is owed.
  * - A MIDI-kind track: `'MIDI plays on Web Audio'` — no native MIDI route
  *   exists (`AudioGraphCommand` carries no MIDI), so `scheduleMidiNotes` and
  *   `handleWebMidiNoteOn` voice the track on Web Audio regardless of what the
