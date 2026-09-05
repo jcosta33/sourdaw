@@ -334,4 +334,30 @@ describe('ToasterPanel', () => {
         expect(mocks.setStepMicroTiming).toHaveBeenCalledTimes(1);
         expect(mocks.setStepMicroTiming).toHaveBeenCalledWith('toaster-test', 0, 0, 0.25);
     });
+
+    it('ensures section cards do not collapse in the bottom panel', () => {
+        const { container } = render(<ToasterPanel deviceId="toaster-test" />);
+        const sectionCards = container.querySelectorAll('section.toaster-window.shrink-0');
+        expect(sectionCards.length).toBe(6);
+        for (const title of ['Kit shelf', 'Pad bay', 'Transport', 'Pad mixer', 'Fill tools', 'Groove']) {
+            const heading = screen.getByText(title);
+            const section = heading.closest('section');
+            expect(section).not.toBeNull();
+            expect(section).toHaveClass('shrink-0', 'toaster-window');
+        }
+    });
+
+    it('applies DAW styling classes to the pattern groove amount slider', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+        const slider = screen.getByRole('slider', { name: 'Pattern groove amount' });
+        expect(slider).toHaveClass(
+            'h-1.5',
+            'w-full',
+            'cursor-pointer',
+            'appearance-none',
+            'rounded-lg',
+            'bg-white/10',
+            'accent-[var(--color-accent-peach)]'
+        );
+    });
 });
