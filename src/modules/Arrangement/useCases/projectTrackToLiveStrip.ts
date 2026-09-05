@@ -9,7 +9,7 @@ import {
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
-import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
+import { activateExternalPlugin, recordExternalPluginActivationError } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
@@ -101,9 +101,9 @@ export function projectTrackToLiveStrip({
         const engineSampleRate = getLiveEngineSampleRate();
         if (instanceId && pluginId) {
             if (engineSampleRate === undefined) {
-                logger.warn(
-                    `Leaving external plugin ${instanceId} dormant on track ${track.id}: the audio engine is not rendering audio, so there is no sample rate to activate at`
-                );
+                const dormantReason = `Leaving external plugin ${instanceId} dormant on track ${track.id}: the audio engine is not rendering audio, so there is no sample rate to activate at`;
+                logger.warn(dormantReason);
+                recordExternalPluginActivationError(instanceId, dormantReason);
             } else {
                 // Idempotent load + state restore; skips if the instance is already live,
                 // so the project-open rebuild and every Play/record rebuild stay cheap.

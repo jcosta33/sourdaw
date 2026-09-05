@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    recordExternalPluginActivationError: vi.fn(),
     getLiveEngineSampleRate: vi.fn<() => number | undefined>(() => ENGINE_SAMPLE_RATE),
     reportBridgeRoundTripFrames: vi.fn(),
     warn: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: mocks.activateExternalPlugin,
+    recordExternalPluginActivationError: mocks.recordExternalPluginActivationError,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -133,6 +135,42 @@ describe('projectTrackToLiveStrip', () => {
         // dormant is reversible: the next rebuild has a real rate.
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('persisted-native-instance'));
+    });
+
+    it('records the refusal on the activation entry when the engine has no live sample rate', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.outputId = 'master';
+        track.devices = [
+            {
+                id: 'device-1',
+                name: 'Native effect',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'persisted-native-plugin',
+                externalInstanceId: 'persisted-native-instance',
+            },
+        ];
+        trackStore.set({
+            tracks: [track, createTrack({ id: 'master', name: 'Master', kind: 'master' })],
+            selectedTrackId: null,
+        });
+        mocks.getLiveEngineSampleRate.mockReturnValue(undefined);
+
+        projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
+
+        // A dormant device otherwise renders as healthy in the rack — its
+        // instance id is set, but the host never loaded it — which is exactly
+        // the state that let the rack offer an editor control that could only
+        // fail. Recording the refusal here is what turns the device
+        // Unavailable with a Retry control instead.
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+        expect(mocks.recordExternalPluginActivationError).toHaveBeenCalledTimes(1);
+        expect(mocks.recordExternalPluginActivationError).toHaveBeenCalledWith(
+            'persisted-native-instance',
+            expect.stringContaining('no sample rate')
+        );
+        expect(mocks.warn).toHaveBeenCalledWith(mocks.recordExternalPluginActivationError.mock.calls[0]?.[1] as string);
     });
 
     it('projects the current owned track in device-chain order and wires sidechains last', () => {

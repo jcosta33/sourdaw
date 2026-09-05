@@ -441,6 +441,9 @@ describe('TrackDevicesSection', () => {
                 },
             ],
         });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'persisted-instance': { status: 'active' } },
+        });
         const trackWithPersistedClap: Track = {
             ...mockTrack,
             devices: [
@@ -564,6 +567,46 @@ describe('TrackDevicesSection', () => {
         ],
     });
 
+    it('offers no editor control while the instance is still loading', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Massive X', format: 'vst3', has_custom_ui: true }],
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'loading-instance': { status: 'loading' } },
+        });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'loading-instance', 'Massive X')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.queryByLabelText('Open editor for Massive X')).not.toBeInTheDocument();
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Bypass Massive X')).toBeEnabled();
+    });
+
+    it('offers no editor control for an instance that was never activated', () => {
+        mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
+        mockScanState.mockReturnValue({
+            scannedPlugins: [{ id: 'path-hash', name: 'Massive X', format: 'vst3', has_custom_ui: true }],
+        });
+        mockActivationState.mockReturnValue({ byInstanceId: {} });
+
+        render(
+            <TrackDevicesSection
+                track={externalPluginTrack('path-hash', 'never-activated-instance', 'Massive X')}
+                onSelectDevice={mockOnSelectDevice}
+            />
+        );
+
+        expect(screen.queryByLabelText('Open editor for Massive X')).not.toBeInTheDocument();
+        expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Bypass Massive X')).toBeEnabled();
+    });
+
     it('offers no editor control for a plugin the scan reports has none', () => {
         mockGetPlatformCapabilities.mockReturnValue({ hasNativePlugins: true });
         mockScanState.mockReturnValue({
@@ -595,6 +638,9 @@ describe('TrackDevicesSection', () => {
                 },
             ],
         });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'unqueried-instance': { status: 'active' } },
+        });
 
         render(
             <TrackDevicesSection
@@ -612,6 +658,9 @@ describe('TrackDevicesSection', () => {
             scannedPlugins: [{ id: 'path-hash', name: 'Open CLAP', format: 'clap', has_custom_ui: true }],
         });
         mockGuiState.mockReturnValue({ byInstanceId: { 'open-instance': { isOpen: true } } });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'open-instance': { status: 'active' } },
+        });
 
         render(
             <TrackDevicesSection
@@ -635,6 +684,9 @@ describe('TrackDevicesSection', () => {
             scannedPlugins: [{ id: 'path-hash', name: 'Open CLAP', format: 'clap', has_custom_ui: true }],
         });
         mockGuiState.mockReturnValue({ byInstanceId: { 'open-instance': { isOpen: true } } });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'open-instance': { status: 'active' } },
+        });
         const track = externalPluginTrack('path-hash', 'open-instance', 'Open CLAP');
         const { rerender } = render(<TrackDevicesSection track={track} onSelectDevice={mockOnSelectDevice} />);
         expect(screen.getByLabelText('Close editor for Open CLAP')).toBeInTheDocument();
@@ -656,6 +708,9 @@ describe('TrackDevicesSection', () => {
         });
         mockGuiState.mockReturnValue({
             byInstanceId: { 'refusing-instance': { isOpen: false, error: 'Plugin GUI is already open' } },
+        });
+        mockActivationState.mockReturnValue({
+            byInstanceId: { 'refusing-instance': { status: 'active' } },
         });
 
         render(
