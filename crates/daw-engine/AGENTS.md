@@ -50,10 +50,12 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   material is not that hold's business — it is produced into the scratch the chain sums in, behind
   the generator's own input hold — so the dry line takes exactly one pass per block, over the chain
   signal and never over that scratch.
-- **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
-  bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
-  the project — the common professional convention, and the reason the dry line is built with the
-  latency rather than with the device.
+- **Bypass keeps latency**: a bypassed latent effect runs its dry line in place of processing. A
+  latent generator's dry line runs over the pass-through on every block regardless of bypass, as the
+  bullet above states, alongside the generator's own pass into its scratch — bypass only withholds
+  that pass, never the dry line. Either way, bypass never triggers a recompensation. Auditioning one
+  plugin must not move every other route in the project — the common professional convention, and
+  the reason the dry line is built with the latency rather than with the device.
 - **Every line is written on every block it renders**: a route line and a dry line alike take
   exactly one pass per block — read-and-write while they hold, write-only otherwise. A route line
   holding nothing is fed rather than skipped, and a dry line is fed on every block the chain visits

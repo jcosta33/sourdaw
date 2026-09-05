@@ -2198,8 +2198,10 @@ fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWind
 /// Take the instance's chain entries out of the live graph, then retire it.
 ///
 /// Order is the whole point. A chain entry naming a retired effect is not
-/// counted anywhere — `TrackDeviceChain::run_device` returns on a failed
-/// effect-table lookup — so it is a silent passthrough for as long as it
+/// counted anywhere — `resolve_effect` returns `None` on a failed
+/// effect-table lookup, and both `TrackDeviceChain::run_device` and
+/// `run_generator` return without processing it, a hosted instance being
+/// spliced as a generator — so it is a silent passthrough for as long as it
 /// stands, and on a rolling engine no topology replacement ever arrives to
 /// clear it. Retiring first would therefore open that hole for the rest of the
 /// session; releasing first closes it before the hole can exist.

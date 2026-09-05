@@ -2800,4 +2800,53 @@ mod compensation_render_alloc_guards {
             "the replaced dry line and the removed track both leave over the retirement route"
         );
     }
+
+    /// The guard above splices only a [`DeviceKind::Effect`], so
+    /// `TrackDeviceChain::run_generator` and the `resolve_effect` lookup it
+    /// shares with `run_device` never ran inside it. A hosted instrument
+    /// arrives spliced exactly the way the control thread splices one:
+    /// `AddHostedPlugin` registers it homed detached, and the splice ships
+    /// the generator's input hold with it, the same pair the scheduler's own
+    /// `insert_track_generator` test helper sends.
+    #[test]
+    fn compensating_a_generator_neither_allocates_nor_frees_on_the_callback() {
+        const CALLBACKS: usize = 2;
+        // Non-zero, so `run_generator`'s dry-line pass over the pass-through
+        // signal actually runs the ring rather than the zero-delay no-op.
+        const LATENCY: usize = 16;
+
+        let mut harness = CompensationHarness::new();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddClip(
+            1,
+            constant_clip(301, 0.5, CALLBACKS * CALLBACK_FRAMES),
+        ));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+        harness.send(GraphCommand::AddHostedPlugin(
+            EFFECT_ID,
+            Box::new(SilentPlugin),
+        ));
+        let entry = ChainEntry {
+            effect_id: EFFECT_ID,
+            kind: DeviceKind::Generator,
+        };
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry,
+            index: 0,
+            hold: entry.input_hold(),
+        });
+        harness.send(set_latency(LATENCY));
+
+        let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+
+        assert_no_alloc(|| {
+            for _ in 0..CALLBACKS {
+                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+            }
+        });
+    }
 }
