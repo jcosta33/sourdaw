@@ -65,18 +65,22 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     // stay centralized.
     const deleteSelected = () => {
         // Per-clip dispatch through the registered action boundary gives each
-        // clip a complete undo entry; one-gesture-one-step grouping for these
-        // singleton-batch actions is tracked in issue #3622.
+        // clip a complete undo entry; one fresh group id per gesture makes the
+        // whole gesture a single undo step (#3622).
         const ids = multiSelected ? selectedIds : [clipId];
+        const groupId = `clip-menu-delete-${crypto.randomUUID()}`;
+        const groupLabel = `Delete ${ids.length} clip${ids.length === 1 ? '' : 's'}`;
         for (const id of ids) {
-            void executeUserAppAction({ type: 'removeClip', payload: { clipId: id } });
+            void executeUserAppAction({ type: 'removeClip', payload: { clipId: id } }, { groupId, groupLabel });
         }
     };
 
     const duplicateSelected = () => {
         const ids = multiSelected ? selectedIds : [clipId];
+        const groupId = `clip-menu-duplicate-${crypto.randomUUID()}`;
+        const groupLabel = `Duplicate ${ids.length} clip${ids.length === 1 ? '' : 's'}`;
         for (const id of ids) {
-            void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: id } });
+            void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: id } }, { groupId, groupLabel });
         }
     };
 

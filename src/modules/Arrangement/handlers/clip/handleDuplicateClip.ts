@@ -78,6 +78,10 @@ function isDuplicateClipNoop(action: DuplicateClipAction): boolean {
 }
 
 export const handleDuplicateClip = createHandler<'duplicateClip'>({
+    // Batch co-execution preflights the same applicability bar `isNoop` encodes
+    // for the single-action route (source and destination eligible, target id
+    // fresh). Single-action dispatch never calls validate.
+    validate: (action) => !isDuplicateClipNoop(action),
     materializeCommandArguments: (action) => {
         ensureTargetClipId(action);
     },

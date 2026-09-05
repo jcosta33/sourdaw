@@ -427,14 +427,19 @@ describe('ClipContextMenu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
         expect(executeUserAppAction).toHaveBeenCalledTimes(2);
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'removeClip',
-            payload: { clipId: 'clip1' },
-        });
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'removeClip',
-            payload: { clipId: 'clip2' },
-        });
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'removeClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+        );
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'removeClip', payload: { clipId: 'clip2' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+        );
+        // One gesture is one undo group: both per-clip dispatches share it.
+        const [firstOptions, secondOptions] = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]);
+        expect(secondOptions?.groupId).toBe(firstOptions?.groupId);
         expect(removeClip).not.toHaveBeenCalled();
     });
 
@@ -446,14 +451,18 @@ describe('ClipContextMenu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Duplicate/ }));
         expect(executeUserAppAction).toHaveBeenCalledTimes(2);
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'duplicateClip',
-            payload: { clipId: 'clip1' },
-        });
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'duplicateClip',
-            payload: { clipId: 'clip2' },
-        });
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'duplicateClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 2 clips' }
+        );
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'duplicateClip', payload: { clipId: 'clip2' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 2 clips' }
+        );
+        const [firstOptions, secondOptions] = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]);
+        expect(secondOptions?.groupId).toBe(firstOptions?.groupId);
         expect(duplicateClip).not.toHaveBeenCalled();
     });
 
@@ -582,12 +591,13 @@ describe('ClipContextMenu', () => {
     it('deletes only the targeted clip when a single clip is selected', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
-        // Single selection → one dispatch for just the one clip.
+        // Single selection → one dispatch for just the one clip, still grouped
+        // so the gesture is one undo step.
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'removeClip',
-            payload: { clipId: 'clip1' },
-        });
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'removeClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 1 clip' }
+        );
         expect(removeClip).not.toHaveBeenCalled();
     });
 
@@ -597,10 +607,10 @@ describe('ClipContextMenu', () => {
         // main Duplicate button by its exact accessible name.
         fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'duplicateClip',
-            payload: { clipId: 'clip1' },
-        });
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'duplicateClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 1 clip' }
+        );
         expect(duplicateClip).not.toHaveBeenCalled();
     });
 

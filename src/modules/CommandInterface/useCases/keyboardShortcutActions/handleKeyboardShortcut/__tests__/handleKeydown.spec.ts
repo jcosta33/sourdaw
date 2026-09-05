@@ -710,7 +710,10 @@ describe('handleKeydown', () => {
             trackStoreMock.value.tracks = [{ id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] }];
             const clipPrevent = handleKeydown(descriptor({ key: 'F1' }));
             expect(clipPrevent).toBe(true);
-            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip-1' } });
+            expect(executeUserAppAction).toHaveBeenCalledWith(
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 1 clip' }
+            );
             expect(clearClipSelection).toHaveBeenCalled();
             expect(removeClip).not.toHaveBeenCalled();
             expect(pushUndoEntry).not.toHaveBeenCalled();
@@ -736,14 +739,19 @@ describe('handleKeydown', () => {
 
             expect(prevent).toBe(true);
             expect(executeUserAppAction).toHaveBeenCalledTimes(2);
-            expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
-                type: 'removeClip',
-                payload: { clipId: 'clip-2' },
-            });
-            expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
-                type: 'removeClip',
-                payload: { clipId: 'clip-1' },
-            });
+            expect(executeUserAppAction).toHaveBeenNthCalledWith(
+                1,
+                { type: 'removeClip', payload: { clipId: 'clip-2' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+            );
+            expect(executeUserAppAction).toHaveBeenNthCalledWith(
+                2,
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+            );
+            // One keypress is one undo group: both per-clip dispatches share it.
+            const [firstOptions, secondOptions] = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]);
+            expect(secondOptions?.groupId).toBe(firstOptions?.groupId);
             expect(removeClip).not.toHaveBeenCalled();
             expect(pushUndoEntry).not.toHaveBeenCalled();
             expect(clearClipSelection).toHaveBeenCalled();

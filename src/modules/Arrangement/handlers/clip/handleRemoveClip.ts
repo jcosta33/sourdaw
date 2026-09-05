@@ -12,7 +12,16 @@ import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
 type MinimalClipShape = { id: string; trackId: string; name: string; startBeat: number; endBeat: number };
 
+function clipStillExists(clipId: string): boolean {
+    return (getTrackStoreState()?.tracks ?? []).some((track) => track.clips.some((clip) => clip.id === clipId));
+}
+
 export const handleRemoveClip = createHandler<'removeClip'>({
+    // Batch co-execution (grouped redo, atomic batches) preflights the state the
+    // action assumes — the clip it names is still present — and refuses the whole
+    // batch once a target is gone. Single-action dispatch never calls validate,
+    // so the per-clip fallbacks in execute below are unchanged.
+    validate: (action) => clipStillExists(action.payload.clipId),
     execute: (alpha) => {
         const state = getTrackStoreState();
         let trackId: string | null = null;
