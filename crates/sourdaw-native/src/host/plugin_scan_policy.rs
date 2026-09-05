@@ -64,7 +64,7 @@ impl PluginScanPolicy {
     /// directory this function never looked at.
     ///
     /// The whole rule in one place: a request with a symlink component is
-    /// refused unless it is lexically exactly one of this policy's own
+    /// refused unless it is component-equal to one of this policy's own
     /// allowed roots — the platform's own layout, not a user-supplied escape
     /// attempt, for example a Linux distribution that symlinks `/usr/lib64`
     /// to `/usr/lib` — in which case it is authorized to its canonical path.
