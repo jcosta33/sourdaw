@@ -57,23 +57,34 @@ describe('GlutenPanel', () => {
     it('prevents control cards from collapsing when faceplate is compressed', () => {
         const { container } = render(<GlutenPanel deviceId={DEVICE_ID} />);
         const cards = container.querySelectorAll('.gluten-window.shrink-0');
-        expect(cards.length).toBeGreaterThanOrEqual(5);
+        expect(cards).toHaveLength(6);
+        for (const title of ['Clamp', 'Finish', 'Detector', 'Character', 'Stage two']) {
+            const heading = screen.getByText(title);
+            const section = heading.closest('section');
+            expect(section).not.toBeNull();
+            expect(section?.className).toContain('shrink-0');
+        }
     });
 
     it('renders topology buttons with stacked icon-led header and labels to prevent horizontal squashing', () => {
         render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const topologyLabels = ['VCA', 'FET', 'Opto', 'Diode'];
         const topologyButtons = screen
             .getAllByRole('button')
             .filter(
                 (b) =>
-                    ['VCA', 'FET', 'Opto', 'Diode', 'Vari-Mu'].some((t) => b.textContent?.includes(t)) &&
+                    topologyLabels.some((t) => b.textContent?.includes(t)) &&
                     ['Bus duty', 'Settle', 'Snap', 'Weight'].some((t) => b.textContent?.includes(t))
             );
         expect(topologyButtons).toHaveLength(4);
-        for (const button of topologyButtons) {
-            const headerRow = button.firstElementChild;
-            expect(headerRow).not.toBeNull();
+        for (const label of topologyLabels) {
+            const button = topologyButtons.find((b) => b.textContent?.includes(label));
+            expect(button).toBeDefined();
+            expect(button?.children).toHaveLength(2);
+            const headerRow = button?.firstElementChild;
             expect(headerRow?.querySelector('svg')).not.toBeNull();
+            expect(headerRow?.textContent).not.toContain(label);
+            expect(button?.children[1]?.textContent).toContain(label);
         }
     });
 });
