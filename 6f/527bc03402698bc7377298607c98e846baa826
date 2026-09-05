@@ -1,0 +1,31 @@
+src/modules/CommandInterface/stores/shortcutStore.ts
+  s_9b530f08172a54::t_472bb80600a31b 387-390
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_86239fc3081a80::t_21ca9ef805ac20 178-179
+src/modules/Command/useCases/actionLabels.ts
+  s_86239fc3081a80::t_1d7303bcfa1782 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6f527bc03402698bc7377298607c98e846baa826",
+  "prompts": {},
+  "sessions": {
+    "s_86239fc3081a80": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a440195cf44d601e1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
