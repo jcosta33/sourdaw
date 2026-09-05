@@ -1587,16 +1587,25 @@ describe('ProofPanel', () => {
         expect(bridge.setParam).toHaveBeenCalledWith('lim_bypass', 1);
     });
 
-    it('establishes min-height floor and allows bottom drawer scrolling without overflow-auto or overflow-hidden', () => {
-        const { container } = render(<ProofPanel deviceId="proof-1" />);
+    const minHeightClasses = (element: HTMLElement | null | undefined): string[] =>
+        (element?.className ?? '').split(/\s+/).filter((token) => token.startsWith('min-h-'));
+
+    it('keeps the faceplate overflow-auto with no min-height floor so it scrolls instead of clipping', () => {
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
         const faceplate = container.querySelector<HTMLElement>('.proof-faceplate');
         expect(faceplate).not.toBeNull();
-        expect(faceplate?.className).toContain('min-h-[440px]');
-        expect(faceplate?.className).not.toContain('overflow-auto');
-        expect(faceplate?.className).not.toContain('overflow-hidden');
+        expect(faceplate).toHaveClass('h-full');
+        expect(faceplate).toHaveClass('overflow-auto');
+        expect(faceplate).not.toHaveClass('overflow-hidden');
+        expect(minHeightClasses(faceplate)).toEqual(['min-h-0']);
+    });
 
+    it('keeps the grid row min-h-0 with no min-height floor so rails own their overflow', () => {
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const faceplate = container.querySelector<HTMLElement>('.proof-faceplate');
         const grid = faceplate?.querySelector<HTMLElement>('.grid');
         expect(grid).not.toBeNull();
-        expect(grid?.className).toContain('min-h-[440px]');
+        expect(grid).toHaveClass('h-full');
+        expect(minHeightClasses(grid)).toEqual(['min-h-0']);
     });
 });
