@@ -78,7 +78,7 @@ const VALIDATION_TRIGGERS = ['workflow_call'] as const;
 const VALIDATION_CALL = './.github/workflows/validation.yml';
 const REQUIRED_CHECK_NAME = 'Gate';
 const HEAVY_SUMMARY_NAME = 'HeavyGate';
-const NIGHTLY_CRON = '0 3 * * *';
+const NIGHTLY_CRON = '23 3 * * *';
 const NIGHTLY_CONCURRENCY_GROUP = 'nightly-${{ github.run_id }}';
 const HEAVY_CONCURRENCY_GROUP =
     "heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}";

@@ -12,7 +12,9 @@ name: Nightly
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    # Off the top of the hour on purpose: GitHub delays scheduled runs during
+    # high load, and the start of every hour is one of its high-load periods.
+    - cron: '23 3 * * *'
   workflow_dispatch:
 
 permissions:
