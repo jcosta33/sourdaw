@@ -1,0 +1,25 @@
+.agents/specs/plugin-hosting-clap/spec.md
+  s_9b530f08172a54::t_6deeba70034025 150
+  s_9b530f08172a54::t_ee5a7cd42f1879 110-111,113
+  s_9b530f08172a54::t_af310f112e6289 103-104,106
+  s_9b530f08172a54::t_8a7f57e198c725 47-48,50
+electron/__tests__/bridge.spec.ts
+  s_9b530f08172a54::t_73bf77ff1aadd0 398
+  s_9b530f08172a54::t_fe8d588cba9af0 399-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "943579092afb12f0f240cf73f2e229b794d4fd03",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
