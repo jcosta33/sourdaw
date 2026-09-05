@@ -178,15 +178,29 @@ struct PersistedScanRegistryRef<'a> {
     quarantine: &'a BTreeMap<String, PersistedQuarantineEntry>,
 }
 
-/// The quarantine column alone, out of a document whose other columns this
-/// build may not be able to read.
+/// The quarantine column alone, out of a document at this build's own schema
+/// whose `entries` this build may not be able to read.
 ///
-/// Every other field is ignored rather than validated, which is the whole
-/// point: the column survives a document the schema check would discard.
-/// `quarantine` defaults so that a document written before the column existed
-/// reads as "nothing quarantined" rather than as unreadable.
+/// Every field but `schema_version` and `quarantine` is ignored rather than
+/// validated: the column survives an unreadable *row* in a sibling column of
+/// a same-schema document. It does not survive a document from another
+/// schema at all — `schema_version` carries no default, so a document that
+/// predates it already fails to deserialize, and [`read_quarantine_column`]
+/// additionally refuses a parsed value whose version does not match
+/// [`SCAN_REGISTRY_SCHEMA_VERSION`]. That is the same whole-document rule
+/// [`SCAN_REGISTRY_SCHEMA_VERSION`] states for `entries`: a schema mismatch
+/// has to mean "no quarantine", never rows read out of a schema this build
+/// did not write and copied verbatim into one it did.
+///
+/// `quarantine` still defaults, but not for a before-the-column document —
+/// the column has existed since version 4 and this struct only ever accepts
+/// version [`SCAN_REGISTRY_SCHEMA_VERSION`] (5), so that document cannot
+/// reach here. The default instead covers a same-schema file that was
+/// hand-edited or truncated before the key was written: it reads as "nothing
+/// quarantined" rather than as unreadable.
 #[derive(Deserialize)]
 struct QuarantineColumn {
+    schema_version: u32,
     #[serde(default)]
     quarantine: BTreeMap<String, PersistedQuarantineEntry>,
 }
@@ -1005,17 +1019,23 @@ fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T>
     }
 }
 
-/// The quarantine column of whatever is on disk now, whether or not the rest of
-/// the document parses.
+/// The quarantine column of whatever is on disk now, at this build's own
+/// schema, whether or not the rest of the document parses.
 ///
 /// [`PluginRegistryStore::persist`] needs this column and nothing else, and it
 /// needs it from a file another writer owns half of. Deserializing the whole
 /// document to reach one column ties a sibling's quarantine record to this
 /// build's ability to parse the sibling's rows — a row shape from a newer build,
 /// or a row this one corrupted, and the column reads as empty and the persist
-/// erases every quarantine decision in it.
+/// erases every quarantine decision in it. But the column must not survive a
+/// document from a *different* schema: those rows belong to a shape this
+/// build never agreed to, and letting them through here would have
+/// `persist` copy them verbatim into the schema-[`SCAN_REGISTRY_SCHEMA_VERSION`]
+/// document it writes next — resurrecting quarantine state a whole-document
+/// schema check would otherwise have discarded outright.
 fn read_quarantine_column(location: &Path) -> BTreeMap<String, PersistedQuarantineEntry> {
     read_bounded_registry_file::<QuarantineColumn>(location)
+        .filter(|column| column.schema_version == SCAN_REGISTRY_SCHEMA_VERSION)
         .map(|column| column.quarantine)
         .unwrap_or_default()
 }
@@ -1701,7 +1721,13 @@ mod tests {
     /// production number itself.
     ///
     /// Mutation this catches: dropping the byte count and letting the parse
-    /// decide, which reads the whole document and reports it as parsed.
+    /// decide, which reads the whole document and reports it as parsed. Also
+    /// pins that the size check runs ahead of the parse result rather than
+    /// alongside it: a source that is both oversized and not JSON at all must
+    /// still report `PastByteBound`, never `Malformed` — a reader that reads
+    /// `max_bytes + 1` before ever asking whether the bytes parsed would
+    /// report the ordinary, silent first-run state for a file that is not
+    /// this file at all.
     #[test]
     fn a_document_read_past_the_byte_bound_is_refused_rather_than_parsed() {
         let document = br#"{"schema_version":5,"entries":{},"quarantine":{}}"#;
@@ -1721,6 +1747,25 @@ mod tests {
                 BoundedRead::Parsed(_)
             ),
             "a document exactly at the bound is the largest legal one and must parse"
+        );
+
+        // An opening quote with no closing one: not a JSON document at all,
+        // but a shape that keeps the parser reading for the terminator all
+        // the way to EOF instead of rejecting the first byte outright — which
+        // is what actually exercises the byte count, since a source refused
+        // on its very first byte (`b'x'` alone, say) never reads far enough
+        // to trip it.
+        let max_bytes = 8u64;
+        let mut not_json = vec![b'"'];
+        not_json.extend(vec![b'x'; (max_bytes + 1) as usize]);
+        assert_eq!(not_json.len() as u64, max_bytes + 2);
+        assert!(
+            matches!(
+                read_within_byte_bound::<PersistedScanRegistry>(&not_json[..], max_bytes),
+                BoundedRead::PastByteBound
+            ),
+            "a source that is both oversized and unparseable must be refused for its size, \
+             not reported as merely malformed"
         );
     }
 
@@ -2053,6 +2098,65 @@ mod tests {
             .is_quarantined(&plugin_path)
             .expect("a quarantine beside an unreadable entries column must survive the persist");
         assert_eq!(quarantined.path, quarantined_key);
+    }
+
+    /// A document from another schema must not donate its quarantine rows
+    /// into this build's file, even though those rows deserialize cleanly on
+    /// their own shape. `read_quarantine_column` reads only the column, so
+    /// without its own schema gate a mismatched `schema_version` on the whole
+    /// document would still leave a readable `quarantine` map — and a persist
+    /// from a store that never touched the key would copy that map, verbatim,
+    /// into the schema-[`SCAN_REGISTRY_SCHEMA_VERSION`] document it writes,
+    /// resurrecting a row [`read_registry_document`]'s whole-document check
+    /// would otherwise have discarded.
+    ///
+    /// Mutation this catches: dropping the `schema_version == SCAN_REGISTRY_SCHEMA_VERSION`
+    /// filter in `read_quarantine_column`.
+    #[test]
+    fn a_persist_reads_no_quarantine_out_of_a_document_from_another_schema() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-other-schema");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+
+        // A valid, current-schema document carrying one quarantine row.
+        let writer = test_root.store();
+        writer.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
+            1_700_000_000_000,
+        );
+        writer.persist(&[]);
+
+        // Rewritten to another schema, the way
+        // `a_registry_file_from_another_schema_reads_as_an_absent_one` does.
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        let mut document: PersistedScanRegistry =
+            serde_json::from_slice(&fs::read(&location).expect("registry should be readable"))
+                .expect("registry should parse");
+        assert!(
+            !document.quarantine.is_empty(),
+            "the fixture must carry a quarantine row, or it proves nothing about reading one \
+             out of a document from another schema"
+        );
+        document.schema_version = SCAN_REGISTRY_SCHEMA_VERSION + 1;
+        fs::write(
+            &location,
+            serde_json::to_vec(&document).expect("registry should serialize"),
+        )
+        .expect("registry should be rewritten");
+
+        // A store that has decided nothing about the quarantine column,
+        // persisting nothing of its own — the one path that would resurrect
+        // the other schema's row into a current-schema document if the
+        // column's own gate were missing.
+        test_root.store().persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.is_quarantined(&plugin_path).is_none(),
+            "a quarantine row from a document of another schema must not survive into this \
+             build's registry"
+        );
     }
 
     /// The inverse of the cross-process survival guarantee: a writer's own
