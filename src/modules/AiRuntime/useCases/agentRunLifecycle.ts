@@ -712,9 +712,10 @@ function applyAgentRunReceiptSagaProjection(
     const matchingRecovery = pendingEffectRecoveryLedger.find((recovery) =>
         isPendingEffectRecovery(recovery, { runId: run.runId, batchId: projection.work.workId })
     );
-    const manualRecovery = [matchingContinuation, matchingRecovery].find(
-        (recovery) => recovery?.receiptIdentity === projection.receiptIdentity && recovery.recovery === 'manual-repair'
+    const existingContinuation = [matchingContinuation, matchingRecovery].find(
+        (candidate) => candidate?.receiptIdentity === projection.receiptIdentity
     );
+    const manualRecovery = existingContinuation?.recovery === 'manual-repair' ? existingContinuation : undefined;
     const projectedExternalSteps = projection.sagaSteps.filter(
         (step) => step.owner === 'external-effect' && step.workId === projection.work.workId
     );
@@ -754,10 +755,13 @@ function applyAgentRunReceiptSagaProjection(
     let pendingEffectContinuations = run.pendingEffectContinuations;
     let nextPendingEffectRecoveryLedger = pendingEffectRecoveryLedger;
     if (projection.pendingEffectContinuation && !hasSettledExactManualReview) {
-        const continuation = manualRecovery
-            ? structuredClone(manualRecovery)
+        const continuation = existingContinuation
+            ? structuredClone(existingContinuation)
             : structuredClone(projection.pendingEffectContinuation);
+        const isPreparedPlaceholder =
+            matchingRecovery?.checkpoint === 'prepared' && existingContinuation === matchingRecovery;
         const requiresExactRenderRevision =
+            isPreparedPlaceholder &&
             continuation.sourceRevision === undefined &&
             continuation.effects.length > 0 &&
             continuation.effects.every(
