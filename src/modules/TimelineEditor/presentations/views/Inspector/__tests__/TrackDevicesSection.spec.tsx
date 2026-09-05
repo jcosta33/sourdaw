@@ -419,6 +419,7 @@ describe('TrackDevicesSection', () => {
                 },
             ],
         };
+        mockActivationState.mockReturnValue({ byInstanceId: { 'legacy-instance': { status: 'active' } } });
 
         render(<TrackDevicesSection track={trackWithMissingPlugin} onSelectDevice={mockOnSelectDevice} />);
 
@@ -612,6 +613,7 @@ describe('TrackDevicesSection', () => {
         mockScanState.mockReturnValue({
             scannedPlugins: [{ id: 'path-hash', name: 'Headless CLAP', format: 'clap', has_custom_ui: false }],
         });
+        mockActivationState.mockReturnValue({ byInstanceId: { 'headless-instance': { status: 'active' } } });
 
         render(
             <TrackDevicesSection

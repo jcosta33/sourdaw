@@ -1,8 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import {
+    defaultExternalPluginActivationState,
+    externalPluginActivationStore,
+} from '../../stores/externalPluginActivationStore';
 import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
-import { setActivationStatus } from './activationStatus';
 import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -58,6 +61,19 @@ type ActivateExternalPluginInput = {
      */
     onBridgeRoundTripFrames?: (frames: number) => void;
 };
+
+function setActivationStatus(instanceId: string, status: 'loading' | 'active' | 'error', message?: string): void {
+    externalPluginActivationStore.update((state) => {
+        const current = state ?? defaultExternalPluginActivationState;
+        return {
+            ...current,
+            byInstanceId: {
+                ...current.byInstanceId,
+                [instanceId]: message ? { status, message } : { status },
+            },
+        };
+    });
+}
 
 /**
  * Instantiate a native plugin in the live audio graph and restore its persisted
