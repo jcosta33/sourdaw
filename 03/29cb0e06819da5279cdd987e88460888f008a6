@@ -1,0 +1,14 @@
+release/open-source-inventory.json
+  h_1228e573df1f42 1198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0329cb0e06819da5279cdd987e88460888f008a6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
