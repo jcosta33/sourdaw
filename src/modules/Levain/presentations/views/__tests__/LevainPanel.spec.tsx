@@ -177,6 +177,7 @@ describe('LevainPanel', () => {
         expect(cards.length).toBeGreaterThanOrEqual(6);
         expect(cards.every((card) => card.className.includes('shrink-0'))).toBe(true);
         expect(container.querySelector('.grid-cols-\\[minmax\\(0\\,1fr\\)_18rem\\]')).toBeNull();
+        expect(container.querySelector('.\\@container')).not.toBeNull();
     });
 
     it('should display engine status', () => {

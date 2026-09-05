@@ -188,7 +188,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                     </section>
                 </Stack>
 
-                <Stack as="section" gap={3} className="min-w-0 overflow-y-auto pr-1">
+                <Stack as="section" gap={3} className="@container min-w-0 overflow-y-auto pr-1">
                     <Row align="start" justify="between" gap={3}>
                         <Stack gap={2}>
                             <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-amber)]/70">
