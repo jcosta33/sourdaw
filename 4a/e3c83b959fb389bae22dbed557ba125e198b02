@@ -1,0 +1,51 @@
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_67a9fae9a03847::t_5c4757bb36e774 46
+  s_67a9fae9a03847::t_08446979792e40 140-175
+  s_67a9fae9a03847::t_119e1defd370b8 31
+src/modules/PluginHost/useCases/pluginLifecycle/activationStatus.ts
+  s_67a9fae9a03847::t_0870b0febe42bc 4,8,12
+  s_67a9fae9a03847::t_3fffc3f71f4020 22-25
+  s_67a9fae9a03847::t_f164635c7bea86 1-3,5-7,9-11,13-21
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_67a9fae9a03847::t_bda531b07c036b 138-142
+  s_67a9fae9a03847::t_4f70d097f42706 136-137
+  s_67a9fae9a03847::t_64fe35befb6b0f 417
+  s_67a9fae9a03847::t_8112e44310c3b1 110-111
+src/modules/PluginHost/useCases/pluginLifecycle/recordExternalPluginActivationError.ts
+  s_67a9fae9a03847::t_3ea690ed6415cd 1-7,9,12
+  s_67a9fae9a03847::t_5b7d4f23853151 8
+  s_67a9fae9a03847::t_706509b295c284 10-11
+src/modules/PluginHost/useCases/index.ts
+  s_67a9fae9a03847::t_791adc10163b41 30
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_67a9fae9a03847::t_9a2da3b041742e 5
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_67a9fae9a03847::t_966126eb3cc9da 104-105
+  s_67a9fae9a03847::t_0406c71f82b1f8 12
+  s_67a9fae9a03847::t_7b8b483f7e0ba0 106
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/recordExternalPluginActivationError.spec.ts
+  s_67a9fae9a03847::t_ff5b1be865d29e 1-27
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_67a9fae9a03847::t_24bde41a8c9fcb 687-689
+  s_67a9fae9a03847::t_fdea88ff7fdc5d 444-446
+  s_67a9fae9a03847::t_37376830cdda4b 641-643
+  s_67a9fae9a03847::t_9e35ec3f39e1c4 570-609
+  s_67a9fae9a03847::t_0d61340021c606 661-663
+  s_67a9fae9a03847::t_acd8797068c9b6 712-714
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "4ae3c83b959fb389bae22dbed557ba125e198b02",
+  "prompts": {},
+  "sessions": {
+    "s_67a9fae9a03847": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49200e7f-c5f8-4fc1-861c-c74fd1a6c90d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
