@@ -1,0 +1,65 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_fb3293df643498 66-68
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/multiDatabaseIndexedDb.ts
+  s_87ab0a2f60ccf8::t_15f04fc8e7a59f 26,362-367
+  s_87ab0a2f60ccf8::t_077bdc31388642 368
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_988418b55e0bb6 173-178,180-196,199,203,215-216
+  s_87ab0a2f60ccf8::t_e759556d91aa17 179,214,224
+  s_87ab0a2f60ccf8::t_33c01c493c2e03 333-380
+  s_87ab0a2f60ccf8::t_d6e0bca23f0ecb 541-559,561-571
+  s_87ab0a2f60ccf8::t_4b4048b6ecd089 502-540
+  s_87ab0a2f60ccf8::t_e8e081ac4343fb 560
+  s_87ab0a2f60ccf8::t_639f24b3ac4140 217
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_f949bd4218bdd3 13,49,198
+  s_87ab0a2f60ccf8::t_23609db60ecd84 197
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_87ab0a2f60ccf8::t_645bda9d081ab1 82-88
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_d04b52fa6f45f2 198-209,211-215,217-220,273
+  s_87ab0a2f60ccf8::t_95995e1980c569 154
+  s_87ab0a2f60ccf8::t_e5ce4264f9fbe6 8-9,11,15,99-107,122,221-222,224-251,254-272,274-276,278-287,293-296,307-310
+  s_87ab0a2f60ccf8::t_07c3d997074dde 58-63,75-80
+  s_87ab0a2f60ccf8::t_88b898a09a450c 210
+  s_87ab0a2f60ccf8::t_eaef08048df867 13-14
+  s_87ab0a2f60ccf8::t_c0258dc63659a7 288-292
+  s_87ab0a2f60ccf8::t_d9dc09edb4ec2a 223,252-253,277,311
+  s_87ab0a2f60ccf8::t_e36bc0d7f63c7b 297-306
+  s_87ab0a2f60ccf8::t_323b3c9ae75385 89-93,95-96,108-109
+  s_87ab0a2f60ccf8::t_25ab732d69d1e4 94,97-98
+src/modules/AudioEngine/stores/preparedAudioBufferPersistenceAttempts.ts
+  s_87ab0a2f60ccf8::t_07342cfb356d21 7-11,14,16,25-28,40-44,76-87
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_87ab0a2f60ccf8::t_38734e38f3aaa0 842
+  s_87ab0a2f60ccf8::t_d04b52fa6f45f2 335,373
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_87ab0a2f60ccf8::t_5e41871f51a7af 350-353,408-492,497,1782
+  s_87ab0a2f60ccf8::t_9c865a6e2e0807 21-23,57,63-68,209
+  s_87ab0a2f60ccf8::t_5ff8f1687231b6 20,509,515,988,1832,1896,1932-1935,1941,1960,1980
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_c66bce7482c3a6 1761,1778,1785,1796-1799,1805
+  s_87ab0a2f60ccf8::t_8f4eb392b81753 487,489,558,560-579,594,596,602-619,647-660
+  s_87ab0a2f60ccf8::t_818625ab5a3ac6 1830-1831,1834-1842,1845-1847,1849-1851,1853-1854,1856-1857,1861-1866,1868-1881,1887-1889,1891-1892,1895,1897,1899-1904,1906-1924,1926-1927,1944,1946-1948,1953-1959,1968-1972,1974-1982,1984-1987
+  s_87ab0a2f60ccf8::t_d04b52fa6f45f2 1983
+  s_87ab0a2f60ccf8::t_4ea05bbd239042 1844,1848,1867,1928-1936,1938-1941,1943,1945,1949-1952
+  s_87ab0a2f60ccf8::t_38734e38f3aaa0 623-639,641-642,661-663,1313,1843,1852,1884-1886,1890,1893,1973
+  s_87ab0a2f60ccf8::t_3ebd9eed295a53 1318,1329-1355
+  s_87ab0a2f60ccf8::t_5723bc16ca17b1 2017,2042,2096-2099,2174-2177,2246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e3d5d4414a93abe62cfdefa8770bd39d3cda3f78",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
