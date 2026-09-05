@@ -1,0 +1,29 @@
+src/modules/Synth/engine/scheduleBuiltinSynthNote.ts
+  s_87ab0a2f60ccf8::t_21bb5bf9f18253 152-156,158
+src/modules/Synth/engine/__tests__/scheduleBuiltinSynthNote.spec.ts
+  s_11bfdebb39e132::t_903ce472df0379 5,7,10-11,13,15-17,48,171-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "25c64f7ffd54d9c06e2652d6b033e369dc6bf168",
+  "prompts": {},
+  "sessions": {
+    "s_11bfdebb39e132": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acbadebf48df79386",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
