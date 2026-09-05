@@ -1,0 +1,30 @@
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_87ab0a2f60ccf8::t_a14eb88249bbca 118-122
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_16f202ff6eb1d5 48-54
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_651ce997f8f890 4
+  s_87ab0a2f60ccf8::t_02a18ebd9894ef 144,227-262,286
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_87ab0a2f60ccf8::t_16f202ff6eb1d5 31-33
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_87ab0a2f60ccf8::t_16f202ff6eb1d5 517-521
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/multiDatabaseIndexedDb.ts
+  s_87ab0a2f60ccf8::t_04454494661848 22,24,26,29,56-57,109-112,138-141,265,268,323-324,372-374,376,380-382,387-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9f573bcd7f7da0adab66511e7ee9b283eb0c323f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
