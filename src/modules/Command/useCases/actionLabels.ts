@@ -34,6 +34,8 @@ export const ACTION_LABELS: Record<string, string> = {
     setEditingTool: 'Set tool',
     duplicateClip: 'Duplicate clip',
     cutClip: 'Cut clip',
+    copyClip: 'Copy clip',
+    pasteClip: 'Paste clip',
     removeClip: 'Remove clip',
     trimClipStart: 'Trim start',
     trimClipEnd: 'Trim end',

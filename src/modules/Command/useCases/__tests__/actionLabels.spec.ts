@@ -12,6 +12,8 @@ describe('ACTION_LABELS', () => {
         // #3623 — cutClip refusals describe through this map; a missing entry
         // surfaces the raw action token in the user-facing warning.
         expect(ACTION_LABELS.cutClip).toBe('Cut clip');
+        expect(ACTION_LABELS.copyClip).toBe('Copy clip');
+        expect(ACTION_LABELS.pasteClip).toBe('Paste clip');
     });
 });
 
