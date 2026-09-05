@@ -235,6 +235,15 @@ export const Fader = ({
         if (event.button !== 0 || !trackRef.current) {
             return;
         }
+        // A second pointer (touch or pen; a mouse cannot repeat a pointerdown
+        // under capture) pressing while a drag is already open must not reset
+        // this gesture: it would clear `hasEmittedTransient` and steal
+        // `activePointerIdRef`, so the open pointer's later moves keep driving
+        // the engine but its release finalizes with the flag cleared and never
+        // settles. The already-captured pointer keeps the gesture exclusively.
+        if (draggingRef.current) {
+            return;
+        }
         if (event.altKey) {
             onChange(defaultValue, false);
             return;

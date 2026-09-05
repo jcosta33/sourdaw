@@ -392,6 +392,72 @@ describe('Fader', () => {
     });
 
     /**
+     * A second pointer (touch or pen; a mouse cannot repeat a `pointerdown`
+     * under capture) pressing while a drag is already open used to reset
+     * `hasEmittedTransient` and steal `activePointerIdRef` in
+     * `handlePointerDown`. `handlePointerUp`/`handlePointerMove` do not filter
+     * by `pointerId` — that is a separate, pre-existing characteristic of this
+     * component and out of scope here — so a second pointer's own release
+     * still closes the open gesture. What the fix changes is whether that
+     * closure commits: before, the reset flag made `finalizeDrag` emit no
+     * settle at all, so the engine and cap froze on the last transient with
+     * project truth never updated. After, the interrupted gesture's last
+     * transient value settles correctly, and the first pointer's own later
+     * moves and release are safe no-ops rather than corrupting state.
+     */
+    describe('second pointer during an open drag', () => {
+        it('should settle at the interrupted pointer’s last value instead of losing the gesture', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+
+            // Pointer 2 presses during the open drag: blocked outright, no call.
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50 });
+            expect(onChange.mock.calls).toHaveLength(1);
+
+            // Pointer 2 lifts: this still closes the gesture (unrelated to the
+            // fix), but it must now settle rather than vanish.
+            fireEvent.pointerUp(slider, { pointerId: 2 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[4, false]]);
+
+            // The gesture already closed, so pointer 1's own later move and
+            // release are inert — no crash, no double settle, no corruption.
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 35 });
+            fireEvent.pointerUp(slider, { pointerId: 1 });
+            expect(onChange.mock.calls).toHaveLength(2);
+        });
+
+        it('should ignore an alt-click reset from a second pointer during an open drag', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} defaultValue={0} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            onChange.mockClear();
+
+            // Pointer 2's alt-click during the open drag must not fire the
+            // default-value reset — that would settle the wrong gesture.
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50, altKey: true });
+            expect(onChange).not.toHaveBeenCalled();
+
+            // Pointer 1's own drag must still be alive: further moves keep
+            // emitting transients, and its own release settles normally.
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 35 });
+            expect(onChange).toHaveBeenCalledWith(6, true);
+
+            fireEvent.pointerUp(slider, { pointerId: 1 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[6, false]]);
+        });
+    });
+
+    /**
      * ADR 0012 — the capture calls used to sit behind `typeof … === 'function'`
      * probes. Every engine this app ships on implements `setPointerCapture`, so
      * the false branch was unreachable; all it could ever do was turn a missing
