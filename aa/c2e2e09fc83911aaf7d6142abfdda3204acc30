@@ -1,0 +1,59 @@
+src/modules/PluginHost/useCases/pluginLifecycle/releasedStripReportSink.ts
+  s_9b530f08172a54::t_8ec9d8b1dd18ac 1-21
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_0806404da95e64 77
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_9b530f08172a54::t_8039902080fd2e 119
+  s_9b530f08172a54::t_7ce7565afa0851 79-83
+  s_9b530f08172a54::t_fd62b15833f5b5 13-14,17
+  s_9b530f08172a54::t_4daebcf6b35a3d 71
+  s_9b530f08172a54::t_f32d1cdc9799fe 60
+  s_9b530f08172a54::t_b79636e60f450e 88
+src/modules/PluginHost/useCases/pluginLifecycle/registerReleasedStripReportSink.ts
+  s_9b530f08172a54::t_727c3b8856e5e9 1-2,4-10,12-14
+src/modules/PluginHost/useCases/pluginLifecycle/forwardReleasedStripReports.ts
+  s_9b530f08172a54::t_276629c4484409 1,4-8
+  s_9b530f08172a54::t_2363e978476eaf 2-3
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/projectSessionPluginRetirement.integration.spec.ts
+  s_9b530f08172a54::t_4e7400c99f1aa1 62
+  s_9b530f08172a54::t_3fb226893a83b1 3-4,10
+tests/e2e/desktopRuntime.spec.ts
+  s_9b530f08172a54::t_38fda1109da12e 89-91
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/unloadPlugin.spec.ts
+  s_9b530f08172a54::t_39a8114d0c6a11 9
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_9b530f08172a54::t_11cfe13d88277f 204
+  s_9b530f08172a54::t_2aec4bc8cc691b 14,24
+  s_9b530f08172a54::t_292d2086c00662 79
+  s_9b530f08172a54::t_b51823da2c23e2 384
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_9b530f08172a54::t_6ab5ef9234e364 241
+  s_9b530f08172a54::t_1de9820aa9fc44 94,136,190,253
+  s_9b530f08172a54::t_1aadd40c2621bb 252
+  s_9b530f08172a54::t_7da34c3a1a2735 17
+  s_9b530f08172a54::t_fbe919b10285ee 21,24-25
+  s_9b530f08172a54::t_2d08754b0c9620 126
+  s_9b530f08172a54::t_03afd6bc32f3fd 155,273
+  s_9b530f08172a54::t_e7e2755a82ccb6 215
+  s_9b530f08172a54::t_3450e4ba9de2e7 225
+  s_9b530f08172a54::t_1e91bdaed09ac1 270
+  s_9b530f08172a54::t_53bbd84e1934a4 46
+  s_9b530f08172a54::t_29a00068fdf30f 18
+  s_9b530f08172a54::t_568cec55ff1a93 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "aac2e2e09fc83911aaf7d6142abfdda3204acc30",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
