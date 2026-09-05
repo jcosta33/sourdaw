@@ -1,0 +1,55 @@
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_28abfd94826e36::t_3c865ddcb2d058 252-256
+  s_28abfd94826e36::t_73388733cc2576 152-168
+  s_28abfd94826e36::t_b6a6bc1890851e 28-36
+  s_28abfd94826e36::t_e681ada7bd7465 235-244
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripIdsHoldingLiveClips.spec.ts
+  s_28abfd94826e36::t_9c3c8de5485d03 1-87
+src/modules/AudioEngine/useCases/livePlayback/stripIdsHoldingLiveClips.ts
+  s_28abfd94826e36::t_c25ed703780e38 1-31
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_28abfd94826e36::t_52500291af9fc1 170-224
+  s_28abfd94826e36::t_8e7c7bb75fafd6 78-82
+  s_28abfd94826e36::t_a9a74be289914c 102
+src/modules/AudioEngine/useCases/livePlayback/readLiveGraphProgramme.ts
+  s_28abfd94826e36::t_2cefae97b8e18b 34-48
+  s_28abfd94826e36::t_0533c266aa85df 32
+  s_28abfd94826e36::t_742d682445cefb 64
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_28abfd94826e36::t_71ddb364b63685 31-35
+  s_28abfd94826e36::t_05c6dfa480871f 55,63
+  s_28abfd94826e36::t_1fe830e6989fe9 417-444
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_28abfd94826e36::t_1f30d23dec4d2e 335-410
+  s_28abfd94826e36::t_e4130961a96b33 334
+src/modules/AudioEngine/useCases/livePlayback/isLiveClip.ts
+  s_28abfd94826e36::t_83d269c0a281d2 1-23
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_28abfd94826e36::t_586b2dbd77ae45 315
+  s_28abfd94826e36::t_d0b061010831de 237
+  s_28abfd94826e36::t_bf83bc547f3e0f 266-268
+  s_28abfd94826e36::t_2417a90e29dff0 76
+  s_28abfd94826e36::t_44d4c6e4b87565 252,257,262,270
+  s_28abfd94826e36::t_c0585d4c5378d7 56-60
+  s_28abfd94826e36::t_0c168e5b0336f1 195
+  s_28abfd94826e36::t_baf347838c7b6c 104-112
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_28abfd94826e36::t_2802f8712c2410 777
+  s_28abfd94826e36::t_add5233629bfe2 364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "196b5022dd44e9e65b2c29d2cf430b320d32870f",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
