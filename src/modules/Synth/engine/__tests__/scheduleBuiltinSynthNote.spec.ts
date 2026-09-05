@@ -211,21 +211,25 @@ describe('scheduleBuiltinSynthNote filter velocity sensitivity', () => {
     });
 
     it('scales filter cutoff linearly with velocity when filterVelocitySensitivity is 1', () => {
-        const { ctx, events } = makeFakeContext();
+        function cutoffForVelocity(velocity: number): number {
+            const { ctx, events } = makeFakeContext();
+            scheduleBuiltinSynthNote({
+                ctx,
+                destination,
+                pitch: 69,
+                startTime: 0,
+                duration: 1,
+                velocity,
+                params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 1 },
+                clipGain: 1,
+            });
+            return getFilterCutoff(events);
+        }
 
-        scheduleBuiltinSynthNote({
-            ctx,
-            destination,
-            pitch: 69,
-            startTime: 0,
-            duration: 1,
-            velocity: 63.5,
-            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 1 },
-            clipGain: 1,
-        });
-
-        const cutoff = getFilterCutoff(events);
-        expect(cutoff).toBe(2500);
+        expect(cutoffForVelocity(0)).toBe(0);
+        expect(cutoffForVelocity(32)).toBeCloseTo(5000 * (32 / 127), 6);
+        expect(cutoffForVelocity(63.5)).toBe(2500);
+        expect(cutoffForVelocity(127)).toBe(5000);
     });
 
     it('is continuous near zero sensitivity without jumping down at 0', () => {
