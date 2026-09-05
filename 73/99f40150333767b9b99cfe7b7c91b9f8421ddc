@@ -1,0 +1,138 @@
+.agents/decisions/0044-two-carrier-live-playback-until-native-hosts-every-device.md
+  s_9b530f08172a54::t_0a4ae786ff639e 103-104
+  s_9b530f08172a54::t_d8c2a8a30c498a 89
+src/modules/AudioEngine/useCases/livePlayback/replaceNativeChains.ts
+  s_9b530f08172a54::t_4de3988d4ab0af 1-17
+src/modules/AudioEngine/useCases/livePlayback/clearNativeChains.ts
+  s_9b530f08172a54::t_a8aeb3cca98053 1-13
+src/modules/AudioEngine/useCases/livePlayback/recordNativeChains.ts
+  s_9b530f08172a54::t_896a74a3955ac7 1-28
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_9b530f08172a54::t_0752879a54bd66 1-7
+  s_9b530f08172a54::t_7c7c93d7f6e68f 156-159
+  s_9b530f08172a54::t_1275e206ddcf78 41-51
+  s_9b530f08172a54::t_3ac1c7e524f48b 160
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_ff8fbb24269a7c 75-78
+  s_9b530f08172a54::t_ad59e288a00a7d 25
+src/modules/AudioEngine/useCases/livePlayback/nativeChainIndex.ts
+  s_9b530f08172a54::t_25a8b75804eb07 1-40
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionSplice.ts
+  s_9b530f08172a54::t_c84a3878702d87 1-110
+src/modules/AudioEngine/useCases/livePlayback/spliceInstancesAttachedBy.ts
+  s_9b530f08172a54::t_7aaccb9cc982bd 1-24
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_5881f177ef6e23 468-470
+  s_9b530f08172a54::t_45d3af2f930782 676-679
+  s_9b530f08172a54::t_eeeb55669d8342 376-379
+  s_9b530f08172a54::t_fc4d6685a6fb18 714-716
+  s_9b530f08172a54::t_1cd8c232a3de93 109,118
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_20729b9628d2bb 15-22
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_9b530f08172a54::t_0a3029d93274b6 92-111
+  s_9b530f08172a54::t_bbe3acbec0e037 129-130
+src/modules/AudioEngine/useCases/livePlayback/__tests__/mirrorDeviceChainDelta.spec.ts
+  s_9b530f08172a54::t_47aa59addd3a48 1-267
+src/modules/AudioEngine/useCases/livePlayback/markAttachedInstances.ts
+  s_9b530f08172a54::t_1ad73b14cb61c9 1-23
+src/modules/AudioEngine/useCases/livePlayback/notifyDeferredChainChange.ts
+  s_9b530f08172a54::t_62b93db9b0c333 1-35,38-43
+  s_9b530f08172a54::t_90a3b00d644c7c 36-37
+src/modules/AudioEngine/useCases/livePlayback/reportAttachedPlugins.ts
+  s_9b530f08172a54::t_6c0da0219b8b35 2-3,17-21,26-28,30-31
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_2d7f7abc148d4e 108-109
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_9b530f08172a54::t_a7c27025222efb 21-29,37-41
+  s_9b530f08172a54::t_0b0752c3149ab6 67
+  s_9b530f08172a54::t_ac0e2c6494fc20 273-455
+src/modules/AudioEngine/useCases/livePlayback/readNativeChain.ts
+  s_9b530f08172a54::t_921636e61a2f1d 1-13
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSessionSplice.spec.ts
+  s_9b530f08172a54::t_641b0c1da98ef9 21
+  s_9b530f08172a54::t_0089d11a681f91 18-20
+  s_9b530f08172a54::t_3a04252c087002 22-24
+  s_11bfdebb39e132::t_b4f4ae90c16913 1-17,25-159
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  s_9b530f08172a54::t_1aa4b35734e754 146,165
+  s_9b530f08172a54::t_58bedfe7e3efc9 46-61
+  s_9b530f08172a54::t_4907d28460da77 158-164
+  s_9b530f08172a54::t_3a1e39eb77bd81 1,6
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_d9ba0de39d5706 392-395
+  s_9b530f08172a54::t_bee55166680ecc 55
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_8957b5a6c73d53 411-414
+  s_9b530f08172a54::t_60597568386eea 1761-1861
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_9b530f08172a54::t_e90b12d6af0a76 31-32
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPlugin.spec.ts
+  s_9b530f08172a54::t_4127c31bf16368 26
+src/modules/Arrangement/handlers/device/__tests__/handleLoadExternalPluginCommand.spec.ts
+  s_9b530f08172a54::t_19325ef33b10d8 30
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_9b530f08172a54::t_935817d951e37f 13-14
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_9b530f08172a54::t_d586581a854eef 40-41
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_9b530f08172a54::t_d8c194e944b3c1 130-131
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_9b530f08172a54::t_414ee027d98356 190-191
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_9b530f08172a54::t_56a6edd83d0233 16-17
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_9b530f08172a54::t_622e08ed2ba0ff 51-52
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_9b530f08172a54::t_c5550d5db2f238 42-43
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_9b530f08172a54::t_3cfbf8db405746 43-44
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_9b530f08172a54::t_76699f0d176f2b 35-36
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_9b530f08172a54::t_3b54bf865c090e 66-67
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_e99b008db9e906 39-40
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_9b530f08172a54::t_fe9a6213f200d4 57-58
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_9b530f08172a54::t_21feb67902689d 53-54
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_9b530f08172a54::t_bd0b9b61cc7626 51-52
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_546d346c4e682e 106-107
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_d472dc63df4892 59-60
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_9b530f08172a54::t_48ecb6db47aa3f 20-21
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_9b530f08172a54::t_680a638b6b5f2f 38-39
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_9b530f08172a54::t_e3aed4aa6184e0 45-46
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_9b530f08172a54::t_4913ca7a59b475 71-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7399f40150333767b9b99cfe7b7c91b9f8421ddc",
+  "prompts": {},
+  "sessions": {
+    "s_11bfdebb39e132": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acbadebf48df79386",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
