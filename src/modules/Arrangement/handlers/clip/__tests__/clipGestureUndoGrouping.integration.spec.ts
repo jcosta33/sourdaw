@@ -6,6 +6,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppActionBatch,
     executeUserAppAction,
     redo,
     resetActionReplayAuthority,
@@ -176,5 +177,160 @@ describe('clip gesture undo grouping (issue #3622)', () => {
         ).toEqual(['clip-a', 'clip-b']);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(2);
+    });
+
+    it('reverts only the latest gesture when two delete gestures run back to back', async () => {
+        const current = trackStore.value;
+        if (!current) {
+            throw new Error('Expected the track store to be initialized');
+        }
+        trackStore.set({
+            ...current,
+            tracks: [
+                TrackDummy.create({
+                    id: TRACK_ID,
+                    name: 'Keys',
+                    kind: 'midi',
+                    clips: [
+                        createClipFixture('clip-a', 0, 4),
+                        createClipFixture('clip-b', 4, 8),
+                        createClipFixture('clip-c', 8, 12),
+                        createClipFixture('clip-d', 12, 16),
+                    ],
+                }),
+            ],
+        });
+
+        const firstGesture = `clip-menu-delete-${crypto.randomUUID()}`;
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            { groupId: firstGesture, groupLabel: 'Delete 2 clips' }
+        );
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-b' } },
+            { groupId: firstGesture, groupLabel: 'Delete 2 clips' }
+        );
+        const secondGesture = `clip-menu-delete-${crypto.randomUUID()}`;
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-c' } },
+            { groupId: secondGesture, groupLabel: 'Delete 2 clips' }
+        );
+        await executeUserAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-d' } },
+            { groupId: secondGesture, groupLabel: 'Delete 2 clips' }
+        );
+
+        expect(trackClips()).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(4);
+
+        await undo();
+
+        // Each gesture mints its own group, so one undo reverts exactly the
+        // second gesture: its two clips return, the first gesture's stay gone.
+        expect(notifications).toEqual([]);
+        expect(
+            trackClips()
+                .map((clip) => clip.id)
+                .sort()
+        ).toEqual(['clip-c', 'clip-d']);
+        expect(undoStore.value?.past).toHaveLength(2);
+        expect(undoStore.value?.future).toHaveLength(2);
+    });
+
+    describe('batch composition', () => {
+        it('refuses a batch that removes the same clip twice', async () => {
+            const result = await executeAppActionBatch([
+                { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(
+                trackClips()
+                    .map((clip) => clip.id)
+                    .sort()
+            ).toEqual(['clip-a', 'clip-b']);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('refuses a batch that removes a track together with a clip living on it', async () => {
+            const result = await executeAppActionBatch([
+                { type: 'removeTrack', payload: { trackId: TRACK_ID } },
+                { type: 'removeClip', payload: { clipId: 'clip-a' } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(trackStore.value?.tracks.map((track) => track.id)).toEqual([TRACK_ID]);
+            expect(
+                trackClips()
+                    .map((clip) => clip.id)
+                    .sort()
+            ).toEqual(['clip-a', 'clip-b']);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
+        it('executes a batch of two removeClip actions on distinct clips as one undo group', async () => {
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                    { type: 'removeClip', payload: { clipId: 'clip-b' } },
+                ],
+                { groupId: `clip-menu-delete-${crypto.randomUUID()}`, groupLabel: 'Delete 2 clips' }
+            );
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(trackClips()).toEqual([]);
+            expect(undoStore.value?.past).toHaveLength(2);
+
+            await undo();
+
+            expect(notifications).toEqual([]);
+            expect(
+                trackClips()
+                    .map((clip) => clip.id)
+                    .sort()
+            ).toEqual(['clip-a', 'clip-b']);
+        });
+
+        it('executes a batch of two restoreClip actions on distinct clips', async () => {
+            await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { skipUndo: true });
+            await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } }, { skipUndo: true });
+            expect(trackClips()).toEqual([]);
+
+            const result = await executeAppActionBatch([
+                {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: 'clip-a',
+                        trackId: TRACK_ID,
+                        clipSnapshot: createClipFixture('clip-a', 0, 4),
+                        ripplePlan: null,
+                        midiNotesSnapshot: null,
+                        midiCcSnapshot: null,
+                        midiPitchBendSnapshot: null,
+                    },
+                },
+                {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: 'clip-b',
+                        trackId: TRACK_ID,
+                        clipSnapshot: createClipFixture('clip-b', 4, 8),
+                        ripplePlan: null,
+                        midiNotesSnapshot: null,
+                        midiCcSnapshot: null,
+                        midiPitchBendSnapshot: null,
+                    },
+                },
+            ]);
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(
+                trackClips()
+                    .map((clip) => clip.id)
+                    .sort()
+            ).toEqual(['clip-a', 'clip-b']);
+            expect(undoStore.value?.past).toEqual([]);
+        });
     });
 });

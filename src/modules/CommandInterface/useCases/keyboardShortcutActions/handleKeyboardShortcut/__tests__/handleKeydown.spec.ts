@@ -757,6 +757,31 @@ describe('handleKeydown', () => {
             expect(clearClipSelection).toHaveBeenCalled();
         });
 
+        it('mints a fresh undo group id per delete keypress', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
+            ];
+            trackStoreMock.value.tracks = [
+                { id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] },
+                { id: 't2', clips: [{ id: 'clip-2', startBeat: 4, endBeat: 6 }] },
+            ];
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
+
+            handleKeydown(descriptor({ key: 'F1' }));
+            // The selection the first keypress asked to clear is still set on
+            // the mock store, so the second keypress is the same gesture shape.
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
+            handleKeydown(descriptor({ key: 'F1' }));
+
+            const groupIds = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]?.groupId);
+            expect(groupIds).toHaveLength(4);
+            // Within one keypress the id is shared; across two it is fresh, so
+            // each keypress is its own undo step.
+            expect(groupIds[0]).toBe(groupIds[1]);
+            expect(groupIds[2]).toBe(groupIds[3]);
+            expect(groupIds[0]).not.toBe(groupIds[2]);
+        });
+
         it('does nothing when the selected clip ids no longer resolve to real clips', () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),

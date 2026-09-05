@@ -443,6 +443,27 @@ describe('ClipContextMenu', () => {
         expect(removeClip).not.toHaveBeenCalled();
     });
 
+    it('mints a fresh undo group id per delete gesture', () => {
+        clipSelectionStore.set({
+            ...defaultClipSelectionState,
+            selectedClipIds: ['clip1', 'clip2'],
+        });
+        const firstGesture = render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
+        firstGesture.unmount();
+
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
+
+        const groupIds = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]?.groupId);
+        expect(groupIds).toHaveLength(4);
+        // Within one gesture the id is shared; across two gestures it is fresh,
+        // so each gesture is its own undo step.
+        expect(groupIds[0]).toBe(groupIds[1]);
+        expect(groupIds[2]).toBe(groupIds[3]);
+        expect(groupIds[0]).not.toBe(groupIds[2]);
+    });
+
     it('duplicates every selected clip on multi-select duplicate', () => {
         clipSelectionStore.set({
             ...defaultClipSelectionState,
