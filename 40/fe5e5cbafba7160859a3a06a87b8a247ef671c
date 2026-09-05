@@ -1,0 +1,19 @@
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_9b530f08172a54::t_2f01b5b040e645 174,177,179-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "40fe5e5cbafba7160859a3a06a87b8a247ef671c",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
