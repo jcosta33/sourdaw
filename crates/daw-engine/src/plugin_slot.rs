@@ -142,7 +142,11 @@ pub trait NativePlugin: Any + Send {
     /// plugin's process path takes the access seam it shares with the control
     /// path and skips the block outright rather than waiting when the control
     /// path holds it, so a control operation landing on this block pushes the
-    /// drain to a later one.
+    /// drain to a later one. An effect driven by its audio bridge is always one
+    /// callback late whatever the seam does: `AudioThread::render` runs
+    /// `process_audio_bridges` — the only path that hands such an effect a
+    /// block — before the `process_block` this call happens inside, so the
+    /// write waits for the next callback's bridge pass.
     ///
     /// `true` means the write is queued. `false` refuses it, and the caller
     /// counts the refusal as an unmapped parameter call — the default, because

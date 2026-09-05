@@ -3099,16 +3099,6 @@ impl AudioScheduler {
                 continue;
             }
 
-            // A detached effect runs nowhere: no chain will consume the MIDI
-            // addressed to it, so it is discarded each block on the same
-            // contract as the bypass arm below. Banking it instead would empty
-            // as a burst of stale note-ons — note-ons with no note-offs behind
-            // them — the moment the effect is placed on a chain again.
-            if effect.placement == EffectPlacement::Detached {
-                effect.pending_midi.clear();
-                continue;
-            }
-
             // Only an effect no track claims belongs on the master insert
             // chain. One on a track chain already ran over that track's signal
             // in `render_timeline`, which owns clearing its MIDI exactly as
@@ -7271,6 +7261,78 @@ mod timeline_tests {
                 .unmapped_set_param_calls,
             0,
             "a stamp the engine discards is not a call the plugin refused"
+        );
+    }
+
+    /// The half of `runs_nowhere` the bridge owns. An off-chain plugin the app
+    /// still feeds over its audio bridge is handed a block every callback that
+    /// bridge carries one, so its pending-parameter queue has a drain behind it
+    /// and the stamp must reach it. Drop the bridge test from the predicate and
+    /// every plugin the app drives off a chain — a panel device, a monitored
+    /// instrument between splices — silently loses its automation writes.
+    #[test]
+    fn a_hosted_stamp_on_a_bridged_detached_effect_still_reaches_the_plugin() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let (plugin, queued) = parameter_recording_plugin(true);
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(7);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 4);
+        harness.send(GraphCommand::AddPluginWithBridge(7, plugin, bridge));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(7),
+            index: 0,
+        });
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+        });
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Hosted { id: 4 },
+            value: 0.25,
+            at_frame: 6,
+        });
+        let slot = harness
+            .scheduler
+            .effect_index
+            .lookup(7)
+            .expect("the removal must not unload the plugin");
+        assert_eq!(
+            harness.scheduler.effects[slot].placement,
+            EffectPlacement::Detached
+        );
+        assert!(
+            harness.scheduler.bridge_index.lookup(7).is_some(),
+            "the bridge outlives the chain that held the plugin, which is what \
+             keeps this effect reachable"
+        );
+
+        harness.render(4);
+        assert!(
+            queued.lock().expect("the parameter log").is_empty(),
+            "a stamp ahead of the playhead must not land early, detached or not"
+        );
+
+        harness.render(4);
+        assert_eq!(
+            queued.lock().expect("the parameter log").as_slice(),
+            &[(4, 0.25)],
+            "a detached effect its bridge still feeds takes the stamp exactly \
+             once, because the bridge drains what the stamp queues"
+        );
+        assert!(
+            harness.scheduler.effects[slot].pending_params.is_empty(),
+            "the applied stamp leaves the queue"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unmapped_set_param_calls,
+            0,
+            "a stamp the plugin accepted is not an unmapped call"
         );
     }
 
