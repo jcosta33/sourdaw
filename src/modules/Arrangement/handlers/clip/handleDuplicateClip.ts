@@ -1,6 +1,6 @@
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type GeneratedMidiStateGuard } from '#/utils/handlerContract';
+import { type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { serializeClipSatelliteEntries } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
@@ -77,11 +77,40 @@ function isDuplicateClipNoop(action: DuplicateClipAction): boolean {
     return resolveEligibleClipWriteTarget({ clipId: targetClipId }).status !== 'missing';
 }
 
+function findOwningTrackId(clipId: string): string | undefined {
+    return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
+}
+
+/**
+ * The copy and its discard inverse live on the source clip's owning track, so a
+ * batch member that removes or restores that track breaks the pair: the member's
+ * own track snapshot pre-dates the copy and can never validate the discard's
+ * guard, wedging the grouped undo that replays the batch. Same-clip
+ * compositions (a duplicate beside a removeClip of the source) are sound in
+ * both orders and stay admitted.
+ */
+function batchLeavesOwningTrackInPlace(action: DuplicateClipAction, context: HandlerValidationContext): boolean {
+    const otherMembers = context.actions.filter((_, index) => index !== context.actionIndex);
+    if (otherMembers.length === 0) {
+        return true;
+    }
+    const owningTrackId = findOwningTrackId(action.payload.clipId);
+    return (
+        !owningTrackId ||
+        !otherMembers.some(
+            (member) =>
+                (member.type === 'removeTrack' || member.type === 'restoreTrack') &&
+                member.payload.trackId === owningTrackId
+        )
+    );
+}
+
 export const handleDuplicateClip = createHandler<'duplicateClip'>({
     // Batch co-execution preflights the same applicability bar `isNoop` encodes
     // for the single-action route (source and destination eligible, target id
-    // fresh). Single-action dispatch never calls validate.
-    validate: (action) => !isDuplicateClipNoop(action),
+    // fresh) plus the owning-track independence rule above. Single-action
+    // dispatch never calls validate.
+    validate: (action, context) => !isDuplicateClipNoop(action) && batchLeavesOwningTrackInPlace(action, context),
     materializeCommandArguments: (action) => {
         ensureTargetClipId(action);
     },

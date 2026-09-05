@@ -269,6 +269,22 @@ describe('clip gesture undo grouping (issue #3622)', () => {
             expect(undoStore.value?.past).toEqual([]);
         });
 
+        it('refuses a batch that duplicates a clip and removes its track', async () => {
+            const result = await executeAppActionBatch([
+                { type: 'duplicateClip', payload: { clipId: 'clip-a' } },
+                { type: 'removeTrack', payload: { trackId: TRACK_ID } },
+            ]);
+
+            expect(result).toMatchObject({ status: 'conflicted' });
+            expect(trackStore.value?.tracks.map((track) => track.id)).toEqual([TRACK_ID]);
+            expect(
+                trackClips()
+                    .map((clip) => clip.id)
+                    .sort()
+            ).toEqual(['clip-a', 'clip-b']);
+            expect(undoStore.value?.past).toEqual([]);
+        });
+
         it('executes a batch of two removeClip actions on distinct clips as one undo group', async () => {
             const result = await executeAppActionBatch(
                 [
