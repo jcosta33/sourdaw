@@ -25,6 +25,7 @@ import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCom
 import { createAgentRunPendingEffectContinuation } from '../createAgentRunPendingEffectContinuation';
 import { recordAgentRunPendingEffectContinuation } from '../recordAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
+import { selectRetainedSectionRenderManualReviews } from '../selectRetainedSectionRenderManualReviews';
 
 type Receipt = Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
 type PendingEffect = Receipt['pendingEffects'][number];
@@ -365,9 +366,8 @@ describe('recordAgentRunReceiptSaga', () => {
             completesRun: true,
             commandBatch: COMMAND_BATCH,
         });
-        const initialContinuation = agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations[0];
         const boundContinuation = {
-            authority: initialContinuation?.authority,
+            authority: COMMAND_BATCH.authority,
             batchId: 'batch-agent-effects',
             effects: [renderEffect],
             lastError: null,
@@ -376,7 +376,7 @@ describe('recordAgentRunReceiptSaga', () => {
             serializedBatch: COMMAND_BATCH.serialized,
             sourceRevision: BASE_REVISION,
         };
-        expect(initialContinuation).toEqual(boundContinuation);
+        expect(agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations[0]).toEqual(boundContinuation);
 
         agentRunLifecycle.failPendingEffectContinuation({
             runId: 'run-agent-effects',
@@ -438,7 +438,7 @@ describe('recordAgentRunReceiptSaga', () => {
 
         const escalatedContinuation = agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations[0];
         const expectedEscalated = {
-            authority: escalatedContinuation?.authority,
+            authority: COMMAND_BATCH.authority,
             batchId: 'batch-agent-effects',
             effects: [renderEffect],
             lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
@@ -478,6 +478,76 @@ describe('recordAgentRunReceiptSaga', () => {
         ]);
     });
 
+    it('binds the committed revision onto an escalated manual-repair entry recorded without one when the same receipt is recorded again', async () => {
+        const renderEffect: PendingEffect = {
+            commandId: STEM_COMMAND.commandId,
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'renderer unavailable',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const receipt = await createReceipt([renderEffect]);
+
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt,
+            actions: ACTIONS,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+
+        const unbound = agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations[0];
+        expect(unbound).toMatchObject({
+            batchId: 'batch-agent-effects',
+            recovery: 'manual-repair',
+            lastError: GENERIC_SECTION_RENDER_RECOVERY_REASON,
+        });
+        expect(unbound).not.toHaveProperty('sourceRevision');
+
+        const escalationReason = 'The committed command batch did not expose its exact project checkpoint revision.';
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: 'run-agent-effects',
+            batchId: 'batch-agent-effects',
+            reason: escalationReason,
+            requiredAt: 250,
+        });
+
+        recordAgentRunReceiptSaga({
+            runId: 'run-agent-effects',
+            receipt,
+            actions: ACTIONS,
+            committedRevision: BASE_REVISION,
+            completesRun: true,
+            commandBatch: COMMAND_BATCH,
+        });
+
+        const expectedBound = {
+            authority: COMMAND_BATCH.authority,
+            batchId: 'batch-agent-effects',
+            effects: [{ ...renderEffect, remediation: 'manual-repair' as const }],
+            lastError: escalationReason,
+            receiptIdentity: `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`,
+            recovery: 'manual-repair' as const,
+            serializedBatch: COMMAND_BATCH.serialized,
+            sourceRevision: BASE_REVISION,
+        };
+        expect(agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations).toEqual([expectedBound]);
+        expect(
+            agentRunLifecycle.getPendingEffectRecovery({ runId: 'run-agent-effects', batchId: 'batch-agent-effects' })
+        ).toEqual({
+            ...expectedBound,
+            runId: 'run-agent-effects',
+            checkpoint: 'durable',
+        });
+
+        // The fixture's `STEM_COMMAND` compiles as `importStemSet`, not `renderProjectSections`, so
+        // `getExactRenderCommands` cannot find a matching render command inside `COMMAND_BATCH` and
+        // this selector reports no retained review; the sourceRevision pins above are the coverage
+        // this suite can give the selector without a genuine render-command fixture.
+        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
+    });
+
     it('binds the committed revision onto a prepared placeholder on first record', async () => {
         const renderEffect: PendingEffect = {
             commandId: STEM_COMMAND.commandId,
@@ -515,17 +585,22 @@ describe('recordAgentRunReceiptSaga', () => {
         });
 
         const boundContinuation = agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations[0];
-        expect(boundContinuation).toMatchObject({
+        const expectedBound = {
+            authority: COMMAND_BATCH.authority,
             batchId: 'batch-agent-effects',
-            recovery: 'reconcile-batch',
+            effects: [renderEffect],
+            lastError: null,
+            receiptIdentity: `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`,
+            recovery: 'reconcile-batch' as const,
+            serializedBatch: COMMAND_BATCH.serialized,
             sourceRevision: BASE_REVISION,
-        });
+        };
+        expect(boundContinuation).toEqual(expectedBound);
         expect(
             agentRunLifecycle.getPendingEffectRecovery({ runId: 'run-agent-effects', batchId: 'batch-agent-effects' })
-        ).toMatchObject({
-            batchId: 'batch-agent-effects',
-            recovery: 'reconcile-batch',
-            sourceRevision: BASE_REVISION,
+        ).toEqual({
+            ...expectedBound,
+            runId: 'run-agent-effects',
             checkpoint: 'durable',
         });
     });

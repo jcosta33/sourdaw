@@ -26,6 +26,7 @@ import {
     type AgentRunWorkTerminalState,
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { type AiBackendPreference } from '../models/LlmOrchestrationTypes';
 import { persistAgentRunState, readAgentRunState, resetAgentRunState } from '../stores/agentRunStore';
 import { hasSamePreparedStemImportRecovery } from '../validators/hasSamePreparedStemImportRecovery';
@@ -701,6 +702,26 @@ function recordAgentRunError(input: {
     });
 }
 
+function isReconcilableExternalEffect(effect: AgentRunPendingEffect): boolean {
+    return effect.kind === 'external-effect' && effect.remediation !== 'manual-repair';
+}
+
+function isSectionRenderEffect(effect: AgentRunPendingEffect): boolean {
+    return effect.kind === 'external-effect' && effect.operation === 'renderProjectSections';
+}
+
+function resolveBoundContinuationReason(
+    continuation: AgentRunPendingEffectContinuation,
+    isPreparedPlaceholder: boolean,
+    sourceRevision: string | undefined
+): string | null {
+    if (!isPreparedPlaceholder) {
+        return continuation.lastError;
+    }
+    return getPendingEffectRecoveryPolicy(continuation.effects, sourceRevision === undefined ? {} : { sourceRevision })
+        .reason;
+}
+
 function applyAgentRunReceiptSagaProjection(
     run: AgentRun,
     pendingEffectRecoveryLedger: AgentRunPendingEffectRecovery[],
@@ -758,15 +779,19 @@ function applyAgentRunReceiptSagaProjection(
         const continuation = existingContinuation
             ? structuredClone(existingContinuation)
             : structuredClone(projection.pendingEffectContinuation);
-        const isPreparedPlaceholder =
-            matchingRecovery?.checkpoint === 'prepared' && existingContinuation === matchingRecovery;
+        const isPreparedPlaceholder = matchingRecovery?.checkpoint === 'prepared';
+        // A durable entry that kept its reconcile effects had its revision deliberately withdrawn
+        // by escalation; re-binding would let the store recompute reconcile-batch and erase that
+        // escalation. A placeholder or a manual-repair-effects entry cannot be un-escalated by a bind.
+        const retainsWithdrawnRevision =
+            existingContinuation !== undefined &&
+            !isPreparedPlaceholder &&
+            continuation.effects.some(isReconcilableExternalEffect);
         const requiresExactRenderRevision =
-            isPreparedPlaceholder &&
+            !retainsWithdrawnRevision &&
             continuation.sourceRevision === undefined &&
             continuation.effects.length > 0 &&
-            continuation.effects.every(
-                (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
-            );
+            continuation.effects.every(isSectionRenderEffect);
         const sourceRevision = requiresExactRenderRevision
             ? projection.work.committedRevision
             : continuation.sourceRevision;
@@ -774,7 +799,9 @@ function applyAgentRunReceiptSagaProjection(
             authority: continuation.authority,
             batchId: continuation.batchId,
             effects: continuation.effects,
-            lastError: continuation.lastError,
+            lastError: requiresExactRenderRevision
+                ? resolveBoundContinuationReason(continuation, isPreparedPlaceholder, sourceRevision)
+                : continuation.lastError,
             receiptIdentity: continuation.receiptIdentity,
             recovery: continuation.recovery,
             serializedBatch: continuation.serializedBatch,
