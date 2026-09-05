@@ -22,6 +22,7 @@
 
 import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
 
+import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
@@ -71,6 +72,10 @@ export function stopNativeLiveGraphSession(
         // still-rolling engine, and recording it as parked would be a claim
         // about the engine that the engine never made.
         nativeLiveGraphSession.rolling = false;
+        // Forgotten with the roll it described. Nothing edits a parked chain —
+        // the next play replaces the whole topology and records its own reports
+        // — so a record kept past the stop could only outlive its truth.
+        clearNativeChains();
         return { outcome: 'stopped' };
     });
 }

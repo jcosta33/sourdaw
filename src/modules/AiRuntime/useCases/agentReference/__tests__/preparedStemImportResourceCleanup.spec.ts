@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

@@ -1,4 +1,10 @@
-import { getLiveEngineSampleRate, reportBridgeRoundTripFrames, reportLatency } from '#/modules/AudioEngine/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import {
+    getLiveEngineSampleRate,
+    nativeLiveGraphSessionSplice,
+    reportBridgeRoundTripFrames,
+    reportLatency,
+} from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin, findSupportedPlugin } from '#/modules/PluginHost/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -30,6 +36,17 @@ function isCommittedExternalDeviceStillAuthoritative(trackId: string, committedD
             candidate.externalPluginId === committedDevice.externalPluginId &&
             candidate.externalInstanceId === committedDevice.externalInstanceId
     );
+}
+
+/**
+ * Fire-and-forget: the activation this answers has already succeeded, and a
+ * strip that could not take the plugin has told the musician itself. Letting a
+ * splice failure out here would route an intact graph to repair (#3575).
+ */
+function spliceIntoRollingNativeGraph(instanceId: string): void {
+    void nativeLiveGraphSessionSplice({ instanceId }).catch((error: unknown) => {
+        logger.warn(`[Arrangement] splicing ${instanceId} into the rolling native graph failed: ${String(error)}`);
+    });
 }
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
@@ -136,6 +153,11 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
             if (activation.status === 'failed') {
                 throw new Error(activation.reason);
             }
+            // The chain delta above ran before this instance existed, so a
+            // rolling native session built the strip with no body for this
+            // device. Only now can it be spliced in; parked, the next play's
+            // topology batch does it instead and this exits at once (#3575).
+            spliceIntoRollingNativeGraph(externalInstanceId);
             pluginActivationSettled = true;
         }
 

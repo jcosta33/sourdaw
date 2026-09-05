@@ -86,7 +86,7 @@ reason.
 A project mixing plugins and built-ins plays, whole, with each track on the engine that can sound
 it — which no single-carrier arrangement does.
 
-Four costs are accepted for the duration of the split, each with a lane of its own:
+Five costs are accepted for the duration of the split, each with a lane of its own:
 
 - The two carriers do not share a roll latency. A native-carried track and a Web Audio one start
   from the same transport position but travel different output paths, so they are aligned only as
@@ -100,6 +100,8 @@ Four costs are accepted for the duration of the split, each with a lane of its o
   device without crossing the Web Audio master fader, so it plays about 1.9 dB hot at the 0.8 default
   and answers no move of that fader mid-take, until a `set-master-gain` command travels with the
   topology (#3596).
+- A device-chain change on a rolling native-carried strip that the native engine cannot host is
+  declined and takes effect on the next play (#3575).
 
 Each of those is a symptom of the split itself, not of the mechanism chosen for it: they are the
 price of two carriers, and they disappear with the second carrier rather than being fixed

@@ -106,6 +106,7 @@ import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeN
 import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
@@ -114,6 +115,7 @@ import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLi
 import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
+import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
@@ -371,6 +373,10 @@ async function applyTopologyBatch(input: {
     // no audio, and corrected nowhere else. Reported before the session
     // bookkeeping, because a device told late has already been read as degraded.
     reportAttachedPlugins(result);
+    // Replaced rather than merged: this batch tore every strip down inside its
+    // own fence, so a strip missing from these reports is a strip the engine no
+    // longer has, and a mirror addressing one must find nothing.
+    replaceNativeChains(result.reports);
     return { outcome: 'applied', result, commands };
 }
 
@@ -459,6 +465,9 @@ function reasonOf(error: unknown): string {
 function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBackend>): void {
     setNativeCarriedTracks(new Set());
     nativeLiveGraphSession.audibleCarrier = false;
+    // A topology batch may already have written its chains before the throw,
+    // and they describe a graph this start is walking away from.
+    clearNativeChains();
     if (nativeLiveGraphSession.backend !== backend) {
         // Thrown before this handle was adopted, so nothing else will ever
         // close it.
@@ -664,6 +673,10 @@ export function startNativeLiveGraphSession(
                 // keep.
                 releaseCarriedStrips();
                 backend.dispose();
+                // The first batch's chains were recorded and are now describing
+                // a graph that is half of two topologies and reachable through
+                // no handle.
+                clearNativeChains();
                 notifyNativeDecline(resent.reason);
                 return { outcome: 'declined', reason: resent.reason };
             }
@@ -698,6 +711,9 @@ export function startNativeLiveGraphSession(
             // that was already working.
             nativeLiveGraphSession.backend?.dispose();
             nativeLiveGraphSession.backend = backend;
+            // A new session is new news: whatever the previous one deferred was
+            // about a topology this batch has just replaced.
+            nativeLiveGraphSession.lastDeferredChainNotice = null;
             // Both halves, and both are needed. What was scheduled is read off the
             // batch actually sent, so the day the producer emits clips nothing has
             // to be remembered here; whether any of it can be heard is the monitor

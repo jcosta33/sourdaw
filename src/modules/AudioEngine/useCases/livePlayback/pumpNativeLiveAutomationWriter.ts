@@ -52,6 +52,7 @@ import {
     type LiveAutomationWriterTarget,
 } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { recordNativeChains } from './recordNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
 export type PumpNativeLiveAutomationWriterInput = Readonly<{
@@ -388,6 +389,10 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
             reportRefusal(pass, result.reason);
             return;
         }
+        // A pass writes parameters and edits no chain, but its reports are still
+        // the engine's own account of the strips it touched — folding them in
+        // keeps the chain record answering to the newest observation there is.
+        recordNativeChains(result.reports);
         for (const { slot, writes, queued } of admissions) {
             slot.cursor += writes.length;
             // The batch's own stamps — the tail of what the admission queued,

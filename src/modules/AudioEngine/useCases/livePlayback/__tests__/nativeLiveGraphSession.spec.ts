@@ -408,6 +408,10 @@ beforeEach(() => {
     // text would assert silence the product does not actually produce.
     nativeLiveGraphSession.lastDeclineNotice = null;
     nativeLiveGraphSession.lastSilentPluginNotice = null;
+    nativeLiveGraphSession.lastDeferredChainNotice = null;
+    // The chain record is module state too, and a case inheriting the previous
+    // one's would read a strip as built that this session never built.
+    nativeLiveGraphSession.nativeChainByStripId = new Map();
     nativeLiveGraphSession.pending = Promise.resolve();
     // The start and the maps update arm the real writer, and its pass is what
     // the arm-wiring cases below read — so it is reset with the session's own.
@@ -1752,5 +1756,106 @@ describe('repositionNativeLiveGraphSession', () => {
         await Promise.all([4, 8, 12].map((positionSeconds) => repositionNativeLiveGraphSession({ positionSeconds })));
 
         expect(reached).toEqual([4, 8, 12]);
+    });
+});
+
+describe('the chain record a rolling mirror addresses', () => {
+    /**
+     * The record is built from the engine's reports, never from the commands
+     * the batch carried. A device the mapper degraded was asked for and is not
+     * in the chain, so a record built from requests would place every later
+     * insert one slot wrong.
+     */
+    it('is the reports of the topology batch, not the devices it asked for', async () => {
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [
+                { kind: 'track', id: 'audio-1', deviceIds: ['device-built'] },
+                { kind: 'bus', id: 'bus-1', deviceIds: [] },
+            ],
+        });
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([
+            ['audio-1', ['device-built']],
+            ['bus-1', []],
+        ]);
+    });
+
+    /**
+     * A topology batch tears every strip down inside its own fence, so a strip
+     * the newest one does not report is a strip the engine no longer has.
+     * Merging would leave a mirror addressing a chain that was replaced.
+     */
+    it('is replaced by the newest topology batch rather than merged into', async () => {
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'gone-next-time', deviceIds: ['device-a'] }],
+        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: [] }],
+        });
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(nativeLiveGraphSession.nativeChainByStripId.has('gone-next-time')).toBe(false);
+        expect(nativeLiveGraphSession.nativeChainByStripId.has('audio-1')).toBe(true);
+    });
+
+    /**
+     * A start that threw past its topology batch leaves a record describing a
+     * graph reachable through no handle. A mirror reading it would send a chain
+     * edit into a session that was abandoned.
+     */
+    it('is cleared when a start is abandoned after its topology landed', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
+        });
+        mocks.setEngineTransportMaps.mockImplementationOnce(() => Promise.reject(new Error('bridge dropped')));
+
+        await expect(
+            startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE })
+        ).rejects.toThrow('bridge dropped');
+
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([]);
+    });
+
+    /** Forgotten with the roll it described: the next play records its own. */
+    it('is cleared once the stop the engine took has parked the transport', async () => {
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
+        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        await stopNativeLiveGraphSession({ positionSeconds: 3 });
+
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([]);
+    });
+
+    /**
+     * A refused stop leaves a still-rolling engine, and forgetting its chains
+     * would strand every later edit on "strip not built" for a session that is
+     * still sounding.
+     */
+    it('survives a stop the engine refused', async () => {
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
+        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'transport busy',
+        });
+
+        await stopNativeLiveGraphSession({ positionSeconds: 3 });
+
+        expect([...nativeLiveGraphSession.nativeChainByStripId]).toEqual([['audio-1', ['device-a']]]);
     });
 });

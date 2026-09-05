@@ -27,6 +27,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     getLiveEngineSampleRate: mocks.getLiveEngineSampleRate,
     reportBridgeRoundTripFrames: mocks.reportBridgeRoundTripFrames,
     reportLatency: mocks.reportLatency,

@@ -40,6 +40,8 @@ import { setGlutenParamWithAudio } from '../setGlutenParamWithAudio';
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ trackId, deviceId, paramId, value });
     },
