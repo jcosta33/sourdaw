@@ -102,3 +102,27 @@ post-install scripts, the runner-image release notes, the vendor's open issues �
 that supports or contradicts the claim; a caveat, restart flag, or open issue that contradicts the
 comment is the finding. When the job cannot run on the pull request, name the first hosted run as
 the only evidence and require the pull request's test section to say so.
+
+### 2026-09-05 — a retired renderer body with a carrier rule that still routed to it (escaped via PR #3593; fixed in #3846)
+
+PR #3593 made the native live session the audible carrier and turned the Web Audio
+external-plugin device into a synchronous pass-through, so only the native engine could voice
+a hosted plugin. The carrier law it shipped kept rule 1 — a strip with no native playback is
+`'nothing scheduled'` and stays on Web Audio — ahead of every chain rule, and the session
+called itself the audible carrier only when the batch scheduled a clip. A track holding an
+attached generator plugin and no clips, the exact project the nightly Desktop latency leg
+builds, was therefore handed to a carrier that could no longer sound it, and the native master
+peak read null. The approval walked every exit of the start sequence asking which carrier
+sounds each strip, and never walked the law's rules against the strips the retired body used to
+sound. The leg ran red from the first nightly after the merge until #3846.
+
+Blind spot: when a diff retires one carrier's body for a device, the reviewer checked the new
+carrier's exits and not whether the routing law can still send that device to the retired
+carrier.
+
+Probe that would have caught it: when a diff removes or stubs a renderer for something — a
+device type, a clip type, a route — enumerate every rule in the routing law that can still
+deliver that thing to the stub, drive each with the smallest project that hits it (one track,
+that device, nothing else) and require either the new carrier to take it or a notice that names
+why not. Then find the product's own standing consumers of that path — the nightly harness
+project, the smoke set — and run them through the same rule.
