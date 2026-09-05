@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 
 import { AppActionCommittedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { redo } from '../redo';
 import { undo } from '../undo';
 
@@ -19,6 +22,12 @@ import type { ActionUndoEntry, CallbackUndoEntry, UndoEntry } from '../../models
 //
 // The second case was the damaging one: `undoStore.set` sat after the awaited
 // call, so any rejection skipped it and left the entry in `past`.
+//
+// #2881 extends the conflict arm: a conflicted head no longer wedges the whole
+// history behind it. Undo steps over it onto the unit beneath — but only when
+// that unit's inverse resolves to a handler flagged `canReportConflict`, so the
+// production handler maps are registered here exactly as bootstrap registers
+// them and the gate reads real capability flags.
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
@@ -32,6 +41,7 @@ const mocks = vi.hoisted(() => ({
     executeAppActionBatch: vi.fn<typeof import('../executeAppActionBatch').executeAppActionBatch>(),
     undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     notifyUser: vi.fn<(message: string, level?: string) => void>(),
+    admissionFailure: null as string | null,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -57,6 +67,10 @@ vi.mock('../executeAppActionBatch', () => ({
 
 vi.mock('../undoTree/undoTreeMoveTo', () => ({
     undoTreeMoveTo: mocks.undoTreeMoveTo,
+}));
+
+vi.mock('../isProjectMutationAllowed', () => ({
+    getProjectMutationAdmissionFailure: () => mocks.admissionFailure,
 }));
 
 function actionEntry(overrides: Partial<ActionUndoEntry> = {}): ActionUndoEntry {
@@ -94,12 +108,38 @@ function conflictOn(...actionTypes: readonly string[]): void {
     });
 }
 
+/** An inverse whose handler is flagged `canReportConflict` — steppable (#2881). */
+const conflictCapableFadeInverse = {
+    type: 'setClipFade',
+    payload: { clipId: 'clip-1', fadeInBeats: 0, fadeOutBeats: 0, expectedFadeInBeats: 0, expectedFadeOutBeats: 0 },
+} as const;
+
+/** A conflicting head's inverse, also conflict-capable. */
+const conflictCapableGainInverse = {
+    type: 'setTrackGain',
+    payload: { trackId: 'track-1', gain: 0.5, expectedGain: 0.8 },
+} as const;
+
 describe('undo/redo replay conflict handling (audit CC-6)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.undoStoreValue.value = { past: [], future: [] };
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.executeAppActionBatch.mockResolvedValue({ status: 'executed', actions: [] });
+        mocks.admissionFailure = null;
+        // The step-over gate resolves inverse handlers through the live
+        // registry, so the capability flags it reads must be the production
+        // ones. Only the Arrangement map is registered — it owns the whole
+        // flagged first set — which leaves the Transport toggle inverses used
+        // by the fixtures below unregistered: they resolve to no handler, so
+        // the gate treats them as unsteppable, which is exactly what those
+        // fixtures assert.
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     describe('undo', () => {
@@ -130,12 +170,15 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
 
             await expect(undo()).resolves.toEqual({ headConsumed: false });
 
-            // Only the head's inverse is attempted. Whether an older inverse would
-            // refuse to write against the diverged document is a property of the
-            // handler it runs, not of the entry, so `First Action` cannot be shown to
-            // be safe to replay here and must not be replayed. The conflicted entry
-            // keeps its place in `past` and never reaches `future`, where redo would
-            // re-apply an action that was never undone.
+            // Only the head's inverse is attempted. The step-over gate (#2881)
+            // admits the unit beneath only when its inverse handler is flagged
+            // `canReportConflict`. `togglePlayback` resolves to no handler at
+            // all in this registry (Transport is not registered here), so the
+            // gate has nothing to read a flag from — the missing-handler case,
+            // complementary to the resolvable-but-unflagged case below. The
+            // conflicted entry keeps its place in `past` and never reaches
+            // `future`, where redo would re-apply an action that was never
+            // undone.
             expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
             expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'toggleRecording' }, expect.anything());
             expect(mocks.undoStoreSet).not.toHaveBeenCalled();
@@ -226,6 +269,267 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
             expect(mocks.notifyUser).toHaveBeenCalledWith(
                 'Only part of "Mixed Edit" could be undone: project state has changed',
+                'warning'
+            );
+        });
+
+        it('steps over a conflicted head onto a conflict-capable unit beneath it and undoes that one (#2881)', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // The conflicted head is attempted, then exactly one step onto the
+            // conflict-capable unit beneath it — whose inverse handler can
+            // genuinely refuse, so replaying it can never clobber the edit that
+            // caused the conflict.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+            ]);
+            // The step target moved to `future`; the conflicted head stays on
+            // `past`, still heading the stack and retryable, so a history sweep
+            // still stops on it (`headConsumed: false`).
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [conflicting], future: [older] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('conflict-1');
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot undo "Cut Clip": project state has changed',
+                'Skipped "Cut Clip": project state has changed; undid "First Action"',
+            ]);
+        });
+
+        it('never steps onto a unit whose inverse handler is not flagged conflict-capable', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                // `soloTrack` is registered through the Arrangement handler map —
+                // the gate RESOLVES this handler — but carries no
+                // `canReportConflict` flag: it writes unconditionally and cannot
+                // refuse. Resolvable-yet-unflagged is the distinction the gate
+                // exists to draw; a gate that only checked resolvability would
+                // step here.
+                inverseAction: { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // The handler resolved, read its flag, and the flag said no: the
+            // unit cannot refuse, so replaying it over the diverged document
+            // would silently overwrite the conflicting edit. Only the head is
+            // attempted and nothing moves.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith(conflictCapableGainInverse, expect.anything());
+            expect(mocks.executeAppAction).not.toHaveBeenCalledWith(
+                { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+                expect.anything()
+            );
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Cut Clip": project state has changed',
+                'warning'
+            );
+        });
+
+        it('never steps onto a callback entry beneath a conflicted action entry', async () => {
+            const callback = callbackEntry({ id: 'cb-1', label: 'Inline Note Move' });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [callback, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // A callback undo reports success unconditionally — it has no
+            // handler that could refuse — so the gate must leave it untouched
+            // rather than run it over the diverged document.
+            expect(callback.undo).not.toHaveBeenCalled();
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('never steps onto a group whose oldest member cannot refuse, even when its newest member can', async () => {
+            const oldest = actionEntry({
+                id: 'g-oldest',
+                groupId: 'mixed-1',
+                groupLabel: 'Mixed Group',
+                // Resolvable but unflagged: `soloTrack` cannot refuse.
+                inverseAction: { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+            });
+            const newest = actionEntry({
+                id: 'g-newest',
+                groupId: 'mixed-1',
+                groupLabel: 'Mixed Group',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [oldest, newest, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // The gate requires EVERY member's inverse to be flagged. The
+            // newest member alone being conflict-capable is not enough: undoing
+            // the group as a unit would also replay its unrefusable oldest
+            // member over the diverged document. No member of the group runs —
+            // not even the flagged one — and the group is not batched.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith(conflictCapableGainInverse, expect.anything());
+            expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('never steps onto a group containing a callback member, even when its action members are flagged', async () => {
+            const callbackMember = callbackEntry({
+                id: 'g-callback',
+                groupId: 'mixed-2',
+                groupLabel: 'Callback Group',
+            });
+            const actionMember = actionEntry({
+                id: 'g-action',
+                groupId: 'mixed-2',
+                groupLabel: 'Callback Group',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [callbackMember, actionMember, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // A callback member reports success unconditionally, so a group
+            // containing one can never be a safe step target no matter what its
+            // action members' handlers declare. Neither member runs.
+            expect(callbackMember.undo).not.toHaveBeenCalled();
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).toHaveBeenCalledWith(conflictCapableGainInverse, expect.anything());
+            expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        });
+
+        it('attempts no inverse at all while project mutation admission fails', async () => {
+            mocks.admissionFailure = 'Project repair is required before project actions can execute';
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [older, conflicting], future: [] };
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // Under a global admission gate every inverse would refuse on
+            // admission alone, before any handler runs — attempting one, or
+            // stepping past it, is pointless churn. The same blocked-undo
+            // notification is reported once and nothing is written.
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Cut Clip": project state has changed',
+                'warning'
+            );
+        });
+
+        it('reports the first real head, not an inert row above it, while admission fails', async () => {
+            mocks.admissionFailure = 'Project repair is required before project actions can execute';
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const inert = actionEntry({ id: 'inert-1', label: 'Dead Row', inverseAction: null });
+            mocks.undoStoreValue.value = { past: [older, inert], future: [] };
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+
+            // Inert rows are purged before the blocked undo is reported — the
+            // same purge the scan would do — so the notification names the
+            // first entry that could actually be undone, and the dead row is
+            // not left wedged above it. No inverse is attempted either way.
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [] });
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "First Action": project state has changed',
+                'warning'
+            );
+        });
+
+        it('touches at most two units per call, stopping after one step even when that unit conflicts too', async () => {
+            const deepest = actionEntry({
+                id: 'deep-1',
+                label: 'Deep Action',
+                inverseAction: { type: 'setClipColor', payload: { clipId: 'clip-1', color: '#00ff00' } },
+            });
+            const middle = actionEntry({
+                id: 'middle-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [deepest, middle, conflicting], future: [] };
+            conflictOn('setTrackGain', 'setClipFade');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // One keystroke touches at most two units: the conflicted head and
+            // the one step target. When the target refuses as well there is no
+            // recursion and no third attempt — `Deep Action` is never replayed —
+            // both conflicted units stay on `past` retryable, nothing moves, and
+            // the head's conflict message is the only notification.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+            ]);
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Cannot undo "Cut Clip": project state has changed',
                 'warning'
             );
         });

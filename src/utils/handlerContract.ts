@@ -2365,6 +2365,19 @@ type ActionHandlerCommon<Action extends AppAction> = {
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
     canReapplyAfterDivergence?: (action: Action, context?: HandlerValidationContext) => boolean;
+    /**
+     * Whether this handler's `execute` can genuinely refuse to write against a diverged
+     * document — some path returns `{ status: 'conflict' }` or throws `AppActionConflictError`.
+     * `executeAppAction` never calls `validate` at dispatch, so conflict capability is only
+     * knowable from the handler that will actually run: many undoable handlers route through
+     * `toHandlerExecutionResult` (`no-write | written`) and can never refuse. Undo step-over
+     * (#2881) may advance onto an entry only when its inverse resolves to a flagged handler;
+     * stepping onto an unflagged one risks silently overwriting the edit that caused the
+     * conflict. A declared capability, not a derived one — see the registry honesty spec in
+     * `Command/useCases/__tests__/` for the proof each flag owes. Distinct from
+     * `canReapplyAfterDivergence`, which certifies reapplication inside an atomic batch.
+     */
+    canReportConflict?: boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
     /** Owner-provided strict validation for a payload after application-owned materialization. */

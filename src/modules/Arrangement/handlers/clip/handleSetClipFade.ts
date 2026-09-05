@@ -5,6 +5,10 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleSetClipFade = createHandler<'setClipFade'>({
+    // Conflicts when `expectedFadeInBeats`/`expectedFadeOutBeats` no longer match
+    // the live clip — the guard its own inverse carries. Proven by the
+    // `canReportConflict` registry honesty spec; undo step-over (#2881) relies on it.
+    canReportConflict: true,
     execute: (action) => {
         const clip = getTrackStoreState()
             ?.tracks.flatMap((track) => track.clips)
