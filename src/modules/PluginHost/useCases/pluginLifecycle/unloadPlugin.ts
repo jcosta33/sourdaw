@@ -46,9 +46,20 @@
  * whole captured set rather than reasoning about which leg failed: an instance
  * the unload *did* take has no snapshot left, and the restore skips an absent
  * one, so the same call is right whether nothing landed or only part of it did.
+ *
+ * ── Released strips report back through the sink ──────────────────────────
+ *
+ * The native reply also names every strip its own release touched, with that
+ * strip's final chain — the release itself changed native state with no batch
+ * of its own for a foreign mirror to read. This use case forwards those
+ * reports to whatever `registerReleasedStripReportSink` wired up as soon as
+ * the bridge reply carries any, ahead of the errors check below: the reports
+ * describe native state that already committed, so their being forwarded does
+ * not depend on whether some other instance in the same cascade also errored.
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
+import { forwardReleasedStripReports } from '../../services/releasedStripReportSink';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
@@ -93,16 +104,18 @@ function reconcileUnloadResult(
     result: Awaited<ReturnType<typeof unloadPluginRepo>>,
     expectedInstanceId?: string
 ): void {
-    const mismatchedSuccess = expectedInstanceId !== undefined && result[0].some((id) => id !== expectedInstanceId);
-    const missingOutcome = expectedInstanceId !== undefined && result[0].length === 0 && result[1].length === 0;
+    const mismatchedSuccess =
+        expectedInstanceId !== undefined && result.unloadedInstanceIds.some((id) => id !== expectedInstanceId);
+    const missingOutcome =
+        expectedInstanceId !== undefined && result.unloadedInstanceIds.length === 0 && result.errors.length === 0;
     if (mismatchedSuccess || missingOutcome) {
         throw new Error('Invalid keyed unload_plugin response');
     }
-    for (const instanceId of result[0]) {
+    for (const instanceId of result.unloadedInstanceIds) {
         forgetPluginInstance(instanceId);
     }
-    if (result[1].length > 0) {
-        throw new Error(result[1].join('; '));
+    if (result.errors.length > 0) {
+        throw new Error(result.errors.join('; '));
     }
 }
 
@@ -136,6 +149,9 @@ async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
     }
     try {
         const unloaded = await unloadPluginRepo(instanceId);
+        if (unloaded.reports.length > 0) {
+            forwardReleasedStripReports(unloaded.reports);
+        }
         reconcileUnloadResult(unloaded, instanceId);
     } catch (error) {
         markExternalPluginParameterSnapshotsAttached(attached);

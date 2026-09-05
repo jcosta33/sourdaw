@@ -1,5 +1,6 @@
 //! Plugin scanning, loading, and parameter management.
 
+use crate::commands::graph::{self, StripReportPayload};
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
 use crate::host::plugin_registry_store::{
     PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim, ScanRow,
@@ -60,7 +61,21 @@ pub struct PluginInstance {
     pub engine_plugin_id: Option<usize>,
 }
 
-pub type PluginUnloadResult = (Vec<String>, Vec<String>);
+/// A native `unload_plugin`'s reply.
+///
+/// `reports` is the final chain of every strip an unloaded instance's release
+/// touched, exactly as `apply_graph_commands`'s own `reports` describe a
+/// batch — because an unload changes native strip state with no batch of its
+/// own, and a caller whose mirror of that state only ever updates from a
+/// batch's reports would otherwise go stale the moment an unload releases a
+/// chain entry, landing its next insert at the wrong native index.
+#[derive(Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUnloadReply {
+    pub unloaded_instance_ids: Vec<String>,
+    pub errors: Vec<String>,
+    pub reports: Vec<StripReportPayload>,
+}
 static PLUGIN_LIFECYCLE_GATES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
@@ -2126,15 +2141,18 @@ pub async fn unload_plugin(
     instance_id: Option<PluginInstanceId>,
     windows_host: &dyn PluginWindowHost,
     state: &AppState,
-) -> Result<PluginUnloadResult, String> {
+) -> Result<PluginUnloadReply, String> {
     match instance_id {
         Some(instance_id) => {
-            let mut response = PluginUnloadResult::default();
+            let mut reply = PluginUnloadReply::default();
             {
                 let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.read().await);
                 match unload_plugin_runtime(&instance_id.0, Some(windows_host), state).await {
-                    Ok(()) => response.0.push(instance_id.0),
-                    Err(error) => response.1.push(error),
+                    Ok(reports) => {
+                        reply.unloaded_instance_ids.push(instance_id.0);
+                        reply.reports = reports;
+                    }
+                    Err(error) => reply.errors.push(error),
                 }
             }
             // The read guard above ends with the block, not with this
@@ -2144,17 +2162,37 @@ pub async fn unload_plugin(
             // fair, so a queued `unload_all_plugin_runtimes` writer would
             // otherwise wait out third-party teardown of unbounded length.
             state.sweep_retired_engine_plugins();
-            Ok(response)
+            Ok(reply)
         }
         None => unload_all_plugin_runtimes(Some(windows_host), state).await,
     }
 }
 
+/// Fold per-instance strip reports from a cascade into one entry per strip,
+/// keeping the last.
+///
+/// Each report is built from the registry as it stood right after its own
+/// instance's release committed, so a strip two cascade instances shared
+/// carries an earlier, incomplete chain in its first report and the final
+/// one in its last — keeping the last is keeping the true final chain,
+/// without a second pass over the registry once the cascade is done.
+fn dedupe_strip_reports_keeping_last(reports: Vec<StripReportPayload>) -> Vec<StripReportPayload> {
+    let mut deduped: Vec<StripReportPayload> = Vec::new();
+    for report in reports {
+        match deduped.iter_mut().find(|entry| entry.id == report.id) {
+            Some(entry) => *entry = report,
+            None => deduped.push(report),
+        }
+    }
+    deduped
+}
+
 async fn unload_all_plugin_runtimes(
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<PluginUnloadResult, String> {
-    let mut result = PluginUnloadResult::default();
+) -> Result<PluginUnloadReply, String> {
+    let mut reply = PluginUnloadReply::default();
+    let mut reports = Vec::new();
     {
         let _runtime_guard = observe_gate_release(PLUGIN_RUNTIME_GATE.write().await);
         let instance_ids = {
@@ -2174,8 +2212,11 @@ async fn unload_all_plugin_runtimes(
         };
         for instance_id in instance_ids {
             match unload_plugin_runtime(&instance_id, windows_host, state).await {
-                Ok(()) => result.0.push(instance_id),
-                Err(error) => result.1.push(error),
+                Ok(strip_reports) => {
+                    reply.unloaded_instance_ids.push(instance_id);
+                    reports.extend(strip_reports);
+                }
+                Err(error) => reply.errors.push(error),
             }
         }
     }
@@ -2183,7 +2224,8 @@ async fn unload_all_plugin_runtimes(
     // the gate has to be free either way, and a sweep per instance inside the
     // loop would only repeat the same wait under it once per instance.
     state.sweep_retired_engine_plugins();
-    Ok(result)
+    reply.reports = dedupe_strip_reports_keeping_last(reports);
+    Ok(reply)
 }
 
 /// The thread this unload's editor teardown must run on.
@@ -2214,10 +2256,16 @@ fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWind
 /// is not a fence, and a registry that had already forgotten a chain entry the
 /// engine still holds could never name it again — the caller's later
 /// `remove-device` would find no device and do nothing.
+///
+/// Answers with the strip reports for every strip the release actually
+/// touched, built from the committed clone after the ring has taken the
+/// batch — never from the working clone before it, which could describe a
+/// release the engine went on to refuse. A refused release, or one with
+/// nothing to release, reports no strip.
 fn release_then_retire_engine_plugin(
     engine_plugin_id: usize,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<Vec<StripReportPayload>, String> {
     let mut registry = state
         .graph
         .lock()
@@ -2231,20 +2279,23 @@ fn release_then_retire_engine_plugin(
     };
 
     let mut working = registry.clone();
-    let released = working.release_engine_plugin(engine_plugin_id);
-    if !released.is_empty() {
+    let release = working.release_engine_plugin(engine_plugin_id);
+    let mut reports = Vec::new();
+    if !release.ops.is_empty() {
         // The reserved slot is the `RemovePlugin` push below: the
         // retirement must not find the ring full behind the release.
-        match engine.send_graph_batch_with_headroom(released, 1) {
+        match engine.send_graph_batch_with_headroom(release.ops, 1) {
             Ok(()) => {
                 working.record_fenced_batch();
+                reports = graph::strip_reports(&working, &release.touched_strip_ids);
                 *registry = working;
             }
             Err(error) => {
                 // Logged and carried on, with the clone discarded. The
                 // retirement still goes: refusing here would abandon an unload
                 // the caller has already begun, and the entry the registry
-                // keeps is what lets a later batch unlink it.
+                // keeps is what lets a later batch unlink it. No report is
+                // owed for a release the registry never committed.
                 eprintln!(
                     "[Plugin] chain release before unload was refused: {:?}",
                     error
@@ -2253,7 +2304,8 @@ fn release_then_retire_engine_plugin(
         }
     }
 
-    engine.remove_plugin(engine_plugin_id)
+    engine.remove_plugin(engine_plugin_id)?;
+    Ok(reports)
 }
 
 /// Tear one instance's runtime out of the engine and the plugin maps.
@@ -2267,7 +2319,7 @@ async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<Vec<StripReportPayload>, String> {
     let _lifecycle_guard = lock_plugin_lifecycle(instance_id).await;
     let command_plugin = {
         let mut plugins = state
@@ -2287,7 +2339,9 @@ async fn unload_plugin_runtime(
             |plugin| plugin.close_gui(),
         );
         remove_plugin_window(instance_id, windows_host, state);
-        return Ok(());
+        // A command-owned instance names no chain entry: it never bound to
+        // a strip, so there is no strip to report.
+        return Ok(Vec::new());
     }
 
     let engine_plugin = {
@@ -2304,10 +2358,13 @@ async fn unload_plugin_runtime(
 
     if let Some((engine_plugin_id, runtime)) = engine_plugin {
         let scheduler_removal_result = release_then_retire_engine_plugin(engine_plugin_id, state);
-        if let Err(error) = scheduler_removal_result {
-            runtime.cancel_unload();
-            return Err(error);
-        }
+        let reports = match scheduler_removal_result {
+            Ok(reports) => reports,
+            Err(error) => {
+                runtime.cancel_unload();
+                return Err(error);
+            }
+        };
 
         state.retain_retired_engine_plugin(Arc::clone(&runtime));
 
@@ -2347,14 +2404,15 @@ async fn unload_plugin_runtime(
         // scheduler removal was only queued, so the caller's sweep frees the
         // previous generation, not this one.
         drop(runtime);
-        return Ok(());
+        return Ok(reports);
     }
 
     // A keyed unload is a convergence operation: the requested runtime being
     // absent already satisfies its postcondition. This also makes a retry safe
     // when the process stopped after native teardown but before its durable
-    // command-batch checkpoint advanced.
-    Ok(())
+    // command-batch checkpoint advanced. No runtime means no chain entry to
+    // have released, so there is no strip to report either.
+    Ok(Vec::new())
 }
 
 // ── Parameter commands ──────────────────────────────────────────────────
@@ -4347,7 +4405,7 @@ mod tests {
         ))
         .expect("the unload call itself does not fail");
         assert_eq!(
-            unload_response.1,
+            unload_response.errors,
             Vec::<String>::new(),
             "fixture A must unload cleanly, or the reclaim below proves nothing"
         );
@@ -4466,7 +4524,7 @@ mod tests {
         ))
         .expect("the unload call itself does not fail");
         assert_eq!(
-            unload_response.1,
+            unload_response.errors,
             Vec::<String>::new(),
             "fixture C must unload cleanly"
         );
@@ -4560,7 +4618,7 @@ mod tests {
         let cascade_response = crate::block_on_test(unload_plugin(None, &NoWindowHost, &state))
             .expect("the cascade call itself does not fail");
         assert_eq!(
-            cascade_response.1,
+            cascade_response.errors,
             Vec::<String>::new(),
             "fixture D must unload cleanly"
         );
@@ -6884,8 +6942,8 @@ mod tests {
             .insert("command-instance".into(), "command-window".into());
         let unload_all = crate::block_on_test(unload_all_plugin_runtimes(None, &state));
         let unload_all = unload_all.expect("bulk inventory should complete");
-        assert_eq!(unload_all.0, ["command-instance"]);
-        assert_eq!(unload_all.1, ["Native engine not running"]);
+        assert_eq!(unload_all.unloaded_instance_ids, ["command-instance"]);
+        assert_eq!(unload_all.errors, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
     }
@@ -6942,8 +7000,8 @@ mod tests {
         let first = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));
         let retry = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));
 
-        assert_eq!(first, Ok(()));
-        assert_eq!(retry, Ok(()));
+        assert_eq!(first, Ok(Vec::new()));
+        assert_eq!(retry, Ok(Vec::new()));
         assert!(!state
             .plugins
             .lock()
@@ -7119,7 +7177,7 @@ mod tests {
         leave_command_ring_with_free_slots(&state, &command_rx, 2);
         drop(retired_adoption_rx);
 
-        crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+        let reports = crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
             .expect("the unload still retires the instance");
 
         let registry = state.graph.lock().expect("graph registry lock");
@@ -7142,6 +7200,239 @@ mod tests {
             released_then_retired(&mut command_rx),
             vec!["retire"],
             "the refused release reached no ring, so only the retirement did"
+        );
+        assert!(
+            reports.is_empty(),
+            "a release the engine refused reports no strip, got: {:?}",
+            reports
+        );
+    }
+
+    /// One track strip whose chain binds three engine-owned fixtures, in
+    /// order — for a test that unloads the middle one and reads what the
+    /// other two leave behind.
+    fn strip_binding_three_fixtures() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                "state": { "gain": 1.0, "pan": 0, "muted": false, "soloGated": false,
+                           "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-comp", "name": "Comp", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-comp" },
+                    { "id": "d-proq", "name": "Pro-Q", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-proq" },
+                    { "id": "d-limiter", "name": "Limiter", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-limiter" }
+                ],
+                "honorMuted": true, "contributesAudio": true
+            }]
+        })
+    }
+
+    /// One track strip whose chain binds two engine-owned fixtures — for a
+    /// test that unloads both in one cascade and reads the strip's one final
+    /// report.
+    fn strip_binding_two_fixtures() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                "state": { "gain": 1.0, "pan": 0, "muted": false, "soloGated": false,
+                           "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-a", "name": "A", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-a" },
+                    { "id": "d-b", "name": "B", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-b" }
+                ],
+                "honorMuted": true, "contributesAudio": true
+            }]
+        })
+    }
+
+    /// Build the strip that binds three fixtures and drain what building it
+    /// pushed, so what stays on the ring afterwards is the unload's alone.
+    fn bind_three_fixtures_to_a_strip(
+        state: &AppState,
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) {
+        let applied = crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            strip_binding_three_fixtures(),
+            state,
+            &crate::commands::crumbs::CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            applied["application"], "applied",
+            "the strip must bind all three attached instances, or nothing is released later"
+        );
+        while commands.pop().is_ok() {}
+    }
+
+    /// Build the strip that binds two fixtures and drain what building it
+    /// pushed, so what stays on the ring afterwards is the cascade's alone.
+    fn bind_two_fixtures_to_a_strip(
+        state: &AppState,
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) {
+        let applied = crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            strip_binding_two_fixtures(),
+            state,
+            &crate::commands::crumbs::CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            applied["application"], "applied",
+            "the strip must bind both attached instances, or nothing is released later"
+        );
+        while commands.pop().is_ok() {}
+    }
+
+    /// Like [`insert_engine_owned_fixture`], with an explicit engine plugin
+    /// id — needed once a test binds more than one fixture to the same
+    /// strip, where the fixture helper's fixed id would collide.
+    fn insert_engine_owned_fixture_with_id(
+        state: &AppState,
+        instance_id: &str,
+        engine_plugin_id: usize,
+    ) {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", Vec::new(), true);
+        let parameters = wrapper.get_parameters();
+        let runtime = Arc::new(SharedHostedPlugin::new(wrapper.into()));
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id,
+                runtime,
+                name: "Engine Owned Fixture".to_string(),
+                parameters,
+                has_gui: true,
+                chain_kind: DeviceKind::Effect,
+                parameter_events: None,
+            },
+        );
+    }
+
+    /// The reply's `reports` mirror what the strip's chain still holds after
+    /// one bound instance releases from it: the two devices this unload does
+    /// not touch, in their original chain order.
+    #[test]
+    fn unloading_a_bound_instance_reports_the_strips_released_chain() {
+        let state = AppState::default();
+        insert_engine_owned_fixture_with_id(&state, "inst-comp", 201);
+        insert_engine_owned_fixture_with_id(&state, "inst-proq", 202);
+        insert_engine_owned_fixture_with_id(&state, "inst-limiter", 203);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        bind_three_fixtures_to_a_strip(&state, &mut command_rx);
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("inst-proq".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the bound instance unloads");
+
+        assert_eq!(
+            unload_response.reports,
+            vec![graph::StripReportPayload {
+                kind: "track",
+                id: "lead".to_string(),
+                device_ids: vec!["d-comp".to_string(), "d-limiter".to_string()],
+            }],
+            "the reply must report the strip's final chain with the unloaded \
+             instance's device gone and the others in their original order, \
+             got: {:?}",
+            unload_response.reports
+        );
+    }
+
+    /// An instance no strip holds releases no chain entry, so the reply
+    /// reports no strip.
+    #[test]
+    fn unloading_an_unbound_instance_reports_no_strip() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let unload_response = crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("inst-1".to_string())),
+            &NoWindowHost,
+            &state,
+        ))
+        .expect("the unbound instance unloads");
+
+        assert!(
+            unload_response.reports.is_empty(),
+            "an instance no strip holds must report no strip, got: {:?}",
+            unload_response.reports
+        );
+    }
+
+    /// A strip two cascade-unloaded instances share must appear once in the
+    /// reply, carrying its final chain — not once per instance that touched
+    /// it, each with an intermediate one.
+    #[test]
+    fn an_unkeyed_unload_reports_each_released_strip_once_with_its_final_chain() {
+        let state = AppState::default();
+        insert_engine_owned_fixture_with_id(&state, "inst-a", 301);
+        insert_engine_owned_fixture_with_id(&state, "inst-b", 302);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        bind_two_fixtures_to_a_strip(&state, &mut command_rx);
+
+        let cascade_response = crate::block_on_test(unload_plugin(None, &NoWindowHost, &state))
+            .expect("the cascade call itself does not fail");
+
+        assert_eq!(
+            cascade_response.reports,
+            vec![graph::StripReportPayload {
+                kind: "track",
+                id: "lead".to_string(),
+                device_ids: Vec::new(),
+            }],
+            "the strip both instances shared must appear exactly once, \
+             carrying its final (empty) chain, got: {:?}",
+            cascade_response.reports
+        );
+    }
+
+    /// The wire reply is a hand-maintained mirror on the TypeScript side;
+    /// pin its spellings the way `graph`'s own result payload pins its own.
+    #[test]
+    fn the_unload_reply_serializes_with_the_contract_spellings() {
+        let reply = serde_json::to_string(&PluginUnloadReply {
+            unloaded_instance_ids: vec!["inst-1".to_string()],
+            errors: vec!["inst-2: still mid-unload".to_string()],
+            reports: vec![graph::StripReportPayload {
+                kind: "track",
+                id: "lead".to_string(),
+                device_ids: vec!["d-comp".to_string()],
+            }],
+        })
+        .expect("the unload reply serializes");
+        assert_eq!(
+            reply,
+            concat!(
+                r#"{"unloadedInstanceIds":["inst-1"],"errors":["inst-2: still mid-unload"],"#,
+                r#""reports":[{"kind":"track","id":"lead","deviceIds":["d-comp"]}]}"#
+            )
         );
     }
 

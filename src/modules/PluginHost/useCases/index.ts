@@ -20,6 +20,9 @@ export { watchPluginStateDirty } from './pluginLifecycle/watchPluginStateDirty';
 // The edit shape stays private: a foreign module derives it from this callable,
 // which is the module contract, rather than from a type the use case owns.
 export { observeExternalPluginParameterEdits } from './pluginLifecycle/observeExternalPluginParameterEdits';
+// The report shape stays private too, for the same reason: a foreign module
+// derives it from the sink it registers.
+export { registerReleasedStripReportSink } from './pluginLifecycle/registerReleasedStripReportSink';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { refreshExternalPluginParameters } from './pluginLifecycle/refreshExternalPluginParameters';
 export { setPluginBypass } from './pluginLifecycle/setPluginBypass';

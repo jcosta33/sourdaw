@@ -52,6 +52,7 @@ import {
     configureOfflineYeastMidiProcessing,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    recordNativeChainReleases,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -133,7 +134,10 @@ import {
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
-import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
+import {
+    getExternalPluginContractVersionForCommand,
+    registerReleasedStripReportSink,
+} from '#/modules/PluginHost/useCases';
 import {
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
@@ -276,6 +280,10 @@ setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
 setToasterGrooveAssignmentExecutor({ execute: executeUserAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
+// An unload changes native strip state with no batch of its own to report it,
+// so PluginHost forwards the strips its own release touched here, the one
+// place that may cross from PluginHost's contract into AudioEngine's.
+registerReleasedStripReportSink(recordNativeChainReleases);
 setCommandEventBus(eventBus);
 setSetlistEventBus(eventBus);
 setVoiceToggleEventBus(eventBus);

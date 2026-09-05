@@ -30,6 +30,7 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 - **No leaked native handles**: Raw library handles, plugin pointers, and OS window handles stay behind the native desktop boundary; only serializable DTOs and instance IDs cross IPC.
 - **Faust synchronization**: Faust is wired in PluginHost and AudioEngine; updates to Faust DSP types or node interfaces must remain synchronized across both modules.
 - **External plugins are engine-hosted**: the native engine processes a hosted plugin inline on its own audio callback. No command carries per-block audio across the desktop IPC boundary, and the Web Audio graph holds a unity pass-through where such a device sits.
+- **Released strips report back through the sink**: an unload's own chain release changes native strip state with no batch of its own, so `unloadPlugin` forwards the strips it released to whatever `registerReleasedStripReportSink` wired up, and the composition root — never this module — decides who that is.
 
 ## Verification
 

@@ -766,6 +766,13 @@ impl Default for GraphRegistry {
     }
 }
 
+/// [`GraphRegistry::release_engine_plugin`]'s answer: the ops the release
+/// produced, and which strips they touched.
+pub(crate) struct EngineReleaseResult {
+    pub(crate) ops: Vec<GraphCommand>,
+    pub(crate) touched_strip_ids: Vec<String>,
+}
+
 impl GraphRegistry {
     /// Number a fence this process published outside [`map_batch`] — the
     /// transport maps install, which sends its own batch
@@ -925,7 +932,12 @@ impl GraphRegistry {
     /// is already in a chain, so one instance cannot be bound twice — and the
     /// ids are ordered so the ops a `HashMap` produced do not depend on its
     /// iteration order.
-    pub(crate) fn release_engine_plugin(&mut self, engine_plugin_id: usize) -> Vec<GraphCommand> {
+    ///
+    /// `touched_strip_ids` names every strip a released device left, in
+    /// first-touch order, for a caller building the strip reports an unload
+    /// owes the same way `map_batch` builds its own — from the registry as it
+    /// stands once the release actually commits.
+    pub(crate) fn release_engine_plugin(&mut self, engine_plugin_id: usize) -> EngineReleaseResult {
         let mut released: Vec<String> = self
             .devices
             .iter()
@@ -937,6 +949,7 @@ impl GraphRegistry {
         released.sort();
 
         let mut ops = Vec::new();
+        let mut touched_strip_ids: Vec<String> = Vec::new();
         for device_id in released {
             let Some(device) = self.devices.remove(&device_id) else {
                 continue;
@@ -946,8 +959,12 @@ impl GraphRegistry {
             };
             ops.push(remove_device_op(strip.kind, strip.native_id, &device));
             strip.device_ids.retain(|id| id != &device_id);
+            touch(&mut touched_strip_ids, &device.strip_id);
         }
-        ops
+        EngineReleaseResult {
+            ops,
+            touched_strip_ids,
+        }
     }
 
     /// Whether this registry still maps `device_id` onto an engine effect.
@@ -1592,6 +1609,33 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
     }
 }
 
+/// A final pass over `registry`, reporting what each named strip's chain
+/// really holds — never an echo of any one command's request. Shared by
+/// `map_batch`, for the strips a batch touched, and by an unload's own
+/// release, for the strips it touched outside any batch.
+pub(crate) fn strip_reports(
+    registry: &GraphRegistry,
+    strip_ids: &[String],
+) -> Vec<StripReportPayload> {
+    strip_ids
+        .iter()
+        .map(|strip_id| {
+            let entry = registry
+                .strips
+                .get(strip_id)
+                .expect("a touched strip exists in the registry");
+            StripReportPayload {
+                kind: match entry.kind {
+                    StripKind::Track => "track",
+                    StripKind::Bus => "bus",
+                },
+                id: strip_id.clone(),
+                device_ids: entry.device_ids.clone(),
+            }
+        })
+        .collect()
+}
+
 /// Map a whole batch. `registry` is the caller's working clone; on `Err`
 /// nothing built here may be applied and the clone is discarded — including
 /// the queue ledger, which is written back onto the clone only on success.
@@ -1665,23 +1709,7 @@ fn map_batch(
     // The reports are a final pass over the post-batch registry: what each
     // touched strip's chain really holds after everything applied, never an
     // echo of any one command's request.
-    let reports = touched
-        .iter()
-        .map(|strip_id| {
-            let entry = registry
-                .strips
-                .get(strip_id)
-                .expect("a touched strip exists in the registry");
-            StripReportPayload {
-                kind: match entry.kind {
-                    StripKind::Track => "track",
-                    StripKind::Bus => "bus",
-                },
-                id: strip_id.clone(),
-                device_ids: entry.device_ids.clone(),
-            }
-        })
-        .collect();
+    let reports = strip_reports(registry, &touched);
     Ok(MappedBatch { ops, reports })
 }
 
@@ -4452,13 +4480,18 @@ mod tests {
         let track_release = registry.release_engine_plugin(1_007);
         assert!(
             matches!(
-                track_release.as_slice(),
+                track_release.ops.as_slice(),
                 [GraphCommand::RemoveTrackDevice {
                     effect_id: 1_007,
                     ..
                 }]
             ),
             "a track chain entry is released, never retired"
+        );
+        assert_eq!(
+            track_release.touched_strip_ids,
+            vec!["lead".to_string()],
+            "the release must name the strip its chain entry left"
         );
         assert!(
             !registry.devices.contains_key("d-plugin"),
@@ -4473,7 +4506,7 @@ mod tests {
         let bus_release = registry.release_engine_plugin(1_009);
         assert!(
             matches!(
-                bus_release.as_slice(),
+                bus_release.ops.as_slice(),
                 [GraphCommand::RemoveBusDevice { bus_id, effect_id: 1_009 }] if *bus_id == bus_native_id
             ),
             "a bus chain entry is released through the bus op, on its own strip"
@@ -4485,7 +4518,7 @@ mod tests {
         );
 
         assert!(
-            registry.release_engine_plugin(1_007).is_empty(),
+            registry.release_engine_plugin(1_007).ops.is_empty(),
             "a second release for the same instance has nothing left to unlink"
         );
     }
