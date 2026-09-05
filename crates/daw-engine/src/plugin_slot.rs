@@ -98,38 +98,15 @@ pub trait NativePlugin: Any + Send {
         self.process_audio(left, right, num_samples);
     }
 
-    /// Process a block that arrived over an audio bridge — the only path
-    /// whose buffers carry real input audio from the app. Default delegates
-    /// to process_audio, so existing plugins keep exactly one behaviour;
-    /// plugins that consume their input (e.g. recording) override this to
-    /// run input-side work only for real bridge audio, never for the
-    /// standalone native chain (whose scratch carries no app input).
-    fn process_bridged_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
-        self.process_audio(left, right, num_samples);
-    }
-
-    /// Bridged counterpart of process_with_events (see process_bridged_audio).
-    fn process_bridged_with_events(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        num_samples: usize,
-        midi_events: &[MidiNoteEvent],
-        transport: &TransportState,
-    ) {
-        self.process_with_events(left, right, num_samples, midi_events, transport);
-    }
-
     /// Receive one chunk of the engine's native input tap — real audio from
     /// the input device, deinterleaved, delivered only to a plugin that
     /// registered for it.
     ///
-    /// Distinct from [`Self::process_bridged_audio`], which carries app-side
-    /// audio over a bridge: this is the device's own capture stream, and it is
-    /// an input rather than an in-place process, so nothing a plugin does here
-    /// reaches the output. A plugin that records overrides it; the default
-    /// ignores the block, so a plugin registered by mistake is inert rather
-    /// than wrong.
+    /// Distinct from [`Self::process_audio`], which renders the signal a chain
+    /// carries: this is the device's own capture stream, and it is an input
+    /// rather than an in-place process, so nothing a plugin does here reaches
+    /// the output. A plugin that records overrides it; the default ignores the
+    /// block, so a plugin registered by mistake is inert rather than wrong.
     fn process_capture_input(&mut self, _block: CaptureInputBlock<'_>) {}
 
     /// Queue one of this plugin's own parameters for its next process call.
@@ -142,11 +119,7 @@ pub trait NativePlugin: Any + Send {
     /// plugin's process path takes the access seam it shares with the control
     /// path and skips the block outright rather than waiting when the control
     /// path holds it, so a control operation landing on this block pushes the
-    /// drain to a later one. An effect driven by its audio bridge is always one
-    /// callback late whatever the seam does: `AudioThread::render` runs
-    /// `process_audio_bridges` — the only path that hands such an effect a
-    /// block — before the `process_block` this call happens inside, so the
-    /// write waits for the next callback's bridge pass.
+    /// drain to a later one.
     ///
     /// `true` means the write is queued. `false` refuses it, and the caller
     /// counts the refusal as an unmapped parameter call — the default, because

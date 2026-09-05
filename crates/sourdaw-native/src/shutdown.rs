@@ -428,8 +428,6 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: true,
                     chain_kind: DeviceKind::Effect,
-                    bridge: None,
-                    relay_scratch: crate::state::PluginRelayScratch::default(),
                     parameter_events: None,
                 },
             );

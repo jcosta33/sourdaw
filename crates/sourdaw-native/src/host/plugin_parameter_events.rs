@@ -468,8 +468,6 @@ mod tests {
                 parameters: Vec::new(),
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
-                bridge: None,
-                relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: Some(Arc::clone(&queue)),
             },
         );

@@ -9,8 +9,8 @@
 //! serde mirror of that contract's batch types (crates/sourdaw-native/AGENTS.md
 //! — no binding generator runs).
 //!
-//! This file is where the native chain stopped rendering only silence-plus-
-//! bridged-plugins: a batch applied here builds timeline tracks, clips, buses,
+//! This file is where the native chain stopped rendering only silence plus
+//! hosted plugins: a batch applied here builds timeline tracks, clips, buses,
 //! sends and device chains that `daw-engine` renders. Web Audio remains the
 //! live product path until the D3.c cutover; the commands stay denied in the
 //! shipped shell, and the offline render below is the parity oracle for that
@@ -568,22 +568,22 @@ pub struct GraphApplyResultPayload {
     ///
     /// The caller needs it because nothing else tells it a plugin it loaded into
     /// silence is now processing audio — its own load reported no engine plugin
-    /// id and no bridge round trip, and there is no later event.
+    /// id at all, and there is no later event.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
 }
 
 /// One instance an engine start took over, as the caller reads it.
 ///
-/// The engine's own plugin id is deliberately not here: it names a slot in the
-/// scheduler, and no caller outside this crate addresses one. The bridge round
-/// trip is the part the caller has to act on, because it is added to the
-/// plugin's own latency when compensating the device.
+/// The instance id is the whole payload. The engine's own plugin id is
+/// deliberately not here: it names a slot in the scheduler, and no caller
+/// outside this crate addresses one. A hosted plugin runs inline on the engine
+/// clock, so it adds no round trip of its own to the device's latency and the
+/// caller has nothing to compensate beyond the plugin's own declaration.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachedPluginPayload {
     pub instance_id: String,
-    pub bridge_round_trip_frames: u32,
 }
 
 impl GraphApplyResultPayload {
@@ -913,7 +913,7 @@ impl GraphRegistry {
     /// Released, never retired, exactly as [`remove_device_op`] decides for any
     /// engine-owned device: the instance's lifetime belongs to the load that
     /// registered it, and the retirement this release precedes is
-    /// `RemovePluginWithBridge`'s.
+    /// `RemovePlugin`'s.
     ///
     /// The mutation is unconditional and knows nothing about whether the ops
     /// it returns ever reach the ring, so a caller whose send may be refused
@@ -1534,7 +1534,7 @@ fn charge_chain_slot(registry: &GraphRegistry, device_id: &str) -> Result<(), St
 /// An engine-owned plugin is removed without being retired, because retiring it
 /// would free an instance the plugin panel, its editor and its parameter path
 /// are all still holding — `unload_plugin` owns that, through
-/// `RemovePluginWithBridge`. The window the retiring form exists to close is
+/// `RemovePlugin`. The window the retiring form exists to close is
 /// already shut for it from the other end: the engine homes a hosted plugin
 /// detached, so releasing one puts it nowhere rather than on the master mix.
 fn remove_device_op(kind: StripKind, native_id: usize, device: &DeviceEntry) -> GraphCommand {
@@ -2894,7 +2894,7 @@ pub async fn apply_graph_commands(
     // refuses to drain past until every command is visible — the engine
     // applies the batch whole or does not observe it at all. Only this
     // thread pushes onto the ring (the engine mutex is held).
-    // The attach below pushes one `AddPluginWithBridge` per instance it takes,
+    // The attach below pushes one `AddHostedPlugin` per instance it takes,
     // onto a ring this batch sizes to exactly itself and then fills, so the
     // batch leaves exactly that many slots free. The count and the limit are the
     // same number: an instance parked after the count is read is left dormant
@@ -2964,7 +2964,6 @@ pub async fn apply_graph_commands(
         .into_iter()
         .map(|attached| AttachedPluginPayload {
             instance_id: attached.instance_id,
-            bridge_round_trip_frames: attached.bridge_round_trip_frames,
         })
         .collect();
 
@@ -4404,7 +4403,7 @@ mod tests {
     /// The release an unload owes before it retires an instance: every chain
     /// entry naming that engine plugin leaves the graph, on a track and on a
     /// bus alike, and the op is the released form rather than the retiring one
-    /// — the retirement this precedes is `RemovePluginWithBridge`'s.
+    /// — the retirement this precedes is `RemovePlugin`'s.
     #[test]
     fn releasing_an_engine_plugin_unlinks_its_chain_entry_from_its_strip() {
         let mut registry = GraphRegistry::default();
@@ -5488,8 +5487,6 @@ mod tests {
                     parameters: Vec::new(),
                     has_gui: false,
                     chain_kind: DeviceKind::Effect,
-                    bridge: None,
-                    relay_scratch: crate::state::PluginRelayScratch::default(),
                     parameter_events,
                 },
             );
@@ -5539,9 +5536,10 @@ mod tests {
             .expect("an applied batch always carries the list");
         assert_eq!(attached.len(), 1, "got: {attached:?}");
         assert_eq!(attached[0]["instanceId"], "attached-on-first-play");
-        assert!(
-            attached[0]["bridgeRoundTripFrames"].is_u64(),
-            "the caller is told the bridge depth it has to compensate: {:?}",
+        assert_eq!(
+            attached[0].as_object().expect("an object").len(),
+            1,
+            "the instance id is the whole payload: {:?}",
             attached[0]
         );
     }
@@ -6557,7 +6555,6 @@ mod tests {
             }],
             vec![AttachedPluginPayload {
                 instance_id: "i1".to_string(),
-                bridge_round_trip_frames: 512,
             }],
         ))
         .expect("applied serializes");
@@ -6566,7 +6563,7 @@ mod tests {
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
                 r#""admittedBatch":5,"reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}],"#,
-                r#""attachedPlugins":[{"instanceId":"i1","bridgeRoundTripFrames":512}]}"#
+                r#""attachedPlugins":[{"instanceId":"i1"}]}"#
             )
         );
 

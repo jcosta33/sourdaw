@@ -35,7 +35,7 @@ pub(crate) const MAX_CALLBACK_FRAMES: usize = 4096;
 /// The period the engine asks a device for when the device lets it choose.
 /// 512 frames is the common professional default (Live, Logic, Reaper all ship
 /// a buffer of this order): low enough for playable monitoring latency, high
-/// enough that a bridged plugin chain is not woken more often than it can serve.
+/// enough that the graph is not woken more often than it can serve.
 /// One constant for every backend: the cpal buffer-size negotiation and the
 /// Windows shared-period negotiation must not drift apart on this number.
 pub(crate) const PREFERRED_BUFFER_FRAMES: u32 = 512;
@@ -234,9 +234,6 @@ pub(crate) struct SpawnedAudioThread {
     pub handle: AudioThreadHandle,
     /// The rate the stream actually opened at.
     pub sample_rate: f32,
-    /// What the render callback publishes the bridge's settled round trip
-    /// into.
-    pub bridge_round_trip_frames: Arc<AtomicUsize>,
     /// What the capture side published as its settled latency, or zero when
     /// no input stream was opened.
     pub input_latency_frames: Arc<AtomicUsize>,
@@ -270,8 +267,6 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
-    let bridge_round_trip_frames = new_bridge_round_trip_slot();
-    let bridge_round_trip_slot = Arc::clone(&bridge_round_trip_frames);
     let input_latency_frames = new_input_latency_slot();
     let input_latency_slot = Arc::clone(&input_latency_frames);
     let capture_refusal = new_capture_refusal_slot();
@@ -290,7 +285,6 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             capture_event_tx,
             force_default_buffer,
             &sample_rate_slot,
-            Arc::clone(&bridge_round_trip_slot),
             &input_latency_slot,
             &capture_refusal_slot,
         ) {
@@ -314,7 +308,6 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     Ok(SpawnedAudioThread {
         handle,
         sample_rate,
-        bridge_round_trip_frames,
         input_latency_frames,
         capture_refusal,
         retired_adoption_tx,
@@ -371,11 +364,8 @@ fn write_interleaved(
 /// to be paying for it.
 ///
 /// What it buys is bounded. A period above `MAX_CALLBACK_FRAMES` does not
-/// overrun anything: the callback chunks its fixed scratch, and the bridge
-/// clamps the frame count and counts the shortfall as
-/// `callback_frames_over_bridge_reach`. The failure is a counted throughput
-/// deficit for bridged plugins, not corruption — real, but not worth mutating a
-/// shared device setting to avoid where it cannot occur.
+/// overrun anything: the callback chunks its fixed scratch and renders the
+/// period in as many chunks as it takes.
 ///
 /// So the engine intervenes on exactly one shape of device: one whose advertised
 /// range reaches above the callback's limit *and* can be asked for something at
@@ -412,44 +402,6 @@ pub(crate) fn effective_buffer_size(
     }
 
     negotiated_buffer_size(supported)
-}
-
-/// Publish the bridge round trip this device period settles at.
-///
-/// The period is what decides how deep the round trip settles, and the host has
-/// to compensate that depth. Only the render callback sees the period, so it
-/// publishes the frames a control thread would otherwise have to guess. A
-/// relaxed store is the one wait-free, allocation-free publish this callback
-/// may do; nothing downstream orders anything against it.
-///
-/// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay with
-/// the native graph, and this publication goes with it.
-#[inline]
-fn publish_bridge_round_trip(slot: &AtomicUsize, callback_frames: usize) {
-    slot.store(
-        crate::audio_bridge::settled_round_trip_frames(callback_frames),
-        Ordering::Relaxed,
-    );
-}
-
-/// The slot the render callback publishes the round trip into, seeded with what
-/// the round trip is assumed to be until the first callback measures it.
-///
-/// A stream is built, and the `EngineHandle` that owns it is usable, before the
-/// device has called back even once — the driver's own start latency. A plugin
-/// loaded in that window reads this slot, and it reads it exactly once, so a
-/// zero here would compensate that instance at zero for as long as it lives:
-/// silently uncompensated bridged audio, which is the defect the slot exists to
-/// remove. The negotiated period is the engine's own request and very nearly
-/// always what the device grants, so seeding it means the first callback
-/// refines a close estimate rather than replacing a wrong answer.
-///
-/// Every construction of the slot goes through here so no call site can
-/// reintroduce that zero.
-pub(crate) fn new_bridge_round_trip_slot() -> Arc<AtomicUsize> {
-    Arc::new(AtomicUsize::new(
-        crate::audio_bridge::settled_round_trip_frames(PREFERRED_BUFFER_FRAMES as usize),
-    ))
 }
 
 /// The slot the capture ring publishes its settled latency into.
@@ -553,8 +505,8 @@ impl CaptureFeed {
 /// boundary that exists in exactly one place has to be drivable without a
 /// device to be provable at all. The callback the backend carries is
 /// [`Self::render`] and nothing else, so a test driving this drives the
-/// production path: same command drain, same bridge service, same timeline
-/// render, same device write.
+/// production path: same command drain, same timeline render, same device
+/// write.
 ///
 /// Runs on the audio thread: no heap allocation, no locks, no IPC — scratch is
 /// fixed-size and owned here, and every channel it publishes into is
@@ -563,8 +515,6 @@ pub(crate) struct DeviceRenderer {
     scheduler: AudioScheduler,
     left_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
     right_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
-    /// What the callback publishes the settled bridge round trip into.
-    bridge_round_trip_slot: Arc<AtomicUsize>,
     /// The one-slot handoff the capture side pushes its feed through. The
     /// renderer is already inside the output stream by then, so this is the
     /// only route to it that takes no lock.
@@ -578,16 +528,11 @@ pub(crate) struct DeviceRenderer {
 }
 
 impl DeviceRenderer {
-    pub(crate) fn new(
-        scheduler: AudioScheduler,
-        bridge_round_trip_slot: Arc<AtomicUsize>,
-        capture_rx: Consumer<CaptureFeed>,
-    ) -> Self {
+    pub(crate) fn new(scheduler: AudioScheduler, capture_rx: Consumer<CaptureFeed>) -> Self {
         Self {
             scheduler,
             left_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             right_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
-            bridge_round_trip_slot,
             capture_rx,
             capture_feed: None,
             capture_position_frames: 0,
@@ -654,22 +599,17 @@ impl DeviceRenderer {
         // this callback already owns: no atomic, no lock, no allocation.
         let shadowed = self.scheduler.monitor_shadowed();
 
-        // 2. Process ring-buffer audio bridges (production path)
-        // Reads input from worklets via main thread, processes through
-        // CLAP/VST3, writes output back for main thread to return.
-        // The device's frame count for this period is the budget:
-        // a bridge may spend it plus one quantum of catch-up, so a
-        // backlog never renders as one spike inside the deadline.
+        // The whole period this callback covers, taken before the chunk loop
+        // splits it: the meter's hold window is measured in frames the device
+        // consumed, not in the chunks the loop happened to render them in.
         let callback_frames = data.len() / channels;
-        publish_bridge_round_trip(&self.bridge_round_trip_slot, callback_frames);
-        self.scheduler.process_audio_bridges(callback_frames);
 
         // What the device is actually handed this callback. A shadowed block
         // writes zeros and so contributes nothing, which is what keeps the
         // meter a statement about the output rather than about the render.
         let mut callback_peak = 0.0f32;
 
-        // 3. Process the native effects chain (for standalone native rendering).
+        // 2. Process the native effects chain (for standalone native rendering).
         // Scratch is fixed-size and owned here, so no heap allocation occurs
         // per buffer.
         for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
@@ -954,7 +894,6 @@ fn build_audio_stream(
     capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
-    bridge_round_trip_slot: Arc<AtomicUsize>,
     input_latency_slot: &Arc<AtomicUsize>,
     capture_refusal_slot: &Arc<AtomicU8>,
 ) -> Result<OwnedDeviceStreams, String> {
@@ -988,7 +927,7 @@ fn build_audio_stream(
     // Built before the renderer, because the renderer takes the consumer with
     // it into the output stream and nothing can reach it afterwards.
     let (mut capture_feed_tx, capture_feed_rx) = RingBuffer::<CaptureFeed>::new(1);
-    let mut renderer = DeviceRenderer::new(scheduler, bridge_round_trip_slot, capture_feed_rx);
+    let mut renderer = DeviceRenderer::new(scheduler, capture_feed_rx);
     let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
         renderer.render(data, channels);
     });
@@ -1453,11 +1392,10 @@ mod capture_seam_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        new_bridge_round_trip_slot, publish_bridge_round_trip, spawn_owned_audio_stream,
-        spawn_owned_audio_stream_with_timeout, spawn_retirement_reclaimer, AudioThreadHandle,
-        StreamWithReclaimerShutdown, AUDIO_STREAM_SHUTDOWN_TIMEOUT,
+        spawn_owned_audio_stream, spawn_owned_audio_stream_with_timeout,
+        spawn_retirement_reclaimer, AudioThreadHandle, StreamWithReclaimerShutdown,
+        AUDIO_STREAM_SHUTDOWN_TIMEOUT,
     };
-    use crate::audio_bridge::settled_round_trip_frames;
     use cpal::{BufferSize, SupportedBufferSize};
     use rtrb::RingBuffer;
     use std::rc::Rc;
@@ -1483,43 +1421,6 @@ mod tests {
                 .send((self.created_on, thread::current().id()))
                 .expect("drop observation receiver should remain connected");
         }
-    }
-
-    /// The callback publishes the round trip its own period settles at, not a
-    /// constant and not the one the slot was seeded with. Nothing else on the
-    /// callback side is observable without a device, so this is where the
-    /// wiring between a device period and the number a host compensates is
-    /// pinned.
-    #[test]
-    fn the_callback_publishes_the_round_trip_its_own_period_settles_at() {
-        let slot = new_bridge_round_trip_slot();
-
-        publish_bridge_round_trip(&slot, 256);
-        assert_eq!(slot.load(Ordering::Relaxed), settled_round_trip_frames(256));
-
-        // A device that grants a different period than the engine asked for
-        // must move the published number, or every such device compensates
-        // against a period it never ran at.
-        publish_bridge_round_trip(&slot, 1024);
-        assert_eq!(
-            slot.load(Ordering::Relaxed),
-            settled_round_trip_frames(1024)
-        );
-    }
-
-    /// A stream is usable before its device has called back once. A plugin
-    /// loaded in that window reads this slot exactly once and keeps the answer
-    /// for as long as it lives, so a zero here is a permanently uncompensated
-    /// instance with nothing logged.
-    #[test]
-    fn a_slot_no_callback_has_touched_yet_reports_the_negotiated_period() {
-        let slot = new_bridge_round_trip_slot();
-
-        assert_eq!(
-            slot.load(Ordering::Relaxed),
-            settled_round_trip_frames(super::PREFERRED_BUFFER_FRAMES as usize)
-        );
-        assert_ne!(slot.load(Ordering::Relaxed), 0);
     }
 
     struct BlockingDropResource {
@@ -1884,7 +1785,7 @@ mod tests {
 /// their own and a feed handed over exactly as the capture side hands one over.
 #[cfg(test)]
 mod capture_render_tests {
-    use super::{new_bridge_round_trip_slot, CaptureFeed, DeviceRenderer, MAX_CALLBACK_FRAMES};
+    use super::{CaptureFeed, DeviceRenderer, MAX_CALLBACK_FRAMES};
     use crate::capture::{capture_ring, target_depth_frames, CaptureRingWriter, CaptureShape};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
@@ -1992,7 +1893,7 @@ mod capture_render_tests {
                 command_tx,
                 retired_rx,
                 feed_tx,
-                renderer: DeviceRenderer::new(scheduler, new_bridge_round_trip_slot(), feed_rx),
+                renderer: DeviceRenderer::new(scheduler, feed_rx),
                 diagnostics,
             }
         }
@@ -2317,7 +2218,7 @@ mod capture_render_tests {
 /// buffer of their own rather than a device.
 #[cfg(test)]
 mod device_output_tests {
-    use super::{new_bridge_round_trip_slot, DeviceRenderer};
+    use super::DeviceRenderer;
     use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
     use crate::plugin_slot::TransportState;
     use crate::scheduler::{
@@ -2382,11 +2283,7 @@ mod device_output_tests {
             Self {
                 command_tx,
                 retired_rx,
-                renderer: DeviceRenderer::new(
-                    scheduler,
-                    new_bridge_round_trip_slot(),
-                    capture_feed_rx,
-                ),
+                renderer: DeviceRenderer::new(scheduler, capture_feed_rx),
                 progress,
                 meter,
             }
@@ -2662,7 +2559,7 @@ mod device_output_tests {
 /// why this module is `#[cfg(all(test, debug_assertions))]`.
 #[cfg(all(test, debug_assertions))]
 mod compensation_render_alloc_guards {
-    use super::{new_bridge_round_trip_slot, DeviceRenderer};
+    use super::DeviceRenderer;
     use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
     use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
     use crate::plugin_slot::{NativePlugin, TransportState};
@@ -2713,11 +2610,7 @@ mod compensation_render_alloc_guards {
             Self {
                 command_tx,
                 retired_rx,
-                renderer: DeviceRenderer::new(
-                    scheduler,
-                    new_bridge_round_trip_slot(),
-                    capture_feed_rx,
-                ),
+                renderer: DeviceRenderer::new(scheduler, capture_feed_rx),
             }
         }
 

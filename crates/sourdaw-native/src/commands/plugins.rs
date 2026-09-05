@@ -10,7 +10,6 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
-use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
 use daw_engine::timeline::DeviceKind;
@@ -22,7 +21,6 @@ use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRunti
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering as AtomicOrdering;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -59,18 +57,6 @@ pub struct PluginInstance {
     /// announces a new one — over `plugin-tail-changed` rather than in this
     /// value, which is the reading at load and nothing later.
     pub tail_samples: u32,
-    /// Frames the worklet↔plugin audio bridge adds on top of the plugin's own
-    /// latency, at the engine rate this instance was activated with. Zero when
-    /// no engine took the instance — nothing crosses a bridge that does not
-    /// exist. The frontend adds it to `latency_ms` when compensating this
-    /// device.
-    ///
-    /// Reported once, at load, and never revised: a device or period change
-    /// mid-session leaves an already-loaded instance compensating the period it
-    /// was loaded under. No revision machinery is being built for it, because
-    /// jcosta33/sourdaw#2230 replaces the relay with the native graph and takes
-    /// this field, and the round trip it reports, with it.
-    pub bridge_round_trip_frames: u32,
     pub engine_plugin_id: Option<usize>,
 }
 
@@ -1119,9 +1105,9 @@ fn host_backend(format: &str) -> Result<HostBackend, String> {
 
 /// The rate the output device runs at by default.
 ///
-/// Not the activation rate, and no longer used as one: the audio a bridged
-/// plugin actually processes is rendered by the renderer's engine and relayed
-/// here, so the plugin has to run on *that* clock whatever the device prefers.
+/// Not the activation rate, and no longer used as one: a hosted plugin
+/// processes the audio the engine renders, on the engine's own clock, whatever
+/// the device prefers.
 /// This is kept only as the reference [`engine_rate_divergence_note`] compares
 /// against, so the two never diverge silently. Falling back to 48 kHz when no
 /// device answers keeps the comparison from failing on a machine with no output
@@ -1170,25 +1156,10 @@ fn engine_rate_divergence_note(engine_sample_rate: f64, device_sample_rate: f64)
     ))
 }
 
-/// Frames of bridge round trip to report for a load, given the engine that took
-/// it.
-///
-/// Only the render callback knows the device period the bridge's depth settles
-/// from, so the number comes from there. A load with no engine behind it
-/// reports none: the instance is in no graph, so no audio crosses the bridge.
-///
-/// Temporary, with the bridge: jcosta33/sourdaw#2230 replaces the relay with
-/// the native graph, and this goes with it.
-fn bridge_round_trip_frames(engine: Option<&daw_engine::EngineHandle>) -> u32 {
-    engine.map_or(0, |engine| {
-        u32::try_from(engine.bridge_round_trip_frames()).unwrap_or(u32::MAX)
-    })
-}
-
 /// Construct and activate one plugin. The only format-specific step in a load.
 ///
 /// Everything after it — the latency query, the notifier, the engine
-/// registration, the bridge, the instance record — is written against
+/// registration, the instance record — is written against
 /// `HostedRuntime` and does not know which format it is holding.
 fn create_hosted_runtime(
     backend: HostBackend,
@@ -1332,8 +1303,8 @@ async fn load_plugin_under_runtime_gate(
 
     // The session limit on engine-owned hosted instances comes before any
     // engine dependency and before the plugin library is even constructed:
-    // the effect table's hosted-plugin reserve and the bridge table — one
-    // bridge per instance — are sized to exactly this number, so a load past
+    // the effect table's hosted-plugin reserve is sized to exactly this
+    // number, so a load past
     // it must refuse here, where the error reaches the user rather than dying
     // as a counter on the callback. Checked against the instance map, which
     // counts the session's hosted instances whether or not a stream is
@@ -1436,12 +1407,8 @@ async fn load_plugin_under_runtime_gate(
         );
     }
 
-    // Send the plugin to the native audio thread for real-time processing
-    // and create an audio bridge for worklet ↔ Rust data transfer.
+    // Send the plugin to the native audio thread for real-time processing.
     //
-    // The bridge's round trip is read under this same lock, from the engine
-    // that is taking the instance: it is what the caller has to compensate on
-    // top of the plugin's own latency, and only the render callback knows it.
     // The engine lock is held for the registration and for nothing else. Both
     // of the other outcomes carry the runtime out of the block untouched,
     // because dropping one destroys the plugin: CLAP and VST3 both run
@@ -1479,13 +1446,10 @@ async fn load_plugin_under_runtime_gate(
         }
     };
 
-    let (engine_plugin_id, bridge_frames) = match outcome {
+    let engine_plugin_id = match outcome {
         EngineHandover::Registered(registration) => {
             install_host_request_wake(&instance_id.0, &registration.runtime);
-            (
-                Some(registration.engine_plugin_id),
-                registration.bridge_round_trip_frames,
-            )
+            Some(registration.engine_plugin_id)
         }
         EngineHandover::Refused(refusal) => {
             // The engine lock left scope with the block above; `refuse_load`
@@ -1525,7 +1489,7 @@ async fn load_plugin_under_runtime_gate(
                     chain_kind: entry.chain_kind,
                 },
             );
-            (None, bridge_round_trip_frames(None))
+            None
         }
     };
 
@@ -1538,7 +1502,6 @@ async fn load_plugin_under_runtime_gate(
         latency_samples,
         latency_ms,
         tail_samples,
-        bridge_round_trip_frames: bridge_frames,
         engine_plugin_id,
     };
 
@@ -1567,8 +1530,8 @@ fn ensure_plugin_instance_id_available(state: &AppState, instance_id: &str) -> R
 /// Nothing native enumerates hosted instances — the map is unbounded, keyed by
 /// instance id — so the ceiling is stated by the engine
 /// (`HOSTED_PLUGIN_RESERVE`) and enforced here, control-side, where the
-/// refusal reaches the user. The effect table's hosted-plugin reserve and the
-/// bridge table (one bridge per instance) are sized to exactly this number, so
+/// refusal reaches the user. The effect table's hosted-plugin reserve is sized
+/// to exactly this number, so
 /// a load past it must never reach the audio thread: its refusal is a counter
 /// the loader cannot read, and the plugin it refused would sit in the rack
 /// passing dry audio forever.
@@ -1599,9 +1562,8 @@ fn ensure_hosted_plugin_session_headroom(
 /// count this critical section sees, it also inserts against, so nothing
 /// slips past `HOSTED_PLUGIN_RESERVE` between its early check and its
 /// insert. A refusal here is clean: `load_plugin` reaches this section
-/// having reserved only a monotonic plugin id (never reused, safe to burn)
-/// and built bridge rings that drop with the return — no engine command has
-/// been pushed and no record exists.
+/// having reserved only a monotonic plugin id (never reused, safe to burn) —
+/// no engine command has been pushed and no record exists.
 ///
 /// Standing alone, engine-free, on purpose: reaching `load_plugin`'s engine
 /// section needs an activated plugin and a live engine handle, so this seam
@@ -1722,7 +1684,6 @@ fn take_teardown_events() -> Vec<TeardownEvent> {
 /// What the engine took, for the caller to report.
 struct EngineRegistration {
     engine_plugin_id: usize,
-    bridge_round_trip_frames: u32,
     /// The owner the audio thread now reads through, handed back so the caller
     /// can install the host-request wake once the engine lock is gone — see
     /// [`install_host_request_wake`].
@@ -1769,7 +1730,7 @@ impl RegistrationRefusal {
     ///
     /// The engine holds nothing on either of these paths: the record insert
     /// refuses before any command is pushed and drops the record it was handed,
-    /// and a refused `add_plugin_with_bridge` drops the slot with the command it
+    /// and a refused `add_hosted_plugin` drops the slot with the command it
     /// could not push. So the owner is sole-held by the time this runs, and the
     /// instance is recoverable rather than spent — the alternative is a device
     /// the renderer still shows whose native instance is gone.
@@ -1792,8 +1753,8 @@ impl RegistrationRefusal {
     }
 }
 
-/// Hand one runtime to a running engine: reserve its id, build its bridge,
-/// record the instance, and register the slot.
+/// Hand one runtime to a running engine: reserve its id, record the instance,
+/// and register the slot.
 ///
 /// The one copy of that sequence. A load reaches it with a runtime it has just
 /// built ([`load_plugin_under_runtime_gate`]); the engine's first graph batch
@@ -1844,7 +1805,6 @@ fn register_runtime_with_engine(
     }
 
     let id = engine.reserve_plugin_id();
-    let (bridge, bridge_handle) = create_audio_bridge(id);
 
     // Take the parameter-event queue before the runtime is handed to the audio
     // thread. Held on the record so the drain reaches it without the control
@@ -1861,8 +1821,8 @@ fn register_runtime_with_engine(
 
     // The record insert re-decides the session ceiling inside its own critical
     // section — see `insert_engine_plugin_record`. A refusal there leaves
-    // nothing behind: the id above is a burned monotonic counter, the rings
-    // drop with the return, and no engine command has been pushed yet. The
+    // nothing behind: the id above is a burned monotonic counter, and no engine
+    // command has been pushed yet. The
     // record it could not insert is dropped inside, which is what leaves the
     // owner sole-held for the recovery below.
     if let Err(reason) = insert_engine_plugin_record(
@@ -1875,8 +1835,6 @@ fn register_runtime_with_engine(
             parameters: parameters.to_vec(),
             has_gui,
             chain_kind,
-            bridge: Some(bridge_handle),
-            relay_scratch: crate::state::PluginRelayScratch::default(),
             parameter_events,
         },
     ) {
@@ -1887,10 +1845,9 @@ fn register_runtime_with_engine(
     // the slot it was handed, and with it the last reference, so an owner given
     // away here would take the runtime down with a refusal the caller was about
     // to recover from.
-    if let Err(error) = engine.add_plugin_with_bridge(
+    if let Err(error) = engine.add_hosted_plugin(
         id,
         Box::new(HostedPluginSlot::new(Arc::clone(&shared_plugin))),
-        bridge,
     ) {
         // The engine refused the registration (a full effect table, or the
         // ring): unwind the record under a fresh acquisition, same order as
@@ -1923,7 +1880,6 @@ fn register_runtime_with_engine(
 
     Ok(EngineRegistration {
         engine_plugin_id: id,
-        bridge_round_trip_frames: bridge_round_trip_frames(Some(engine)),
         runtime: shared_plugin,
     })
 }
@@ -1979,7 +1935,6 @@ fn install_host_request_wake(instance_id: &str, runtime: &SharedHostedPlugin) {
 pub struct AttachedPlugin {
     pub instance_id: String,
     pub engine_plugin_id: usize,
-    pub bridge_round_trip_frames: u32,
 }
 
 /// Register the instances that were loaded while no engine was running, up to
@@ -1987,10 +1942,9 @@ pub struct AttachedPlugin {
 ///
 /// The engine starts lazily, on the first graph batch, so a plugin loaded
 /// before the first Play is parked in `state.plugins` with no engine plugin id.
-/// Nothing used to move it out again: it stayed dormant for the rest of the
-/// session, and the relay answered every block for it with "No engine plugin
-/// for instance". This is what moves it, called by `apply_graph_commands` right
-/// after the crumbs slot it mirrors.
+/// Nothing used to move it out again: it stayed dormant, rendering nothing, for
+/// the rest of the session. This is what moves it, called by
+/// `apply_graph_commands` right after the crumbs slot it mirrors.
 ///
 /// Each attach pushes one command onto the ring the caller's batch just filled,
 /// so the caller reserves that many slots before sending it and passes the same
@@ -2125,7 +2079,6 @@ fn attach_one_dormant_plugin(
             Ok(Some(AttachedPlugin {
                 instance_id: instance_id.to_string(),
                 engine_plugin_id: registration.engine_plugin_id,
-                bridge_round_trip_frames: registration.bridge_round_trip_frames,
             }))
         }
         Err(refusal) => {
@@ -2280,7 +2233,7 @@ fn release_then_retire_engine_plugin(
     let mut working = registry.clone();
     let released = working.release_engine_plugin(engine_plugin_id);
     if !released.is_empty() {
-        // The reserved slot is the `RemovePluginWithBridge` push below: the
+        // The reserved slot is the `RemovePlugin` push below: the
         // retirement must not find the ring full behind the release.
         match engine.send_graph_batch_with_headroom(released, 1) {
             Ok(()) => {
@@ -2389,10 +2342,6 @@ async fn unload_plugin_runtime(
         }
         runtime.retire();
 
-        // The instance record owned this instance's bridge handle, so removing
-        // it above already dropped the ring. Nothing keyed by engine_plugin_id
-        // is left to clean up.
-        //
         // This runtime is not a sweep candidate yet even once the caller's
         // guard is gone: `runtime` is still a live reference here and the
         // scheduler removal was only queued, so the caller's sweep frees the
@@ -2448,9 +2397,8 @@ pub async fn set_plugin_parameter(
 
     // Resolve the runtime under the map lock and release it before the write.
     // `enqueue_parameter` blocks unbounded on the instance's non-RT control
-    // lock, and the worklet relay (`process_plugin_audio`) takes this same map
-    // lock once per render quantum — holding it across the write parks the
-    // relay, and the audio it carries, for as long as control is held.
+    // lock, so holding the map lock across the write parks every other reader of
+    // this map for as long as control is held.
     let runtime = {
         let engine_plugins = state
             .engine_plugins
@@ -2604,9 +2552,8 @@ fn write_plugin_state_chunk(
 
     // Resolve the runtime under the map lock and release it before the restore.
     // `set_state_invalidating_pending_parameters` waits up to 2 s for control
-    // access and then runs the plugin's own `set_state`; the worklet relay
-    // (`process_plugin_audio`) takes this same map lock once per render quantum,
-    // so holding it across that work parks the relay for seconds.
+    // access and then runs the plugin's own `set_state`, so holding the map lock
+    // across that work parks every other reader of this map for seconds.
     let runtime = {
         let engine_plugins = state
             .engine_plugins
@@ -2727,9 +2674,8 @@ fn engine_plugin_id_for_instance(instance_id: &str, state: &AppState) -> Result<
 
 /// Bypass or un-bypass a natively hosted plugin on the audio thread.
 ///
-/// Keyed by `instance_id` for the same reason as `process_plugin_audio`: the
-/// engine plugin id is reserved inside the audio engine and the frontend has no
-/// reliable way to learn it.
+/// Keyed by `instance_id`: the engine plugin id is reserved inside the audio
+/// engine and the frontend has no reliable way to learn it.
 ///
 /// Bypass is not unloading. The instance, its parameters and its editor stay
 /// exactly as they were — the professional convention — and only its processing
@@ -2748,126 +2694,6 @@ pub async fn set_plugin_bypass(
     let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
 
     engine.set_bypass(engine_plugin_id, bypassed)
-}
-
-/// Process an audio block through a native plugin via the ring-buffer bridge.
-/// Called from the main thread (relayed from the AudioWorklet via MessagePort).
-///
-/// Takes interleaved stereo audio as raw bytes (IEEE 754 little-endian f32,
-/// L0,R0,L1,R1,...). Returns processed audio as raw bytes in the same format.
-/// Uses the lock-free ring buffer — no mutex on the audio thread.
-///
-/// Keyed by `instance_id`, not by the engine plugin id. The engine id is
-/// reserved inside the audio engine and is meaningless to the frontend: the
-/// frontend has no reliable way to learn it, and a placeholder value resolves
-/// no bridge at all, which degrades to an unprocessed dry signal rather than to
-/// a visible error. The instance id is the identifier both sides already agree
-/// on, so the engine id is resolved here, where it is actually known.
-///
-/// Runs once per render quantum per bridged plugin — ~2.7 ms apart at 48 kHz —
-/// so it takes exactly one lock and performs exactly one lookup: the instance
-/// record owns its ring and its de-interleave scratch, and both come back
-/// together. Two sequential mutex takes on this path were two chances per block
-/// to wait behind an unrelated control command.
-///
-/// The de-interleave scratch is preallocated on the instance, so this path
-/// performs no heap allocation except the IPC return value: the processed block
-/// is handed to the IPC layer by value, so its buffer cannot be pooled here.
-/// `push_input` still stack-constructs a zeroed `AudioBlock` per call before
-/// copying into it — that is a stack cost inside the bridge, not an allocation
-/// this command can pool away.
-pub async fn process_plugin_audio(
-    instance_id: String,
-    mut audio_bytes: Vec<u8>,
-    state: &AppState,
-) -> Result<Vec<u8>, String> {
-    let mut engine_plugins = state
-        .engine_plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    let instance = engine_plugins
-        .get_mut(&instance_id)
-        .ok_or_else(|| format!("No engine plugin for instance {}", instance_id))?;
-    let engine_plugin_id = instance.engine_plugin_id;
-    let relay_scratch = &mut instance.relay_scratch;
-    let bridge = instance
-        .bridge
-        .as_mut()
-        .ok_or_else(|| format!("No audio bridge for plugin {}", engine_plugin_id))?;
-
-    // Interleaved stereo f32: two samples, four bytes each, per frame.
-    const BYTES_PER_FRAME: usize = 2 * std::mem::size_of::<f32>();
-    let frames = audio_bytes.len() / BYTES_PER_FRAME;
-
-    // Push input to the audio thread. A refusal means the input ring was full,
-    // so this block never reaches the plugin and its output is a hole in the
-    // processed stream. It cannot fail the command: the caller is the worklet relay,
-    // an error there costs the output block that IS ready below, and the very
-    // condition being reported is the engine already running behind. So it is
-    // counted where `engine_rt_diagnostics` can see it, alongside the engine's
-    // own output-side and backlog counters.
-    //
-    // A block past the bridge's capacity is refused by `push_input` itself, so
-    // it is refused here without de-interleaving it — the scratch stays sized
-    // to what the bridge accepts and never has to grow.
-    let block_accepted = if frames > MAX_BLOCK_FRAMES {
-        false
-    } else {
-        relay_scratch.left.clear();
-        relay_scratch.right.clear();
-        for frame in audio_bytes.chunks_exact(BYTES_PER_FRAME) {
-            relay_scratch
-                .left
-                .push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-            relay_scratch
-                .right
-                .push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-        }
-        bridge.push_input(&relay_scratch.left, &relay_scratch.right)
-    };
-
-    if !block_accepted {
-        state
-            .bridge_input_blocks_refused
-            .fetch_add(1, AtomicOrdering::Relaxed);
-    }
-
-    // Try to pop processed output
-    // This may be from the previous block with one block of latency.
-    if let Some(output) = bridge.pop_output() {
-        // Re-interleave and encode as raw bytes. The block reports its own
-        // frame count, so a quantum other than 128 round-trips whole instead of
-        // being silently clipped to the first 128 frames.
-        let n = output.frames;
-        let mut result = Vec::with_capacity(n * BYTES_PER_FRAME);
-        for i in 0..n {
-            result.extend_from_slice(&output.left[i].to_le_bytes());
-            result.extend_from_slice(&output.right[i].to_le_bytes());
-        }
-        Ok(result)
-    } else {
-        // Nothing came back this quantum: the ring is still priming on the first
-        // block, or the engine fell behind and has none ready.
-        //
-        // Silence, not the dry input. Passing dry makes an under-run audible as
-        // the unprocessed source — a chain the user is hearing as a filter or a
-        // distortion briefly plays the raw signal at full level, and a bridged
-        // instrument plays whatever the worklet happened to send it. That is
-        // both louder and less honest than a gap, and
-        // `.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md`
-        // records under-run output as zero independently of the failure policy
-        // it decides.
-        //
-        // No ramp: an f32 sample is four zero bytes, and a quantum this command
-        // never processed has no ramp state to carry — the ramped hand-over
-        // belongs to the failure path that knows a plugin stopped.
-        //
-        // Zeroed in place rather than allocated: the input block is owned here
-        // and already the right length, and this path runs once per quantum per
-        // bridged plugin.
-        audio_bytes.fill(0);
-        Ok(audio_bytes)
-    }
 }
 
 #[cfg(test)]
@@ -2956,15 +2782,6 @@ mod tests {
     }
 
     fn insert_engine_owned_fixture(state: &AppState, instance_id: &str, state_bytes: Vec<u8>) {
-        insert_engine_owned_fixture_with_bridge(state, instance_id, state_bytes, None);
-    }
-
-    fn insert_engine_owned_fixture_with_bridge(
-        state: &AppState,
-        instance_id: &str,
-        state_bytes: Vec<u8>,
-        bridge: Option<daw_engine::audio_bridge::PluginAudioBridgeHandle>,
-    ) {
         let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
             "Engine Owned Fixture",
             state_bytes,
@@ -2986,8 +2803,6 @@ mod tests {
                 parameters,
                 has_gui: true,
                 chain_kind: DeviceKind::Effect,
-                bridge,
-                relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,
             },
         );
@@ -3040,9 +2855,9 @@ mod tests {
         assert_eq!(refusal, Err("Native engine not running".to_string()));
     }
 
-    /// `process_plugin_audio` and `set_plugin_bypass` must address the same
-    /// plugin for the same instance id: a bypass that resolved differently from
-    /// the audio path would mute a plugin the app is still feeding.
+    /// Every command keyed by instance id must resolve the same engine plugin:
+    /// a bypass that resolved differently from a parameter write would mute a
+    /// plugin the user is still editing.
     #[test]
     fn every_command_resolves_one_instance_to_the_same_engine_plugin_id() {
         let state = AppState::default();
@@ -3063,282 +2878,6 @@ mod tests {
             "sourdaw-{test_name}-{}-{unique_suffix}",
             std::process::id()
         ))
-    }
-
-    /// Regression (F14): `push_input` reports a refusal and the result used to
-    /// be discarded, so a block the plugin never saw looked exactly like one it
-    /// processed. Refusals must reach the diagnostics surface.
-    #[test]
-    fn a_refused_input_block_is_counted_while_an_accepted_one_is_not() {
-        let state = AppState::default();
-        // Hold the RT side alive so the ring refuses only because it is full,
-        // not because its consumer went away.
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-input-refusal",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        let block_bytes = vec![0u8; 128 * 2 * 4];
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-input-refusal".to_string(),
-            block_bytes.clone(),
-            &state,
-        ))
-        .expect("a block with room in the ring should be accepted");
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            0,
-            "an accepted block must not be counted as refused"
-        );
-
-        {
-            let mut engine_plugins = state
-                .engine_plugins
-                .lock()
-                .expect("engine_plugins lock should be available");
-            let bridge = engine_plugins
-                .get_mut("instance-input-refusal")
-                .and_then(|instance| instance.bridge.as_mut())
-                .expect("bridge should be registered");
-            let left = [0.0_f32; 128];
-            while bridge.push_input(&left, &left) {}
-        }
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-input-refusal".to_string(),
-            block_bytes.clone(),
-            &state,
-        ))
-        .expect("a refused input block must not fail the round trip");
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            1,
-            "a block the plugin never received must be counted"
-        );
-
-        // The ring is still full, so this one is refused too. The counter is
-        // cumulative since engine start: a store rather than an add would read
-        // 1 here and make a stream refusing every period look like one hiccup.
-        crate::block_on_test(process_plugin_audio(
-            "instance-input-refusal".to_string(),
-            block_bytes,
-            &state,
-        ))
-        .expect("a refused input block must not fail the round trip");
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            2,
-            "every refused block must add to the count, not overwrite it"
-        );
-    }
-
-    /// One quantum of interleaved stereo at full scale, so a block that came
-    /// back unchanged is unmistakable from one the host zeroed.
-    fn loud_block(frames: usize) -> Vec<u8> {
-        let mut block = Vec::with_capacity(frames * 2 * 4);
-        for _ in 0..frames * 2 {
-            block.extend_from_slice(&1.0_f32.to_le_bytes());
-        }
-        block
-    }
-
-    /// Nothing is processed on the first block — and nothing is processed for as
-    /// long as the engine is behind. Handing the dry input back makes an
-    /// under-run audible as the unprocessed source at full level, which ADR 0021
-    /// records as wrong independently of the failure policy it decides.
-    #[test]
-    fn an_underrun_answers_silence_rather_than_the_dry_input() {
-        let state = AppState::default();
-        // The RT side stays alive and never processes, so `pop_output` has
-        // nothing for the whole test — exactly the under-run this covers.
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-underrun",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        let block = loud_block(128);
-        let answer = crate::block_on_test(process_plugin_audio(
-            "instance-underrun".to_string(),
-            block.clone(),
-            &state,
-        ))
-        .expect("an under-run must not fail the round trip");
-
-        assert_eq!(
-            answer.len(),
-            block.len(),
-            "the quantum the caller asked for must come back whole"
-        );
-        assert_eq!(
-            answer,
-            vec![0u8; block.len()],
-            "an under-run must answer silence, not the signal the plugin never processed"
-        );
-    }
-
-    /// The relay ran once per render quantum and allocated its de-interleave
-    /// buffers every time. They are preallocated on the instance now: the same
-    /// storage must serve consecutive blocks, including blocks of different
-    /// lengths, without moving.
-    ///
-    /// Both channels are checked: the relay fills two independent `Vec`s, so a
-    /// regression that reallocated only the right one would pass a left-only
-    /// assertion. What this cannot see is an added *clone* of the scratch — the
-    /// address it reads is the instance's own buffer either way — so the
-    /// no-copy property is carried by the code, not by this test.
-    #[test]
-    fn the_relay_refills_one_preallocated_scratch_buffer_across_blocks() {
-        let state = AppState::default();
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-scratch",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        // Both channels, every time: pointer, capacity and length.
-        type ScratchShape = ((*const f32, usize, usize), (*const f32, usize, usize));
-        let scratch_shape = || -> ScratchShape {
-            let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-            let instance = engine_plugins
-                .get("instance-scratch")
-                .expect("fixture should exist");
-            (
-                (
-                    instance.relay_scratch.left.as_ptr(),
-                    instance.relay_scratch.left.capacity(),
-                    instance.relay_scratch.left.len(),
-                ),
-                (
-                    instance.relay_scratch.right.as_ptr(),
-                    instance.relay_scratch.right.capacity(),
-                    instance.relay_scratch.right.len(),
-                ),
-            )
-        };
-
-        let ((left_before, left_capacity_before, _), (right_before, right_capacity_before, _)) =
-            scratch_shape();
-        assert_eq!(
-            (left_capacity_before, right_capacity_before),
-            (MAX_BLOCK_FRAMES, MAX_BLOCK_FRAMES),
-            "both scratch channels must be sized once to the largest block the bridge accepts"
-        );
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-scratch".to_string(),
-            vec![0u8; 128 * 2 * 4],
-            &state,
-        ))
-        .expect("a 128-frame block should round-trip");
-        let (
-            (left_after_short, left_capacity_after_short, left_frames_after_short),
-            (right_after_short, right_capacity_after_short, right_frames_after_short),
-        ) = scratch_shape();
-        assert_eq!(
-            (left_frames_after_short, right_frames_after_short),
-            (128, 128),
-            "the block must be de-interleaved into the instance's own scratch, both channels"
-        );
-
-        crate::block_on_test(process_plugin_audio(
-            "instance-scratch".to_string(),
-            vec![0u8; 256 * 2 * 4],
-            &state,
-        ))
-        .expect("a 256-frame block should round-trip");
-        let (
-            (left_after_long, left_capacity_after_long, left_frames_after_long),
-            (right_after_long, right_capacity_after_long, right_frames_after_long),
-        ) = scratch_shape();
-
-        assert_eq!(
-            (left_frames_after_long, right_frames_after_long),
-            (256, 256)
-        );
-        assert_eq!(
-            (
-                left_before,
-                left_capacity_before,
-                right_before,
-                right_capacity_before
-            ),
-            (
-                left_after_short,
-                left_capacity_after_short,
-                right_after_short,
-                right_capacity_after_short
-            ),
-            "the relay must reuse both buffers, not allocate new ones per block"
-        );
-        assert_eq!(
-            (
-                left_before,
-                left_capacity_before,
-                right_before,
-                right_capacity_before
-            ),
-            (
-                left_after_long,
-                left_capacity_after_long,
-                right_after_long,
-                right_capacity_after_long
-            ),
-            "a longer block must fit the preallocated capacity without moving either channel"
-        );
-    }
-
-    /// A block past the bridge's capacity is refused, and refusing it must not
-    /// be the thing that grows the preallocated scratch.
-    #[test]
-    fn an_oversized_block_is_refused_without_resizing_the_relay_scratch() {
-        let state = AppState::default();
-        let (_bridge, bridge_handle) = create_audio_bridge(17);
-        insert_engine_owned_fixture_with_bridge(
-            &state,
-            "instance-oversized",
-            Vec::new(),
-            Some(bridge_handle),
-        );
-
-        let oversized = vec![0u8; (MAX_BLOCK_FRAMES + 1) * 2 * 4];
-        crate::block_on_test(process_plugin_audio(
-            "instance-oversized".to_string(),
-            oversized,
-            &state,
-        ))
-        .expect("an oversized block must not fail the round trip");
-
-        assert_eq!(
-            state
-                .bridge_input_blocks_refused
-                .load(AtomicOrdering::Relaxed),
-            1,
-            "a block the plugin never received must be counted"
-        );
-        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-        let instance = engine_plugins
-            .get("instance-oversized")
-            .expect("fixture should exist");
-        assert_eq!(
-            instance.relay_scratch.left.capacity(),
-            MAX_BLOCK_FRAMES,
-            "an oversized block must not grow the scratch past what the bridge accepts"
-        );
     }
 
     /// The cache only ever recorded writes this host made, so a knob turned in
@@ -3434,8 +2973,6 @@ mod tests {
             parameters,
             has_gui: true,
             chain_kind: DeviceKind::Effect,
-            bridge: None,
-            relay_scratch: crate::state::PluginRelayScratch::default(),
             parameter_events: None,
         }
     }
@@ -3494,11 +3031,11 @@ mod tests {
         parameters.iter().map(|parameter| parameter.value).collect()
     }
 
-    /// The relay (`process_plugin_audio`) takes the `engine_plugins` map lock
-    /// once per render quantum. `set_plugin_parameter` used to hold that same
-    /// lock across `enqueue_parameter`, which blocks unbounded on the instance's
-    /// non-RT control lock — so a plugin holding control parked the audio relay
-    /// with it. The map must be free while the control write is in flight.
+    /// `set_plugin_parameter` used to hold the `engine_plugins` map lock across
+    /// `enqueue_parameter`, which blocks unbounded on the instance's non-RT
+    /// control lock — so a plugin holding control parked every other reader of
+    /// that map with it. The map must be free while the control write is in
+    /// flight.
     ///
     /// And once it is free, an unload+reload can land in that window: the value
     /// went to the runtime that is gone, so it must not be written onto the
@@ -3924,7 +3461,7 @@ mod tests {
 
     /// The session-limit predicate itself, at the ceiling, in the wording
     /// that names it: past the limit the effect table's hosted-plugin reserve
-    /// and the bridge table have no slot left, and the audio thread's own
+    /// has no slot left, and the audio thread's own
     /// refusal is a counter nothing propagates — the plugin would load, open
     /// its editor, and pass dry audio forever. The predicate is only part of
     /// the guarantee: the load path's early call is pinned by
@@ -3995,8 +3532,6 @@ mod tests {
                 parameters: Vec::new(),
                 has_gui: false,
                 chain_kind: DeviceKind::Effect,
-                bridge: None,
-                relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,
             }
         }
@@ -4763,7 +4298,7 @@ mod tests {
     /// already let go of — not one it is still torn down while holding.
     ///
     /// Fixture A is loaded, then unloaded: its runtime lands in
-    /// `retired_engine_plugins`, still held by the `AddPluginWithBridge`
+    /// `retired_engine_plugins`, still held by the `AddHostedPlugin`
     /// command this command-capture engine never drained, exactly as a real
     /// scheduler holds it between a queued removal and the audio thread
     /// dropping the slot. Draining the ring is this test's stand-in for that
@@ -4818,7 +4353,7 @@ mod tests {
         );
 
         // The scheduler's own acknowledgment: draining the ring drops the
-        // `AddPluginWithBridge` slot that load pushed, which is the only
+        // `AddHostedPlugin` slot that load pushed, which is the only
         // other owner of A's runtime once the maps have forgotten it.
         while command_rx.pop().is_ok() {}
 
@@ -4900,7 +4435,7 @@ mod tests {
         ))
         .expect("fixture A unloads");
 
-        // A is still held by the queued `AddPluginWithBridge` its own load
+        // A is still held by the queued `AddHostedPlugin` its own load
         // pushed, so it is not reclaimable yet: C's load, next, sweeps a
         // retirement vec it cannot free anything from.
         crate::block_on_test(load_plugin_with_backend(
@@ -4998,7 +4533,7 @@ mod tests {
         ))
         .expect("fixture A unloads");
 
-        // A is still held by the queued `AddPluginWithBridge` its own load
+        // A is still held by the queued `AddHostedPlugin` its own load
         // pushed, so it is not reclaimable yet: D's load, next, sweeps a
         // retirement vec it cannot free anything from.
         crate::block_on_test(load_plugin_with_backend(
@@ -5189,26 +4724,6 @@ mod tests {
     #[test]
     fn an_engine_rate_matching_the_device_reports_no_divergence() {
         assert_eq!(engine_rate_divergence_note(48_000.0, 48_000.0), None);
-    }
-
-    /// The bridge round trip a load reports is the engine's own measurement,
-    /// and a load with no engine reports none: there is no bridge to cross, so
-    /// compensating for one would push the track late by a latency it does not
-    /// have.
-    #[test]
-    fn the_reported_bridge_round_trip_comes_from_the_engine_and_is_none_without_one() {
-        let (engine, _command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(8);
-
-        assert_eq!(bridge_round_trip_frames(None), 0);
-        assert_eq!(
-            bridge_round_trip_frames(Some(&engine)),
-            u32::try_from(engine.bridge_round_trip_frames()).expect("a plausible frame count")
-        );
-        assert!(
-            bridge_round_trip_frames(Some(&engine)) > 0,
-            "a running engine's bridge has a depth to compensate"
-        );
     }
 
     /// Wiring: the ceiling the predicate states is the one the load path
@@ -7450,9 +6965,7 @@ mod tests {
                 daw_engine::scheduler::GraphCommand::RemoveTrackDevice { .. } => {
                     order.push("release")
                 }
-                daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(_) => {
-                    order.push("retire")
-                }
+                daw_engine::scheduler::GraphCommand::RemovePlugin(_) => order.push("retire"),
                 _ => {}
             }
         }

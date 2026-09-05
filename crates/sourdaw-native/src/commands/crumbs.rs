@@ -608,7 +608,7 @@ pub async fn create_crumbs(
     // The map is also the ownership ledger for each runtime. Reject an
     // existing id before allocating rings or registering anything engine-side;
     // otherwise the insert below replaces the first ledger entry and strands
-    // its slot and bridge.
+    // its slot.
     if instances.contains_key(&instance_id) {
         return Err(format!("Crumbs instance '{instance_id}' already exists"));
     }
@@ -1457,7 +1457,7 @@ mod tests {
         crate::block_on_test(destroy_crumbs(instance_id.to_string(), &state, &app_state))
             .expect("the original runtime must remain destroyable after the refusal");
         let removed_engine_plugin_id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
+            Ok(daw_engine::scheduler::GraphCommand::RemovePlugin(id)) => id,
             Ok(_) => panic!("destroy must queue the plugin removal command"),
             Err(_) => panic!("destroy must queue one engine removal command"),
         };
@@ -1524,7 +1524,7 @@ mod tests {
             .expect("destroy should succeed after scheduler capacity is drained");
 
         let removed_engine_plugin_id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
+            Ok(daw_engine::scheduler::GraphCommand::RemovePlugin(id)) => id,
             Ok(_) => panic!("retry must queue the plugin removal command"),
             Err(_) => panic!("retry must queue one engine removal command"),
         };
