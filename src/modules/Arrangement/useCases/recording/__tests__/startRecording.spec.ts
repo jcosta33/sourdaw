@@ -199,4 +199,25 @@ describe('startRecording', () => {
         expect(startRecording()).toHaveLength(0);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
+
+    it('labels the first take on each lane "Take 1" when two tracks record in one session', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', armed: true, kind: 'audio', clips: [] },
+                { id: 't2', armed: true, kind: 'audio', clips: [] },
+            ],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+
+        const newClips = startRecording();
+
+        expect(newClips).toHaveLength(2);
+        const [firstClip, secondClip] = newClips;
+        if (!firstClip || !secondClip) {
+            throw new Error('expected two recorded clips');
+        }
+        expect(mocks.addTake).toHaveBeenCalledWith('t1', firstClip.id, 'Take 1', 4, 4);
+        expect(mocks.addTake).toHaveBeenCalledWith('t2', secondClip.id, 'Take 1', 4, 4);
+    });
 });
