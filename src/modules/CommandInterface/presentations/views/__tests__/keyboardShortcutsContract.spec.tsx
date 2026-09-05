@@ -175,4 +175,51 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
         expect(lastIsInput()).toBe(true);
     });
+
+    describe('modal and menu portal surfaces (#3618)', () => {
+        it('gates the global shortcut (isInput=true) when Delete fires inside a [role="dialog"] surface', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            // Radix Dialog and Popover content render role="dialog" and hold
+            // focus while open; the hand-rolled dialogService portals mark the
+            // same role. A keydown originating inside must not fall through to
+            // the arrangement clip-delete behind the surface.
+            const dialog = mount(document.createElement('div'));
+            dialog.setAttribute('role', 'dialog');
+            const surfaceButton = dialog.appendChild(document.createElement('button'));
+
+            surfaceButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+
+            expect(lastIsInput()).toBe(true);
+        });
+
+        it('gates the global shortcut (isInput=true) when Backspace fires inside a [role="menu"] surface', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            // Radix DropdownMenu content renders role="menu" and moves focus
+            // into it on open; the context-menu portals mark the same role.
+            const menu = mount(document.createElement('div'));
+            menu.setAttribute('role', 'menu');
+            const menuItem = menu.appendChild(document.createElement('div'));
+            menuItem.setAttribute('role', 'menuitem');
+
+            menuItem.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+
+            expect(lastIsInput()).toBe(true);
+        });
+
+        it('does NOT gate a keydown originating outside an open dialog surface', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            // The gate is origin-based, not presence-based: an open dialog
+            // elsewhere in the document must not steal the timeline's Delete.
+            const dialog = mount(document.createElement('div'));
+            dialog.setAttribute('role', 'dialog');
+            const timeline = mount(document.createElement('div'));
+
+            timeline.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+
+            expect(lastIsInput()).toBe(false);
+        });
+    });
 });
