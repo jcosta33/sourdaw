@@ -19,10 +19,14 @@ type InstallMultiDatabaseIndexedDbResult = {
     allowAudioWrites: () => void;
     get: (databaseName: string, storeName: string, key: IDBValidKey) => unknown;
     pauseAudioWriteSettlements: () => void;
+    pauseNamedProjectWriteSettlements: () => void;
     pendingAudioWriteSettlements: () => number;
+    pendingNamedProjectWriteSettlements: () => number;
     releaseNextAudioWriteSettlement: () => void;
+    releaseNextNamedProjectWriteSettlement: () => void;
     rejectedAudioWriteCount: () => number;
     resumeAudioWriteSettlements: () => void;
+    resumeNamedProjectWriteSettlements: () => void;
     seed: (databaseName: string, storeName: string, key: IDBValidKey, value: unknown) => void;
 };
 
@@ -49,6 +53,8 @@ class FakeTransaction {
         private readonly shouldAbortAudioWrite: () => boolean,
         private readonly holdAudioWriteSettlement: (settle: () => void) => void,
         private readonly isAudioWriteSettlementPaused: () => boolean,
+        private readonly holdNamedProjectWriteSettlement: (settle: () => void) => void,
+        private readonly isNamedProjectWriteSettlementPaused: () => boolean,
         private readonly onRejectedAudioWrite: () => void,
         private readonly onSettled: () => void
     ) {
@@ -100,6 +106,10 @@ class FakeTransaction {
             }
             const isAudioWrite =
                 this.databaseName === 'sourdaw-audio' && this.mode === 'readwrite' && this.scope.includes('buffers');
+            const isNamedProjectWrite =
+                this.databaseName === 'sourdaw-projects' &&
+                this.mode === 'readwrite' &&
+                this.scope.includes('projects');
             const settle = (): void => {
                 if (this.aborted || (isAudioWrite && this.shouldAbortAudioWrite())) {
                     if (isAudioWrite) {
@@ -123,6 +133,10 @@ class FakeTransaction {
             };
             if (isAudioWrite && this.isAudioWriteSettlementPaused()) {
                 this.holdAudioWriteSettlement(settle);
+                return;
+            }
+            if (isNamedProjectWrite && this.isNamedProjectWriteSettlementPaused()) {
+                this.holdNamedProjectWriteSettlement(settle);
                 return;
             }
             settle();
@@ -248,8 +262,10 @@ class FakeObjectStore {
 export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbResult {
     const databases = new Map<string, DatabaseState>();
     const pendingAudioSettlements: Array<() => void> = [];
+    const pendingNamedProjectSettlements: Array<() => void> = [];
     let rejectAudioWrites = false;
     let pauseAudioSettlements = false;
+    let pauseNamedProjectSettlements = false;
     let rejectedAudioWrites = 0;
 
     function databaseState(name: string): DatabaseState {
@@ -304,6 +320,8 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
                         () => rejectAudioWrites,
                         (settle) => pendingAudioSettlements.push(settle),
                         () => pauseAudioSettlements,
+                        (settle) => pendingNamedProjectSettlements.push(settle),
+                        () => pauseNamedProjectSettlements,
                         () => rejectedAudioWrites++,
                         () => {
                             database.activeTransaction = null;
@@ -351,13 +369,23 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
         pauseAudioWriteSettlements: () => {
             pauseAudioSettlements = true;
         },
+        pauseNamedProjectWriteSettlements: () => {
+            pauseNamedProjectSettlements = true;
+        },
         pendingAudioWriteSettlements: () => pendingAudioSettlements.length,
+        pendingNamedProjectWriteSettlements: () => pendingNamedProjectSettlements.length,
         releaseNextAudioWriteSettlement: () => {
             pendingAudioSettlements.shift()?.();
+        },
+        releaseNextNamedProjectWriteSettlement: () => {
+            pendingNamedProjectSettlements.shift()?.();
         },
         rejectedAudioWriteCount: () => rejectedAudioWrites,
         resumeAudioWriteSettlements: () => {
             pauseAudioSettlements = false;
+        },
+        resumeNamedProjectWriteSettlements: () => {
+            pauseNamedProjectSettlements = false;
         },
         seed: (databaseName, storeName, key, value) => {
             const store = databaseState(databaseName).stores.get(storeName);

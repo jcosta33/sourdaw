@@ -45,3 +45,10 @@ token before starting persistence. The discriminating probe queues one real owni
 after synchronous snapshot construction and before the caller continuation, without adding another
 await. Save must fail and remain dirty or persist a snapshot that includes the edit. Tests that only
 mutate state during CRDT or named-project writes do not cover this boundary.
+
+An edit can also update a public store while its Automerge write remains deferred to an animation
+frame during any later persistence await. Every snapshot-continuation check must flush those pending
+writes before it reads project identity, revision, or asset receipts; one flush before persistence
+does not protect later continuations. Hold the named-project transaction and the animation frame,
+invoke a public owning edit, then settle the transaction before the frame. Save must fail and remain
+dirty, and a later Save/reopen must contain the edit.

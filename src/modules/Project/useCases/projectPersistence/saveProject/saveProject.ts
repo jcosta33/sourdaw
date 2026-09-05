@@ -114,11 +114,12 @@ export async function saveProject(): Promise<boolean> {
             throw new Error('[saveProject] Project snapshot could not be built');
         }
 
-        // buildProjectData binds its snapshot to the revision captured during
-        // synchronous serialization. Flush pending writes here so an edit queued
-        // after construction is visible before this continuation adopts it.
-        flushAutomergeStorageWrites();
         const assertSnapshotContinuation = (requiresAudioReceipt: boolean): void => {
+            // A public project edit updates its store immediately but may defer
+            // the corresponding Automerge write until the next animation frame.
+            // Expose that write before every post-await authority check so the
+            // original serialized revision cannot certify a newer visible state.
+            flushAutomergeStorageWrites();
             assertProjectSnapshotAuthority();
             const activeProject = projectStore.value;
             if (

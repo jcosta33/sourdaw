@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
@@ -140,7 +141,7 @@ describe('saveProject audio durability integration', () => {
             project,
             { projectStore },
             { trackStore },
-            { registerCrdtStorageRuntime, resetCrdtProjectAuthority },
+            { captureProjectRevision, registerCrdtStorageRuntime, resetCrdtProjectAuthority },
             { resetModuleStoresToDefault },
             { createFreshProjectMetadata },
             { configureCollaborationAssetOwner },
@@ -223,6 +224,42 @@ describe('saveProject audio durability integration', () => {
         expect(projectStore.value?.dirty).toBe(false);
         expect(indexedDb.get('sourdaw-audio', 'buffers', bufferId)).toBeDefined();
 
+        const pendingFrames = new Map<number, FrameRequestCallback>();
+        let nextFrameId = 1;
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+            const frameId = nextFrameId++;
+            pendingFrames.set(frameId, callback);
+            return frameId;
+        });
+        vi.stubGlobal('cancelAnimationFrame', (frameId: number): void => {
+            pendingFrames.delete(frameId);
+        });
+        indexedDb.pauseNamedProjectWriteSettlements();
+        const savingBeforeRename = project.saveProject();
+        await vi.waitFor(() => expect(indexedDb.pendingNamedProjectWriteSettlements()).toBe(1));
+
+        const revisionBeforeRename = captureProjectRevision();
+        project.renameProject('Renamed during save');
+        expect(projectStore.value?.name).toBe('Renamed during save');
+        expect(captureProjectRevision()).toBe(revisionBeforeRename);
+        expect(pendingFrames.size).toBeGreaterThan(0);
+
+        indexedDb.releaseNextNamedProjectWriteSettlement();
+        const saveBeforeRename = await savingBeforeRename;
+        const dirtyAfterRename = projectStore.value?.dirty;
+        const staleJson = indexedDb.get('sourdaw-projects', 'projects', project.getProjectSnapshotKey(CREATED_AT));
+        flushAutomergeStorageWrites();
+
+        expect(saveBeforeRename).toBe(false);
+        expect(dirtyAfterRename).toBe(true);
+        expect(typeof staleJson === 'string' ? (JSON.parse(staleJson) as ProjectData).meta.name : undefined).toBe(
+            'Durability'
+        );
+
+        indexedDb.resumeNamedProjectWriteSettlements();
+        expect(await project.saveProject()).toBe(true);
+        expect(projectStore.value?.dirty).toBe(false);
+
         clearRuntimeCachedAudioBuffers();
         resetCrdtProjectAuthority('Blank project');
         resetModuleStoresToDefault();
@@ -246,7 +283,7 @@ describe('saveProject audio durability integration', () => {
         expect(projectStore.value).toMatchObject({
             createdAt: CREATED_AT,
             dirty: false,
-            name: 'Durability',
+            name: 'Renamed during save',
         });
 
         const savedJson = indexedDb.get('sourdaw-projects', 'projects', project.getProjectSnapshotKey(CREATED_AT));

@@ -514,8 +514,11 @@ describe('buildProjectData', () => {
             ])
         );
         const inactiveArrangement = built?.data.arrangements?.find((arrangement) => arrangement.id === 'arrangement-2');
-        expect(inactiveArrangement?.tracks.tracks[0]?.freezeState.frozenBufferId).toBe('inactive-arrangement-freeze');
-        expect(inactiveArrangement?.tracks.tracks[0]?.clips[0]?.bufferId).toBe('inactive-arrangement-buffer');
+        if (!inactiveArrangement?.tracks) {
+            throw new Error('expected the serialized inactive arrangement to retain its tracks');
+        }
+        expect(inactiveArrangement.tracks.tracks[0]?.freezeState.frozenBufferId).toBe('inactive-arrangement-freeze');
+        expect(inactiveArrangement.tracks.tracks[0]?.clips[0]?.bufferId).toBe('inactive-arrangement-buffer');
     });
 
     it('serializes the current chord-track read contract into project truth', async () => {
