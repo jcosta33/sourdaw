@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { type ActionUndoEntry, type CallbackUndoEntry, type UndoEntry } from '../../models/UndoEntry';
 import { createEmptyTree } from '../../models/UndoTree';
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoTreeStore } from '../../stores/undoTree';
 import { redo } from '../redo';
 import { REDO_NOT_APPLIED } from '../redoResult';
@@ -82,6 +83,27 @@ function notAppliedCallbackEntry(id: string): CallbackUndoEntry {
     };
 }
 
+/** Members of a mixed singleton group: the shape `normalizeSingletonUndoGroups`
+ *  strips, because the group's handler declares `batchExecution: 'singleton'`
+ *  while the group spans more than one entry. */
+function groupedInertEntry(id: string, groupId: string): ActionUndoEntry {
+    return {
+        ...inertEntry(id),
+        action: { type: 'setEditingTool', payload: { tool: 'marquee' } },
+        groupId,
+        groupLabel: 'Legacy singleton group',
+    };
+}
+
+function groupedUndoableEntry(id: string, groupId: string): ActionUndoEntry {
+    return {
+        ...undoableEntry(id),
+        action: { type: 'setEditingTool', payload: { tool: 'select' } },
+        groupId,
+        groupLabel: 'Legacy singleton group',
+    };
+}
+
 /** Commit entries through the real mirror so the tree holds real nodes and the
  *  cursor sits on the last-pushed entry, exactly as a live session would. */
 function recordPast(...entries: readonly UndoEntry[]): void {
@@ -126,6 +148,7 @@ describe('undo/redo keeps the tree cursor on the document position (#3640)', () 
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.notifyUser.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
+        clearHandlerRegistry();
     });
 
     describe('undo', () => {
@@ -192,6 +215,37 @@ describe('undo/redo keeps the tree cursor on the document position (#3640)', () 
 
             expect(currentNodeId()).toBeNull();
             expect(settledUndoState().past).toEqual([]);
+        });
+
+        it('keeps the cursor on the surviving head when a singleton-group strip rewrites the stack without a move', async () => {
+            registerHandlerMap({
+                setEditingTool: {
+                    batchExecution: 'singleton',
+                    execute: () => ({ status: 'written' }),
+                    describe: () => ({ label: 'Set editing tool', inverseAction: null }),
+                    undoable: true,
+                },
+            });
+            const inertMember = groupedInertEntry('group-inert', 'legacy-singleton');
+            const groupHead = groupedUndoableEntry('group-head', 'legacy-singleton');
+            const above = undoableEntry('above-group');
+            recordPast(inertMember, groupHead, above);
+            mocks.undoStoreValue.value = { past: [inertMember, groupHead, above], future: [] };
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+
+            // The strip engaged on the mixed singleton group before the scan: the two
+            // surviving members were rewritten without their groupId, and the ungrouped
+            // head above them was undone. The strip's own `undoStore.set` makes no tree
+            // move — the rewritten entries stay cursor-resolvable only because their
+            // entry ids survived the rewrite.
+            const settled = settledUndoState();
+            expect(settled.past.map((entry) => entry.groupId)).toEqual([undefined, undefined]);
+            expect(settled.future.map((entry) => entry.id)).toEqual(['above-group']);
+            // The document is back at the group head's state (the inert member never
+            // wrote, the entry above was undone), so the cursor must name the stripped
+            // head's node — not the last-pushed node the strip left it on.
+            expect(currentNodeId()).toBe(nodeIdForEntry('group-head'));
         });
     });
 
