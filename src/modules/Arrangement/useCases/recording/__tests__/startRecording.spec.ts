@@ -199,4 +199,47 @@ describe('startRecording', () => {
         expect(startRecording()).toHaveLength(0);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
+
+    it('labels each new take from the existing take count of its own lane', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', armed: true, kind: 'audio', clips: [] },
+                { id: 't2', armed: true, kind: 'audio', clips: [] },
+            ],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+        // Track one's lane already holds one take; track two records onto a
+        // fresh lane. Only per-lane counting labels them "Take 2" and "Take 1"
+        // in the same session — a shared counter or a swapped lane cannot.
+        mocks.getTakeLaneForTrack.mockImplementation((trackId: string) => {
+            if (trackId !== 't1') {
+                return null;
+            }
+            return {
+                id: 'lane-t1',
+                trackId: 't1',
+                takes: [
+                    {
+                        id: 'take-existing',
+                        clipId: 'clip-existing',
+                        name: 'Take 1',
+                        startBeat: 0,
+                        endBeat: 4,
+                        selected: false,
+                    },
+                ],
+                activeCompRegions: [],
+            };
+        });
+
+        const newClips = startRecording();
+
+        expect(newClips).toHaveLength(2);
+        const [firstClip, secondClip] = newClips;
+        if (!firstClip || !secondClip) {
+            throw new Error('expected two recorded clips');
+        }
+        expect(mocks.addTake).toHaveBeenCalledWith('t1', firstClip.id, 'Take 2', 4, 4);
+        expect(mocks.addTake).toHaveBeenCalledWith('t2', secondClip.id, 'Take 1', 4, 4);
+    });
 });

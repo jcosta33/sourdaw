@@ -10,7 +10,6 @@ import { addTakeLane } from '../comping/addTakeLane';
 import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
 const recordClipId = 1;
-let takeCounter = 1;
 
 /**
  * Open recording clips on every armed, recording-eligible track.
@@ -77,7 +76,10 @@ export function startRecording(atBeat?: number): Clip[] {
         if (!getTakeLaneForTrack(track.id)) {
             addTakeLane(track.id);
         }
-        addTake(track.id, clipId, `Take ${takeCounter++}`, recordBeat, recordBeat);
+        // Take labels count per lane, the way the scheduler's wrap path mints
+        // them, so takes on different lanes never share or duplicate labels.
+        const takeNum = (getTakeLaneForTrack(track.id)?.takes.length ?? 0) + 1;
+        addTake(track.id, clipId, `Take ${takeNum}`, recordBeat, recordBeat);
     }
 
     if (newClips.length > 0) {
