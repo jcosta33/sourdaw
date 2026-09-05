@@ -1279,8 +1279,13 @@ async fn load_plugin_with_backend(
 /// The rate check and the registry resolution run first, holding nothing —
 /// resolution can wait on a bounded child-process rescan, and the gate is fair.
 /// `PLUGIN_RUNTIME_GATE` and the instance's lifecycle lease are taken directly
-/// after that resolution and held to the end of this body, whichever exit it
-/// takes. Never call this directly outside that wrapper: the sweep the wrapper
+/// after that resolution. The lifecycle lease is held to the end of this body
+/// on every exit. The runtime gate is held to the end of this body only on
+/// exits that do not pass through [`refuse_load`]: that helper takes the gate
+/// by value and releases it before the runtime's own teardown, so a refusal
+/// exit added after `create_runtime` must return through `refuse_load` rather
+/// than the bare reason, or it would tear the runtime down still holding the
+/// gate. Never call this directly outside that wrapper: the sweep the wrapper
 /// runs afterward depends on this frame, and both guards it took, being gone.
 async fn load_plugin_under_runtime_gate(
     plugin_id: PluginId,
@@ -1668,6 +1673,14 @@ thread_local! {
     /// instead — and between the release in [`refuse_load`] and the runtime's
     /// drop there is no await, so the two events are adjacent on whichever
     /// thread ran the refusal.
+    ///
+    /// The three ordering tests named for sweeping retired runtimes only after
+    /// releasing the runtime gate record the release from the guard's own drop
+    /// inside the loading body, then the teardown from the sweep in the
+    /// wrapper, with an `.await?` between the two. That gap still answers here
+    /// because [`crate::block_on_test`] drives each test on a current-thread
+    /// runtime, so the task carrying both events never migrates to another
+    /// thread across the await.
     ///
     /// Every release entry is written by [`ObservedGateGuard`]'s own drop, so
     /// the sequence carries where each guard actually ended rather than where a
