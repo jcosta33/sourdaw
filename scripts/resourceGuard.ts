@@ -89,7 +89,10 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 };
 
 // Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
-const measuredScriptBudgets = new Map<string, number>([['typecheck:test', 6 * 1024 ** 3]]);
+const measuredScriptBudgets = new Map<string, number>([
+    ['typecheck:test', 6 * 1024 ** 3],
+    ['test:e2e', 5.5 * 1024 ** 3],
+]);
 
 function pnpmScriptName(command: string, args: readonly string[]): string | undefined {
     if (command !== 'pnpm') {

@@ -9,7 +9,7 @@ test.describe('AI Features', () => {
     });
 
     test('Generative AI panel shows generation options when toggled', async ({ page }) => {
-        await page.getByRole('button', { name: 'Generate' }).click();
+        await page.getByRole('button', { name: 'Generate', exact: true }).click();
         await page.waitForTimeout(1000);
 
         const panel_content = page.getByText(/Genre|Mood|Pattern|Instrument|Generate|Create/i);
