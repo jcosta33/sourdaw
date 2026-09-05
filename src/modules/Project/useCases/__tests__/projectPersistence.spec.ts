@@ -11,6 +11,7 @@ import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
 import type { ProjectStoreState } from '../../stores/projectStore';
+import type { BuiltProjectData } from '../projectPersistence/fileIO/buildProjectData';
 
 const { emit } = vi.hoisted(() => ({
     emit: vi.fn(),
@@ -45,10 +46,13 @@ const mocks = vi.hoisted(() => ({
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
     captureExternalPluginStates: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+    buildProjectData: vi.fn<() => Promise<BuiltProjectData | null>>(),
     getDurableProjectOwnerId: vi.fn<() => string>(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
     migrateAbsoluteMidiNotes: vi.fn<() => void>(),
     readLegacyChordTrackMigration: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(() =>
+        Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+    ),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -161,6 +165,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         cancelPendingAudioBufferImport: vi.fn(),
         getAudioContext: vi.fn(() => ({})),
         prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
+        ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
     };
 });
 
@@ -188,7 +193,12 @@ describe('Project Persistence Use Cases', () => {
         emit.mockClear();
         vi.clearAllMocks();
         installFakeIndexedDb();
-        mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
+        mocks.buildProjectData.mockResolvedValue({
+            data: { version: 1, meta: { name: 'My Song' } } as BuiltProjectData['data'],
+            missingBufferCount: 0,
+            requiredAudioBufferIds: [],
+            snapshotRevision: 'saved-revision',
+        });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         mocks.projectStoreValue.value = {
             loading: false,

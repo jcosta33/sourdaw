@@ -284,7 +284,12 @@ describe('agent project model contract', () => {
     });
 
     it('builds the no-input contract through project persistence without exposing media bytes', async () => {
-        buildProjectDataMock.mockResolvedValueOnce({ data: projectData(), missingBufferCount: 0 });
+        buildProjectDataMock.mockResolvedValueOnce({
+            data: projectData(),
+            missingBufferCount: 0,
+            requiredAudioBufferIds: ['buffer-1', 'freeze-1'],
+            snapshotRevision: 'snapshot-revision',
+        });
 
         const contract = await getAgentProjectModelContract();
 

@@ -63,6 +63,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersByAge: vi.fn(),
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(() =>
+        Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+    ),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     getCompensationDelay: vi.fn(),

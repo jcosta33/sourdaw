@@ -23,6 +23,7 @@ export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
 export { clearRuntimeCachedAudioBuffers } from './clearRuntimeCachedAudioBuffers';
+export { ensureCachedAudioBuffersDurable } from './ensureCachedAudioBuffersDurable';
 export { exportCachedAudioBuffers } from './exportCachedAudioBuffers';
 export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAudioBuffersByAge';
 export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAudioBuffersBySize';

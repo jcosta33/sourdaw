@@ -1,8 +1,14 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const syncCurrentArrangementToStoreMock = vi.hoisted(() => vi.fn());
+const flushAutomergeStorageWritesMock = vi.hoisted(() => vi.fn());
+const captureProjectRevisionMock = vi.hoisted(() => vi.fn<() => string>());
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({
     syncCurrentArrangementToStore: syncCurrentArrangementToStoreMock,
+}));
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
+    flushAutomergeStorageWrites: flushAutomergeStorageWritesMock,
 }));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
 const exportCachedAudioBuffersMock = vi.hoisted(() => vi.fn());
@@ -12,6 +18,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 const agentProjectRepairStateStoreMock = vi.hoisted((): { value: unknown } => ({ value: null }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: agentProjectRepairStateStoreMock,
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: captureProjectRevisionMock,
 }));
 
 const trackStoreMock = vi.hoisted((): { value: { tracks: unknown[] } } => ({ value: { tracks: [] } }));
@@ -115,6 +124,9 @@ describe('buildProjectData', () => {
             delete yeastRacksMock[key];
         }
         syncCurrentArrangementToStoreMock.mockClear();
+        flushAutomergeStorageWritesMock.mockClear();
+        captureProjectRevisionMock.mockReset();
+        captureProjectRevisionMock.mockReturnValue('snapshot-revision');
         exportCachedAudioBuffersMock.mockReset();
         exportCachedAudioBuffersMock.mockResolvedValue({});
         Object.assign(productionBriefFixture, { id: 'production-brief', supersedesBriefId: null });
@@ -190,6 +202,46 @@ describe('buildProjectData', () => {
         await expect(buildPromise).resolves.toBeNull();
     });
 
+    it('refuses an audio export when project truth changes after snapshot construction', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        const pendingAudioExport = Promise.withResolvers<Record<string, never>>();
+        exportCachedAudioBuffersMock.mockReturnValue(pendingAudioExport.promise);
+        let revision = 'snapshot-revision';
+        let pendingRevision: string | undefined;
+        flushAutomergeStorageWritesMock.mockImplementation(() => {
+            if (pendingRevision) {
+                revision = pendingRevision;
+            }
+        });
+        captureProjectRevisionMock.mockImplementation(() => revision);
+
+        const buildPromise = buildProjectData({ includeAudioBuffers: true });
+        await vi.waitFor(() => expect(exportCachedAudioBuffersMock).toHaveBeenCalledOnce());
+        pendingRevision = 'newer-revision';
+        pendingAudioExport.resolve({});
+
+        await expect(buildPromise).resolves.toBeNull();
+    });
+
+    it('captures the snapshot revision after flushing the arrangement synchronization', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+
+        const built = await buildProjectData({ includeAudioBuffers: false });
+
+        expect(built?.snapshotRevision).toBe('snapshot-revision');
+        const syncOrder = syncCurrentArrangementToStoreMock.mock.invocationCallOrder[0];
+        const flushOrder = flushAutomergeStorageWritesMock.mock.invocationCallOrder[0];
+        const captureOrder = captureProjectRevisionMock.mock.invocationCallOrder[0];
+        expect(syncOrder ?? 0).toBeLessThan(flushOrder ?? 0);
+        expect(flushOrder ?? 0).toBeLessThan(captureOrder ?? 0);
+    });
+
     // AC-5. `includeAudioBuffers: false` is the shape the live save uses: the
     // encoder is never entered and the snapshot carries no audio payload.
     // Mutation: making `includeAudioBuffers` unconditional (or defaulting the
@@ -206,6 +258,7 @@ describe('buildProjectData', () => {
         expect(exportCachedAudioBuffersMock).not.toHaveBeenCalled();
         expect(built?.data.audioBuffers).toBeUndefined();
         expect(built?.missingBufferCount).toBe(0);
+        expect(built?.snapshotRevision).toBe('snapshot-revision');
         expect(built?.data.meta.productionBrief).toEqual(productionBriefFixture);
         expect(built?.data.meta.productionBrief).not.toBe(productionBriefFixture);
     });
@@ -347,6 +400,29 @@ describe('buildProjectData', () => {
                             {
                                 id: 'track-2',
                                 freezeState: { status: 'frozen', frozenBufferId: 'mixed-buffer' },
+                                alternatives: [
+                                    {
+                                        id: 'alternative-2',
+                                        name: 'Alternative 2',
+                                        clips: [
+                                            {
+                                                id: 'alternative-clip-2',
+                                                trackId: 'track-2',
+                                                name: 'Inactive source',
+                                                startBeat: 0,
+                                                endBeat: 4,
+                                                type: 'audio',
+                                                audioBufferId: 'alternative-buffer',
+                                                fadeInBeats: 0,
+                                                fadeOutBeats: 0,
+                                                gain: 1,
+                                                color: '#fff',
+                                                locked: false,
+                                                muted: false,
+                                            },
+                                        ],
+                                    },
+                                ],
                                 clips: [
                                     {
                                         id: 'clip-2',
@@ -371,18 +447,78 @@ describe('buildProjectData', () => {
                     automation: { lanes: [] },
                     midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
                 },
+                {
+                    id: 'arrangement-2',
+                    name: 'Inactive arrangement',
+                    tracks: {
+                        tracks: [
+                            {
+                                id: 'track-3',
+                                freezeState: {
+                                    status: 'frozen',
+                                    frozenBufferId: 'inactive-arrangement-freeze',
+                                },
+                                alternatives: [],
+                                clips: [
+                                    {
+                                        id: 'clip-3',
+                                        trackId: 'track-3',
+                                        name: 'Inactive arrangement source',
+                                        startBeat: 0,
+                                        endBeat: 4,
+                                        type: 'audio',
+                                        audioBufferId: 'inactive-arrangement-buffer',
+                                        fadeInBeats: 0,
+                                        fadeOutBeats: 0,
+                                        gain: 1,
+                                        color: '#fff',
+                                        locked: false,
+                                        muted: false,
+                                    },
+                                ],
+                            },
+                        ],
+                        selectedTrackId: null,
+                    },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
             ],
             activeArrangementId: 'arrangement-1',
         });
         const buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] };
-        exportCachedAudioBuffersMock.mockResolvedValue({ 'freeze-track-1': buffer, 'mixed-buffer': buffer });
+        exportCachedAudioBuffersMock.mockResolvedValue({
+            'alternative-buffer': buffer,
+            'freeze-track-1': buffer,
+            'inactive-arrangement-buffer': buffer,
+            'inactive-arrangement-freeze': buffer,
+            'mixed-buffer': buffer,
+        });
 
         const built = await buildProjectData({ includeAudioBuffers: true });
 
         expect(built?.data.audioBuffers).toEqual({
+            'alternative-buffer': buffer,
             'freeze-track-1': { ...buffer, freezeProjectId: 1 },
+            'inactive-arrangement-buffer': buffer,
+            'inactive-arrangement-freeze': { ...buffer, freezeProjectId: 1 },
             'mixed-buffer': buffer,
         });
+        expect(new Set(built?.requiredAudioBufferIds)).toEqual(
+            new Set([
+                'alternative-buffer',
+                'freeze-track-1',
+                'inactive-arrangement-buffer',
+                'inactive-arrangement-freeze',
+                'mixed-buffer',
+            ])
+        );
+        const inactiveArrangement = built?.data.arrangements?.find((arrangement) => arrangement.id === 'arrangement-2');
+        if (!inactiveArrangement?.tracks) {
+            throw new Error('expected the serialized inactive arrangement to retain its tracks');
+        }
+        expect(inactiveArrangement.tracks.tracks[0]?.freezeState.frozenBufferId).toBe('inactive-arrangement-freeze');
+        expect(inactiveArrangement.tracks.tracks[0]?.clips[0]?.bufferId).toBe('inactive-arrangement-buffer');
     });
 
     it('serializes the current chord-track read contract into project truth', async () => {
