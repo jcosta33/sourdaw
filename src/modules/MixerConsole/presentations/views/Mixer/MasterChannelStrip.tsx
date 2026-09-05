@@ -27,15 +27,27 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     // the pre-gesture store value for as long as the commit takes to land.
     const [gestureGain, setGestureGain] = useState<number | null>(null);
     /**
-     * The store percent from before this gesture moved anything, captured at
-     * its first transient sample. `expectedPercent` on the settled dispatch
-     * has to name that pre-gesture value, not whatever `transportStore` holds
-     * once the drag settles, or a conflict from something else moving the
-     * master fader mid-gesture could never be detected. A gesture with no
-     * transient sample (a keyboard commit or the double-click reset) settles
-     * straight from the current store value instead.
+     * Identifies which gesture owns the display and the engine. A settle's
+     * dispatch awaits the Automerge snapshot transaction, which a
+     * persistence barrier can hold for real time — long enough for the
+     * pointer to be grabbed again before the first gesture's commit lands.
+     * That commit's continuation must not clobber the newer gesture just
+     * because it resolves late; the token is how it tells the two apart.
+     * Incremented at the first transient sample after the previous gesture
+     * settled (tracked by `liveGestureValue` going back to `null`).
      */
-    const gestureStartPercent = useRef<number | null>(null);
+    const gestureToken = useRef(0);
+    // The current gesture's most recent transient sample, `null` between
+    // gestures. Doubles as the "is a gesture open" flag and, for a settle
+    // whose continuation lands after a newer gesture has opened, as the
+    // value that continuation re-sends to the engine on that gesture's
+    // behalf.
+    const liveGestureValue = useRef<number | null>(null);
+    // Serialises settled dispatches: chaining each one onto the previous
+    // gesture's settled dispatch — rather than firing them independently —
+    // is what lets a later commit's `expectedPercent` read the store only
+    // after an earlier, barrier-held commit has actually landed.
+    const pendingCommit = useRef<Promise<void>>(Promise.resolve());
 
     /**
      * Put the engine back on project truth after a settle that never moved
@@ -58,37 +70,58 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         setMasterGain(storeMasterGain, true);
     };
 
-    const commitMasterGain = (value: number, expectedPercent: number): void => {
-        void (async () => {
-            try {
-                await executeUserAppAction({
-                    type: 'setMasterGain',
-                    payload: { gain: value, expectedPercent },
-                });
-            } catch (error) {
-                logger.error(
-                    new Error('Master channel strip commit failed for action: setMasterGain', { cause: error })
-                );
-            } finally {
-                restoreEngineFromProjectTruth();
-                setGestureGain(null);
+    /**
+     * Runs once a settle's dispatch has landed, whichever gesture's token it
+     * was issued under. If no newer gesture has opened since, this settle is
+     * still the display and engine's owner and reconciles both from project
+     * truth as before. Otherwise a newer gesture has already taken over —
+     * restoring here would clobber it with this stale commit's outcome, so
+     * this instead re-asserts the newer gesture's own live sample on the
+     * engine (its own eventual settle reconciles the rest) and leaves the
+     * display state untouched.
+     */
+    const settleContinuation = (token: number): void => {
+        if (gestureToken.current === token) {
+            restoreEngineFromProjectTruth();
+            setGestureGain(null);
+            return;
+        }
+        if (liveGestureValue.current !== null) {
+            setMasterGain(liveGestureValue.current * 100, true);
+        }
+    };
+
+    const commitMasterGain = async (value: number, token: number): Promise<void> => {
+        try {
+            const expectedPercent = transportStore.value?.masterGain;
+            if (expectedPercent === undefined) {
+                return;
             }
-        })();
+            await executeUserAppAction({
+                type: 'setMasterGain',
+                payload: { gain: value, expectedPercent },
+            });
+        } catch (error) {
+            logger.error(new Error('Master channel strip commit failed for action: setMasterGain', { cause: error }));
+        } finally {
+            settleContinuation(token);
+        }
     };
 
     const handleFaderChange = (value: number, isTransient?: boolean): void => {
         if (isTransient === true) {
-            if (gestureStartPercent.current === null) {
-                gestureStartPercent.current = masterGain;
+            if (liveGestureValue.current === null) {
+                gestureToken.current += 1;
             }
+            liveGestureValue.current = value;
             setGestureGain(value);
             setMasterGain(value * 100, true);
             return;
         }
+        const token = gestureToken.current;
+        liveGestureValue.current = null;
         setGestureGain(value);
-        const expectedPercent = gestureStartPercent.current ?? masterGain;
-        gestureStartPercent.current = null;
-        commitMasterGain(value, expectedPercent);
+        pendingCommit.current = pendingCommit.current.then(() => commitMasterGain(value, token));
     };
 
     const displayGain = gestureGain ?? masterGain / 100;

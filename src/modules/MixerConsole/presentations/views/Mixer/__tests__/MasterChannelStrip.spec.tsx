@@ -171,6 +171,7 @@ describe('MasterChannelStrip', () => {
 
         const { rerender } = render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
 
         // The transient sample uses a different value from the settle below:
         // firing `change` twice with an identical string is a same-value
@@ -179,13 +180,26 @@ describe('MasterChannelStrip', () => {
         fader.setAttribute('data-transient', 'true');
         fireEvent.change(fader, { target: { value: '0.5' } });
 
+        // Flushed inside `act` so the settled dispatch — chained onto
+        // `pendingCommit` — has actually reached `executeUserAppAction` by
+        // the time the assertions below run, rather than sitting queued as
+        // an unflushed microtask.
         fader.removeAttribute('data-transient');
-        fireEvent.change(fader, { target: { value: '0.6' } });
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6' } });
+            await Promise.resolve();
+        });
 
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setMasterGain',
             payload: { gain: 0.6, expectedPercent: 80 },
         });
+
+        // While the dispatch is still in flight, the engine's last word is
+        // still the transient sample fired above — moving
+        // `restoreEngineFromProjectTruth()` ahead of the `await` would fire
+        // it here, before the dispatch has actually landed.
+        expect(setMasterGain).toHaveBeenLastCalledWith(50, true);
 
         // The store never moved (still 80), yet the fader and dB readout must
         // keep showing the gesture's 0.6 while the dispatch is still pending
@@ -200,6 +214,10 @@ describe('MasterChannelStrip', () => {
         });
 
         expect(screen.getByTestId('fader')).toHaveValue('0.8');
+        // Only once the dispatch has landed does the engine's last word
+        // become the restored project truth (80), not the released gesture
+        // sample (60).
+        expect(setMasterGain).toHaveBeenLastCalledWith(80, true);
 
         // With the gesture actually cleared, a later store change is what the
         // same fader instance now reads — a `gestureGain` never cleared would
@@ -209,14 +227,138 @@ describe('MasterChannelStrip', () => {
         expect(screen.getByTestId('fader')).toHaveValue('0.6');
     });
 
+    it('keeps a newer gesture as the display and engine owner when an earlier settle lands late behind a barrier', async () => {
+        let resolveDispatchA: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveDispatchA = resolve;
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
+
+        // Gesture A releases at 0.65 — its settled dispatch (A) stays
+        // pending, standing in for the Automerge snapshot transaction a
+        // persistence barrier is holding open.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.65' } });
+        fader.removeAttribute('data-transient');
+        // A distinct string with the same parsed value as the transient
+        // sample above — releasing exactly where the drag left off — since
+        // firing `change` twice with an identical string is a same-value
+        // no-op for the input's native value tracker. Flushed inside `act`
+        // so dispatch A — chained onto `pendingCommit` — has actually
+        // reached `executeUserAppAction` before the next assertion runs.
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.6500' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // The pointer is grabbed again before A lands: this transient sample
+        // opens a new gesture, which must own the display and the engine
+        // from here on, not A's stale commit whenever it resolves.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.3' } });
+
+        expect(setMasterGain).toHaveBeenLastCalledWith(30, true);
+        expect(screen.getByTestId('fader')).toHaveValue('0.3');
+
+        // A lands: the store settles at 65 (what A's dispatch committed),
+        // but gesture B is still open and must keep owning the display and
+        // the engine — dropping the token comparison snaps the fader back to
+        // 0.65 here instead.
+        storeMocks.useStore.mockReturnValue({ masterGain: 65 });
+        storeMocks.transportStoreValue = { masterGain: 65 };
+        await act(async () => {
+            resolveDispatchA?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(screen.getByTestId('fader')).toHaveValue('0.3');
+        expect(screen.getByTestId('level-value')).toHaveTextContent(`${formatGainDb(0.3)} dB`);
+        // A's late-landing continuation re-asserts gesture B's own live
+        // sample on the engine — not A's restored project truth (65).
+        expect(setMasterGain).toHaveBeenLastCalledWith(30, true);
+
+        // Settle B: its dispatch reads `expectedPercent` off the store as it
+        // now stands (65, what A's commit landed), not the value that was
+        // current when gesture B began.
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.30' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.3, expectedPercent: 65 },
+        });
+    });
+
+    it('serialises settled dispatches so a later gesture always commits after an earlier one has landed', async () => {
+        let resolveDispatchA: (() => void) | undefined;
+        commandMocks.executeUserAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveDispatchA = resolve;
+                })
+        );
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const fader = screen.getByTestId('fader');
+
+        // Gesture A settles; dispatch A stays pending.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.5' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.55' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // Gesture B settles while A is still pending — dispatching without
+        // chaining onto `pendingCommit` would let this reach the use case
+        // immediately instead of waiting for A's commit to land first, so
+        // this flush must still observe only the one call.
+        fader.setAttribute('data-transient', 'true');
+        fireEvent.change(fader, { target: { value: '0.4' } });
+        fader.removeAttribute('data-transient');
+        await act(async () => {
+            fireEvent.change(fader, { target: { value: '0.45' } });
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+
+        // A lands, moving the store to 55 — B's now-unblocked dispatch has
+        // to read `expectedPercent` off the store as it stands at that point.
+        storeMocks.transportStoreValue = { masterGain: 55 };
+        await act(async () => {
+            resolveDispatchA?.();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(2);
+        expect(commandMocks.executeUserAppAction).toHaveBeenLastCalledWith({
+            type: 'setMasterGain',
+            payload: { gain: 0.45, expectedPercent: 55 },
+        });
+    });
+
     it('restores the engine from project truth once a settled dispatch resolves a conflict `executeUserAppAction` swallowed', async () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
         const { setMasterGain } = await import('#/modules/Transport/useCases');
 
-        // First transient sample captures `gestureStartPercent` off the store
-        // as it stood at 80 — this is the value the settled dispatch's
-        // `expectedPercent` must carry regardless of what the store does next.
         fader.setAttribute('data-transient', 'true');
         fireEvent.change(fader, { target: { value: '0.7' } });
 
@@ -239,9 +381,13 @@ describe('MasterChannelStrip', () => {
             await Promise.resolve();
         });
 
+        // `expectedPercent` is read off the store at dispatch time, not
+        // captured back when the gesture opened — so it names 60, the value
+        // the store already holds by the time this settle's commit actually
+        // reads it, not the 80 the store stood at when the drag began.
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setMasterGain',
-            payload: { gain: 0.75, expectedPercent: 80 },
+            payload: { gain: 0.75, expectedPercent: 60 },
         });
         // The engine's last word has to be the diverged store value (60), not
         // the released gesture sample (70) the transient half last wrote —
