@@ -7079,6 +7079,10 @@ mod timeline_tests {
         let smoothing = master_smoothing();
         let mut harness = Harness::new(16);
         harness.playing();
+        // The clip must be exactly unity: the master automation lane's unity
+        // fast path leaves the signal untouched, so a rendered sample equal
+        // to 0.8 proves the fader's own value is bit-equal to its target
+        // rather than merely close to it.
         track_with_constant_clip(&mut harness, 1, 9, 1.0, BLOCK * BLOCKS);
         harness.send(GraphCommand::SetMasterGain {
             value: 0.8,

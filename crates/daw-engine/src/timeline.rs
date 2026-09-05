@@ -1205,11 +1205,11 @@ enum MixNode {
 /// and would keep multiplying the mix by numbers small enough to cost a
 /// denormal on every frame of the rest of the session.
 ///
-/// This ends that one approach and no other. Around silence an `f32` step stays
-/// representable far past this distance, so the epsilon is what the descent
-/// meets first; anywhere else in the audible range the step underflows while
-/// more than this is still left, and [`MasterFader::next`] ends the approach on
-/// that stall instead.
+/// The epsilon ends approaches to targets near silence, below roughly -25 dB
+/// at 48 kHz (the crossover moves with the coefficient): there an `f32` step
+/// stays representable past this distance, so the descent runs out of
+/// distance before it runs out of step. Everywhere louder the step underflows
+/// first, and [`MasterFader::next`] ends the approach on that stall instead.
 const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
 
 /// The master fader: a level the mix approaches sample by sample, holding no
