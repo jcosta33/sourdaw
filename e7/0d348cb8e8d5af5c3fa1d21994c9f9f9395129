@@ -1,0 +1,94 @@
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_87ab0a2f60ccf8::t_34e0ab058d8ba9 4882
+  s_87ab0a2f60ccf8::t_3a54ce0412e06b 15
+  s_87ab0a2f60ccf8::t_1091be89781036 4905-4932
+  s_87ab0a2f60ccf8::t_96d3119773b47f 4803-4823,4825,4847-4881,4883-4904
+  s_87ab0a2f60ccf8::t_364db937a033bd 4802,4824,4826-4846,4933-4934
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_87ab0a2f60ccf8::t_d71bfb69b75fb9 21,137-141,239-242
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  s_87ab0a2f60ccf8::t_abc335f2d3dffc 315
+  s_87ab0a2f60ccf8::t_ca8d2e874afe3d 1,8,25,28,42-44,55-60,67-68,105-106,191-228,230-291,314,316
+  s_87ab0a2f60ccf8::t_674edc00d777ce 229
+src/modules/AiRuntime/useCases/agentReference/__tests__/batchLocalBindingProducers.spec.ts
+  s_87ab0a2f60ccf8::t_4280edc51c3f96 138-154
+  s_87ab0a2f60ccf8::t_1091be89781036 168-173
+  s_87ab0a2f60ccf8::t_95b4669abc6840 28-38,65-137,155-167,174
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_87ab0a2f60ccf8::t_2354aa190a6d69 164-179,251-268
+src/modules/AiRuntime/useCases/agentReference/projectBatchLocalCreation.ts
+  s_87ab0a2f60ccf8::t_8be5cf4ab772d7 1-5,9-11,13-33,73-76,89-90,100-129,139,142-143
+  s_87ab0a2f60ccf8::t_80bc7bd92997f2 12,40-51,61,64,66,68
+  s_87ab0a2f60ccf8::t_55886873d7ac53 144
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_87ab0a2f60ccf8::t_5d894b625cf39c 39,225,400,480,493-495,516-517
+  s_87ab0a2f60ccf8::t_c6cc09815e8e6f 4193-4205
+  s_87ab0a2f60ccf8::t_7df02caa3aafba 5113-5115,5117-5152
+  s_87ab0a2f60ccf8::t_31429c4cdece89 140,362-364,506-511,5116
+  s_87ab0a2f60ccf8::t_0d0ec1de64514b 333
+  s_87ab0a2f60ccf8::t_b71684ac86a9d4 3812-3832
+  s_9b530f08172a54::t_a04c8b7c954ecb 518
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_87ab0a2f60ccf8::t_7a3857cd7a51fb 49-58,68,75,77,380-385,387-392
+  s_87ab0a2f60ccf8::t_e4f0021492770d 59-67,69-74,76,78-81,374-379,386,393-394
+  s_87ab0a2f60ccf8::t_a968026f463a5e 395-396
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_6b80d459c3d2b5 2500-2591,2595-2597,2601,2603-2616,2618-2624
+  s_87ab0a2f60ccf8::t_46f145a97e6602 2625-2725
+  s_87ab0a2f60ccf8::t_5207ed015ed6a0 2592-2594,2598-2600,2602,2617
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_c141f6e4b5879c 15,267-269,280-301
+  s_87ab0a2f60ccf8::t_053153ead63cd3 251-265,270-272,277
+  s_87ab0a2f60ccf8::t_815c7b10b58c0a 312-315
+  s_87ab0a2f60ccf8::t_5f07c178eb651c 137,151-155,266,273-276,278
+  s_87ab0a2f60ccf8::t_c9f291c4020229 1-12,14,17-136,138-150,156-209,303-310,316-319,322-335,342-385
+  s_87ab0a2f60ccf8::t_9ab7fbcf7125b1 13,16,210-250,279,302
+  s_87ab0a2f60ccf8::t_8fb791798ee1e9 320-321,336-341
+  s_87ab0a2f60ccf8::t_de96527193c6a3 311
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_87ab0a2f60ccf8::t_516c1c44cc7af9 14,498-517
+src/modules/AiRuntime/useCases/agentReference/BatchLocalActionIdentity.ts
+  s_87ab0a2f60ccf8::t_31429c4cdece89 19-20
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  s_87ab0a2f60ccf8::t_5207ed015ed6a0 8,91,99-102,122-124
+  s_87ab0a2f60ccf8::t_eca2790dcfb19b 125
+src/modules/AiRuntime/transformers/projectDeviceDescriptorParameters.ts
+  s_87ab0a2f60ccf8::t_d71bfb69b75fb9 1-40
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_87ab0a2f60ccf8::t_99903417acece9 128
+src/modules/AiRuntime/useCases/agentReference/__tests__/projectBatchLocalCreation.spec.ts
+  s_87ab0a2f60ccf8::t_3459ddf138c128 1-61,102-126
+  s_87ab0a2f60ccf8::t_2d02c6bce5bf9a 62-101
+  s_87ab0a2f60ccf8::t_4324174c3d1862 127-129
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  s_87ab0a2f60ccf8::t_cb774736a4b2c4 12,40-47,65,67-70,76-78,114-121
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_87ab0a2f60ccf8::t_e384d8fcb8bc56 28,695-717,773-786
+src/modules/AiRuntime/useCases/__tests__/materializeActionStateGuards.spec.ts
+  s_87ab0a2f60ccf8::t_f16b8e9c92478f 1-35,37-60,62-72,74-113
+  s_87ab0a2f60ccf8::t_5207ed015ed6a0 36,61,73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e70d348cb8e8d5af5c3fa1d21994c9f9f9395129",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
