@@ -113,6 +113,8 @@ const {
     sessionUndoWitnessStampPortMock,
     stampSessionUndoWitnessMock,
     composeGrandBouleMock,
+    toasterGrooveExecutorMock,
+    executeUserAppActionBinding,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -165,6 +167,10 @@ const {
         // registration assertion pins these by reference, so rewiring bootstrap
         // to another barrel's exports has to change what reaches that call.
         setTrackGainMock: vi.fn(),
+        // Same distinction for the Toaster groove executor wiring: its assertion
+        // pins the registered dispatcher by reference against the barrel binding.
+        toasterGrooveExecutorMock: vi.fn(),
+        executeUserAppActionBinding: vi.fn(),
         setTrackPanMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
@@ -312,6 +318,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    executeUserAppAction: executeUserAppActionBinding,
     getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,
     getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
@@ -481,7 +488,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterSubscribers: noop,
     initToasterKitPersistence: noop,
     setToasterEventBus: noop,
-    setToasterGrooveAssignmentExecutor: noop,
+    setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
     prepareOfflineToaster: noop,
 }));
 
@@ -642,6 +649,16 @@ describe('bootstrap', () => {
         expect(configureCommandBatchIdempotencyMock).toHaveBeenCalledExactlyOnceWith({
             canExecute: canExecuteCommandBatchMock,
         });
+    });
+    it('wires the Toaster groove executor to the user dispatch wrapper', async () => {
+        // Identity pin: the executor ToasterPanel gestures flow through must be
+        // the barrel's executeUserAppAction binding, so an admission refusal on
+        // a groove assignment reaches the user as a notification. Rewiring to
+        // the bare executeAppAction changes the reference and fails this test.
+        const registered = toasterGrooveExecutorMock.mock.calls[0]?.[0];
+        expect(registered).toBeDefined();
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
+        expect(registered?.execute).toBe(executeUserAppAction);
     });
 
     it('gives Collaboration only Project-owned settled identity reads', () => {

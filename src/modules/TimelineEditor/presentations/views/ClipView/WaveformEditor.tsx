@@ -34,7 +34,7 @@ import {
     getCachedAudioBuffer,
     getCachedAudioBufferWaveformPeaks,
 } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { verifyAudioBufferReferences } from '#/modules/Project/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -529,7 +529,9 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
-                        onClick={waveAct(() => void executeAppAction({ type: 'normalizeClip', payload: { clipId } }))}
+                        onClick={waveAct(
+                            () => void executeUserAppAction({ type: 'normalizeClip', payload: { clipId } })
+                        )}
                     >
                         Normalize
                     </Button>
@@ -539,7 +541,7 @@ export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): 
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
-                        onClick={waveAct(() => void executeAppAction({ type: 'reverseClip', payload: { clipId } }))}
+                        onClick={waveAct(() => void executeUserAppAction({ type: 'reverseClip', payload: { clipId } }))}
                     >
                         Reverse
                     </Button>

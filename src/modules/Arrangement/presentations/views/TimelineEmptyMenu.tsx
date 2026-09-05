@@ -6,7 +6,7 @@ import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -155,7 +155,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'createBus', payload: { name: 'Bus' } });
+                    void executeUserAppAction({ type: 'createBus', payload: { name: 'Bus' } });
                 })}
             >
                 Add Bus Track
@@ -195,7 +195,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'generateDrumPattern',
                         payload: { style: 'rock', bars: 4, trackId: trackId ?? undefined, startBeat: beat },
                     });
@@ -207,7 +207,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'generateChordProgression',
                         payload: {
                             style: 'pop',
@@ -226,7 +226,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'generateMelody',
                         payload: {
                             style: 'simple',

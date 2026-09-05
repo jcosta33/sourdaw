@@ -26,7 +26,7 @@ type MockLayer = {
 const mocks = vi.hoisted(() => ({
     layers: [] as MockLayer[],
     tracks: [] as Array<{ id: string; name: string }>,
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -52,7 +52,7 @@ vi.mock('../../../stores/adjustmentLayer', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
 }));
 
 vi.mock('../TimelineChromeSurface', () => ({
@@ -142,7 +142,7 @@ describe('AdjustmentLayerStrip', () => {
         renderStrip();
         const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.click(layerRow, { altKey: true, button: 0, clientX: 200 });
-        const calls = mocks.executeAppAction.mock.calls;
+        const calls = mocks.executeUserAppAction.mock.calls;
         const addRegionCall = calls.find((call) => {
             const action = call[0] as { type: string };
             return action.type === 'addAdjustmentRegion';
@@ -194,9 +194,9 @@ describe('AdjustmentLayerStrip', () => {
     });
 
     const findCall = (type: string): unknown => {
-        const call = mocks.executeAppAction.mock.calls.find((c) => (c[0] as { type: string }).type === type);
+        const call = mocks.executeUserAppAction.mock.calls.find((c) => (c[0] as { type: string }).type === type);
         if (!call) {
-            throw new Error(`expected executeAppAction call of type ${type}`);
+            throw new Error(`expected executeUserAppAction call of type ${type}`);
         }
         return call[0];
     };
@@ -305,7 +305,7 @@ describe('AdjustmentLayerStrip', () => {
         const regionEl = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.click(regionEl, { altKey: true, button: 2, clientX: 200 });
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
         ).toBe(false);
     });
 
@@ -315,7 +315,7 @@ describe('AdjustmentLayerStrip', () => {
         const regionEl = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.click(regionEl, { altKey: false, button: 0, clientX: 200 });
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'addAdjustmentRegion')
         ).toBe(false);
     });
 
@@ -399,7 +399,9 @@ describe('AdjustmentLayerStrip', () => {
         drag.move(101); // < MIN_DRAG_PX (3)
         drag.up();
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some(
+                (c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion'
+            )
         ).toBe(false);
     });
 
@@ -439,7 +441,9 @@ describe('AdjustmentLayerStrip', () => {
         drag.move(200);
         drag.up();
         expect(
-            mocks.executeAppAction.mock.calls.some((c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion')
+            mocks.executeUserAppAction.mock.calls.some(
+                (c) => (c[0] as { type: string }).type === 'moveAdjustmentRegion'
+            )
         ).toBe(false);
     });
 

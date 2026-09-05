@@ -27,7 +27,7 @@ describe('createFlushHandlers', () => {
             updateDeviceParam,
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
-            executeAppAction: vi.fn(() => Promise.resolve()),
+            executeUserAppAction: vi.fn(() => Promise.resolve()),
         });
 
         flushParam('device-1:threshold', entry);
@@ -55,7 +55,7 @@ describe('createFlushHandlers', () => {
             updateDeviceParam,
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
-            executeAppAction: vi.fn(() => Promise.resolve()),
+            executeUserAppAction: vi.fn(() => Promise.resolve()),
         });
 
         pushParamImmediately('device-1', 'attack', 12);
@@ -75,7 +75,7 @@ describe('createFlushHandlers', () => {
             updateDeviceParam,
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
-            executeAppAction: vi.fn(() => Promise.resolve()),
+            executeUserAppAction: vi.fn(() => Promise.resolve()),
         });
 
         flushParam('device-1:threshold', { deviceId: 'device-1', key: 'threshold', value: -10 });

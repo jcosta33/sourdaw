@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
+import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -394,7 +395,7 @@ describe('ClipContextMenu', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Normalize' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
         expect(normalizeClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -404,9 +405,85 @@ describe('ClipContextMenu', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Reverse' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
         expect(reverseClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
+    });
+    it('fires the AI failure toast on a refused action, not the success toast', async () => {
+        // An admission refusal rejects the bare dispatch; runAiActionWithToast
+        // consumes that rejection and fires the failure toast. Wrapping the
+        // dispatch in executeUserAppAction would resolve the conflict instead,
+        // routing the same refusal into the success toast — the exact defect
+        // this pin exists to catch.
+        const refusal = Object.assign(new Error('Action conflicts with current project state: variationMidi'), {
+            name: 'AppActionConflictError',
+        });
+        vi.mocked(executeAppAction).mockRejectedValueOnce(refusal);
+        // Load the real wrapper (its module graph is light; the barrel itself stays
+        // mocked) so the failure path under test is the shipped one, not a stub.
+        // The shape is spelled inline: a typeof-import here would be a deep
+        // cross-module edge the boundary gate rightly refuses.
+        const actual = await vi.importActual<{
+            runAiActionWithToast: (
+                action: () => Promise<void>,
+                messages: { startMsg: string; successMsg: string; successDetails: string[]; failMsg: string }
+            ) => Promise<void>;
+        }>('#/modules/AiRuntime/useCases/runAiActionWithToast');
+        vi.mocked(runAiActionWithToast).mockImplementationOnce(actual.runAiActionWithToast);
+
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Generate Variation' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'variationMidi',
+            payload: { clipId: 'midi1', amount: 0.3 },
+        });
+        await waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                expect.stringMatching(/^MIDI variation failed:/),
+                'error'
+            )
+        );
+    });
+    it('routes audio-to-MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+
+        const action = { type: 'audioToMidi', payload: { clipId: 'clip1' } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes Continue MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Continue MIDI…' }));
+
+        const action = { type: 'completeMidi', payload: { clipId: 'midi1', bars: 4 } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes the wilder variation through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Regenerate (different style)' }));
+
+        const action = { type: 'variationMidi', payload: { clipId: 'midi1', amount: 0.6 } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes the bassline generation through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Generate Bassline from Clip' }));
+
+        const action = { type: 'generateBassline', payload: { clipId: 'midi1', style: 'root-fifth' } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
     });
 
     it('does not dispatch denoise for a clip without an audioBufferId', () => {
@@ -701,21 +778,21 @@ describe('ClipContextMenu', () => {
         expect(input.value).toBe('');
     });
 
-    it('dispatches invertNotes through executeAppAction and closes the menu', () => {
+    it('dispatches invertNotes through executeUserAppAction and closes the menu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Invert Pitch' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
 
-    it('dispatches retrogradeNotes through executeAppAction and closes the menu', () => {
+    it('dispatches retrogradeNotes through executeUserAppAction and closes the menu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Reverse (Retrograde)' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
 });

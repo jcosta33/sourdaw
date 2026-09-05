@@ -11,7 +11,7 @@ import { setWorkspaceEventBus, type WorkspaceEventBus } from '../../../useCases/
 import { useAppEventHandlers } from '../useAppEventHandlers';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({ importMidiFile: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({ undo: vi.fn(), redo: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ undo: vi.fn(), redo: vi.fn(), executeUserAppAction: vi.fn() }));
 vi.mock('#/modules/Project/useCases', () => ({ saveProject: vi.fn(), newProject: vi.fn() }));
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 

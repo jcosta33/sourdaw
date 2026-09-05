@@ -4,7 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { addTrack } from '../../../useCases/addTrack';
@@ -53,7 +53,7 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 const importMidiFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -155,7 +155,7 @@ describe('TimelineEmptyMenu', () => {
 
         fireEvent.click(screen.getByText('Add Bus Track'));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'createBus', payload: { name: 'Bus' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'createBus', payload: { name: 'Bus' } });
         expect(addTrack).not.toHaveBeenCalledWith({ name: 'Bus', kind: 'bus' });
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -202,17 +202,17 @@ describe('TimelineEmptyMenu', () => {
     it('dispatches generate actions with the selected trackId and startBeat', () => {
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Generate Drum Pattern'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateDrumPattern',
             payload: { style: 'rock', bars: 4, trackId: 't1', startBeat: 8 },
         });
         fireEvent.click(screen.getByText('Generate Chord Progression'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateChordProgression',
             payload: expect.objectContaining({ trackId: 't1', startBeat: 8, key: 0, scale: 'major' }),
         });
         fireEvent.click(screen.getByText('Generate Melody'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateMelody',
             payload: expect.objectContaining({ trackId: 't1', startBeat: 8 }),
         });
@@ -221,21 +221,21 @@ describe('TimelineEmptyMenu', () => {
     it('dispatches generate actions with undefined trackId when none is selected', () => {
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Generate Drum Pattern'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateDrumPattern',
             payload: { style: 'rock', bars: 4, trackId: undefined, startBeat: 0 },
         });
         // Drive the remaining generators so their `trackId ?? undefined`
         // fallbacks are exercised too.
         fireEvent.click(screen.getByText('Generate Chord Progression'));
-        expect(executeAppAction).toHaveBeenCalledWith(
+        expect(executeUserAppAction).toHaveBeenCalledWith(
             expect.objectContaining({
                 type: 'generateChordProgression',
                 payload: expect.objectContaining({ trackId: undefined }),
             })
         );
         fireEvent.click(screen.getByText('Generate Melody'));
-        expect(executeAppAction).toHaveBeenCalledWith(
+        expect(executeUserAppAction).toHaveBeenCalledWith(
             expect.objectContaining({
                 type: 'generateMelody',
                 payload: expect.objectContaining({ trackId: undefined }),

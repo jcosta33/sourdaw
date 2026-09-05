@@ -94,6 +94,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     getVersionedCommandBatchCommitProof: mocks.getVersionedCommandBatchCommitProof,
 }));
 

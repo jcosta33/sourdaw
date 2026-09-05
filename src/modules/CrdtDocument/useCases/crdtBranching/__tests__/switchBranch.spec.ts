@@ -72,6 +72,7 @@ vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     clearUndoHistory: mocks.clearUndoHistory,
     captureUndoHistory: mocks.captureUndoHistory,
     restoreUndoHistory: mocks.restoreUndoHistory,

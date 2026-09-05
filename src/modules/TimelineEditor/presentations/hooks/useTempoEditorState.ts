@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { playheadPositionRef, tempoMapStore, transportStore, type TransportState } from '#/modules/Transport/stores';
 import {
     addTempoChange,
@@ -320,7 +320,7 @@ export const useTempoEditorState = (): TempoEditorState => {
         if (isNaN(num) || isNaN(den) || num < 1 || num > 32) {
             return;
         }
-        void executeAppAction({ type: 'setTimeSignature', payload: { numerator: num, denominator: den } });
+        void executeUserAppAction({ type: 'setTimeSignature', payload: { numerator: num, denominator: den } });
         setEditingTimeSig(false);
     };
 
@@ -400,10 +400,10 @@ export const useTempoEditorState = (): TempoEditorState => {
             return;
         }
         if (tempoField.tempoChangeId === null) {
-            void executeAppAction({ type: 'setTempo', payload: { bpm } });
+            void executeUserAppAction({ type: 'setTempo', payload: { bpm } });
             return;
         }
-        void executeAppAction({ type: 'setTempo', payload: { bpm, tempoChangeId: tempoField.tempoChangeId } });
+        void executeUserAppAction({ type: 'setTempo', payload: { bpm, tempoChangeId: tempoField.tempoChangeId } });
     };
 
     /**

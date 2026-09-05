@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
@@ -12,7 +12,7 @@ export const elasticCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'detectTransients', payload: { clipId } });
+                void executeUserAppAction({ type: 'detectTransients', payload: { clipId } });
             }
         },
     },
@@ -24,7 +24,7 @@ export const elasticCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'openElasticEditor', payload: { clipId } });
+                void executeUserAppAction({ type: 'openElasticEditor', payload: { clipId } });
             }
         },
     },
@@ -36,7 +36,7 @@ export const elasticCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'quantizeTransients', payload: { clipId } });
+                void executeUserAppAction({ type: 'quantizeTransients', payload: { clipId } });
             }
         },
     },

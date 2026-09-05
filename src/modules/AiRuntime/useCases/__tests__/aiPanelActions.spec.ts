@@ -8,6 +8,7 @@ import { undoLastAction } from '../aiPanelActions/undoLastAction';
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     undo: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
@@ -67,11 +68,11 @@ describe('aiPanelActions injectables', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
-    it('runAppAction forwards to executeAppAction', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+    it('runAppAction forwards to executeUserAppAction', async () => {
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
         await runAppAction({ type: 'muteTrack', payload: { trackId: 't1', muted: true } });
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'muteTrack',
             payload: { trackId: 't1', muted: true, expectedMuted: false },
         });

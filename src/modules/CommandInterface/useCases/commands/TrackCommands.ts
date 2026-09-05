@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
-import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { promptUser } from '#/utils/Notification/promptUser';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -84,7 +84,7 @@ export const trackCommands: CallableCommandEntry[] = [
                     confirmLabel: 'Rename',
                 });
                 if (name) {
-                    await executeAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
+                    await executeUserAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
                 }
             })();
         },
@@ -97,7 +97,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'freezeTrack', payload: { trackId: id } });
+                void executeUserAppAction({ type: 'freezeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -109,7 +109,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'unfreezeTrack', payload: { trackId: id } });
+                void executeUserAppAction({ type: 'unfreezeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -121,7 +121,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'flattenTrack', payload: { trackId: id } });
+                void executeUserAppAction({ type: 'flattenTrack', payload: { trackId: id } });
             }
         },
     },
@@ -133,7 +133,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const trackId = getSelectedTrackId();
             if (trackId) {
-                void executeAppAction({ type: 'bounceToNewTrack', payload: { trackId } });
+                void executeUserAppAction({ type: 'bounceToNewTrack', payload: { trackId } });
             }
         },
     },
@@ -145,7 +145,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'bounceInPlace', payload: { trackId: id } });
+                void executeUserAppAction({ type: 'bounceInPlace', payload: { trackId: id } });
             }
         },
     },
@@ -157,7 +157,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'armTrack', payload: { trackId: id, armed: true } });
+                void executeUserAppAction({ type: 'armTrack', payload: { trackId: id, armed: true } });
             }
         },
     },
@@ -169,7 +169,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'soloTrack', payload: { trackId: id, soloed: true } });
+                void executeUserAppAction({ type: 'soloTrack', payload: { trackId: id, soloed: true } });
             }
         },
     },
@@ -182,7 +182,7 @@ export const trackCommands: CallableCommandEntry[] = [
             const id = getSelectedTrackId();
             const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
             if (track) {
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'muteTrack',
                     payload: { trackId: track.id, muted: true, expectedMuted: track.muted },
                 });
@@ -197,7 +197,7 @@ export const trackCommands: CallableCommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                void executeAppAction({ type: 'groupTracks', payload: { trackIds: [id], name: 'Group' } });
+                void executeUserAppAction({ type: 'groupTracks', payload: { trackIds: [id], name: 'Group' } });
             }
         },
     },
@@ -226,7 +226,7 @@ export const trackCommands: CallableCommandEntry[] = [
             if (id) {
                 const track = trackStore.value?.tracks.find((time) => time.id === id);
                 if (track?.groupId) {
-                    void executeAppAction({ type: 'ungroupTracks', payload: { groupId: track.groupId } });
+                    void executeUserAppAction({ type: 'ungroupTracks', payload: { groupId: track.groupId } });
                 }
             }
         },

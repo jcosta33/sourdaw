@@ -10,7 +10,7 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     removeMidiNote,
@@ -62,7 +62,7 @@ export const PianoRollContextMenu = ({
 
     const handleAIGenerate = async (): Promise<void> => {
         try {
-            await executeAppAction(
+            await executeUserAppAction(
                 { type: 'completeMidi', payload: { clipId, direction: 'forward', bars: 4 } },
                 { source: 'ai' }
             );
@@ -73,7 +73,7 @@ export const PianoRollContextMenu = ({
 
     const handleExtractGroove = async (): Promise<void> => {
         const templateId = `groove-${clipId}-v1`;
-        await executeAppAction({ type: 'extractGroove', payload: { clipId, templateId } });
+        await executeUserAppAction({ type: 'extractGroove', payload: { clipId, templateId } });
         const extractedTemplateId = getGrooveTemplate(templateId)?.id ?? getStraightGrooveTemplateId();
         setGrooveTemplateId(extractedTemplateId);
     };
@@ -82,7 +82,7 @@ export const PianoRollContextMenu = ({
         if (!grooveTemplateId) {
             return;
         }
-        await executeAppAction({
+        await executeUserAppAction({
             type: 'applyGroove',
             payload: { clipId, grooveId: grooveTemplateId, amount: 0.5 },
         });
@@ -150,7 +150,7 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'quantizeNotes',
                                 payload: { clipId, gridSize: g },
                             }).catch(() => logger.warn('Could not quantize notes'));
@@ -172,7 +172,7 @@ export const PianoRollContextMenu = ({
                         key={`len-${g}`}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'quantizeNoteLengths',
                                 payload: { clipId, gridSize: g },
                             }).catch(() => logger.warn('Could not quantize note lengths'));
@@ -196,7 +196,7 @@ export const PianoRollContextMenu = ({
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'transposeNotes',
                                 payload: { clipId, semitones: semi },
                             }).catch(() => logger.warn('Could not transpose notes'));
@@ -243,7 +243,7 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={notes.length === 0}
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'invertNotes',
                         payload: { clipId },
                     }).catch(() => logger.warn('Could not invert notes'));
@@ -255,7 +255,7 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={notes.length === 0}
                 onClick={act(() => {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'retrogradeNotes',
                         payload: { clipId },
                     }).catch(() => logger.warn('Could not retrograde notes'));
@@ -276,7 +276,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'scaleAllVelocities',
                             payload: { clipId, factor: 0.8 },
                         }).catch(() => logger.warn('Could not scale velocities'));
@@ -291,7 +291,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'scaleAllVelocities',
                             payload: { clipId, factor: 1.2 },
                         }).catch(() => logger.warn('Could not scale velocities'));
@@ -306,7 +306,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'setAllVelocities',
                             payload: { clipId, velocity: 100 },
                         }).catch(() => logger.warn('Could not set velocities'));
@@ -321,7 +321,7 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
-                        void executeAppAction({
+                        void executeUserAppAction({
                             type: 'setAllVelocities',
                             payload: { clipId, velocity: 64 },
                         }).catch(() => logger.warn('Could not set velocities'));

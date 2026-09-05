@@ -31,6 +31,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof CommandUseCases>();
     return {
         ...actual,
+        executeUserAppAction: vi.fn(),
         pushUndoEntry: mocks.pushUndoEntry,
     };
 });

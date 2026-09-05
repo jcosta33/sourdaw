@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptDraft } from '#/modules/AiRuntime/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
@@ -192,7 +192,7 @@ export const TrackListView = ({
                             // Same gesture as the context menu's Delete Track,
                             // so it takes the same undoable route: the bare
                             // `removeTrack` use case captures nothing for undo.
-                            void executeAppAction({
+                            void executeUserAppAction({
                                 type: 'removeTrack',
                                 payload: { trackId: selectedTrackId },
                             });

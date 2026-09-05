@@ -89,6 +89,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     describeAction: vi.fn((action: { type: string }) => action.type),
+    executeUserAppAction: vi.fn(),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'Prompt action' })),
     isExecutableAppActionType: vi.fn((type: string) => type !== 'removeAllTracks'),
 }));

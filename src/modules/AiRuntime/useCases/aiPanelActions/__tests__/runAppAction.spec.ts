@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runAppAction } from '../runAppAction';
 
 const mocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn<typeof import('#/modules/Command/useCases').executeAppAction>(),
+    executeUserAppAction: vi.fn<typeof import('#/modules/Command/useCases').executeUserAppAction>(),
     logger: {
         warn: vi.fn(),
         info: vi.fn(),
@@ -24,7 +24,8 @@ function create_malformed_punch_action(type: 'setPunchIn' | 'setPunchOut', paylo
 }
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
@@ -37,31 +38,31 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 describe('runAppAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.executeUserAppAction.mockResolvedValue(undefined);
     });
 
-    it('forwards the action to executeAppAction', () => {
+    it('forwards the action to executeUserAppAction', () => {
         const action: Parameters<typeof runAppAction>[0] = { type: 'removeTrack', payload: { trackId: '123' } };
         void runAppAction(action);
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
-        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(action);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1);
     });
 
-    it('awaits executeAppAction and resolves after it completes', async () => {
-        mocks.executeAppAction.mockResolvedValueOnce(undefined);
+    it('awaits executeUserAppAction and resolves after it completes', async () => {
+        mocks.executeUserAppAction.mockResolvedValueOnce(undefined);
         const action: Parameters<typeof runAppAction>[0] = { type: 'removeTrack', payload: { trackId: '456' } };
 
         const result = await runAppAction(action);
         expect(result).toBeUndefined();
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(action);
     });
 
     it.each(['setPunchIn', 'setPunchOut'] as const)(
         'rejects malformed %s payloads before handler execution or state effects',
         async (actionType) => {
             let transport_write_count = 0;
-            mocks.executeAppAction.mockImplementation(() => {
+            mocks.executeUserAppAction.mockImplementation(() => {
                 transport_write_count += 1;
                 return Promise.resolve();
             });
@@ -81,7 +82,7 @@ describe('runAppAction', () => {
                 await runAppAction(create_malformed_punch_action(actionType, payload));
             }
 
-            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
             expect(transport_write_count).toBe(0);
             expect(mocks.logger.warn).toHaveBeenCalledTimes(10);
         }
@@ -97,7 +98,7 @@ describe('runAppAction', () => {
 
             await runAppAction(action);
 
-            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
             expect(mocks.logger.warn).toHaveBeenCalledOnce();
         }
     );

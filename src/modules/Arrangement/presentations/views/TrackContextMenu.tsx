@@ -5,7 +5,7 @@ import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Grid } from '#/components/layout';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -123,7 +123,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: track.armed ? 'Disarm' : 'Arm for Recording',
             action: () => {
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'armTrack',
                     payload: { trackId: track.id, armed: !track.armed },
                 });
@@ -203,7 +203,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                         // `removeTrack` handler snapshots clips, devices,
                         // routing, automation lanes, MIDI and takes for its
                         // `restoreTrack` inverse — route through it.
-                        void executeAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
+                        void executeUserAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
                     }
                 })();
             },

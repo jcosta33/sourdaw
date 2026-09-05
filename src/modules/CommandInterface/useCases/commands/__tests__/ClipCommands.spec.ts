@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type CallableCommandEntry } from '../../searchCommandRegistry';
 import { clipCommands } from '../ClipCommands';
 
-const executeAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const executeUserAppAction = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: vi.fn(),
     removeTrack: vi.fn(),
@@ -81,7 +81,7 @@ describe('clipCommands', () => {
     it('normalize-clip dispatches normalizeClip action with the selected clipId', async () => {
         runAction('normalize-clip');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'normalizeClip',
             payload: { clipId: 'c1' },
         });
@@ -90,7 +90,7 @@ describe('clipCommands', () => {
     it('reverse-clip dispatches reverseClip action with the selected clipId', async () => {
         runAction('reverse-clip');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'reverseClip',
             payload: { clipId: 'c1' },
         });
@@ -99,7 +99,7 @@ describe('clipCommands', () => {
     it('glue-clips dispatches glueClips when 2+ clips are selected', async () => {
         runAction('glue-clips');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'glueClips',
             payload: { clipIds: ['c1', 'c2'] },
         });
@@ -110,13 +110,13 @@ describe('clipCommands', () => {
         vi.mocked(getSelectedClipIds).mockReturnValueOnce(['c1']);
         runAction('glue-clips');
         await flush();
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('consolidate-selection dispatches with trackId and clip bounds from the store', async () => {
         runAction('consolidate-selection');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'consolidateSelection',
             payload: { trackId: 't1', startBeat: 0, endBeat: 4 },
         });
@@ -125,7 +125,7 @@ describe('clipCommands', () => {
     it('set-clip-loop dispatches with the inverted loopEnabled state', async () => {
         runAction('set-clip-loop');
         await flush();
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setClipLoop',
             payload: { clipId: 'c1', enabled: true },
         });

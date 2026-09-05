@@ -108,29 +108,29 @@ describe('midiLearn injectables', () => {
     });
 });
 
-describe('completeMidiLearn (audit A-1 — dispatches through executeAppAction)', () => {
+describe('completeMidiLearn (audit A-1 — dispatches through executeUserAppAction)', () => {
     const dispatched: { type: string; payload: unknown }[] = [];
-    const executeAppAction = vi.fn((action: { type: string; payload: unknown }) => {
+    const executeUserAppAction = vi.fn((action: { type: string; payload: unknown }) => {
         dispatched.push(action);
         return Promise.resolve();
     });
 
     beforeEach(() => {
         dispatched.length = 0;
-        executeAppAction.mockClear();
+        executeUserAppAction.mockClear();
         mocks.state.value = {
             mappingsSchemaVersion: 1,
             mappings: [],
             isLearning: false,
             learningTarget: null,
         };
-        injectDependencies(completeMidiLearn, { executeAppAction });
+        injectDependencies(completeMidiLearn, { executeUserAppAction });
     });
 
     it('should not dispatch when completeMidiLearn runs without active learning', () => {
         completeMidiLearn(1, 7);
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('should dispatch completeMidiLearn with the channel/cc when learning is active', () => {

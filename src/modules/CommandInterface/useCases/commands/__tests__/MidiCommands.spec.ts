@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { midiCommands } from '../MidiCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
 
 const CLIP_SCOPED_COMMAND_IDS = [
@@ -50,7 +50,7 @@ describe('midiCommands', () => {
     it('quantize-notes dispatches quantizeNotes with the selected clip and a quarter-beat grid', () => {
         runAction('quantize-notes');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'quantizeNotes',
             payload: { clipId: 'clip-1', gridSize: 1 },
         });
@@ -59,7 +59,7 @@ describe('midiCommands', () => {
     it('transpose-up dispatches transposeNotes one semitone up', () => {
         runAction('transpose-up');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'transposeNotes',
             payload: { clipId: 'clip-1', semitones: 1 },
         });
@@ -68,7 +68,7 @@ describe('midiCommands', () => {
     it('transpose-down dispatches transposeNotes one semitone down', () => {
         runAction('transpose-down');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'transposeNotes',
             payload: { clipId: 'clip-1', semitones: -1 },
         });
@@ -77,7 +77,7 @@ describe('midiCommands', () => {
     it('transpose-up-octave dispatches transposeNotes twelve semitones up', () => {
         runAction('transpose-up-octave');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'transposeNotes',
             payload: { clipId: 'clip-1', semitones: 12 },
         });
@@ -86,7 +86,7 @@ describe('midiCommands', () => {
     it('transpose-down-octave dispatches transposeNotes twelve semitones down', () => {
         runAction('transpose-down-octave');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'transposeNotes',
             payload: { clipId: 'clip-1', semitones: -12 },
         });
@@ -95,7 +95,7 @@ describe('midiCommands', () => {
     it('humanize-notes dispatches humanizeNotes with a subtle 0.3 amount', () => {
         runAction('humanize-notes');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'humanizeNotes',
             payload: { clipId: 'clip-1', amount: 0.3 },
         });
@@ -104,7 +104,7 @@ describe('midiCommands', () => {
     it('invert-notes dispatches invertNotes for the selected clip', () => {
         runAction('invert-notes');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'invertNotes',
             payload: { clipId: 'clip-1' },
         });
@@ -113,7 +113,7 @@ describe('midiCommands', () => {
     it('arpeggiate dispatches arpeggiate for the selected clip', () => {
         runAction('arpeggiate');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'arpeggiate',
             payload: { clipId: 'clip-1' },
         });
@@ -133,6 +133,6 @@ describe('midiCommands', () => {
             runAction(id);
         }
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 });

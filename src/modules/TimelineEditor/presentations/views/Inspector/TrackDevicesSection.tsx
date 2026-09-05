@@ -17,7 +17,7 @@ import {
     executeAddDeviceAction,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import {
     pluginScanStore,
     defaultPluginScanState,
@@ -255,7 +255,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             className={cn(menuBtnClass, 'justify-between text-foreground')}
                                             role="menuitem"
                                             onClick={() => {
-                                                void executeAppAction({
+                                                void executeUserAppAction({
                                                     type: 'loadExternalPlugin',
                                                     payload: { pluginId: plugin.id, trackId: track.id },
                                                 });
@@ -331,7 +331,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 const draggedDeviceId = event.dataTransfer.getData('text/plain');
                                 const action = compileReorderDevicesAction(track.id, draggedDeviceId, device.id);
                                 if (action) {
-                                    void executeAppAction(action);
+                                    void executeUserAppAction(action);
                                 }
                             }}
                         >
@@ -372,7 +372,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         // action is undoable; the raw use case
                                         // write never entered history (#1938
                                         // precedent for the add path).
-                                        void executeAppAction({
+                                        void executeUserAppAction({
                                             type: 'bypassDevice',
                                             payload: { deviceId: device.id, bypassed: !device.bypassed },
                                         });
@@ -449,7 +449,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                         // Action boundary: removeDevice is
                                         // undoable via its restoreDevice
                                         // inverse.
-                                        void executeAppAction({
+                                        void executeUserAppAction({
                                             type: 'removeDevice',
                                             payload: { deviceId: device.id },
                                         });

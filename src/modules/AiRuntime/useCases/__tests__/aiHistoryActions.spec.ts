@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { revertAiActionGroup } from '../aiHistoryActions';
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     revertActionGroup: vi.fn().mockResolvedValue(undefined),
 }));
 

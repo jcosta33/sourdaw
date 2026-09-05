@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     toggleInputMonitoring: vi.fn(),
     selectTrack: vi.fn(),
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     toggleVcaMembership: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     clearUndoHistory: vi.fn(),
     isAppActionCommittedError: vi.fn(() => false),
@@ -268,7 +270,7 @@ describe('ExpandedChannelStrip', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
@@ -277,13 +279,13 @@ describe('ExpandedChannelStrip', () => {
         expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
 
         fireEvent.click(screen.getByRole('button', { name: 'Solo' }), { metaKey: true });
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
             { skipUndo: true }
         );
 
         fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 'track-1', armed: true },
         });
@@ -300,13 +302,13 @@ describe('ExpandedChannelStrip', () => {
         fireEvent.doubleClick(screen.getByText('Track 1'));
         fireEvent.keyDown(screen.getByDisplayValue('Track 1'), { key: 'Escape' });
         expect(screen.queryByDisplayValue('Track 1')).not.toBeInTheDocument();
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
 
         fireEvent.doubleClick(screen.getByText('Track 1'));
         const input = screen.getByDisplayValue('Track 1');
         fireEvent.change(input, { target: { value: 'Kick In' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'renameTrack',
             payload: { trackId: 'track-1', name: 'Kick In' },
         });
@@ -320,7 +322,7 @@ describe('ExpandedChannelStrip', () => {
         expect(screen.getByRole('menu')).toHaveStyle({ left: '42px', top: '17px' });
 
         fireEvent.click(screen.getByRole('menuitem', { name: 'Mute' }));
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
@@ -346,12 +348,12 @@ describe('ExpandedChannelStrip', () => {
         openContextMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: 'Remove Channel' }));
         await waitFor(() => expect(mocks.confirmUser).toHaveBeenCalledTimes(1));
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
 
         openContextMenu();
         fireEvent.click(screen.getByRole('menuitem', { name: 'Remove Channel' }));
         await waitFor(() =>
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'removeTrack',
                 payload: { trackId: 'track-1' },
             })

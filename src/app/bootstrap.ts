@@ -77,7 +77,7 @@ import {
     commandBatchPreviewPort,
     configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
-    executeAppAction,
+    executeUserAppAction,
     getExecutableAppActionGroundingCatalog,
     registerProductionCommandHandlers,
     productionBriefAdmissionPort,
@@ -268,7 +268,7 @@ setOfflineRenderDependencies({
     createChordPitchProjector,
 });
 setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
-setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
+setToasterGrooveAssignmentExecutor({ execute: executeUserAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
 setCommandEventBus(eventBus);

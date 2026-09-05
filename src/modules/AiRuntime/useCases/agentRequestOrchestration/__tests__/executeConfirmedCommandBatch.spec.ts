@@ -86,6 +86,7 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: collaboration }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     executeVersionedCommandBatchEnvelope: mocks.executeBatch,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({

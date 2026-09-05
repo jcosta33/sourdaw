@@ -88,13 +88,13 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         <>
             <DawMenuButton
                 role="menuitem"
-                onClick={act(() => void executeAppAction({ type: 'normalizeClip', payload: { clipId } }))}
+                onClick={act(() => void executeUserAppAction({ type: 'normalizeClip', payload: { clipId } }))}
             >
                 Normalize
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
-                onClick={act(() => void executeAppAction({ type: 'reverseClip', payload: { clipId } }))}
+                onClick={act(() => void executeUserAppAction({ type: 'reverseClip', payload: { clipId } }))}
             >
                 Reverse
             </DawMenuButton>
@@ -178,7 +178,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'arpeggiate', payload: { clipId } });
+                    void executeUserAppAction({ type: 'arpeggiate', payload: { clipId } });
                 })}
             >
                 Arpeggiate
@@ -186,7 +186,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'invertNotes', payload: { clipId } });
+                    void executeUserAppAction({ type: 'invertNotes', payload: { clipId } });
                 })}
             >
                 Invert Pitch
@@ -194,7 +194,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'retrogradeNotes', payload: { clipId } });
+                    void executeUserAppAction({ type: 'retrogradeNotes', payload: { clipId } });
                 })}
             >
                 Reverse (Retrograde)
@@ -263,7 +263,11 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
                     void runAiActionWithToast(
-                        () => executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } }),
+                        () =>
+                            executeAppAction({
+                                type: 'generateBassline',
+                                payload: { clipId, style: 'root-fifth' },
+                            }),
                         {
                             startMsg: 'Generating bassline that follows this clip…',
                             successMsg: 'Bassline generated',

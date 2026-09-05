@@ -8,7 +8,7 @@ import { resetProjectIdentityTransitionDependencies } from '../../resetProjectId
 import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({ cancelPendingAudioBufferImport: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn(), executeUserAppAction: vi.fn() }));
 
 describe('runProjectLoadTransaction', () => {
     beforeEach(() => {

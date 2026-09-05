@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { setA4Reference } from '../setA4Reference';
 
@@ -15,7 +15,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(() => Promise.resolve()),
+    executeUserAppAction: vi.fn(() => Promise.resolve()),
 }));
 
 /**
@@ -64,7 +64,7 @@ describe('setA4Reference', () => {
         it('delivers the new reference as a setDeviceParameter action on the a4_hz parameter', () => {
             setA4Reference('dev-1', 415);
 
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'setDeviceParameter',
                 payload: { deviceId: 'dev-1', paramId: 'a4_hz', value: 415 },
             });
@@ -74,7 +74,7 @@ describe('setA4Reference', () => {
             setA4Reference('dev-1', 440);
             setA4Reference('dev-1', 415);
 
-            const dispatched = vi.mocked(executeAppAction).mock.calls.map((call) => call[0]);
+            const dispatched = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[0]);
             expect(dispatched).toEqual([
                 { type: 'setDeviceParameter', payload: { deviceId: 'dev-1', paramId: 'a4_hz', value: 440 } },
                 { type: 'setDeviceParameter', payload: { deviceId: 'dev-1', paramId: 'a4_hz', value: 415 } },
@@ -86,26 +86,26 @@ describe('setA4Reference', () => {
         /**
          * A knob drag is one edit. `RotaryKnob` fires `onChange(value, true)` on
          * every pointer-move that crosses a step, so a sweep from 440 to 415
-         * crosses twenty-five of them; `executeAppAction` opens an Automerge
+         * crosses twenty-five of them; `executeUserAppAction` opens an Automerge
          * transaction and an undo entry per call and coalesces only when handed
          * an `options.groupId`. Committing each move would therefore bury the
          * user's real edits under twenty-five one-hertz undo steps.
          *
          * Mutation that reds this (ADR 0015): delete the `if (isTransient)`
          * guard from `setA4Reference` so both halves fall through to
-         * `executeAppAction` — the dispatch count goes from 1 to 26.
+         * `executeUserAppAction` — the dispatch count goes from 1 to 26.
          */
         it('opens exactly one undo entry for a drag of many moves', () => {
             const sweep = [438, 435, 431, 428, 424, 421, 418, 415];
             for (const hz of sweep) {
                 setA4Reference('dev-1', hz, true);
             }
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
 
             setA4Reference('dev-1', 415, false);
 
-            expect(executeAppAction).toHaveBeenCalledTimes(1);
-            expect(executeAppAction).toHaveBeenCalledWith({
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'setDeviceParameter',
                 payload: { deviceId: 'dev-1', paramId: 'a4_hz', value: 415 },
             });
@@ -137,7 +137,7 @@ describe('setA4Reference', () => {
             setA4Reference('dev-1', 415, true);
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
-            expect(executeAppAction).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
     });
 });

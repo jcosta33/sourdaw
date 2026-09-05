@@ -95,6 +95,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,

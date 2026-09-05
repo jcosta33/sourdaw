@@ -20,6 +20,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({

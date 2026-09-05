@@ -60,6 +60,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: mocks.clearUndoHistory,
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
     isAppActionCommittedError: mocks.isAppActionCommittedError,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     pushUndoEntry: vi.fn(),

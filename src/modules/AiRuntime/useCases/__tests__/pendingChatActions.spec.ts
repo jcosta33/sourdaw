@@ -124,6 +124,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (import_original) => ({
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
     ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
     executeAppActionBatch: mocks.executeAppActionBatch,
     executeVersionedCommandBatchEnvelope: mocks.executeVersionedCommandBatchEnvelope,
     describeAction: mocks.describeAction,

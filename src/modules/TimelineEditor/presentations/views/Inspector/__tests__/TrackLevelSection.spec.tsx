@@ -22,6 +22,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),

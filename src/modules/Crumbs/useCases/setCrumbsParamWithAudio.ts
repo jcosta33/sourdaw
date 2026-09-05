@@ -1,6 +1,6 @@
 import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type CrumbsPersistedParamId } from '../models/CrumbsParameterMap';
 import { applyCrumbsParamValue, beginCrumbsParamPreview, endCrumbsParamPreview } from '../stores/crumbsStore';
@@ -94,7 +94,7 @@ export function setCrumbsParamWithAudio(
     // the native engine holding the second-to-last drag sample forever.
     cancelCrumbsParamPreview(deviceId, paramId);
     setCrumbsParamImmediate(deviceId, paramId, value);
-    void executeAppAction({
+    void executeUserAppAction({
         type: 'setDeviceParameter',
         payload: { deviceId, paramId, value },
     });

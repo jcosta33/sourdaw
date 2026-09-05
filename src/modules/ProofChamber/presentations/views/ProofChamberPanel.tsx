@@ -17,7 +17,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction, executeAppActionBatch, generateGroupId } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
 
@@ -332,7 +332,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         } else {
             numericValue = value;
         }
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
         });
@@ -473,7 +473,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     function selectAlgorithm(next: ProofChamberAlgorithm): void {
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, algorithm: next }));
 
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[next] ?? 0 },
         });

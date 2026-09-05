@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import {
     zoomToFit,
@@ -17,7 +17,7 @@ import { viewCommands } from '../ViewCommands';
 const mocks = vi.hoisted(() => ({ transportValue: null as { loopStart: number; loopEnd: number } | null }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({ addMarker: vi.fn(), zoomTimelineBy: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeUserAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/Onboarding/useCases', () => ({ startOnboardingTour: vi.fn() }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {
@@ -139,7 +139,7 @@ describe('viewCommands', () => {
     it('delete-time removes the loop region, shifting everything left', () => {
         runAction('delete-time');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'deleteTime',
             payload: { startBeat: 2, endBeat: 10 },
         });
@@ -148,7 +148,7 @@ describe('viewCommands', () => {
     it('insert-time inserts four beats at the playhead', () => {
         runAction('insert-time');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'insertTime',
             payload: { atBeat: 6, durationBeats: 4 },
         });
@@ -157,7 +157,7 @@ describe('viewCommands', () => {
     it('duplicate-time-range duplicates the loop region', () => {
         runAction('duplicate-time-range');
 
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'duplicateTimeRange',
             payload: { startBeat: 2, endBeat: 10 },
         });
@@ -170,13 +170,13 @@ describe('viewCommands', () => {
         runAction('insert-time');
         runAction('duplicate-time-range');
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('strip-silence splits the selected clip at silent sections', () => {
         runAction('strip-silence');
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'stripSilence', payload: { clipId: 'clip-1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'stripSilence', payload: { clipId: 'clip-1' } });
     });
 
     it('strip-silence does not dispatch when no clip is selected', async () => {
@@ -185,7 +185,7 @@ describe('viewCommands', () => {
 
         runAction('strip-silence');
 
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('add-marker adds a marker at the playhead position when transport state exists', () => {

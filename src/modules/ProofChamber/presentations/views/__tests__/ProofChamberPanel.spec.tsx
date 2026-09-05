@@ -2,7 +2,7 @@ import { render, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -13,7 +13,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     generateGroupId: vi.fn(() => 'group-test'),
     pushUndoEntry: vi.fn(),
@@ -96,7 +96,7 @@ describe('ProofChamberPanel', () => {
         // `payload.value`, so the band change must dispatch `value: 1.75`.
         // Before the fix the panel sent `{ ..., mult }`, leaving `value`
         // undefined — this matcher fails on the missing `value` field.
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setDeviceParameter',
             payload: { deviceId: 'test-device', paramId: 'decay_eq_2', value: 1.75 },
         });
@@ -110,7 +110,7 @@ describe('ProofChamberPanel', () => {
      */
     function dispatchedAlgorithmValues(): number[] {
         return vi
-            .mocked(executeAppAction)
+            .mocked(executeUserAppAction)
             .mock.calls.map(([action]) => action)
             .filter((action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'algorithm')
             .map((action) => (action.type === 'setDeviceParameter' ? action.payload.value : -1));
@@ -186,7 +186,7 @@ describe('ProofChamberPanel', () => {
         // 1 is the Chebyshev arm of `soft_saturate`, reached through
         // `(value as u8).min(2)`. A chip that sent an ordinal from its own
         // position in some other list would land on a different curve.
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setDeviceParameter',
             payload: { deviceId: 'test-device', paramId: 'saturation_type', value: 1 },
         });

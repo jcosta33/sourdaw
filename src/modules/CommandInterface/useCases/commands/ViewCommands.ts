@@ -1,5 +1,5 @@
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
@@ -129,7 +129,7 @@ export const viewCommands: CallableCommandEntry[] = [
         action: () => {
             const time = transportStore.value;
             if (time) {
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'deleteTime',
                     payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
                 });
@@ -144,7 +144,7 @@ export const viewCommands: CallableCommandEntry[] = [
         action: () => {
             const time = transportStore.value;
             if (time) {
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'insertTime',
                     payload: { atBeat: playheadPositionRef.current, durationBeats: 4 },
                 });
@@ -159,7 +159,7 @@ export const viewCommands: CallableCommandEntry[] = [
         action: () => {
             const time = transportStore.value;
             if (time) {
-                void executeAppAction({
+                void executeUserAppAction({
                     type: 'duplicateTimeRange',
                     payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
                 });
@@ -174,7 +174,7 @@ export const viewCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'stripSilence', payload: { clipId } });
+                void executeUserAppAction({ type: 'stripSilence', payload: { clipId } });
             }
         },
     },

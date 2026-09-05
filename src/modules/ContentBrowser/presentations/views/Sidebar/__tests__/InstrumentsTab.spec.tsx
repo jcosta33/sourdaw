@@ -49,7 +49,7 @@ const toasterMocks = vi.hoisted(() => ({
 }));
 
 const commandMocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),
 }));
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
@@ -80,7 +80,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: commandMocks.executeAppAction,
+    executeUserAppAction: commandMocks.executeUserAppAction,
     executeAppActionBatch: commandMocks.executeAppActionBatch,
     pushUndoEntry: vi.fn(),
 }));
@@ -160,7 +160,7 @@ describe('InstrumentsTab', () => {
         arrangementMocks.getFactoryPresets.mockReturnValue([]);
         arrangementMocks.getUserPresets.mockReturnValue([]);
         arrangementMocks.saveCurrentAsPreset.mockReturnValue({ id: 'saved-preset' });
-        commandMocks.executeAppAction.mockResolvedValue(undefined);
+        commandMocks.executeUserAppAction.mockResolvedValue(undefined);
         commandMocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
     });
 
@@ -253,7 +253,7 @@ describe('InstrumentsTab', () => {
             presetId: preset.id,
             trackId: mockTrack.id,
         });
-        expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith(action);
     });
 
     it('logs the rejection before notifying when the instrument preset load fails', async () => {
@@ -276,7 +276,7 @@ describe('InstrumentsTab', () => {
             groupLabel: 'Load preset',
             trackId: mockTrack.id,
         });
-        commandMocks.executeAppAction.mockRejectedValue(new Error('repair required'));
+        commandMocks.executeUserAppAction.mockRejectedValue(new Error('repair required'));
 
         renderWithTooltip(
             <InstrumentsTab
