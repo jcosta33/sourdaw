@@ -107,8 +107,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
         })
     );
 
-    // Every device that could have an editor: an external plugin that is
-    // actually loaded. Anything else has no instance for the host to address.
+    // Every external-plugin device that has an instance id. Having an id does not mean
+    // the host holds the instance; each derivation below narrows by the status it needs.
     const externalDeviceEditors = track.devices.flatMap((device) =>
         device.type === 'external-plugin' && device.externalInstanceId
             ? [{ device, instanceId: device.externalInstanceId }]
@@ -131,6 +131,13 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                         )
                     ) !== 'absent'
             )
+            .map(({ device }) => device.id)
+    );
+    // Only an 'active' entry means the host holds an instance the GUI open/close IPC can
+    // address; while loading, or with no entry at all, the control could only fail.
+    const activeExternalDeviceIds = new Set(
+        externalDeviceEditors
+            .filter(({ instanceId }) => activationState.byInstanceId[instanceId]?.status === 'active')
             .map(({ device }) => device.id)
     );
     const openEditorDeviceIds = new Set(
@@ -407,6 +414,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 {device.type === 'external-plugin' &&
                                 device.externalInstanceId &&
                                 !unavailableExternalDeviceIds.has(device.id) &&
+                                activeExternalDeviceIds.has(device.id) &&
                                 editorCapableDeviceIds.has(device.id) ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
