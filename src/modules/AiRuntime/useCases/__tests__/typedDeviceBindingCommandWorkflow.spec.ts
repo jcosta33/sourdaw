@@ -120,7 +120,39 @@ const providerItems = [
     },
 ] as const;
 
-function materializeWorkflow(projectRevision: string) {
+const siblingDevicePrompt =
+    'Create a MIDI track named Lead with Filter A and independently add Filter B. Also create an audio track named Reference and add a Filter to it.';
+
+const siblingDeviceProviderItems = [
+    { id: 'make-lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+    {
+        id: 'add-filter-a',
+        name: 'addDevice',
+        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter-a' },
+        dependsOn: ['make-lead'],
+    },
+    {
+        id: 'add-filter-b',
+        name: 'addDevice',
+        arguments: { trackId: '$lead', deviceType: 'builtin-filter', binding: 'filter-b' },
+        dependsOn: ['make-lead'],
+    },
+    { id: 'make-reference', name: 'addTrack', arguments: { name: 'Reference', kind: 'audio', binding: 'reference' } },
+    {
+        id: 'add-reference-filter',
+        name: 'addDevice',
+        arguments: { trackId: '$reference', deviceType: 'builtin-filter', binding: 'reference-filter' },
+        dependsOn: ['make-reference'],
+    },
+] as const;
+
+type WorkflowProviderItems = typeof providerItems | typeof siblingDeviceProviderItems;
+
+function materializeWorkflow(
+    projectRevision: string,
+    workflowPrompt: string = prompt,
+    workflowProviderItems: WorkflowProviderItems = providerItems
+) {
     const context = getProjectContext();
     const compiled = compileArbitraryCommandList({
         context,
@@ -128,7 +160,7 @@ function materializeWorkflow(projectRevision: string) {
         calls: [
             {
                 name: 'command.batch.propose',
-                arguments: { plan, list: { schemaVersion: 1, items: providerItems } },
+                arguments: { plan, list: { schemaVersion: 1, items: workflowProviderItems } },
             },
         ],
     });
@@ -140,7 +172,7 @@ function materializeWorkflow(projectRevision: string) {
         compilerEvidence: compiled.compilerEvidence,
         context,
         projectRevision,
-        prompt,
+        prompt: workflowPrompt,
     });
     if (bridged.rejections.length > 0) {
         throw new Error(bridged.rejections.map((rejection) => rejection.reason).join('; '));
@@ -213,6 +245,190 @@ describe('typed created-device binding Command workflow', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.restoreAllMocks();
+    });
+
+    it('retains guarded sibling device producers when partially accepting the later device', async () => {
+        const revision = captureProjectRevision();
+        const workflow = materializeWorkflow(revision, siblingDevicePrompt, siblingDeviceProviderItems);
+        const [trackAction, firstDeviceAction, secondDeviceAction] = workflow.actions;
+        if (
+            trackAction?.type !== 'addTrack' ||
+            firstDeviceAction?.type !== 'addDevice' ||
+            secondDeviceAction?.type !== 'addDevice'
+        ) {
+            throw new Error('Expected the Lead, Filter A, Filter B action sequence');
+        }
+        expect(firstDeviceAction.payload.expectedDeviceIds).toEqual([trackAction.payload.initialDeviceId]);
+        expect(secondDeviceAction.payload.expectedDeviceIds).toEqual([
+            trackAction.payload.initialDeviceId,
+            firstDeviceAction.payload.deviceId,
+        ]);
+
+        const previewBatch = compilePlannedActionCommandBatch({
+            actions: workflow.actions,
+            actionCommandGraph: workflow.actionCommandGraph,
+            actionLabels: workflow.actions.map((action) => action.type),
+            autoCommit: false,
+            context: workflow.context,
+            group: { groupId: 'group-sibling-preview', groupLabel: 'Preview independent device branches' },
+            intent: siblingDevicePrompt,
+            mode: 'preview',
+            projectRevision: revision,
+            runId: 'run-sibling-preview',
+        }).commandBatch;
+        const parsedPreview = parseVersionedCommandBatchEnvelope(previewBatch.serialized, previewBatch.authority);
+        if (parsedPreview.status !== 'valid') {
+            throw new Error(parsedPreview.reason);
+        }
+        const [trackCommand, firstDeviceCommand, secondDeviceCommand] = parsedPreview.envelope.commands;
+        if (!trackCommand || !firstDeviceCommand || !secondDeviceCommand) {
+            throw new Error('Expected the Lead, Filter A, Filter B commands');
+        }
+        expect(parsedPreview.envelope.commands.map((command) => command.operation)).toEqual([
+            'addTrack',
+            'addDevice',
+            'addDevice',
+            'addTrack',
+            'addDevice',
+        ]);
+
+        const preview = await executeVersionedCommandBatchEnvelope(previewBatch);
+        if (preview.status !== 'previewed') {
+            throw new Error(`Expected preview, received ${preview.status}`);
+        }
+        const partial = compilePartialCommandBatchAcceptance({
+            batchId: 'group-sibling-partial',
+            previewSelection: preview.partialAcceptance,
+            runId: 'run-sibling-partial',
+            selectedIntentGroupIds: [secondDeviceCommand.commandId],
+        });
+        if (partial.status !== 'compiled') {
+            throw new Error(partial.reason);
+        }
+        const parsedPartial = parseVersionedCommandBatchEnvelope(partial.serialized, partial.authority);
+        if (parsedPartial.status !== 'valid') {
+            throw new Error(parsedPartial.reason);
+        }
+        preview.resource.release();
+
+        const partialApproval = issueCommandApprovalBinding({
+            authority: partial.authority,
+            serialized: partial.serialized,
+            validate: () => ({ status: 'valid' }),
+        });
+        const outcome = await executeVersionedCommandBatchEnvelope({
+            authority: partial.authority,
+            approvalBinding: partialApproval,
+            serialized: partial.serialized,
+        });
+        expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'committed' });
+
+        expect(partial.includedOriginalCommandIds).toEqual([
+            trackCommand.commandId,
+            firstDeviceCommand.commandId,
+            secondDeviceCommand.commandId,
+        ]);
+        const [partialTrack, partialFirstDevice, partialSecondDevice] = parsedPartial.envelope.commands;
+        if (!partialTrack || !partialFirstDevice || !partialSecondDevice) {
+            throw new Error('Expected the retained Lead, Filter A, Filter B commands');
+        }
+        expect(parsedPartial.envelope.commands.map((command) => command.operation)).toEqual([
+            'addTrack',
+            'addDevice',
+            'addDevice',
+        ]);
+        expect(partialFirstDevice.dependencyIds).toEqual([partialTrack.commandId]);
+        expect(partialSecondDevice.dependencyIds).toEqual([partialTrack.commandId, partialFirstDevice.commandId]);
+        expect(parsedPartial.envelope.batchLocalBindings).toEqual([]);
+        expect(partialTrack.arguments).toEqual(trackCommand.arguments);
+        expect(partialFirstDevice.arguments).toEqual(firstDeviceCommand.arguments);
+        expect(partialSecondDevice.arguments).toEqual(secondDeviceCommand.arguments);
+        const createdTrack = trackStore.value?.tracks[0];
+        expect(trackStore.value?.tracks).toHaveLength(1);
+        expect(createdTrack?.name).toBe('Lead');
+        expect(createdTrack?.clips).toEqual([]);
+        expect(createdTrack?.devices.map((device) => device.id)).toEqual([
+            partialTrack.arguments.initialDeviceId,
+            partialFirstDevice.arguments.deviceId,
+            partialSecondDevice.arguments.deviceId,
+        ]);
+        const committedTrack = structuredClone(createdTrack);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks).toEqual([]);
+        await redo();
+        expect(trackStore.value?.tracks).toEqual([committedTrack]);
+    });
+
+    it('carries sparse descriptor legal values through context into created-device compilation', () => {
+        const context = getProjectContext();
+        const oversampling = context.availableDeviceTypes
+            ?.find((device) => device.id === 'gluten')
+            ?.parameters?.find((parameter) => parameter.id === 'oversampling');
+        expect(oversampling?.legalValues).toEqual([1, 2, 4]);
+
+        const compileValue = (value: number) => {
+            const valuePrompt = `Create a MIDI track named Lead, add Gluten, and set its Oversampling to ${String(value)}.`;
+            const compiled = compileArbitraryCommandList({
+                context,
+                revision: `revision-gluten-${String(value)}`,
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan,
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'make-lead',
+                                        name: 'addTrack',
+                                        arguments: { name: 'Lead', kind: 'midi', binding: 'lead' },
+                                    },
+                                    {
+                                        id: 'add-gluten',
+                                        name: 'addDevice',
+                                        arguments: { trackId: '$lead', deviceType: 'gluten', binding: 'gluten' },
+                                        dependsOn: ['make-lead'],
+                                    },
+                                    {
+                                        id: 'set-oversampling',
+                                        name: 'setDeviceParameter',
+                                        arguments: { deviceId: '$gluten', paramId: 'oversampling', value },
+                                        dependsOn: ['add-gluten'],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            return bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context,
+                projectRevision: `revision-gluten-${String(value)}`,
+                prompt: valuePrompt,
+            });
+        };
+
+        const invalid = compileValue(3);
+        expect(invalid.actions).toEqual([]);
+        expect(invalid.rejections).not.toEqual([]);
+        expect(JSON.stringify(invalid)).not.toMatch(/(?:track|device)-ai-/u);
+
+        for (const value of [1, 2, 4]) {
+            const valid = compileValue(value);
+            expect(valid.rejections).toEqual([]);
+            expect(valid.actions).toHaveLength(3);
+            expect(valid.actions[2]).toMatchObject({
+                type: 'setDeviceParameter',
+                payload: { paramId: 'oversampling', value },
+            });
+        }
     });
 
     it('commits one typed batch and round-trips its exact identities, notes, device order, and value', async () => {
@@ -296,7 +512,7 @@ describe('typed created-device binding Command workflow', () => {
             'setDeviceParameter',
         ]);
         expect(partialDevice?.dependencyIds).toEqual([partialTrack?.commandId]);
-        expect(partialParameter?.dependencyIds).toEqual([partialDevice?.commandId]);
+        expect(partialParameter?.dependencyIds).toEqual([partialDevice?.commandId, partialTrack?.commandId]);
         expect(parsedPartial.envelope.batchLocalBindings).toEqual([]);
         expect(partialTrack?.arguments).toEqual(parsedPreview.envelope.commands[0]?.arguments);
         expect(partialDevice?.arguments).toEqual(parsedPreview.envelope.commands[1]?.arguments);
