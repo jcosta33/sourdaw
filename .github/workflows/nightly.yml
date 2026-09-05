@@ -330,6 +330,15 @@ jobs:
   native-macos:
     name: Native audio backend (macOS)
     needs: decide
+    # Every platform Sourdaw releases on carries its own hosted evidence of the
+    # audio crates, because what they assert is target-specific: allocator,
+    # thread scheduling and device backend all differ per platform, so a defect
+    # in one of them is invisible to the Linux leg and would surface in a
+    # release instead. Debug profile for the reason the `rust` leg records:
+    # `assert_no_alloc`'s `disable_release` feature is on by default, so a
+    # release build turns every real-time allocation guard into a no-op that
+    # passes while proving nothing.
+    #
     # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
     # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
     # the only place it compiles, and public repositories get those free.
@@ -346,16 +355,25 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      - name: Test the audio crates
+        run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
+
       - name: Test the native crate
         run: cargo test --package sourdaw-native
 
   native-windows:
-    name: Windows device layer
+    name: Native audio backend (Windows)
     needs: decide
+    # The Windows half of the same platform evidence, in debug profile for the
+    # reason `native-macos` records above.
+    #
     # The WASAPI backend under crates/daw-engine/src/device/wasapi/ compiles
     # only for the Windows target: elsewhere `cfg(any(windows, test))` reaches
     # its pure policy half and never the windows-crate integration code. A
-    # native runner replaces the cross-compilation oracle #2253 asked for.
+    # native runner replaces the cross-compilation oracle #2253 asked for, and
+    # testing keeps that oracle rather than trading it away: a test build
+    # compiles everything a `cargo check` of the same crate compiles, and then
+    # runs it too.
     if: needs.decide.outputs.rust == 'true'
     runs-on: windows-latest
     timeout-minutes: 60
@@ -369,8 +387,8 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Compile-verify the device layer
-        run: cargo check --package daw-engine
+      - name: Test the audio crates
+        run: cargo test --package daw-core --package daw-dsp --package daw-engine --all-features
 
   desktop-measure:
     name: Desktop latency measurement (macOS)
