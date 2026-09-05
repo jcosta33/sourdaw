@@ -128,16 +128,15 @@ export const Fader = ({
     const trackRef = useRef<HTMLDivElement>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
-    /** The value the gesture began from, so the finalizer knows whether the drag moved anything. */
-    const gestureStartValue = useRef(value);
     /** The latest value emitted during the gesture — the one the finalizer commits. */
     const currentValue = useRef(value);
     /**
      * Whether this gesture emitted at least one transient sample. A drag that
      * moves away and returns to its start pixel still moved the cap and drove
      * the engine with transient samples along the way — `currentValue` landing
-     * back on `gestureStartValue` does not mean nothing happened, so the
-     * finalizer cannot use value equality to decide whether to settle.
+     * back on the value the gesture began from does not mean nothing
+     * happened, so the finalizer cannot use value equality to decide whether
+     * to settle.
      */
     const hasEmittedTransient = useRef(false);
     /** audit M-082: the id of the captured pointer, so a finalizer that has no event can still release it. */
@@ -177,8 +176,8 @@ export const Fader = ({
         // at least one transient sample, not when the final value differs from the
         // start: a drag that moves away and returns to its start pixel still drove
         // the engine through transients and must still settle project truth, even
-        // though `currentValue` lands back on `gestureStartValue`. A bare click on
-        // the cap emits no transient and therefore stays a no-op.
+        // though `currentValue` lands back on the value the gesture began from. A
+        // bare click on the cap emits no transient and therefore stays a no-op.
         if (hasEmittedTransient.current) {
             onChange(currentValue.current, false);
         }
@@ -252,10 +251,6 @@ export const Fader = ({
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         setIsDragging(true);
-        // Where the gesture began, not where the press landed: a press on the
-        // groove jumps the value immediately, and that jump is part of what the
-        // finalizer has to commit.
-        gestureStartValue.current = value;
         hasEmittedTransient.current = false;
 
         const capEl = event.currentTarget.querySelector('[data-role="fader-cap"]');
@@ -302,30 +297,19 @@ export const Fader = ({
         onChange(clamped, true);
     };
 
-    // A second pointer's own pointerup/pointercancel must not close the first
-    // pointer's still-open gesture: bound to the same element, it bubbles
-    // here just as readily as the owning pointer's release. Compare against
-    // the captured pointer before finalizing. When no drag is open,
-    // `activePointerIdRef.current` is `null` and every real `pointerId`
-    // fails the comparison, which is the same no-op `finalizeDrag` already
-    // produced by guarding on `draggingRef.current`.
-    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-        if (event.pointerId !== activePointerIdRef.current) {
-            return;
-        }
-        finalizeDrag();
-    };
-
-    /**
-     * `pointercancel` / `lostpointercapture` arrive for pointers this fader does
-     * not own: measured in Chromium, a second touch that `handlePointerDown`
-     * ignored still gets implicit capture, and still fires `lostpointercapture`
-     * here when it lifts. Compare against the captured pointer before
-     * finalizing — the same guard `handlePointerUp` already applies — so a
-     * foreign pointer's capture loss cannot finalize the owner's still-open
-     * drag. Only `onBlur` and the window `blur`/`visibilitychange` listeners
-     * finalize unconditionally, because those carry no `pointerId` at all.
-     */
+    // A foreign pointer's release, cancel, or implicit-capture loss all bubble
+    // here — bound to the same element, a second pointer's own pointerup,
+    // pointercancel, or lostpointercapture fires just as readily as the
+    // owning pointer's release, and must not close the owner's still-open
+    // gesture. Measured in Chromium: a second touch that `handlePointerDown`
+    // ignored still gets implicit capture, and still fires `lostpointercapture`
+    // here when it lifts. Compare against the captured pointer before
+    // finalizing. When no drag is open, `activePointerIdRef.current` is `null`
+    // and every real `pointerId` fails the comparison, which is the same
+    // no-op `finalizeDrag` already produces by guarding on
+    // `draggingRef.current`. Only `onBlur` and the window
+    // `blur`/`visibilitychange` listeners finalize unconditionally, because
+    // those carry no `pointerId` at all.
     const handlePointerInterrupt = (event: PointerEvent<HTMLDivElement>): void => {
         if (event.pointerId !== activePointerIdRef.current) {
             return;
@@ -431,8 +415,7 @@ export const Fader = ({
             style={{ height }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            // audit M-082: every non-pointerup end of a drag, not just the happy path.
+            onPointerUp={handlePointerInterrupt}
             onPointerCancel={handlePointerInterrupt}
             onLostPointerCapture={handlePointerInterrupt}
             onBlur={handleForceFinalize}

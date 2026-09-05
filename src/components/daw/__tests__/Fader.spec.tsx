@@ -395,8 +395,8 @@ describe('Fader', () => {
      * A second pointer (touch or pen; a mouse cannot repeat a `pointerdown`
      * under capture) pressing while a drag is already open is blocked
      * outright in `handlePointerDown` — the already-captured pointer keeps
-     * the gesture exclusively. `handlePointerMove` and `handlePointerUp`
-     * (which also backs `onPointerCancel`) now compare `event.pointerId`
+     * the gesture exclusively. `handlePointerMove` and `handlePointerInterrupt`
+     * (which backs `onPointerUp` and `onPointerCancel`) now compare `event.pointerId`
      * against `activePointerIdRef.current` too: a second pointer's own moves
      * can no longer steer the cap, and its own release can no longer
      * finalize — let alone settle — the first pointer's still-open gesture.
