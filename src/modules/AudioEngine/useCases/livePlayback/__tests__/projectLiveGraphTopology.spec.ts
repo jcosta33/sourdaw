@@ -28,7 +28,11 @@ import { projectLiveGraphTopology, type LiveGraphTopologyInput } from '../projec
  * agreement with the export is proven by rendering both
  * (`projectLiveGraphProgrammeParity.spec.ts`).
  */
-function programmeFor(stripIds: readonly string[], bakedStripIds: readonly string[] = []): LiveGraphProgramme {
+function programmeFor(
+    stripIds: readonly string[],
+    bakedStripIds: readonly string[] = [],
+    webVoicedStripIds: readonly string[] = []
+): LiveGraphProgramme {
     return {
         playbacksByStripId: new Map(
             stripIds.map((stripId): [string, readonly AudioGraphClipPlayback[]] => [
@@ -48,6 +52,7 @@ function programmeFor(stripIds: readonly string[], bakedStripIds: readonly strin
             ])
         ),
         bakedStripIds: new Set(bakedStripIds),
+        webVoicedStripIds: new Set(webVoicedStripIds),
         exclusions: [],
     };
 }
@@ -55,6 +60,7 @@ function programmeFor(stripIds: readonly string[], bakedStripIds: readonly strin
 const NO_PROGRAMME: LiveGraphProgramme = {
     playbacksByStripId: new Map(),
     bakedStripIds: new Set(),
+    webVoicedStripIds: new Set(),
     exclusions: [],
 };
 
@@ -406,6 +412,34 @@ describe('projectLiveGraphTopology', () => {
 
         const creation = stripCreation(commands, 'audio-1');
         expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(true);
+    });
+
+    it('leaves a strip whose clips Web Audio voices out of the native contribution', () => {
+        // The strip's plugin is attached, but its material — a MIDI clip the
+        // programme never admitted — is playing on the Web Audio path.
+        // Contributing it here gates that strip out of Web Audio, and the notes
+        // stop for the whole take.
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [
+                        createDevice({
+                            id: 'dev-1',
+                            type: 'external-plugin',
+                            externalPluginId: 'clap:harness-tone',
+                            externalInstanceId: 'i1',
+                        }),
+                    ],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+            programme: programmeFor([], [], ['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
     });
 
     it('builds a playing strip whose whole chain is native as contributing audio', () => {

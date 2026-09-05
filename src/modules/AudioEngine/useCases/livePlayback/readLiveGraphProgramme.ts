@@ -29,13 +29,23 @@ import {
     type LiveGraphProgramme,
     type LiveGraphProgrammeInput,
 } from './projectLiveGraphProgramme';
+import { stripIdsHoldingLiveClips } from './stripIdsHoldingLiveClips';
 
-/** What a session with nothing to play — or no clock to place it on — holds. */
-const NO_PROGRAMME: LiveGraphProgramme = {
-    playbacksByStripId: new Map(),
-    bakedStripIds: new Set(),
-    exclusions: [],
-};
+/**
+ * What a session with no clock to place its material on holds: no native
+ * playback at all, and therefore every strip holding a live clip named as one
+ * Web Audio alone voices. Leaving that set empty would tell the carrier law
+ * those strips have nothing to sound, and it would gate them out of the only
+ * carrier playing them.
+ */
+function noProgramme(stripTracks: LiveGraphProgrammeInput['stripTracks']): LiveGraphProgramme {
+    return {
+        playbacksByStripId: new Map(),
+        bakedStripIds: new Set(),
+        webVoicedStripIds: stripIdsHoldingLiveClips(stripTracks),
+        exclusions: [],
+    };
+}
 
 export type ReadLiveGraphProgrammeInput = Readonly<{
     /** The strips this session builds, in project order. */
@@ -51,7 +61,7 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
 export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): LiveGraphProgramme {
     const { project, resolveTempoAtBeat } = offlinePpqEndpointProjectorState;
     if (!project || !resolveTempoAtBeat) {
-        return NO_PROGRAMME;
+        return noProgramme(input.stripTracks);
     }
     return projectLiveGraphProgramme({
         stripTracks: input.stripTracks,

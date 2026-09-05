@@ -361,6 +361,7 @@ const PLAYING_PROGRAMME = {
         ],
     ]),
     bakedStripIds: new Set<string>(),
+    webVoicedStripIds: new Set<string>(),
     exclusions: [],
 };
 
@@ -773,6 +774,7 @@ describe('startNativeLiveGraphSession', () => {
                 ],
             ]),
             bakedStripIds: new Set<string>(),
+            webVoicedStripIds: new Set<string>(['audio-1']),
             exclusions: [
                 {
                     stripId: 'audio-1',

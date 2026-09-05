@@ -25,6 +25,15 @@
  * clip under the playhead at all, which is why the rule about having nothing to
  * play asks about the chain as well as about the programme.
  *
+ * That reading is bounded by the other carrier: an attached plugin gives a
+ * strip something to sound only when nothing on the Web Audio path still voices
+ * that strip. The native programme admits audio clips alone, so its empty entry
+ * for a strip says nothing native plays there rather than that nothing plays
+ * there — a MIDI clip on an instrument track is voiced by Web Audio and by no
+ * one else. Carrying such a strip natively would gate the only carrier sounding
+ * it out of the mix, and the notes would stop with no notice given, so the
+ * programme names those strips (`webVoicedStripIds`) and the law reads them.
+ *
  * Buses get no entry. They are shared: a native-carried track feeds the native
  * bus while a web-carried one feeds the Web Audio bus of the same name, and the
  * two sum at the hardware output. That is what makes the split per track
@@ -140,6 +149,23 @@ function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
     );
 }
 
+/**
+ * Why the native engine would sound nothing for a strip the programme gave no
+ * playback, or `null` when its own chain still gives it something to sound.
+ *
+ * An attached plugin is that something — it generates or processes with no clip
+ * under the playhead — but only while the strip has no material Web Audio is
+ * voicing. A strip whose MIDI clip the native programme never admitted is
+ * playing on the Web Audio path right now, and carrying it natively would
+ * silence it, so the plugin does not win it.
+ */
+function silenceWithoutNativePlayback(track: Track, context: CarrierContext): string | null {
+    if (!hostsAttachedPlugin(track, context)) {
+        return 'nothing scheduled';
+    }
+    return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
+}
+
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
     return chainOf(track, context).find((device) => !hasNativeBody(device, context.attachedInstanceIds)) ?? null;
 }
@@ -206,12 +232,16 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * clips on it is not "missing a plugin".
  *
  * Rule 1 asks whether the strip has anything to sound, which is a wider
- * question than whether the programme put a clip on it. An attached plugin
- * sounds on its own — the engine splices an instrument in as a generator — and
- * it has a body on no other carrier, so a clip-less strip holding one is
- * carried natively rather than handed to a Web Audio strip that would voice
- * nothing at all. An *unattached* plugin names no instance the engine holds, so
- * a clip-less strip carrying one still has nothing scheduled.
+ * question than whether the programme put a clip on it, and whether the native
+ * engine is the carrier that would sound it. An attached plugin sounds on its
+ * own — the engine splices an instrument in as a generator — and it has a body
+ * on no other carrier, so a clip-less strip holding one is carried natively
+ * rather than handed to a Web Audio strip that would voice nothing at all. An
+ * *unattached* plugin names no instance the engine holds, so a clip-less strip
+ * carrying one still has nothing scheduled. And a strip the programme left to
+ * Web Audio is voiced there whatever its chain holds: an attached plugin gives
+ * a strip something to sound only when nothing on the Web Audio path still
+ * voices that strip.
  */
 function firstFailure(
     track: Track,
@@ -219,8 +249,11 @@ function firstFailure(
     inputMonitoredTrackIds: ReadonlySet<string>
 ): string | null {
     const plays = (context.programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
-    if (!plays && !hostsAttachedPlugin(track, context)) {
-        return 'nothing scheduled';
+    if (!plays) {
+        const silence = silenceWithoutNativePlayback(track, context);
+        if (silence) {
+            return silence;
+        }
     }
     if (inputMonitoredTrackIds.has(track.id)) {
         // The live input reaches the Web Audio strip and nothing else, so

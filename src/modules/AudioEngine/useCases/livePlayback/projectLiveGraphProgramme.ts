@@ -53,7 +53,11 @@
  * silent here.
  *
  * MIDI is out of this slice (#3122): an instrument renders on the Web Audio
- * path, so a MIDI clip is skipped here rather than turned into a rest.
+ * path, so a MIDI clip is skipped here rather than turned into a rest. Skipped
+ * is not silent, though, and the producer names every strip it left that way in
+ * `webVoicedStripIds`: an empty native entry means "nothing native to play"
+ * rather than "nothing to play", and a reader that cannot tell the two apart
+ * gates the Web Audio strip that was voicing the material out of the mix.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -69,13 +73,7 @@ import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClipsWithComping';
 
-/**
- * A live session plays the arrangement from its head, so every time in this
- * producer is an absolute timeline second. The export's region offset is the
- * only reason `projectOfflineAudioClipPlaybacks` takes a region at all, and a
- * live session has none.
- */
-const LIVE_REGION_START_BEAT = 0;
+import { isLiveClip, LIVE_REGION_START_BEAT } from './isLiveClip';
 
 export type LiveGraphProgrammeExclusion = Readonly<{
     stripId: string;
@@ -103,6 +101,15 @@ export type LiveGraphProgramme = Readonly<{
     playbacksByStripId: ReadonlyMap<string, readonly AudioGraphClipPlayback[]>;
     /** Strips whose device chain the programme replaces — the frozen ones. */
     bakedStripIds: ReadonlySet<string>;
+    /**
+     * Strips holding at least one live clip this producer did not admit as a
+     * native playback: a MIDI clip, which is voiced on the Web Audio path
+     * (#3122); an audio clip with no decoded material or no buffer id; a clip
+     * refused by the expansion ceiling; or a frozen track whose bake is not
+     * loaded. Such a strip has material only Web Audio voices, so the carrier
+     * law must not read its empty native entry as nothing to sound.
+     */
+    webVoicedStripIds: ReadonlySet<string>;
     /** Everything this projection could not carry, and why. */
     exclusions: readonly LiveGraphProgrammeExclusion[];
 }>;
@@ -185,6 +192,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
 
     const playbacksByStripId = new Map<string, AudioGraphClipPlayback[]>();
     const bakedStripIds = new Set<string>();
+    const webVoicedStripIds = new Set<string>();
     const exclusions: LiveGraphProgrammeExclusion[] = [];
 
     function admit(stripId: string, playback: AudioGraphClipPlayback): void {
@@ -226,6 +234,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
             continue;
         }
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
+            webVoicedStripIds.add(track.id);
             exclusions.push({
                 stripId: track.id,
                 subjectId: track.freezeState.frozenBufferId,
@@ -240,19 +249,25 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
 
         for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
-            if (clip.muted || clip.endBeat <= LIVE_REGION_START_BEAT || clip.endBeat - clip.startBeat <= 0) {
+            if (!isLiveClip(clip)) {
                 continue;
             }
             if (clip.type !== 'audio') {
                 // Instrument programme stays on the Web Audio path (#3122).
+                webVoicedStripIds.add(track.id);
                 continue;
             }
             const bufferId = clip.audioBufferId;
             if (!bufferId) {
+                webVoicedStripIds.add(track.id);
                 continue;
             }
             const clipLabel = clip.name || clip.id;
+            // Dropping a clip names its strip web-voiced as well as naming the
+            // clip: the material is still in the project, and Web Audio is the
+            // only carrier left that plays it.
             const excludeClip = (reason: string): void => {
+                webVoicedStripIds.add(track.id);
                 exclusions.push({ stripId: track.id, subjectId: clip.id, reason });
             };
 
@@ -297,5 +312,5 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
         }
     }
 
-    return { playbacksByStripId, bakedStripIds, exclusions };
+    return { playbacksByStripId, bakedStripIds, webVoicedStripIds, exclusions };
 }
