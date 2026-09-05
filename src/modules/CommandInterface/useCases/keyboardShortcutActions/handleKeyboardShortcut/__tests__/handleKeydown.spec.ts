@@ -753,6 +753,51 @@ describe('handleKeydown', () => {
             expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
+        it('resolves a simultaneous marquee and clip selection to the marquee delete only', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
+            ];
+            // Both selections at once: the marquee must win, and the clip
+            // deletion must not also fire behind it.
+            clipSelectionStoreMock.value.marqueeSelection = { startBeat: 2, endBeat: 7, trackIds: ['t1'] };
+            clipSelectionStoreMock.value.selectedClipId = 'clip-1';
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
+            trackStoreMock.value.tracks = [
+                { id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] },
+                { id: 't2', clips: [{ id: 'clip-2', startBeat: 4, endBeat: 6 }] },
+            ];
+
+            const prevent = handleKeydown(descriptor({ key: 'F1' }));
+
+            expect(prevent).toBe(true);
+            expect(deleteTimeRange).toHaveBeenCalledWith(2, 7, ['t1']);
+            expect(setMarqueeSelection).toHaveBeenCalledWith(null);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(clearClipSelection).not.toHaveBeenCalled();
+            expect(removeClip).not.toHaveBeenCalled();
+        });
+
+        it('falls back to the lone selected clip id when the multi-selection is empty', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
+            ];
+            clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+            clipSelectionStoreMock.value.selectedClipIds = [];
+            trackStoreMock.value.tracks = [{ id: 't1', clips: [{ id: 'clip-9', startBeat: 0, endBeat: 2 }] }];
+
+            const prevent = handleKeydown(descriptor({ key: 'F1' }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith(
+                { type: 'removeClip', payload: { clipId: 'clip-9' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 1 clip' }
+            );
+            expect(clearClipSelection).toHaveBeenCalled();
+            expect(removeClip).not.toHaveBeenCalled();
+            expect(pushUndoEntry).not.toHaveBeenCalled();
+        });
+
         it('dispatches one registered removeClip per selected clip, in selection order, and no raw mutation', () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
