@@ -1,0 +1,36 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_28abfd94826e36::t_38a1750e79a9a1 493-495
+  s_28abfd94826e36::t_6c3ff7d1b0ffc7 220-222
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveGraphProgramme.spec.ts
+  s_28abfd94826e36::t_09e425d63aceb8 1-96
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_28abfd94826e36::t_f7d5c90aba47ca 37-44
+  s_28abfd94826e36::t_6455b50aa37619 169-182,188-189
+  s_28abfd94826e36::t_4f961d06f5a83e 269-270
+  s_28abfd94826e36::t_308e4d7d455722 190
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_28abfd94826e36::t_8b7f0704680751 170-174,191-232
+  s_28abfd94826e36::t_d2653da6d52c40 233
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripIdsHoldingLiveClips.spec.ts
+  s_28abfd94826e36::t_f3b38939a0a795 127-129
+  s_28abfd94826e36::t_f012ba9aa242a7 86-89
+  s_28abfd94826e36::t_3fca2554763cd2 105-126,130-147
+  s_28abfd94826e36::t_e4505ba0ac9f19 10,12,16-28
+  s_28abfd94826e36::t_b0c1a4268d70e7 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "256250c19a3ba4b233fd6e3599a17793b8e42b01",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
