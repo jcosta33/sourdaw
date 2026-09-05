@@ -1585,7 +1585,7 @@ describe('ProofPanel', () => {
         expect(bridge.setParam).toHaveBeenCalledWith('lim_bypass', 1);
     });
 
-    const minHeightClasses = (element: HTMLElement | null): string[] =>
+    const minHeightClasses = (element: HTMLElement | null | undefined): string[] =>
         (element?.className ?? '').split(/\s+/).filter((token) => token.startsWith('min-h-'));
 
     it('keeps the faceplate overflow-auto with no min-height floor so it scrolls instead of clipping', () => {
