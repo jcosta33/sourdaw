@@ -40,7 +40,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -48,10 +48,11 @@ use std::time::UNIX_EPOCH;
 
 use daw_plugin_host::scanner::{self, PluginFormat, ScannedPlugin};
 use daw_plugin_host::vst3_module;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::filesystem::APP_DIR_NAME;
-use crate::commands::plugins::MAX_SCAN_CANDIDATES;
+use crate::commands::plugins::{MAX_SCAN_CANDIDATES, SCANNED_PLUGIN_KEY_CAPACITY};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::PluginRegistryEntry;
 
@@ -94,33 +95,26 @@ const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 5;
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
 const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
 
-/// The most plugins one bundle's factory may declare before the scan refuses
-/// the bundle.
-///
-/// Restated from `daw_plugin_host::scanner::MAX_SCANNED_BUNDLE_PLUGINS`, which
-/// is private to that crate. A restatement, not a second opinion: this store
-/// cannot hold more rows for a bundle than the scanner will emit for it, so a
-/// value below the scanner's refuses documents the scanner itself produced.
-const MAX_BUNDLE_PLUGINS: usize = 32;
-
-/// Registry keys one scanned plugin is stored under: its path hash and its own
-/// descriptor id. `commands::plugins::key_scanned_plugins` writes both.
-const KEYS_PER_PLUGIN: usize = 2;
-
 /// Refuse a document carrying more rows than a completed scan could index.
 ///
 /// Every factor, because every one of them multiplies: a walk indexes at most
 /// [`MAX_SCAN_CANDIDATES`] files, each file may declare up to
-/// [`MAX_BUNDLE_PLUGINS`] plugins, and each plugin is stored under
-/// [`KEYS_PER_PLUGIN`] keys. Counting candidates alone was wrong by the whole
-/// bundle factor — one two-plugin bundle in an otherwise full folder writes
-/// more rows than such a bound admits — and the reader would then refuse, at
-/// every launch, a file this build's own writer produced.
+/// [`scanner::MAX_SCANNED_BUNDLE_PLUGINS`] plugins, and each plugin is stored
+/// under [`SCANNED_PLUGIN_KEY_CAPACITY`] keys. Counting candidates alone was
+/// wrong by the whole bundle factor — one two-plugin bundle in an otherwise
+/// full folder writes more rows than such a bound admits — and the reader would
+/// then refuse, at every launch, a file this build's own writer produced.
+///
+/// Each factor is read from the code that enforces it rather than restated
+/// here. A restated bound is a second opinion that can fall behind the first,
+/// and falling behind means refusing documents this build wrote.
 ///
 /// Bounding the row count as well as the byte count matters because the two
 /// costs are different: deeply repetitive JSON well inside the byte bound still
 /// expands into a map far larger than any scan can produce.
-const MAX_REGISTRY_ENTRIES: usize = MAX_SCAN_CANDIDATES * MAX_BUNDLE_PLUGINS * KEYS_PER_PLUGIN;
+const MAX_REGISTRY_ENTRIES: usize = MAX_SCAN_CANDIDATES
+    * scanner::MAX_SCANNED_BUNDLE_PLUGINS as usize
+    * SCANNED_PLUGIN_KEY_CAPACITY;
 
 /// Refuse to parse a registry file larger than a scan could have written.
 ///
@@ -165,6 +159,36 @@ pub struct PersistedScanRegistry {
     /// Binaries a scan helper crashed or timed out on, keyed by path. Ordered
     /// for the same byte-stability reason as `entries`.
     pub quarantine: BTreeMap<String, PersistedQuarantineEntry>,
+}
+
+/// The document as it is written: the same columns as
+/// [`PersistedScanRegistry`], borrowed rather than owned.
+///
+/// A persist writes the whole registry, and the whole registry is already in
+/// memory under the store's lock. Building an owned document to serialize would
+/// hold a second copy of every row for the length of the write, on a table
+/// whose ceiling is [`MAX_REGISTRY_ENTRIES`] rows.
+///
+/// The field names are the schema and must stay identical to
+/// [`PersistedScanRegistry`]'s: this writes what that reads.
+#[derive(Serialize)]
+struct PersistedScanRegistryRef<'a> {
+    schema_version: u32,
+    entries: &'a BTreeMap<String, PersistedPluginEntry>,
+    quarantine: &'a BTreeMap<String, PersistedQuarantineEntry>,
+}
+
+/// The quarantine column alone, out of a document whose other columns this
+/// build may not be able to read.
+///
+/// Every other field is ignored rather than validated, which is the whole
+/// point: the column survives a document the schema check would discard.
+/// `quarantine` defaults so that a document written before the column existed
+/// reads as "nothing quarantined" rather than as unreadable.
+#[derive(Deserialize)]
+struct QuarantineColumn {
+    #[serde(default)]
+    quarantine: BTreeMap<String, PersistedQuarantineEntry>,
 }
 
 /// One persisted quarantine row: a binary a scan will not spawn a helper for
@@ -680,8 +704,7 @@ impl PluginRegistryStore {
         }
 
         let mut stored = self.lock_stored();
-        let mut entries = stored.entries.clone();
-        entries.extend(scanned_this_session);
+        stored.entries.extend(scanned_this_session);
 
         // The quarantine column gets the same "never resurrect what a sibling
         // removed, never erase what a sibling added" treatment as `entries`,
@@ -692,9 +715,7 @@ impl PluginRegistryStore {
         // (`quarantine_touched`) — every other key defers entirely to the
         // fresh disk read, which is how a sibling process's own quarantine or
         // clear survives a persist from this one.
-        let mut quarantine = read_registry_document(location)
-            .map(|document| document.quarantine)
-            .unwrap_or_default();
+        let mut quarantine = read_quarantine_column(location);
         for key in &stored.quarantine_touched {
             match stored.quarantine.get(key) {
                 Some(entry) => {
@@ -706,16 +727,21 @@ impl PluginRegistryStore {
             }
         }
 
-        let document = PersistedScanRegistry {
-            schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
-            entries,
-            quarantine,
-        };
-        match write_registry_document(location, &document) {
-            Ok(()) => {
-                stored.entries = document.entries;
-                stored.quarantine = document.quarantine;
-            }
+        // The union is already in `stored.entries`, so a failed write leaves
+        // memory ahead of disk rather than behind it. That is the recoverable
+        // direction: the next persist writes the same union again, while
+        // rolling memory back would drop this scan's rows for the session that
+        // just produced them.
+        let written = write_registry_document(
+            location,
+            &PersistedScanRegistryRef {
+                schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
+                entries: &stored.entries,
+                quarantine: &quarantine,
+            },
+        );
+        match written {
+            Ok(()) => stored.quarantine = quarantine,
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
     }
@@ -824,13 +850,25 @@ pub(crate) fn scanned_binary_location(plugin: &ScannedPlugin) -> Option<PathBuf>
 ///
 /// macOS loads a bundle through `CFBundleCreate`, which takes its executable
 /// from `Info.plist`'s `CFBundleExecutable` and is under no obligation to name
-/// it after the bundle. The stem-named path is the convention and is tried
-/// first; when it is not there, the one regular file in `Contents/MacOS` is
-/// what CoreFoundation would have opened. Lowest path wins among several, so
-/// repeated runs resolve the same file — `read_dir` order is not stable, and an
-/// unstable pick would read as a plugin that changes every scan.
+/// it after the bundle. So the plist's answer is asked for first, through the
+/// same CoreFoundation call the loader makes: a bundle whose executable is
+/// named for the vendor rather than for the bundle is fingerprinted from the
+/// file the loader opens, not from a conventional name that is not there.
+///
+/// The remaining two answers are for a bundle CoreFoundation will not name an
+/// executable for — no `Info.plist`, and nothing where it infers the executable
+/// to be. The stem-named path is the convention, and when it is absent the one
+/// regular file in `Contents/MacOS` is the only candidate left. Lowest path
+/// wins among several, so repeated runs resolve the same file — `read_dir`
+/// order is not stable, and an unstable pick would read as a plugin that
+/// changes every scan.
 #[cfg(target_os = "macos")]
 fn vst3_bundle_binary_location(bundle: &Path) -> Option<PathBuf> {
+    let declared = vst3_module::bundle_executable_path(bundle);
+    if let Some(executable) = declared.filter(|executable| executable.is_file()) {
+        return Some(executable);
+    }
+
     let stem_named = vst3_module::macos_executable_path(bundle).ok()?;
     if stem_named.is_file() {
         return Some(stem_named);
@@ -891,7 +929,39 @@ fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
     Some((metadata.len(), u64::try_from(modified).ok()?))
 }
 
-/// Read the registry document, or nothing.
+/// Counts the bytes taken out of `inner`, so a bounded parse can say afterwards
+/// how far it read.
+struct CountingReader<R> {
+    inner: R,
+    bytes: u64,
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        self.bytes += read as u64;
+        Ok(read)
+    }
+}
+
+/// What a bounded parse found.
+///
+/// The two failures are told apart because only one of them is worth saying out
+/// loud: a malformed document is the ordinary first-run and corrupt-file state
+/// this module already treats as absent, while a document past the byte bound
+/// is a file that is not this file at all.
+enum BoundedRead<T> {
+    Parsed(T),
+    Malformed,
+    PastByteBound,
+}
+
+/// Parse `source`, refusing anything that reads past `max_bytes`.
+///
+/// Streamed rather than buffered: the parser pulls from the reader, so the
+/// bound limits what is *read*, not merely what is accepted. Collecting the
+/// bytes first in order to reject them spends the whole bound in memory to
+/// answer a question the count alone answers.
 ///
 /// The bound is enforced on the read itself rather than on a `metadata` call
 /// first. Two reasons, and both of them are the same file: `metadata` follows
@@ -901,22 +971,58 @@ fn file_fingerprint(path: &Path) -> Option<(u64, u64)> {
 /// even for an ordinary file the size can change between the stat and the read.
 /// Reading one byte past the limit and refusing on overflow answers both
 /// without trusting anything the filesystem said earlier.
-fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
-    let mut bytes = Vec::new();
-    File::open(location)
-        .ok()?
-        .take(MAX_REGISTRY_FILE_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() as u64 > MAX_REGISTRY_FILE_BYTES {
-        eprintln!(
-            "[Plugin] Ignoring an oversized plugin scan registry at {}",
-            location.display()
-        );
-        return None;
+fn read_within_byte_bound<T: DeserializeOwned>(
+    source: impl Read,
+    max_bytes: u64,
+) -> BoundedRead<T> {
+    let mut reader = CountingReader {
+        inner: BufReader::new(source.take(max_bytes + 1)),
+        bytes: 0,
+    };
+    let parsed = serde_json::from_reader(&mut reader).ok();
+    if reader.bytes > max_bytes {
+        return BoundedRead::PastByteBound;
     }
+    match parsed {
+        Some(value) => BoundedRead::Parsed(value),
+        None => BoundedRead::Malformed,
+    }
+}
 
-    let document: PersistedScanRegistry = serde_json::from_slice(&bytes).ok()?;
+/// Read one shape out of the registry file, under the byte bound.
+fn read_bounded_registry_file<T: DeserializeOwned>(location: &Path) -> Option<T> {
+    let file = File::open(location).ok()?;
+    match read_within_byte_bound(file, MAX_REGISTRY_FILE_BYTES) {
+        BoundedRead::Parsed(value) => Some(value),
+        BoundedRead::Malformed => None,
+        BoundedRead::PastByteBound => {
+            eprintln!(
+                "[Plugin] Ignoring an oversized plugin scan registry at {}",
+                location.display()
+            );
+            None
+        }
+    }
+}
+
+/// The quarantine column of whatever is on disk now, whether or not the rest of
+/// the document parses.
+///
+/// [`PluginRegistryStore::persist`] needs this column and nothing else, and it
+/// needs it from a file another writer owns half of. Deserializing the whole
+/// document to reach one column ties a sibling's quarantine record to this
+/// build's ability to parse the sibling's rows — a row shape from a newer build,
+/// or a row this one corrupted, and the column reads as empty and the persist
+/// erases every quarantine decision in it.
+fn read_quarantine_column(location: &Path) -> BTreeMap<String, PersistedQuarantineEntry> {
+    read_bounded_registry_file::<QuarantineColumn>(location)
+        .map(|column| column.quarantine)
+        .unwrap_or_default()
+}
+
+/// Read the registry document, or nothing.
+fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
+    let document: PersistedScanRegistry = read_bounded_registry_file(location)?;
     if document.schema_version != SCAN_REGISTRY_SCHEMA_VERSION {
         return None;
     }
@@ -945,7 +1051,7 @@ fn read_registry_document(location: &Path) -> Option<PersistedScanRegistry> {
 /// only atomic within a filesystem.
 fn write_registry_document(
     location: &Path,
-    document: &PersistedScanRegistry,
+    document: &PersistedScanRegistryRef<'_>,
 ) -> Result<(), String> {
     let directory = location
         .parent()
@@ -1582,6 +1688,42 @@ mod tests {
         );
     }
 
+    /// A document is refused for its byte count, and the count is the reader's
+    /// own rather than anything the filesystem declared. Both edges are pinned
+    /// because only the pair distinguishes a bound from an absence of one: a
+    /// reader with no count at all admits the oversized document, and a reader
+    /// that miscounts by one refuses the largest legal one at every launch.
+    ///
+    /// Bounded here rather than at [`MAX_REGISTRY_FILE_BYTES`] because the real
+    /// bound is two gigabytes, and a spec that materialised two gigabytes to
+    /// watch them be refused would cost more than the defect.
+    /// `the_byte_bound_admits_a_registry_full_of_maximal_rows` pins the
+    /// production number itself.
+    ///
+    /// Mutation this catches: dropping the byte count and letting the parse
+    /// decide, which reads the whole document and reports it as parsed.
+    #[test]
+    fn a_document_read_past_the_byte_bound_is_refused_rather_than_parsed() {
+        let document = br#"{"schema_version":5,"entries":{},"quarantine":{}}"#;
+        let document_bytes = document.len() as u64;
+
+        assert!(
+            matches!(
+                read_within_byte_bound::<PersistedScanRegistry>(&document[..], document_bytes - 1),
+                BoundedRead::PastByteBound
+            ),
+            "a document one byte past the bound must be refused for its size, \
+             not accepted because it happened to parse"
+        );
+        assert!(
+            matches!(
+                read_within_byte_bound::<PersistedScanRegistry>(&document[..], document_bytes),
+                BoundedRead::Parsed(_)
+            ),
+            "a document exactly at the bound is the largest legal one and must parse"
+        );
+    }
+
     /// The bound has to hold against a file whose declared length is a lie —
     /// a registry replaced by a symlink to a character device declares zero and
     /// then reads forever.
@@ -1596,6 +1738,125 @@ mod tests {
         assert!(
             read_registry_document(&location).is_none(),
             "an endless read must be refused by the bound, not followed"
+        );
+    }
+
+    /// A `.vst3` bundle as CoreFoundation reads one: the executables under
+    /// `Contents/MacOS`, and an `Info.plist` naming which of them is the
+    /// bundle's own when `declared_executable` is given.
+    #[cfg(target_os = "macos")]
+    fn write_vst3_bundle(
+        root: &Path,
+        bundle_name: &str,
+        declared_executable: Option<&str>,
+        executables: &[&str],
+    ) -> PathBuf {
+        let bundle = root.join(bundle_name);
+        let executable_directory = bundle.join("Contents").join("MacOS");
+        fs::create_dir_all(&executable_directory)
+            .expect("the bundle's executable directory should be created");
+        for executable in executables {
+            fs::write(executable_directory.join(executable), b"mach-o")
+                .expect("a bundle executable should be written");
+        }
+        if let Some(declared) = declared_executable {
+            fs::write(
+                bundle.join("Contents").join("Info.plist"),
+                format!(
+                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>{declared}</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.sourdaw.test.{declared}</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+</dict>
+</plist>
+"#
+                ),
+            )
+            .expect("the bundle's Info.plist should be written");
+        }
+        bundle
+    }
+
+    /// The fingerprint has to follow the file the loader opens, and on macOS
+    /// that file is whichever one the plist names. A vendor is free to ship
+    /// `Contents/MacOS/Vendor` beside a stem-named stub, and fingerprinting the
+    /// stub reads an update to the real module as no change at all — so the
+    /// plugin is never rescanned and the stale row is reused forever.
+    ///
+    /// Mutation this catches: resolving the stem-named path first, which is
+    /// what this did before the plist was read.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_macos_bundle_resolves_the_executable_its_plist_names() {
+        let test_root = TestRegistryRoot::create("registry-macos-plist-executable");
+        let bundle = write_vst3_bundle(
+            &test_root.root.join("plugins"),
+            "Reverb.vst3",
+            Some("Renamed"),
+            &["Renamed", "Reverb"],
+        );
+
+        assert_eq!(
+            vst3_bundle_binary_location(&bundle),
+            Some(bundle.join("Contents").join("MacOS").join("Renamed")),
+            "the executable the bundle declares wins over the conventional name, \
+             even when the conventional name is there"
+        );
+    }
+
+    /// A bundle with no `Info.plist` still resolves. CoreFoundation falls back
+    /// to the bundle's own name here exactly as the convention does, so this
+    /// pins the answer rather than the route to it: a resolver that stopped
+    /// answering for a plist-less bundle would leave it unfingerprintable, and
+    /// its rows would never be reused again.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_macos_bundle_with_no_plist_resolves_the_stem_named_executable() {
+        let test_root = TestRegistryRoot::create("registry-macos-no-plist");
+        let bundle = write_vst3_bundle(
+            &test_root.root.join("plugins"),
+            "Reverb.vst3",
+            None,
+            &["Reverb"],
+        );
+
+        assert_eq!(
+            vst3_bundle_binary_location(&bundle),
+            Some(bundle.join("Contents").join("MacOS").join("Reverb")),
+            "a bundle with no declared executable still resolves by convention"
+        );
+    }
+
+    /// Neither the plist nor the convention answers here: there is no plist to
+    /// read, and the file in `Contents/MacOS` is not named after the bundle.
+    /// The directory itself is the last answer, and it is the one CoreFoundation
+    /// would have opened — dropping it fingerprints the bundle directory
+    /// instead, which does not move when the module inside it is rewritten, so
+    /// an updated plugin reads as unchanged forever.
+    ///
+    /// Mutation this catches: resolving through the declared and conventional
+    /// paths alone.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_macos_bundle_naming_neither_executable_resolves_the_file_that_is_there() {
+        let test_root = TestRegistryRoot::create("registry-macos-unconventional");
+        let bundle = write_vst3_bundle(
+            &test_root.root.join("plugins"),
+            "Reverb.vst3",
+            None,
+            &["Actual"],
+        );
+
+        assert_eq!(
+            vst3_bundle_binary_location(&bundle),
+            Some(bundle.join("Contents").join("MacOS").join("Actual")),
+            "the only regular file in Contents/MacOS is the only module there is"
         );
     }
 
@@ -1747,6 +2008,53 @@ mod tests {
         assert_eq!(quarantined.path, plugin_path.display().to_string());
     }
 
+    /// A sibling's quarantine record must not depend on this build's ability to
+    /// read the sibling's rows. The two columns fail independently — a row
+    /// shape from a newer build, or one file corruption — and reading the whole
+    /// document to reach one column ties them together: the parse fails, the
+    /// column reads as empty, and the persist writes that emptiness back,
+    /// un-quarantining a binary whose scan helper crashed.
+    ///
+    /// Mutation this catches: reaching the quarantine column through
+    /// `read_registry_document` again.
+    #[test]
+    fn a_persist_keeps_a_siblings_quarantine_when_the_entries_column_is_unreadable() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-unreadable-entries");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let quarantined_key = plugin_path.display().to_string();
+
+        // A row of the wrong shape: `bundle_position` is a number in every
+        // document this build writes, so the whole document fails to
+        // deserialize while staying valid JSON.
+        let unreadable = format!(
+            r#"{{"schema_version":{SCAN_REGISTRY_SCHEMA_VERSION},
+                "entries":{{"aaaa1111":{{"bundle_position":"first"}}}},
+                "quarantine":{{{key}:{{"path":{key},
+                    "reason":"Plugin scan helper exited unsuccessfully for Hostile.clap",
+                    "quarantined_at_ms":1700000000000}}}}}}"#,
+            key = serde_json::to_string(&quarantined_key)
+                .expect("a path should serialize as a JSON string"),
+        );
+        let location = test_root.root.join(REGISTRY_FILE_NAME);
+        fs::write(&location, unreadable).expect("the fixture document should be written");
+        assert!(
+            read_registry_document(&location).is_none(),
+            "the fixture must be a document this build cannot read whole, or it \
+             proves nothing about reading one column out of one it cannot"
+        );
+
+        // A store that has decided nothing about the quarantine column, doing
+        // the one thing that rewrites the file.
+        test_root.store().persist(&[]);
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let quarantined = next_launch
+            .is_quarantined(&plugin_path)
+            .expect("a quarantine beside an unreadable entries column must survive the persist");
+        assert_eq!(quarantined.path, quarantined_key);
+    }
+
     /// The inverse of the cross-process survival guarantee: a writer's own
     /// clear of a key must still win even when another store's intervening,
     /// untouched persist re-reads and re-writes the very file the clear will
@@ -1850,14 +2158,6 @@ mod tests {
     /// the persisted row without revisiting the bound.
     #[test]
     fn the_byte_bound_admits_a_registry_full_of_maximal_rows() {
-        assert_eq!(
-            MAX_REGISTRY_ENTRIES,
-            MAX_SCAN_CANDIDATES * MAX_BUNDLE_PLUGINS * KEYS_PER_PLUGIN,
-            "the row cap is the product of every factor that multiplies it: \
-             candidates, the plugins one bundle may declare, and the keys each \
-             plugin is stored under"
-        );
-
         let entry = PersistedPluginEntry {
             plugin: maximal_scanned_plugin(Path::new("/plugins/Reverb.clap")),
             bundle_position: 0,

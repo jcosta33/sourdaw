@@ -32,7 +32,12 @@ const MAX_SCANNED_PARAMETER_METADATA_BYTES: usize = 32 * 1024;
 /// four billion plugins would otherwise hold the worker inside a walk until
 /// its deadline killed it and report as broken rather than as unusual. Real
 /// bundles declare a handful.
-const MAX_SCANNED_BUNDLE_PLUGINS: u32 = 32;
+///
+/// `pub` because the persisted plugin registry multiplies its own row cap by
+/// this number (`sourdaw_native::host::plugin_registry_store`). A store that
+/// restated it could hold a value below the one the scan enforces, and would
+/// then refuse, at every launch, documents this build's own scan wrote.
+pub const MAX_SCANNED_BUNDLE_PLUGINS: u32 = 32;
 
 /// The most audio ports, per direction, the scanner will walk on one plugin.
 ///
