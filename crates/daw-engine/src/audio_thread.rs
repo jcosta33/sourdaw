@@ -2646,3 +2646,264 @@ mod device_output_tests {
         assert_eq!(harness.master_peak(), FOLDED_SAMPLE.abs());
     }
 }
+
+/// Compensation's real-time contract, driven through the production render
+/// callback.
+///
+/// Every delay line the graph runs is built control-side and reaches the
+/// callback owning its buffers, and a line the callback replaces or gives up
+/// leaves over the ADR 0020 retirement route. Both halves are one property of
+/// this callback: an allocation and a free are equally fatal on the audio
+/// thread, and `assert_no_alloc` catches both.
+///
+/// The interceptor is installed as the test binary's global allocator by the
+/// scheduler's own guards and exists only in debug builds
+/// (`assert_no_alloc`'s `disable_release` feature is on by default), which is
+/// why this module is `#[cfg(all(test, debug_assertions))]`.
+#[cfg(all(test, debug_assertions))]
+mod compensation_render_alloc_guards {
+    use super::{new_bridge_round_trip_slot, DeviceRenderer};
+    use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
+    use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
+    use crate::plugin_slot::{NativePlugin, TransportState};
+    use crate::scheduler::{
+        graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+        GraphCommand, RetiredGraphObjects,
+    };
+    use crate::timeline::{
+        timeline_rt_diagnostics_channel, ChainEntry, ClipPlacement, ClipPlayback, DeviceKind,
+        RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
+    };
+    use assert_no_alloc::assert_no_alloc;
+    use rtrb::{Consumer, Producer, RingBuffer};
+    use std::any::Any;
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const DEVICE_CHANNELS: usize = 2;
+    const CALLBACK_FRAMES: usize = 128;
+    const COMMAND_CAPACITY: usize = 32;
+    const EFFECT_ID: usize = 900;
+
+    struct CompensationHarness {
+        command_tx: Producer<GraphCommand>,
+        retired_rx: Consumer<RetiredGraphObjects>,
+        renderer: DeviceRenderer,
+    }
+
+    impl CompensationHarness {
+        fn new() -> Self {
+            let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
+            let (retired_tx, retired_rx) = RingBuffer::new(COMMAND_CAPACITY + 1);
+            let (midi_diagnostics_tx, _midi_reader) = active_midi_rt_diagnostics_channel();
+            let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
+            let (graph_progress_tx, _progress_reader) = graph_progress_channel();
+            let (transport_position_tx, _position_reader) = transport_position_channel();
+            let (master_meter_tx, _meter_reader) = master_meter_channel();
+            let scheduler = AudioScheduler::with_rt_diagnostics(
+                command_rx,
+                retired_tx,
+                SAMPLE_RATE,
+                midi_diagnostics_tx,
+                timeline_diagnostics_tx,
+                graph_progress_tx,
+                transport_position_tx,
+                master_meter_tx,
+            );
+            let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
+            Self {
+                command_tx,
+                retired_rx,
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    new_bridge_round_trip_slot(),
+                    capture_feed_rx,
+                ),
+            }
+        }
+
+        fn send(&mut self, command: GraphCommand) {
+            self.command_tx
+                .push(command)
+                .map_err(|_| "the command ring should hold this test's batch")
+                .expect("push");
+        }
+    }
+
+    /// Something for the effect table to hold, so a declared latency lands on a
+    /// registered effect and the second declaration replaces the first's line
+    /// rather than being refused.
+    struct SilentPlugin;
+
+    impl NativePlugin for SilentPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn name(&self) -> &str {
+            "silent-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The command the control thread builds for a declared latency.
+    fn set_latency(latency_frames: usize) -> GraphCommand {
+        GraphCommand::SetEffectLatency {
+            effect_id: EFFECT_ID,
+            latency_frames,
+            dry_delay: CompensationDelay::for_latency(latency_frames),
+        }
+    }
+
+    /// One mono clip of a constant value from frame zero, so the frame the
+    /// material first sounds on is the only thing the assertion has to read.
+    fn constant_clip(clip_id: usize, value: f32, frames: usize) -> Box<TimelineClip> {
+        TimelineClip::new(
+            clip_id,
+            vec![value; frames].into(),
+            [].into(),
+            ClipPlacement {
+                start_frame: 0,
+                source_offset_frames: 0,
+                length_frames: frames as u64,
+            },
+            ClipPlayback::at_gain(1.0),
+        )
+    }
+
+    #[test]
+    fn compensating_the_graph_neither_allocates_nor_frees_on_the_callback() {
+        const CALLBACKS: usize = 4;
+        const GROUP_CLIP_ID: usize = 202;
+        const GROUP_CLIP_VALUE: f32 = 0.5;
+        const HELD_FRAMES: usize = 128;
+        /// The callback each bypass switch is sent on, so the guard covers a
+        /// running device's dry line and a bypassed one's alike.
+        const BYPASS_AT: usize = 1;
+        const UNBYPASS_AT: usize = 2;
+
+        let mut harness = CompensationHarness::new();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        // The group's own material, so the render has something to hold and the
+        // hold is readable at the master rather than only in the graph's state.
+        harness.send(GraphCommand::AddClip(
+            2,
+            constant_clip(GROUP_CLIP_ID, GROUP_CLIP_VALUE, CALLBACKS * CALLBACK_FRAMES),
+        ));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PostFader,
+            level: 0.5,
+            delay: Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)),
+        });
+        harness.send(GraphCommand::AddPlugin(EFFECT_ID, Box::new(SilentPlugin)));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 3,
+            entry: ChainEntry {
+                effect_id: EFFECT_ID,
+                kind: DeviceKind::Effect,
+            },
+            index: 0,
+        });
+        // A group: the latent track sums into track 2's input, which puts
+        // track 2's source line at a non-zero delay and so on the render this
+        // guard wraps.
+        harness.send(GraphCommand::SetTrackOutput(3, RouteTarget::Track(2)));
+        // Two on one effect: the second replaces the line the first installed,
+        // which is the free this guard exists to catch.
+        harness.send(set_latency(64));
+        harness.send(set_latency(128));
+        // Gives up a track that owns an output line, a source line and a send
+        // line.
+        harness.send(GraphCommand::RemoveTrack(1));
+
+        // Sized outside, the way a device buffer is: the callback is what is
+        // under test, not the buffer it is handed. So is the master the render
+        // is read back from, for the same reason.
+        let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+        let mut heard = vec![0.0f32; CALLBACKS * CALLBACK_FRAMES];
+
+        assert_no_alloc(|| {
+            for callback in 0..CALLBACKS {
+                // The two passes a dry line takes are different code on the
+                // callback: a running device feeds its line, a bypassed one
+                // reads it. Switching inside the guard puts both under it,
+                // along with the block each switch lands on.
+                match callback {
+                    BYPASS_AT => harness.send(GraphCommand::SetBypass(EFFECT_ID, true)),
+                    UNBYPASS_AT => harness.send(GraphCommand::SetBypass(EFFECT_ID, false)),
+                    _ => {}
+                }
+                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
+                for (frame, sample) in block.iter_mut().enumerate() {
+                    *sample = data[frame * DEVICE_CHANNELS];
+                }
+            }
+        });
+
+        // The feed a route line takes while it holds nothing is callback code
+        // too, and this graph runs it inside the guard: the latent track
+        // arrives at the group's input at exactly the group's depth, so its
+        // output line holds nothing and is written rather than read on every
+        // block above.
+        assert_eq!(
+            harness
+                .renderer
+                .scheduler
+                .timeline()
+                .track(3)
+                .expect("the latent track is in the graph")
+                .output_delay_frames(),
+            0,
+            "the latent track's output line held nothing, so the guard covered the \
+             zero-hold feed as well as the holds"
+        );
+
+        // The guard only covers what the callback ran, and a line holding
+        // nothing reads nothing back. Aiming it says the graph asked for the
+        // hold; the master says the render took it. Both are needed, because
+        // compensation aims a line whether or not the render path that runs it
+        // was ever reached.
+        assert_eq!(
+            harness
+                .renderer
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("the group track is in the graph")
+                .source_delay_frames(),
+            HELD_FRAMES,
+            "the group's source line was aimed at the depth of the latent track feeding it"
+        );
+        let mut expected = vec![GROUP_CLIP_VALUE; CALLBACKS * CALLBACK_FRAMES];
+        expected[..HELD_FRAMES].fill(0.0);
+        assert_eq!(
+            heard, expected,
+            "the group's own clip waits the whole hold at the master, so the callback ran the line"
+        );
+
+        // Freed here, on the control side, which is the whole point of the
+        // route: two objects the callback let go of and did not drop.
+        let mut retired = 0;
+        while harness.retired_rx.pop().is_ok() {
+            retired += 1;
+        }
+        assert_eq!(
+            retired, 2,
+            "the replaced dry line and the removed track both leave over the retirement route"
+        );
+    }
+}

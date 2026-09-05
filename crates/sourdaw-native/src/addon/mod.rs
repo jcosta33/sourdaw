@@ -139,6 +139,7 @@ impl SourdawNative {
         crate::host::latency_watcher::start(
             Arc::clone(&events),
             Arc::clone(&singletons.app_state.engine_plugins),
+            Arc::clone(&singletons.app_state.engine),
         );
         crate::host::plugin_host_requests::start(
             Arc::clone(&events),

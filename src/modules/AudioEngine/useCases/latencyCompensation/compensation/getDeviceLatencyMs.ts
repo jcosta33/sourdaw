@@ -24,6 +24,11 @@ function engineSampleRate(): number {
  * more — both described audio that used to leave this process and come back,
  * and none does. Compensating for a delay the graph no longer has would push
  * every other device on the strip late by exactly that figure.
+ *
+ * The plugin's real latency is compensated where the plugin actually sounds:
+ * the native engine aligns it against every route summing beside it, in frames
+ * of the device's own clock. Reporting it here as well would compensate it
+ * twice.
  */
 export function getDeviceLatencyMs(deviceId: string, deviceType: string): number {
     if (deviceType === EXTERNAL_PLUGIN_DEVICE_TYPE) {

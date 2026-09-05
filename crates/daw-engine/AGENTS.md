@@ -14,6 +14,62 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 - **Headroom over Latency**: SPSC ring buffers must decouple the audio callback from asynchronous command processing without dropping blocks before native plugins process them.
 - **Teardown Order**: Audio streams must stop and drain before dropping downstream DSP nodes or CLAP plugin instances.
 
+## Plugin Delay Compensation
+
+- **Alignment at every summing point**: everything meeting at one point — a track output and its
+  siblings at the master, the sends landing on a bus, a bus feeding another bus — arrives having
+  waited the same number of frames. A route's hold is the summing point's deepest arrival minus its
+  own, and a bus's arrival carries into the point it sums at, so hops add up.
+- **A track input is a summing point too**: a track fed by other tracks or buses is a group, and
+  what lands on its input has waited the depth of that input like any other contributor. The group's
+  own clips are the side that waits, held back to meet them, so a group never leads the tracks
+  feeding it. Live input monitored through that track is not held: hearing yourself late is the one
+  alignment a DAW must not make.
+- **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
+  bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
+  the project — the common professional convention, and the reason the dry line is built with the
+  latency rather than with the device.
+- **Every line is written on every block it renders**: a route line and a dry line alike take
+  exactly one pass per block — read-and-write while they hold, write-only otherwise. A route line
+  holding nothing is fed rather than skipped, and a dry line is fed on every block the chain visits
+  its device, including the blocks a shadowed or otherwise skipped device is passed over. So a line
+  always holds the last frames of the signal its route carries, a change of hold is a read-offset
+  jump into audio that is already current, and neither a re-aiming nor a bypass can open a hole of
+  silence or replay audio from an earlier part of the session.
+- **Every line is sized at the ceiling and re-aimed in place**: a route line and a dry line alike
+  are built to hold anything the ceiling admits, so no change of figure ever needs a new ring. A
+  device's declared latency moving is therefore a read-offset jump into audio that line is already
+  holding, exactly like a recompensation — one bounded repeat or skip of the difference, never a
+  hold's worth of silence. Swapping a fresh ring in would empty the line the graph has been keeping
+  current, which is the very thing the rule above exists to prevent.
+- **A detached device's line restarts from silence**: a device can be left holding no placement at
+  all — the strip it sat on removed under it, or a hosted plugin taken off the strip that borrowed
+  it — and nothing then feeds or reads its line. That is the one break in the rule above, so it is
+  the one place a line is cleared, and it stays silent until a chain takes the device again and
+  starts feeding it. The clear is taken on every transition into detachment, bounded by the latency
+  declared then.
+- **A hold is only as deep as the history behind the write head**: a device goes on declaring while
+  it waits, and a figure can also arrive a block after a strip has taken it back but before that
+  strip has fed its line. Either way a hold reaching further back than the last restart lands on
+  slots that still carry the audio of the strip the device left, so a line owes silence for any hold
+  deeper than the frames fed since that restart — wherever its device sits when the figure arrives.
+  The line itself owns that rule, so no caller can aim one past its own history; a route line and a
+  dry line fed since it was built are covered to their capacity and never pay it.
+- **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
+  real-time diagnostics, alongside the deepest arrival the graph was asked for. The count covers
+  every line the ceiling cut short — a route line, and the dry line of a device declaring past it,
+  which a strip aligning every route perfectly still runs. Only a placed device runs such a line: a
+  detached one is fed and read by nothing and adds nothing to any summing point's depth, so its
+  declaration is counted once a chain takes it and not before. A hold that could not be taken is
+  reported, never silently misaligned.
+- **Lines are built control-side**: every delay line reaches the callback owning its buffers, and one
+  the callback declines or gives up leaves over the ADR 0020 retirement route. A latency figure and
+  a line to hold a bypassed pass at it travel on one command, so no caller can publish one without
+  the other; the control thread cannot see whether the device already runs a line, so it ships one
+  whenever the figure is non-zero and the callback returns whichever is spare.
+- **What dirties compensation**: a change to declared latency, to the device chains, or to the shape
+  of the routing graph. Gain, pan, mute, solo, bypass and transport do not.
+
 ## Verification
 
 ```bash
