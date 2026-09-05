@@ -128,6 +128,17 @@ const QUEUE_FULL: AudioGraphApplyResult = {
     reason: 'automation-queue-capacity — this parameter’s native queue is full',
 };
 
+/**
+ * `QueueBudgets::charge_device_param`'s refusal, whose text opens on its own
+ * prefix rather than on the strip queue's — one effect's shared
+ * `DeviceParamQueue` is a different ledger from a strip position's.
+ */
+const DEVICE_QUEUE_FULL: AudioGraphApplyResult = {
+    acceptance: 'rejected',
+    application: 'not-applied',
+    reason: "device-param-queue-capacity — this device's pending window is full",
+};
+
 const backend: AudioGraphBackend = {
     backendId: 'writer-spec',
     apply: (batch) => mocks.apply(batch),
@@ -325,11 +336,16 @@ beforeEach(() => {
     nativeEnginePlayheadFeed.epoch += 1;
     nativeEnginePlayheadFeed.inFlightEpoch = null;
     nativeEnginePlayheadFeed.reading = null;
+    nativeLiveAutomationWriter.pendingRearm = null;
     nativeLiveGraphSession.backend = backend;
     nativeLiveGraphSession.rolling = true;
     nativeLiveGraphSession.loopRegion = null;
     nativeLiveGraphSession.loopEnabled = false;
     nativeLiveGraphSession.pending = Promise.resolve();
+    // The chain the engine reports it built. A pump drops a device parameter
+    // whose device is absent from it, so a pass that names one has to stand on
+    // a chain that holds it.
+    nativeLiveGraphSession.nativeChainByStripId = new Map([['track-a', ['plugin-1']]]);
 });
 
 describe('the live automation writer', () => {
@@ -1322,6 +1338,50 @@ describe('the live automation writer — hosted device parameters', () => {
 
         const [batch] = mocks.apply.mock.calls[0] ?? [];
         expect(batch?.commands).toEqual([{ kind: 'write-parameter', target: FADER, write: step(1, 0.4) }]);
+    });
+
+    /**
+     * A plugin pulled out of a chain mid-roll (#3568). The pass in flight still
+     * holds its target, and `graph.rs` answers a `write-device-parameter` for a
+     * device its graph no longer has with `unknown device '<id>'` — refusing
+     * the *whole* batch. No cursor advances on a refusal, so the identical
+     * poisoned batch is offered again on every tick and the fader riding beside
+     * it stops moving too, until a locate re-arms.
+     */
+    it('drops a target whose device the engine no longer holds, and still advances the rest', async () => {
+        mocks.curve = [
+            { target: FADER, writes: [step(1, 0.4)] },
+            { target: DEVICE_A, writes: [step(1, 0.6)] },
+        ];
+        arm(0);
+        await flush();
+        expect(mocks.apply).not.toHaveBeenCalled();
+
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['track-a', []]]);
+
+        await pump(0.95, 0);
+
+        const [batch] = mocks.apply.mock.calls[0] ?? [];
+        expect(batch?.commands).toEqual([{ kind: 'write-parameter', target: FADER, write: step(1, 0.4) }]);
+        expect(slotFor(FADER)?.cursor).toBe(1);
+        expect(slotFor(DEVICE_A)?.cursor).toBe(0);
+    });
+
+    // The strip queue's refusal is said once per pass because a full queue
+    // arrives on every animation frame. An effect's shared queue fills exactly
+    // the same way, and its refusal opens on its own prefix — so a latch that
+    // matched only the strip text logs the whole flood.
+    it('says a full device parameter queue once for the pass', async () => {
+        mocks.curve = [{ target: DEVICE_A, writes: [step(1, 0.6)] }];
+        arm(0);
+        await flush();
+
+        mocks.apply.mockResolvedValue(DEVICE_QUEUE_FULL);
+        await pump(0.95, 0);
+        await pump(0.95, 0);
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toHaveLength(1);
     });
 
     it('admits one parameter of a plugin whose shared queue has a slot left', async () => {

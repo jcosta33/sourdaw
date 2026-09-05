@@ -25,6 +25,7 @@ import {
 import { stoppedEngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { mirrorDeviceChainDelta } from '../mirrorDeviceChainDelta';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
+import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
 
@@ -73,6 +74,23 @@ function sentCommands(): readonly AudioGraphCommand[] {
     return apply.mock.calls[0]?.[0].commands ?? [];
 }
 
+/**
+ * A pass in flight that writes one parameter of `deviceId`, which is what makes
+ * removing that device something the pass has to be told about.
+ */
+function passWritesParameterOf(deviceId: string): void {
+    nativeLiveAutomationWriter.pass = {
+        targets: [
+            {
+                target: { kind: 'device-parameter', trackId: 'audio-1', deviceId, parameterId: '7' },
+                writes: [],
+                cursor: 0,
+                queued: [],
+            },
+        ],
+    } as unknown as LiveAutomationWriterPass;
+}
+
 beforeEach(() => {
     apply.mockReset();
     apply.mockResolvedValue(APPLIED);
@@ -85,6 +103,7 @@ beforeEach(() => {
     nativeLiveGraphSession.pending = Promise.resolve();
     vi.mocked(rearmNativeLiveAutomationWriterInPlace).mockClear();
     nativeEnginePlayheadFeed.reading = null;
+    nativeLiveAutomationWriter.pass = null;
 });
 
 describe('mirrorDeviceChainDelta', () => {
@@ -309,6 +328,49 @@ describe('mirrorDeviceChainDelta', () => {
         await mirrorDeviceChainDelta({
             before: track([device('eq'), device('comp')]),
             after: track([device('eq'), device('comp'), device('knead')]),
+        });
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Removing a plugin the pass still writes is the other half (#3568). The
+     * pass keeps naming it, `graph.rs` refuses the whole `write-device-parameter`
+     * batch as `unknown device`, and a whole-batch refusal advances no cursor —
+     * so every strip's automation, not only this plugin's, freezes until a
+     * locate re-arms.
+     */
+    it('re-reads the pass when the chain loses a device that pass still writes', async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'plug']]]);
+        passWritesParameterOf('plug');
+        nativeEnginePlayheadFeed.reading = {
+            ...stoppedEngineTransportPosition,
+            running: true,
+            playing: true,
+            positionSeconds: 2,
+        };
+        apply.mockResolvedValue({ ...APPLIED, admittedBatch: 21 });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('plug')]),
+            after: track([device('eq')]),
+        });
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).toHaveBeenCalledWith({
+            provenAfterBatch: 21,
+            positionSeconds: 2,
+        });
+    });
+
+    // A device no lane drives is a device no pump can name, so removing it
+    // cannot poison a batch — and re-arming for it would spend a whole
+    // lookahead of admitted stamps on a projection that says the same thing.
+    it('leaves the pass in flight alone when the device that left was one it never wrote', async () => {
+        passWritesParameterOf('some-other-device');
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('comp')]),
+            after: track([device('eq')]),
         });
 
         expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();

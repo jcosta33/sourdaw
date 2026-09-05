@@ -110,10 +110,41 @@ const HOSTED_LANE: StoredAutomationLane = {
     ],
 };
 
+/** The lane the filled seam refuses: a parameter id this plugin never declared. */
+const UNDECLARED_LANE: StoredAutomationLane = {
+    ...HOSTED_LANE,
+    id: 'lane-plugin-9',
+    parameterId: 'plugin-1:9',
+    parameterName: 'plugin-1:9',
+};
+
+/** The ceiling the filled seam publishes, below what {@link HOSTED_LANE} asks for. */
+const PUBLISHED_CEILING = 0.5;
+
+/**
+ * A seam that can say no.
+ *
+ * An accept-all predicate and an identity clamp would let every case in this
+ * file pass whether the projection consulted the law or ignored it — the whole
+ * point of the seam is that Arrangement, not AudioEngine, decides which ids are
+ * automatable and what bounds their values are held to. So this one accepts a
+ * single declared id and publishes a ceiling the lane's own curve exceeds.
+ */
 function fillSeam(): void {
-    offlineDeviceParameterLawState.acceptsExternalPluginParameter = () => true;
-    offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => value;
+    offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, parameterId) => parameterId === '7';
+    offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => Math.min(value, PUBLISHED_CEILING);
     offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+}
+
+/**
+ * The stamped values one hosted parameter's entry carries, in order. Steps
+ * only, because a step is the one shape a device parameter has a meaning for.
+ */
+function hostedValues(result: ReturnType<typeof readLiveAutomationWrites>, parameterId: string): readonly number[] {
+    const entry = result.entries.find(
+        (candidate) => candidate.target.kind === 'device-parameter' && candidate.target.parameterId === parameterId
+    );
+    return (entry?.writes ?? []).flatMap((write) => (write.shape === 'step' ? [write.value] : []));
 }
 
 function emptySeam(): void {
@@ -133,7 +164,7 @@ function readOneRegion(): ReturnType<typeof readLiveAutomationWrites> {
 
 beforeEach(() => {
     offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
-    automationStore.set({ lanes: [HOSTED_LANE] });
+    automationStore.set({ lanes: [HOSTED_LANE, UNDECLARED_LANE] });
     // The session is sounding this plugin: the two other conditions a hosted
     // parameter needs are met, so the seam is the only thing left to decide it.
     nativeLiveGraphSession.carriedStripIds = new Set([TRACK.id]);
@@ -160,6 +191,26 @@ describe('readLiveAutomationWrites', () => {
             deviceId: HOSTED_DEVICE.id,
             parameterId: '7',
         });
+    });
+
+    it('admits no lane for a parameter id the seam’s law refuses', () => {
+        fillSeam();
+
+        const result = readOneRegion();
+
+        expect(hostedValues(result, '9')).toEqual([]);
+        expect(result.exclusions.some((exclusion) => exclusion.subjectId === UNDECLARED_LANE.id)).toBe(true);
+    });
+
+    it('stamps the value the seam’s clamp published, not the one the curve asked for', () => {
+        fillSeam();
+
+        const values = hostedValues(readOneRegion(), '7');
+
+        // The lane rides from 0.2 to 0.8; the instance publishes 0.5 as its
+        // ceiling, and the ceiling is what the engine may be stamped.
+        expect(values).not.toHaveLength(0);
+        expect(Math.max(...values)).toBe(PUBLISHED_CEILING);
     });
 
     it('admits no hosted plugin lane while the parameter-law seam is unset', () => {

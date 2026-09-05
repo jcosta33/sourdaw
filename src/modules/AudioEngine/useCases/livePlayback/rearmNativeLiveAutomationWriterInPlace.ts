@@ -41,10 +41,6 @@ export function rearmNativeLiveAutomationWriterInPlace(input: RearmNativeLiveAut
     if (!pass) {
         return;
     }
-    // Whatever this re-read was asked for, it re-reads the whole projection —
-    // so a request recorded for the same pass is answered by it and must not
-    // make the next feed reading re-arm a second time.
-    nativeLiveAutomationWriter.pendingRearm = null;
     armNativeLiveAutomationWriter({
         stripTracks: pass.stripTracks,
         sampleRate: pass.sampleRate,

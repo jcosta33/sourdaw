@@ -137,10 +137,14 @@ describe('carryQueuedStamps', () => {
  * Device parameters carry differently from strip positions (#3568), on both
  * halves of what this function does.
  *
- * They key differently: the engine charges a device stamp against
- * `(effect, parameter)`, so two parameters of one plugin are two queues and
- * folding them onto one key would carry a stamp into a queue that never held
- * it.
+ * They key differently: a device stamp belongs to the parameter that issued
+ * it, because the stale-cancellation a later write applies is compared inside
+ * that parameter alone, so folding two parameters of one plugin onto one key
+ * would hand each of them stamps the other issued. The engine's *ceiling* is
+ * not per parameter — `QueueBudgets::charge_device_param` charges every
+ * parameter of one effect against that effect's single `DeviceParamQueue`,
+ * which is where the pump applies the shared ledger group — but a depth shared
+ * by two parameters is still two lists of stamps.
  *
  * And they prune differently: `QueueBudgets::apply_seek` in
  * `crates/sourdaw-native/src/commands/graph.rs` walks the strip automation
@@ -157,11 +161,11 @@ describe('carryQueuedStamps — device parameters', () => {
     };
     const paramNine: LiveAutomationWriterTarget['target'] = { ...paramSeven, parameterId: '9' };
 
-    it('carries two parameters of one device to their own queues, not to each other’s', () => {
+    it('carries two parameters of one device to their own slots, not to each other’s', () => {
         // The incoming pass already holds parameter 7, so a key that named only
         // the device would match parameter 9's outgoing slot to it — parameter
         // 7 would inherit stamps it never issued and parameter 9 would lose
-        // every stamp the engine is still charging it for.
+        // every stamp the engine is still charging the effect for.
         const from: LiveAutomationWriterTarget[] = [
             { target: paramSeven, writes: [], cursor: 0, queued: [stamp(100)] },
             { target: paramNine, writes: [], cursor: 0, queued: [stamp(200)] },

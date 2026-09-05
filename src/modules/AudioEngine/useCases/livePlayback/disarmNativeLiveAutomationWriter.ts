@@ -17,6 +17,10 @@ import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 export function disarmNativeLiveAutomationWriter(): void {
     nativeLiveAutomationWriter.epoch += 1;
     nativeLiveAutomationWriter.pass = null;
+    // A re-read is owed by one pass, and this ends it. Left standing, the next
+    // session's first reading would take it and re-arm against a fence from an
+    // engine world that no longer exists.
+    nativeLiveAutomationWriter.pendingRearm = null;
     // The next session's first arm gets to say what it excluded, whatever this
     // one already reported.
     nativeLiveAutomationWriter.reportedExclusions = null;

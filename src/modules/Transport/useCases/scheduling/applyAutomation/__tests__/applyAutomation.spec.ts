@@ -137,6 +137,32 @@ function seedDeviceLane(options: {
     };
 }
 
+/** One device carrying two lanes of its own, which is what a plugin usually looks like. */
+function seedTwoLanesOnOneDevice(device: SeedDevice): void {
+    mutableTrackStore.value = {
+        tracks: [
+            {
+                id: 'track-1',
+                kind: 'audio',
+                automationMode: 'read',
+                clips: [],
+                midiFx: [],
+                devices: [device],
+                sends: [],
+            },
+        ],
+    };
+    mutableAutomationStore.value = {
+        lanes: Object.keys(device.parameterValues).map((paramId) => ({
+            id: `lane-${paramId}`,
+            trackId: 'track-1',
+            parameterId: `${device.id}:${paramId}`,
+            minValue: 0,
+            points: [{ beat: 0, value: 0.75 }],
+        })),
+    };
+}
+
 describe('applyAutomation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -545,6 +571,11 @@ describe('applyAutomation', () => {
                 applyAutomation(1);
 
                 expect(updateDeviceParam).toHaveBeenCalledTimes(expectedWrites);
+                // The gate asks whether the *device on this lane's track* is
+                // carried. Handing the two ids the other way round asks about a
+                // track named by a device id, which no session ever carries —
+                // so every carried device would keep its doubled IPC writer.
+                expect(isDeviceCarriedByNativeSession).toHaveBeenCalledWith('track-1', 'device-eq1');
             }
         );
 
@@ -562,6 +593,10 @@ describe('applyAutomation', () => {
             };
             seedDeviceLane({ devices: [device], laneParameterId: 'device-eq1:eq-low-gain' });
             vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+            // The curve moves across the bypass. What the restatement owes the
+            // plugin is where the lane is *now*, not the value it held when the
+            // engine stopped stamping it.
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
 
             applyAutomation(0);
 
@@ -571,11 +606,50 @@ describe('applyAutomation', () => {
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenCalledTimes(1);
-            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
+            expect(updateDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-eq1',
+                'eq-low-gain',
+                slewStep(0.2, 0.8, AUTOMATION_SLEW_ALPHA)
+            );
 
             applyAutomation(2);
 
             expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        });
+
+        it('restates every lane on a carried device that comes back from bypass, not only the first', () => {
+            // A plugin commonly carries several lanes. The release is one fact
+            // about the device per tick, so consuming it where the first lane
+            // reaches the device leaves every later lane reading a device that
+            // was never bypassed — and its parameter stays where the bypass
+            // left it, with no curve movement coming to correct it.
+            const device: SeedDevice = {
+                id: 'device-eq1',
+                type: 'builtin-eq',
+                parameterValues: { 'eq-low-gain': 0, 'eq-high-gain': 0 },
+                bypassed: true,
+            };
+            seedTwoLanesOnOneDevice(device);
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            applyAutomation(0);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+
+            device.bypassed = false;
+            applyAutomation(1);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[2])).toEqual([
+                'eq-low-gain',
+                'eq-high-gain',
+            ]);
+
+            // And still exactly once each: the edge is spent for the tick after
+            // it is resolved, not re-offered on every tick that follows.
+            applyAutomation(2);
+
+            expect(updateDeviceParam).toHaveBeenCalledTimes(2);
         });
     });
 

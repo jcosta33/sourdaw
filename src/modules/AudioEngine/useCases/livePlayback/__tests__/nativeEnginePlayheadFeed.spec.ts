@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { getEngineTransportPosition } from '../../../repositories/engineTransport/getEngineTransportPosition';
+import { armNativeLiveAutomationWriter } from '../armNativeLiveAutomationWriter';
+import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
 import {
     nativeEnginePlayheadFeed,
     pollNativeEnginePlayheadOnce,
@@ -13,6 +15,7 @@ import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { pumpNativeLiveAutomationWriter } from '../pumpNativeLiveAutomationWriter';
 import { readNativeEnginePlayheadSeconds } from '../readNativeEnginePlayheadSeconds';
 import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
+import { requestNativeLiveAutomationWriterRearm } from '../requestNativeLiveAutomationWriterRearm';
 import { startNativeEnginePlayheadFeed } from '../startNativeEnginePlayheadFeed';
 import { stopNativeEnginePlayheadFeed } from '../stopNativeEnginePlayheadFeed';
 
@@ -53,7 +56,21 @@ describe('the native engine playhead feed', () => {
         vi.mocked(pumpNativeLiveAutomationWriter).mockClear();
         vi.mocked(rearmNativeLiveAutomationWriterInPlace).mockReset();
         nativeLiveAutomationWriter.pendingRearm = null;
+        nativeLiveAutomationWriter.pass = null;
+        nativeLiveGraphSession.loopRegion = null;
+        nativeLiveGraphSession.loopEnabled = false;
     });
+
+    /** The arm a stop-and-play or a locate takes, with nothing to project. */
+    function armAnEmptyPass(): void {
+        armNativeLiveAutomationWriter({
+            stripTracks: [],
+            sampleRate: 48_000,
+            programmeEndSeconds: 8,
+            positionSeconds: 0,
+            provenAfterBatch: null,
+        });
+    }
 
     it('polls on the animation frame rather than on a timer of its own', () => {
         startNativeEnginePlayheadFeed();
@@ -148,6 +165,46 @@ describe('the native engine playhead feed', () => {
         // re-reading again here would throw away a newer pass for an older one.
         nativeLiveAutomationWriter.pendingRearm = { provenAfterBatch: 42 };
         nativeLiveAutomationWriter.epoch += 1;
+        await vi.waitFor(() => expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalled());
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
+    });
+
+    /*
+     * A re-read is owed by one pass, and the fence it names dates a batch
+     * against the engine world that pass ran in. Left standing past the end of
+     * that pass, the next session's very first reading takes it — re-arming
+     * against a count the new engine scheduler has never reached, which
+     * withholds every write until it does.
+     */
+    it('takes no re-read the pass that owed it did not outlive', async () => {
+        vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
+        armAnEmptyPass();
+        requestNativeLiveAutomationWriterRearm({ provenAfterBatch: 42 });
+        // The transport stops before the reading that would have taken it.
+        disarmNativeLiveAutomationWriter();
+        vi.mocked(pumpNativeLiveAutomationWriter).mockClear();
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalled());
+
+        expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
+    });
+
+    // An arm re-projects the whole world, so it has already answered whatever
+    // the request was about; taking it again would throw the arm's own pass
+    // away one reading after it opened.
+    it('takes no re-read a fresh arm has already answered', async () => {
+        vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
+        armAnEmptyPass();
+        requestNativeLiveAutomationWriterRearm({ provenAfterBatch: 42 });
+        // A locate lands before the next reading does.
+        armAnEmptyPass();
+        vi.mocked(pumpNativeLiveAutomationWriter).mockClear();
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
         await vi.waitFor(() => expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalled());
 
         expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();

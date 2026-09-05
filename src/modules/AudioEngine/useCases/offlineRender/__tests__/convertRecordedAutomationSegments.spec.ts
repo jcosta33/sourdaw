@@ -20,21 +20,49 @@ import { convertRecordedAutomationSegments } from '../convertRecordedAutomationS
 
 const SAMPLE_RATE = 44_100;
 
-function segment(startFrame: number, startValue: number): OfflineAutomationSegment {
-    return { startFrame, endFrame: startFrame, startValue, endValue: startValue };
+/** One slew tick at 44.1 kHz, which is the span the compiler emits a segment over. */
+const TICK_FRAMES = 441;
+
+/**
+ * A segment that actually spans, opening on one value and closing on another.
+ *
+ * Endpoints are deliberately distinct. A zero-length segment whose two values
+ * agree cannot tell the value and frame the converter is required to read — a
+ * segment's opening — from the closing pair it must ignore, so a fixture built
+ * from those would pass whichever pair the code happened to take.
+ */
+function segment(startFrame: number, startValue: number, endValue: number): OfflineAutomationSegment {
+    return { startFrame, endFrame: startFrame + TICK_FRAMES, startValue, endValue };
+}
+
+/** The stream `compileAutomationSegments` produces: each segment opens where the last one closed. */
+function contiguous(values: readonly number[]): OfflineAutomationSegment[] {
+    return values.map((value, index) => segment(index * TICK_FRAMES, value, values[index + 1] ?? value));
 }
 
 describe('convertRecordedAutomationSegments', () => {
     it('emits one step per segment whose value has moved past the slew epsilon', () => {
         const writes = convertRecordedAutomationSegments({
-            segments: [segment(0, 0.5), segment(441, 0.50002), segment(882, 0.7)],
+            segments: contiguous([0.5, 0.50002, 0.7]),
             sampleRate: SAMPLE_RATE,
         });
 
         expect(writes).toEqual([
             { shape: 'step', value: 0.5, time: 0 },
-            { shape: 'step', value: 0.7, time: 882 / SAMPLE_RATE },
+            { shape: 'step', value: 0.7, time: (2 * TICK_FRAMES) / SAMPLE_RATE },
         ]);
+    });
+
+    it('skips a segment that opens within the slew epsilon of the step already emitted', () => {
+        // Half an epsilon above what the engine is holding. Stating it would
+        // spend a slot of the effect's shared parameter queue on a value the
+        // plugin already has.
+        const writes = convertRecordedAutomationSegments({
+            segments: contiguous([0.5, 0.5 + AUTOMATION_SLEW_EPSILON / 2]),
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(writes).toEqual([{ shape: 'step', value: 0.5, time: 0 }]);
     });
 
     it('lands a drift that never moves an epsilon in one tick once it has moved one in total', () => {
@@ -43,14 +71,14 @@ describe('convertRecordedAutomationSegments', () => {
         // emitted, which is the value the engine is actually holding.
         const drift = AUTOMATION_SLEW_EPSILON * 0.4;
         const writes = convertRecordedAutomationSegments({
-            segments: [0, 1, 2, 3, 4, 5].map((step) => segment(step * 441, 0.2 + step * drift)),
+            segments: contiguous([0, 1, 2, 3, 4, 5].map((step) => 0.2 + step * drift)),
             sampleRate: SAMPLE_RATE,
         });
 
-        expect(writes.map((write) => write.time)).toEqual([0, (3 * 441) / SAMPLE_RATE]);
+        expect(writes.map((write) => write.time)).toEqual([0, (3 * TICK_FRAMES) / SAMPLE_RATE]);
     });
 
     it('refuses a sample rate that cannot place a stamp', () => {
-        expect(convertRecordedAutomationSegments({ segments: [segment(0, 0.5)], sampleRate: 0 })).toEqual([]);
+        expect(convertRecordedAutomationSegments({ segments: contiguous([0.5]), sampleRate: 0 })).toEqual([]);
     });
 });

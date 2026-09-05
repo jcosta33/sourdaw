@@ -54,6 +54,7 @@ import {
     type LiveAutomationWriterTarget,
 } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { readNativeChain } from './readNativeChain';
 import { recordNativeChains } from './recordNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
@@ -328,6 +329,26 @@ function queuedByGroup(pass: LiveAutomationWriterPass): Map<string, number> {
 }
 
 /**
+ * Whether the engine still holds the device this slot writes.
+ *
+ * `graph.rs` refuses a whole `write-device-parameter` batch with `unknown
+ * device` when any target names a device its graph no longer has — so one
+ * plugin removed under a pass in flight would stop every other target's cursor
+ * too, and no cursor advancing means the identical poisoned batch goes out
+ * again on the next tick. A vanished device is therefore dropped from the
+ * batch rather than allowed to carry it down. Only the chain the engine
+ * *reports* answers this: a device on project truth that no splice has placed
+ * is not one the engine can be written.
+ */
+function engineStillHoldsSlotDevice(slot: LiveAutomationWriterTarget): boolean {
+    const { target } = slot;
+    if (target.kind !== 'device-parameter') {
+        return true;
+    }
+    return readNativeChain(target.trackId)?.includes(target.deviceId) ?? false;
+}
+
+/**
  * The writes each target owes inside the lookahead, in curve order.
  *
  * A ramp is admitted on its start, never on its landing, and never split: the
@@ -344,6 +365,9 @@ function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: n
     const depths = queuedByGroup(pass);
     const admissions: Admission[] = [];
     for (const slot of pass.targets) {
+        if (!engineStillHoldsSlotDevice(slot)) {
+            continue;
+        }
         const group = ledgerGroup(slot);
         const ceiling = groupCeiling(slot);
         const writes: AudioGraphParameterWrite[] = [];
@@ -373,8 +397,19 @@ function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: n
     return admissions;
 }
 
+/**
+ * Say a refusal once per pass when it is a full queue, and every time when it
+ * is anything else.
+ *
+ * Both of the engine's capacity refusals count: a strip position is charged
+ * against `automation-queue-capacity` and a hosted plugin's parameters against
+ * their effect's shared `device-param-queue-capacity`. Either arrives on every
+ * animation frame for as long as the queue stays full, which is a log nobody
+ * can read past — while a refusal of any other kind is news each time it
+ * happens.
+ */
 function reportRefusal(pass: LiveAutomationWriterPass, reason: string): void {
-    const queueFull = reason.includes('automation-queue-capacity');
+    const queueFull = reason.includes('automation-queue-capacity') || reason.includes('device-param-queue-capacity');
     if (queueFull && pass.queueFullReported) {
         return;
     }

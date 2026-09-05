@@ -232,6 +232,10 @@ export const nativeLiveAutomationWriter: {
      * next reading, immediately before the pump that would have sent the pass.
      * The engine position that reading carries is fresher than anything the
      * splice could have supplied, and the pump behind it is the same one.
+     *
+     * The request belongs to the pass that owed it, so every arm and every
+     * disarm clears it: an arm has already re-read everything the request was
+     * about, and a disarm ends the world whose fence the request names.
      */
     pendingRearm: Readonly<{ provenAfterBatch: number | null }> | null;
 } = {

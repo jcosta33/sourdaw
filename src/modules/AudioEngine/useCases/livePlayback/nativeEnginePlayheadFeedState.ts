@@ -87,10 +87,13 @@ export const nativeEnginePlayheadFeed: {
  * Take a re-read the pass owes before sending it, and answer with the epoch the
  * pump must use.
  *
- * A request is dropped when something else re-armed while this reading was in
- * flight, and dropping it is correct rather than lossy: that arm re-read the
- * same projection, from a position the musician is nearer to than this one, so
- * the device the request was about is already in the pass it produced.
+ * A reading taken for a pass the writer has since replaced takes nothing: the
+ * request is left standing for the next reading rather than answered here.
+ * Answering it would re-arm from a position of the world this reading was
+ * taken in, which is the one the arm that replaced the pass has already moved
+ * on from — and the pump behind this reading is about to bail on the same
+ * epoch mismatch anyway. An arm that already covers the request clears it
+ * itself, so what is left standing here is only a request made after that arm.
  */
 function takePendingRearm(writerEpoch: number, positionSeconds: number): number {
     const pending = nativeLiveAutomationWriter.pendingRearm;

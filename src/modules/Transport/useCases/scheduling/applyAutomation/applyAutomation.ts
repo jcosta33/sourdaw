@@ -143,10 +143,22 @@ const automationState: {
  * Reading and writing in one step is deliberate: the edge exists only between
  * two consecutive observations of the same device, so a caller that read it
  * without recording would report the same release on every following tick.
+ *
+ * The edge is one fact about a device per *tick*, not per lane. Consuming it
+ * where each lane reaches the device would give it to whichever lane the loop
+ * happened to visit first and leave every other lane on that device — a plugin
+ * commonly carries several — reading a device that had never been bypassed. So
+ * the tick resolves each device once and then reads that answer, which
+ * `thisTick` carries.
  */
-function takeBypassReleaseEdge(deviceId: string, bypassed: boolean): boolean {
+function takeBypassReleaseEdge(thisTick: Map<string, boolean>, deviceId: string, bypassed: boolean): boolean {
+    const resolved = thisTick.get(deviceId);
+    if (resolved !== undefined) {
+        return resolved;
+    }
     const released = automationState.lastBypassed.get(deviceId) === true && !bypassed;
     automationState.lastBypassed.set(deviceId, bypassed);
+    thisTick.set(deviceId, released);
     return released;
 }
 
@@ -159,6 +171,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // param that is both automated and modulated combines onto the value
     // automation actually applied rather than a separately recomputed one.
     clearAppliedAutomationBases();
+    // Each device's bypass-release edge, resolved on the first lane of this
+    // tick that reaches it and read by every lane after that.
+    const bypassReleaseEdges = new Map<string, boolean>();
     const autoState = automationStore.value;
     if (!autoState) {
         return gainAutomationTrackIds;
@@ -420,7 +435,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const moved =
                     isDiscontinuity ||
                     (Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
-                const released = takeBypassReleaseEdge(device.id, device.bypassed);
+                const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
                 if (device.type === 'fermenter') {
                     // Fermenter params use camelCase ids that must be mapped to
                     // their snake_case DSP ids before reaching the WASM node —
