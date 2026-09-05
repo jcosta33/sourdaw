@@ -1,0 +1,31 @@
+src/modules/GrandBoule/presentations/components/MorphPanel.tsx
+  s_28abfd94826e36::t_277f6979526a9c 169
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_28abfd94826e36::t_5e698c8d935f31 79,354-375
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_9b530f08172a54::t_d3fc815befd9c9 198-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e5216efd7967009619c06d0fd6235e9efee2fb02",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
