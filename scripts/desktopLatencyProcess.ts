@@ -8,8 +8,8 @@
  * and drives a live `Page` through `connectAndMeasure`, so — like the
  * driver, and unlike `desktopLatencyReadings.ts` — most of it is not
  * unit-testable without Playwright. `stripPayloadOverrides` is pure, and
- * `removeProfileDir` / `removeDirectoryWithRetries` are testable because
- * their file-system call is injectable; they carry their own specs.
+ * `removeProfileDir` is testable because its file-system call is
+ * injectable; it carries its own spec.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -62,7 +62,6 @@ export function stripPayloadOverrides(env: NodeJS.ProcessEnv): StrippedEnv {
 }
 
 export type ProfileRemoval = { removed: true } | { removed: false; reason: string };
-export type RemoveDirectory = (path: string) => void;
 
 /**
  * `rmSync`'s default `maxRetries` is 0, so a file a still-exiting Chromium
@@ -73,11 +72,12 @@ export type RemoveDirectory = (path: string) => void;
  * exiting to finish clearing its own files. Node 24's `fs.rmSync` sleeps
  * `i * retryDelay / 1000` whole seconds between retries on POSIX (integer
  * division in `src/node_file.cc`), so `retryDelay` only takes effect in
- * whole-second increments; the values below give attempts at 0 s, then
- * after 1 s, then after 2 s.
+ * whole-second increments; the values below give two attempts, at 0 s and
+ * after a 1 s sleep, then a 2 s sleep before the throw, so a removal that
+ * never succeeds costs 3 s.
  */
-export function removeDirectoryWithRetries(path: string, rm: typeof rmSync = rmSync): void {
-    rm(path, { recursive: true, force: true, maxRetries: 2, retryDelay: 1000 });
+function removeDirectoryWithRetries(path: string, rm: typeof rmSync): void {
+    rm(path, { recursive: true, force: true, maxRetries: 1, retryDelay: 1000 });
 }
 
 /**
@@ -85,12 +85,9 @@ export function removeDirectoryWithRetries(path: string, rm: typeof rmSync = rmS
  * measurement's verdict is about latency, not about temp cleanup, so a
  * removal failure is reported to the caller instead of raised.
  */
-export function removeProfileDir(
-    profileDir: string,
-    remove: RemoveDirectory = removeDirectoryWithRetries
-): ProfileRemoval {
+export function removeProfileDir(profileDir: string, rm: typeof rmSync = rmSync): ProfileRemoval {
     try {
-        remove(profileDir);
+        removeDirectoryWithRetries(profileDir, rm);
         return { removed: true };
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);

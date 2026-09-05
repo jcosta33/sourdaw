@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, type rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, type PathLike, type rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { removeDirectoryWithRetries, removeProfileDir, stripPayloadOverrides } from '../desktopLatencyProcess.ts';
+import { removeProfileDir, stripPayloadOverrides } from '../desktopLatencyProcess.ts';
 
 describe('stripPayloadOverrides', () => {
     it('removes every payload-override key that was set', () => {
@@ -66,42 +66,30 @@ describe('removeProfileDir', () => {
         expect(removal).toEqual({ removed: true });
     });
 
-    it('reports the error message instead of throwing when the injected remover fails', () => {
-        const remove = (): void => {
+    it('reports the error message instead of throwing when the injected rm fails', () => {
+        const rm: typeof rmSync = (): never => {
             throw Object.assign(new Error('ENOTEMPTY: directory not empty'), { code: 'ENOTEMPTY' });
         };
 
-        const removal = removeProfileDir('/tmp/sourdaw-desktop-measure-spec-fake', remove);
+        const removal = removeProfileDir('/tmp/sourdaw-desktop-measure-spec-fake', rm);
 
         expect(removal).toEqual({ removed: false, reason: 'ENOTEMPTY: directory not empty' });
     });
 
-    it('calls the injected remover exactly once with the profile directory path', () => {
-        const calls: string[] = [];
-        const remove = (path: string): void => {
-            calls.push(path);
+    it('passes the profile directory and the retry options to rm', () => {
+        const calls: Array<[PathLike, unknown]> = [];
+        const rm: typeof rmSync = (path, options): void => {
+            calls.push([path, options]);
         };
 
-        removeProfileDir('/tmp/sourdaw-desktop-measure-spec-fake', remove);
-
-        expect(calls).toEqual(['/tmp/sourdaw-desktop-measure-spec-fake']);
-    });
-});
-
-describe('removeDirectoryWithRetries', () => {
-    it('calls the injected rm exactly once with the retry schedule Node 24 actually runs', () => {
-        const calls: Array<[string, unknown]> = [];
-        const rm: typeof rmSync = (path, options) => {
-            calls.push([path as string, options]);
-        };
-
-        removeDirectoryWithRetries('/tmp/sourdaw-desktop-measure-spec-fake', rm);
+        const removal = removeProfileDir('/tmp/sourdaw-desktop-measure-spec-fake', rm);
 
         expect(calls).toEqual([
             [
                 '/tmp/sourdaw-desktop-measure-spec-fake',
-                { recursive: true, force: true, maxRetries: 2, retryDelay: 1000 },
+                { recursive: true, force: true, maxRetries: 1, retryDelay: 1000 },
             ],
         ]);
+        expect(removal).toEqual({ removed: true });
     });
 });
