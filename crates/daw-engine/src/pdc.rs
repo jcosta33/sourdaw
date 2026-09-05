@@ -601,6 +601,93 @@ mod tests {
         assert_eq!(delay.write_position(), 0);
     }
 
+    /// The tail call in [`CompensationDelay::process`] has to extend history
+    /// exactly as [`CompensationDelay::feed`]'s twin call does: a processed
+    /// block advances `covered` by the frames it wrote, not only by however
+    /// many the ring was already short of its capacity.
+    #[test]
+    fn a_processed_line_grows_its_history_exactly_as_a_fed_one() {
+        let mut delay = CompensationDelay::new(8);
+        delay.feed(&ramp(8), &ramp(8), 8);
+
+        delay.set_delay(4);
+        delay.restart_from_silence();
+
+        // The restart clears the trailing four slots and puts the write head
+        // back at zero, so covered is now only the four slots of silence it
+        // just laid down.
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "the restart clears exactly the trailing four slots the delay reaches"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(
+            delay.write_position(),
+            0,
+            "the restart puts the write head back at zero"
+        );
+
+        let mut left = vec![9.0; 2];
+        let mut right = vec![9.0; 2];
+        delay.process(&mut left, &mut right, 2);
+
+        assert_eq!(
+            left,
+            vec![0.0, 0.0],
+            "the read head is still four slots behind the write head, inside the restart's silence"
+        );
+        assert_eq!(right, left);
+
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [9.0, 9.0, 3.0, 4.0, 5.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "the two processed frames overwrite the first two slots and nothing else"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(
+            delay.write_position(),
+            2,
+            "the write head advances by the two frames just processed"
+        );
+
+        // If `process` did not advance `covered` by the frames it wrote,
+        // covered would still read four here, and six is one past it: this
+        // re-aiming would wrongly restart the line and zero the ring, even
+        // though the two processed frames just extended history to six.
+        delay.set_delay(6);
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [9.0, 9.0, 3.0, 4.0, 5.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "a hold the grown history exactly covers is taken in place, without restarting"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(
+            delay.write_position(),
+            2,
+            "taking the hold in place leaves the write head where processing left it"
+        );
+
+        // One frame deeper reaches past the six frames of history the line
+        // actually has, so this one does restart.
+        delay.set_delay(7);
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(
+            ring_left,
+            [9.0, 9.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].as_slice(),
+            "one frame past the covered history restarts the line, zeroing the trailing seven slots"
+        );
+        assert_eq!(ring_right, ring_left);
+        assert_eq!(
+            delay.write_position(),
+            0,
+            "the restart puts the write head back at zero"
+        );
+    }
+
     /// The cost is paid only where it is owed. A ring is built silent, and
     /// silence is history a hold may read, so no line pays a restart for its
     /// first aiming however deep it is — which is every dry line the control
