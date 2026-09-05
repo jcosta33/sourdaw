@@ -17,7 +17,7 @@ describe('recordNativeChainReleases', () => {
     it('narrows a held strip to the chain the release left it with', () => {
         nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['comp', 'proq', 'limiter']]]);
 
-        recordNativeChainReleases([{ kind: 'track', id: 'audio-1', deviceIds: ['comp', 'limiter'] }]);
+        recordNativeChainReleases([{ id: 'audio-1', deviceIds: ['comp', 'limiter'] }]);
 
         expect(nativeLiveGraphSession.nativeChainByStripId.get('audio-1')).toEqual(['comp', 'limiter']);
     });
@@ -26,7 +26,7 @@ describe('recordNativeChainReleases', () => {
         const before = new Map([['audio-1', ['comp', 'limiter']]]);
         nativeLiveGraphSession.nativeChainByStripId = before;
 
-        recordNativeChainReleases([{ kind: 'track', id: 'audio-9', deviceIds: [] }]);
+        recordNativeChainReleases([{ id: 'audio-9', deviceIds: [] }]);
 
         expect(nativeLiveGraphSession.nativeChainByStripId).toBe(before);
         expect(nativeLiveGraphSession.nativeChainByStripId.size).toBe(1);

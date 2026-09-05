@@ -11,11 +11,23 @@
  * build has nothing here to narrow.
  */
 
-import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
-
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
-export function recordNativeChainReleases(reports: readonly AudioGraphStripReport[]): void {
+/**
+ * One strip's chain as an unload's release left it, as this use case reads
+ * it.
+ *
+ * Its own local DTO rather than the backend's `AudioGraphStripReport`: this
+ * only ever narrows a chain already held by id, so it reads no more than
+ * `id` and `deviceIds` and never promotes the backend's report contract onto
+ * this barrel-exported function's own signature.
+ */
+export type NativeChainRelease = {
+    id: string;
+    deviceIds: readonly string[];
+};
+
+export function recordNativeChainReleases(reports: readonly NativeChainRelease[]): void {
     const held = reports.filter((report) => nativeLiveGraphSession.nativeChainByStripId.has(report.id));
     if (held.length === 0) {
         return;

@@ -1,4 +1,16 @@
-import type { ReleasedStripReport } from '../../repositories/pluginBridge/unloadPlugin';
+/**
+ * One strip's chain as an unload left it, as the sink this use case forwards
+ * to reads it.
+ *
+ * The repository's own DTO for the native reply's `reports` entries stays
+ * inside `repositories/pluginBridge/unloadPlugin`, like every other bridge
+ * shape; `forwardReleasedStripReports` maps onto this one, field by field.
+ */
+export type ReleasedStripReport = {
+    kind: 'track' | 'bus';
+    id: string;
+    deviceIds: readonly string[];
+};
 
 /** Where an unload's released strip reports go, once forwarded. */
 export type ReleasedStripReportSink = (reports: readonly ReleasedStripReport[]) => void;

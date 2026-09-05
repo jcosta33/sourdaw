@@ -302,4 +302,29 @@ describe('unloadPlugin', () => {
         expect(sink).toHaveBeenCalledTimes(1);
         expect(sink).toHaveBeenCalledWith(reports);
     });
+
+    /**
+     * `unloadWithRetractedMirror` forwards `unloaded.reports` ahead of
+     * `reconcileUnloadResult`, which is what throws on a non-empty `errors`
+     * list. A reply naming both proves the ordering: the reports describe
+     * native state that already committed regardless of what else in the
+     * same cascade failed, so the sink must see them even though the same
+     * call rejects.
+     */
+    it('forwards released strip reports before the errors check rejects the unload', async () => {
+        loadedExternalInstances.add('inst-1');
+        const sink = vi.fn<(reports: readonly ReleasedStripReport[]) => void>();
+        registerReleasedStripReportSink(sink);
+        const reports: ReleasedStripReport[] = [{ kind: 'track', id: 'lead', deviceIds: [] }];
+        mocks.unloadRepo.mockResolvedValue({
+            unloadedInstanceIds: ['inst-1'],
+            errors: ['inst-2: teardown failed'],
+            reports,
+        });
+
+        await expect(subject.unloadPlugin('inst-1')).rejects.toThrow('inst-2: teardown failed');
+
+        expect(sink).toHaveBeenCalledTimes(1);
+        expect(sink).toHaveBeenCalledWith(reports);
+    });
 });

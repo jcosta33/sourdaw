@@ -4,12 +4,13 @@ import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
  * One strip's chain as an unload left it, after releasing every chain entry
  * naming an instance the unload retired.
  *
- * The repository's own DTO for the native reply's `reports` entries; the
- * `pluginLifecycle` use case derives its own `ReleasedStripReport` from this
- * shape rather than the other way around, because a repository owns the wire
- * contract it parses.
+ * The repository's own DTO for the native reply's `reports` entries. The
+ * `pluginLifecycle` use case owns its own `ReleasedStripReport` type and maps
+ * onto it from this one, field by field, rather than importing this type
+ * itself: a repository owns the wire contract it parses, and a use case never
+ * promotes that contract onto its own barrel-exported surface.
  */
-export type ReleasedStripReport = {
+export type PluginUnloadStripReport = {
     kind: 'track' | 'bus';
     id: string;
     deviceIds: readonly string[];
@@ -18,7 +19,7 @@ export type ReleasedStripReport = {
 type PluginUnloadResult = {
     unloadedInstanceIds: string[];
     errors: string[];
-    reports: ReleasedStripReport[];
+    reports: PluginUnloadStripReport[];
 };
 
 function isStringArray(value: unknown): value is string[] {
@@ -33,7 +34,7 @@ function isStringArray(value: unknown): value is string[] {
  * the two modules read the same wire shape for different reasons, and a
  * use case's parsing of its own bridge reply stays with that bridge.
  */
-function parseReleasedStripReports(value: unknown): ReleasedStripReport[] {
+function parseReleasedStripReports(value: unknown): PluginUnloadStripReport[] {
     if (!Array.isArray(value)) {
         throw new TypeError('Invalid unload_plugin response');
     }
