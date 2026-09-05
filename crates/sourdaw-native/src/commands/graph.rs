@@ -2752,8 +2752,12 @@ pub async fn apply_graph_commands(
     // the order every path holding both takes them in — and both released
     // before this batch claims the engine below. A crumbs refusal is that
     // instance's to carry, never this batch's: it stays dormant for the next
-    // one.
-    match crumbs::attach_dormant_crumbs(crumbs, &state.engine) {
+    // one. The registry guard already held above is passed straight through
+    // (#3807): the attach's own fence must be numbered on this same registry,
+    // ahead of `working`'s clone below, so the batch fence that follows
+    // inherits the count in the order the two fences take on the ring — the
+    // registration first, then the batch it precedes.
+    match crumbs::attach_dormant_crumbs(crumbs, &mut registry_guard, &state.engine) {
         Ok(refusals) => {
             for (instance_id, reason) in refusals {
                 eprintln!(
@@ -5289,6 +5293,54 @@ mod tests {
         assert_eq!(
             crumbs_slots, 1,
             "the batch that started the engine published the dormant instance's slot onto it"
+        );
+    }
+
+    /// Issue #3807 (regression): the attach that installs a dormant crumbs
+    /// slot publishes its own fence, ahead of the batch that triggered it in
+    /// the same call — the two fences land on the ring attach-first, batch
+    /// second. The batch's own fence must therefore be numbered one past the
+    /// attach's, not on top of it. Before the fix, the attach never called
+    /// `record_fenced_batch`, so this batch's fence collided with the
+    /// attach's un-numbered one and reported 1 instead of 2.
+    #[test]
+    fn a_crumbs_attach_fence_counts_toward_the_batch_it_precedes() {
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "before-first-play-fence-count".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        // Filling the slot first is what makes this a capture engine, exactly
+        // as the lazy bootstrap's own tests do: the batch reuses this handle
+        // rather than opening a device.
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["admittedBatch"].as_u64(),
+            Some(2),
+            "the dormant crumbs attach fences the ring once before this batch's own fence"
+        );
+        assert_eq!(
+            state
+                .graph
+                .lock()
+                .expect("the registry is readable")
+                .fenced_batches(),
+            2,
+            "the registry's own counter must agree with the reported fence"
         );
     }
 
