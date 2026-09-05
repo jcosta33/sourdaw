@@ -23,6 +23,14 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 
 ## Lessons from escapes
 
+### 2026-09-05 — output selection recorded the requested sink after the browser refused it
+
+The output-device use case wrote the requested ID into its selection store after `setSinkId` rejected or was unavailable, so the picker claimed hardware that was not applied. Its existing spec blessed that mirror by asserting the requested ID after a rejection.
+
+Blind spot: the review treated a successful call attempt as the hardware outcome and never checked whether the store represented the browser's applied state through failure or overlapping requests.
+
+Probe that would have caught it: drive the real use case with fake hardware and observe the store and notification after rejection, absent or non-callable `setSinkId`, deferred success, and ordered overlapping requests; require every failed request to retain the last applied ID and every later request to wait for its predecessor.
+
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
 PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end
