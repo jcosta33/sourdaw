@@ -171,13 +171,15 @@ describe('LevainPanel', () => {
         expect(screen.getAllByTestId('section-card').length).toBeGreaterThan(0);
     });
 
-    it('keeps all section cards from shrinking and eliminates inner subgrid collapse', () => {
+    it('keeps all section cards from shrinking and establishes responsive container hierarchy', () => {
         const { container } = render(<LevainPanel deviceId="test-device" />);
         const cards = screen.getAllByTestId('section-card');
-        expect(cards.length).toBeGreaterThanOrEqual(6);
+        expect(cards).toHaveLength(7);
         expect(cards.every((card) => card.className.includes('shrink-0'))).toBe(true);
-        expect(container.querySelector('.grid-cols-\\[minmax\\(0\\,1fr\\)_18rem\\]')).toBeNull();
-        expect(container.querySelector('.\\@container')).not.toBeNull();
+
+        const stageContainer = container.querySelector('section.\\@container');
+        expect(stageContainer).not.toBeNull();
+        expect(stageContainer?.querySelector('.grid.grid-cols-1.\\@\\[540px\\]\\:grid-cols-2')).not.toBeNull();
     });
 
     it('should display engine status', () => {
