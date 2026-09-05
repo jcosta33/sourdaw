@@ -304,6 +304,23 @@ describe('promptParser parsing', () => {
             ]);
         });
 
+        it('preserves casing of track names specified in compound multi-track creation', () => {
+            const actions = tryCompoundFastPath('create 2 audio tracks named Lead Vocals, Backing Vocals', context);
+            expect(actions).toEqual([
+                { type: 'addTrack', payload: { name: 'Lead Vocals', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Backing Vocals', kind: 'audio' } },
+            ]);
+
+            const upperActions = tryCompoundFastPath(
+                'CREATE 2 AUDIO TRACKS NAMED Lead Vocals, Backing Vocals',
+                context
+            );
+            expect(upperActions).toEqual([
+                { type: 'addTrack', payload: { name: 'Lead Vocals', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Backing Vocals', kind: 'audio' } },
+            ]);
+        });
+
         it('parses mute/solo all tracks', () => {
             const actions1 = tryCompoundFastPath('mute all tracks', context);
             expect(actions1).toEqual([

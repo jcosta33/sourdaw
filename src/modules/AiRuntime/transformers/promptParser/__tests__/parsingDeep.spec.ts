@@ -94,6 +94,14 @@ describe('tryParameterizedPath', () => {
         const result = tryParameterizedPath('rename clip to Verse', ctx);
         expect(result).toHaveLength(1);
         expect(result[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Verse' } });
+
+        const upperResult = tryParameterizedPath('RENAME THE CLIP TO Bridge Solo', ctx);
+        expect(upperResult).toHaveLength(1);
+        expect(upperResult[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Bridge Solo' } });
+
+        const lowerResult = tryParameterizedPath('rename the clip to verse', ctx);
+        expect(lowerResult).toHaveLength(1);
+        expect(lowerResult[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'verse' } });
     });
 
     // `#954` retired the transpose and quantize fast paths so these prompts
