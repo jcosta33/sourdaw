@@ -84,6 +84,37 @@ describe('tryParameterizedPath', () => {
         expect(result[0]).toMatchObject({ type: 'setTrackGain', payload: { trackId: 't1', gain: 0.8 } });
     });
 
+    it('preserves explicit percent semantics for 1% gain commands and bare values', () => {
+        expect(tryParameterizedPath('volume 1%', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0.01 },
+        });
+        expect(tryParameterizedPath('set gain to 1%', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0.01 },
+        });
+        expect(tryParameterizedPath('volume 0%', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0 },
+        });
+        expect(tryParameterizedPath('volume 2%', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0.02 },
+        });
+        expect(tryParameterizedPath('volume 100%', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 1 },
+        });
+        expect(tryParameterizedPath('set volume to 1', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 1 },
+        });
+        expect(tryParameterizedPath('volume 80', ctx)[0]).toMatchObject({
+            type: 'setTrackGain',
+            payload: { trackId: 't1', gain: 0.8 },
+        });
+    });
+
     it('parses pan value', () => {
         const result = tryParameterizedPath('set pan to -25', ctx);
         expect(result).toHaveLength(1);

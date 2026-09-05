@@ -124,10 +124,11 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
         return [{ type: 'setTempo', payload: { bpm: parseInt(tempoMatch[1]!, 10) } }];
     }
 
-    const gainMatch = text.match(/^(?:set\s+)?(?:track\s+)?(?:gain|volume)\s+(?:to\s+)?(\d+)%?$/i);
+    const gainMatch = text.match(/^(?:set\s+)?(?:track\s+)?(?:gain|volume)\s+(?:to\s+)?(\d+)(%)?$/i);
     if (gainMatch && selectedTrack) {
         const rawVal = parseInt(gainMatch[1]!, 10);
-        const gain = rawVal > 1 ? rawVal / 100 : rawVal;
+        const hasPercent = Boolean(gainMatch[2]);
+        const gain = hasPercent || rawVal > 1 ? rawVal / 100 : rawVal;
         return [
             {
                 type: 'setTrackGain',
