@@ -454,6 +454,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                 <div
                     ref={addMenuRef}
                     className="daw-floating-surface absolute right-2 top-5 z-50 min-w-[200px] rounded-md p-1"
+                    role="menu"
                 >
                     <DawMenuMutedRow className="px-2">New Adjustment Layer</DawMenuMutedRow>
                     {ALL_EFFECT_TYPES.map((effectType) => (
@@ -470,6 +471,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                     data-testid="adjustment-layer-context-menu"
                     className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                    role="menu"
                 >
                     {contextMenu.kind === 'layer' ? (
                         <>

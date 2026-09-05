@@ -742,7 +742,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
 // ── Chord picker popover ──────────────────────────────────────────────────
 
 const ChordPickerPopover = ({ onPick }: { onPick: (root: number, quality: ChordQuality) => void }): ReactElement => (
-    <div className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-56 w-48 overflow-y-auto rounded-md p-1.5">
+    <div
+        className="daw-floating-surface absolute left-0 top-full z-50 mt-1 max-h-56 w-48 overflow-y-auto rounded-md p-1.5"
+        role="menu"
+    >
         {ROOT_NAMES.map((name, rootIdx) => (
             <div key={name}>
                 <div className="px-1.5 pt-1 pb-0.5 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-wider">

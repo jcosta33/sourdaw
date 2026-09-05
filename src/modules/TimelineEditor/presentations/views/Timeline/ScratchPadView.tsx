@@ -283,6 +283,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     ref={menuRef}
                     className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                    role="menu"
                 >
                     <Button
                         variant="bare"

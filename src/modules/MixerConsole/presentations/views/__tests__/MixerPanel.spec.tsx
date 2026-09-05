@@ -99,6 +99,16 @@ describe('MixerPanel', () => {
         expect(saveMixerSnapshot).toHaveBeenCalled();
     });
 
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open dropdown deletes the arrangement clips behind it.
+    it('snapshot options sit inside a [role="menu"] surface', () => {
+        render(<MixerPanel />);
+        fireEvent.click(screen.getByLabelText('Recall mixer snapshot'));
+
+        expect(screen.getByText('Snapshot 1').closest('[role="menu"]')).not.toBeNull();
+    });
+
     it('should render correct title based on track count', () => {
         render(<MixerPanel />);
         expect(screen.getByText(/Mixer - 2 channels/i)).toBeInTheDocument();

@@ -85,4 +85,13 @@ describe('AutomationContextMenu', () => {
         fireEvent.click(overlay!);
         expect(defaultProps.onClose).toHaveBeenCalled();
     });
+
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618). The menu items are real buttons, so a
+    // keydown can originate inside this portal — without a menu-role ancestor
+    // it would fall through and delete the clips behind the open menu.
+    it('should give every menu item a [role="menu"] ancestor', () => {
+        renderWithTooltip(<AutomationContextMenu {...defaultProps} />);
+        expect(screen.getByText('Linear').closest('[role="menu"]')).not.toBeNull();
+    });
 });
