@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationControls.tsx
+  s_54219e59585d12::t_d45af535e52878 84,160-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "252d9aaf8ec4f2c801b5c450ecaa970ecf82a192",
+  "prompts": {},
+  "sessions": {
+    "s_54219e59585d12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ee4c31fc3b0adf9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
