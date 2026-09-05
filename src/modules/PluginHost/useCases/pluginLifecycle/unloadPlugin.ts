@@ -12,11 +12,14 @@
  * whole topology, and the strip it rebuilds names no effect for the unloaded
  * device, so nothing survives the fence.
  *
- * Rolling, nothing here reaches the graph. The engine's registry goes on naming
- * the freed effect until some later batch replaces the topology, and the
- * scheduler passes it through and counts it in the meantime. Releasing an
- * instance from a rolling graph needs a command that does not tear the topology
- * down, which is #3575's work; this module deliberately has no route to one.
+ * Rolling, no topology batch is coming, so the release is the native unload's
+ * own: it takes every chain entry naming the instance out of the graph, in a
+ * fenced batch of its own, before it retires the instance. The order is the
+ * point. A chain entry naming a retired effect is a silent passthrough — the
+ * scheduler's `run_device` returns on a failed effect-table lookup and counts
+ * nothing — so an entry left standing would go unnoticed for the rest of the
+ * session. Nothing dangles because nothing is retired while a chain still names
+ * it.
  *
  * ── The mirror is retracted first, reconciled after ───────────────────────
  *

@@ -1,5 +1,6 @@
 /**
- * Correct the devices of every instance a batch reported the engine took over.
+ * Correct the devices of every instance a batch reported the engine took over,
+ * and splice those instances into the chains that name them.
  *
  * A plugin loaded before the engine was running is held by the command layer
  * with no engine behind it, and its device was told exactly that: loaded, and
@@ -13,20 +14,19 @@
  * one — within a single start sequence that is the roll, one batch behind the
  * topology. Which batch carries the correction is the native side's business;
  * this module's business is that no route drops it.
+ *
+ * The splice is the rolling half of the same fact (#3575). Parked, the next
+ * play's topology batch is built against the attach state written just above
+ * and binds the instance by itself. Rolling, no such batch is coming: the strip
+ * went out with no body for that device, and only a chain edit puts one there.
  */
-
-import { markExternalPluginEngineAttached } from '#/modules/PluginHost/useCases';
 
 import { type AudioGraphApplyResult } from '../../models/AudioGraphBackend';
 
+import { markAttachedInstances } from './markAttachedInstances';
+import { spliceInstancesAttachedBy } from './spliceInstancesAttachedBy';
+
 export function reportAttachedPlugins(result: AudioGraphApplyResult): void {
-    if (result.application !== 'applied') {
-        return;
-    }
-    for (const attached of result.attachedPlugins ?? []) {
-        markExternalPluginEngineAttached({
-            instanceId: attached.instanceId,
-            bridgeRoundTripFrames: attached.bridgeRoundTripFrames,
-        });
-    }
+    markAttachedInstances(result);
+    spliceInstancesAttachedBy(result);
 }

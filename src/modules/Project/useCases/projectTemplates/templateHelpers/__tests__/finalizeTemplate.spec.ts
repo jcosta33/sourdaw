@@ -17,6 +17,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     setTrackState: mocks.setTrackState,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     waitForDevices: mocks.waitForDevices,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

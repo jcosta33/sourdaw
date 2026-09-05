@@ -89,6 +89,26 @@ export type NativeLiveGraphSession = {
      * engine's attach state does.
      */
     lastSilentPluginNotice: string | null;
+    /**
+     * The deferred-chain-change notice this session last showed, under the same
+     * rule as the two above.
+     */
+    lastDeferredChainNotice: string | null;
+    /**
+     * What the engine's chain holds, per strip this session built, in graph
+     * order.
+     *
+     * The engine's own observation rather than the project's chain: a device
+     * the mapper degraded is absent here, and every index a chain edit
+     * addresses is an index into *this* list. Written from the `reports` of
+     * every applied batch the session sends, because that is the only readback
+     * of the realized chain there is.
+     *
+     * A strip missing from this map is a strip this session never built — a
+     * track added mid-roll — and a chain edit on one has nothing to mirror
+     * into.
+     */
+    nativeChainByStripId: ReadonlyMap<string, readonly string[]>;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
@@ -106,6 +126,8 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     loopEnabled: false,
     lastDeclineNotice: null,
     lastSilentPluginNotice: null,
+    lastDeferredChainNotice: null,
+    nativeChainByStripId: new Map(),
     pending: Promise.resolve(),
 };
 

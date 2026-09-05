@@ -35,6 +35,8 @@ const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     getAudioSampleRate: () => sampleRateMock(),
     getMasterAnalyser: () => null,
     isEngineAudioAvailable: () => true,

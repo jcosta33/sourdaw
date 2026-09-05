@@ -105,6 +105,8 @@ export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSi
 export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
+export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';

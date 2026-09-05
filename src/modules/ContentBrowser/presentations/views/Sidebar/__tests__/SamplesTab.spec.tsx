@@ -13,6 +13,8 @@ import { SamplesTab } from '../SamplesTab';
 // AudioEngine key in this factory is an unread graph-coverage stub (`vi.fn()`
 // and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     getCachedAudioBuffer: vi.fn(),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

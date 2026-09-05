@@ -42,6 +42,8 @@ vi.mock('#/infra/store/useStore', () => ({
 // `updateDeviceParam` is the wired stub; every other AudioEngine key in this
 // factory is an unread graph-coverage stub (`vi.fn()` and `audioEngine: {}`).
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     updateDeviceParam: vi.fn(),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
