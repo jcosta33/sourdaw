@@ -76,7 +76,7 @@ const SectionCard = ({
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="grand-boule-window"
+        className="grand-boule-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-neutral-400/80"
@@ -351,32 +351,28 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </Stack>
                     </SectionCard>
 
-                    <SectionCard title="Morph" detail="Piano model blending.">
-                        <MorphPanel
-                            morph={morph}
-                            onMorphPositionChange={(position, isTransient) =>
-                                setGrandBouleMorphPosition({
-                                    deviceId,
-                                    engine,
-                                    store,
-                                    morphPosition: position,
-                                    isTransient,
-                                })
-                            }
-                            onLayerBalanceChange={(balance, isTransient) =>
-                                setGrandBouleMorphBalance({ deviceId, engine, store, balance, isTransient })
-                            }
-                            onModelAChange={(modelId) =>
-                                setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelA', modelId })
-                            }
-                            onModelBChange={(modelId) =>
-                                setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelB', modelId })
-                            }
-                            onEnabledChange={(enabled) =>
-                                setGrandBouleMorphEnabled({ deviceId, engine, store, enabled })
-                            }
-                        />
-                    </SectionCard>
+                    <MorphPanel
+                        morph={morph}
+                        onMorphPositionChange={(position, isTransient) =>
+                            setGrandBouleMorphPosition({
+                                deviceId,
+                                engine,
+                                store,
+                                morphPosition: position,
+                                isTransient,
+                            })
+                        }
+                        onLayerBalanceChange={(balance, isTransient) =>
+                            setGrandBouleMorphBalance({ deviceId, engine, store, balance, isTransient })
+                        }
+                        onModelAChange={(modelId) =>
+                            setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelA', modelId })
+                        }
+                        onModelBChange={(modelId) =>
+                            setGrandBouleMorphModel({ deviceId, engine, store, slot: 'modelB', modelId })
+                        }
+                        onEnabledChange={(enabled) => setGrandBouleMorphEnabled({ deviceId, engine, store, enabled })}
+                    />
 
                     <SectionCard title="Mix" detail="Master, soundboard, sympathetic.">
                         <Grid cols={3} gapX={2} gapY={3}>

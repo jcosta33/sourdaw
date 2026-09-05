@@ -195,4 +195,10 @@ describe('GrandBoulePanel', () => {
         expect(faceplate?.className).toContain('min-h-[440px]');
         expect(faceplate?.className).not.toContain('overflow-hidden');
     });
+
+    it('keeps the section cards from shrinking when the faceplate is compressed', () => {
+        render(<GrandBoulePanel deviceId="dev-1" />);
+        const cards = document.querySelectorAll('.grand-boule-window.shrink-0');
+        expect(cards.length).toBeGreaterThanOrEqual(5);
+    });
 });
