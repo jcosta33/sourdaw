@@ -1,7 +1,7 @@
 import("stdfaust.lib");
 process = vgroup("eq", 
     fi.low_shelf(lf_gain, lf_freq) :
-    fi.peak_eq(mf_gain, mf_freq, mf_q) :
+    fi.peak_eq_cq(mf_gain, mf_freq, mf_q) :
     fi.high_shelf(hf_gain, hf_freq)
 ) with {
     lf_gain = hslider("lf_gain", 0, -18, 18, 0.1);
