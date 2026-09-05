@@ -1,0 +1,29 @@
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_28abfd94826e36::t_ca9363d6d9c0fa 79-82
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_54219e59585d12::t_138a25b93ebf8d 202-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c1f146ae5bc67720cb6a5e02def2ec97b492ba84",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_54219e59585d12": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ee4c31fc3b0adf9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
