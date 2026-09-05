@@ -1,0 +1,21 @@
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_5946db58647c56 75-76
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_5f2992f5b30090 197-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c5cfe288d38762db5f88f6b83e7fc5c85c7f81f0",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
