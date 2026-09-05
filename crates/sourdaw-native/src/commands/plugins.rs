@@ -2087,6 +2087,60 @@ fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWind
     windows_host.unwrap_or(&NoWindowHost)
 }
 
+/// Take the instance's chain entries out of the live graph, then retire it.
+///
+/// Order is the whole point. A chain entry naming a retired effect is not
+/// counted anywhere — `TrackDeviceChain::run_device` returns on a failed
+/// effect-table lookup — so it is a silent passthrough for as long as it
+/// stands, and on a rolling engine no topology replacement ever arrives to
+/// clear it. Retiring first would therefore open that hole for the rest of the
+/// session; releasing first closes it before the hole can exist.
+///
+/// Both guards are held across the pair so the release ops and the retirement
+/// reach the ring from one producer with nothing interleaved. They are taken
+/// registry-then-engine, the order `apply_graph_commands` takes them in, which
+/// is what keeps a concurrent batch from deadlocking against this one.
+fn release_then_retire_engine_plugin(
+    engine_plugin_id: usize,
+    state: &AppState,
+) -> Result<(), String> {
+    let mut registry = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {}", error))?;
+    let mut engine_guard = state
+        .engine
+        .lock()
+        .map_err(|error| format!("Failed to lock engine: {}", error))?;
+    let Some(engine) = engine_guard.as_mut() else {
+        return Err("Native engine not running".to_string());
+    };
+
+    let released = registry.release_engine_plugin(engine_plugin_id);
+    if !released.is_empty() {
+        // The reserved slot is the `RemovePluginWithBridge` push below: the
+        // retirement must not find the ring full after the release has already
+        // taken the entry out of the registry.
+        match engine.send_graph_batch_with_headroom(released, 1) {
+            Ok(()) => {
+                registry.record_fenced_batch();
+            }
+            Err(error) => {
+                // Logged and carried on. The registry no longer holds the
+                // entry either way, so refusing here would abandon an unload
+                // the caller has already begun and leave the instance loaded
+                // with nothing in the graph holding it.
+                eprintln!(
+                    "[Plugin] chain release before unload was refused: {:?}",
+                    error
+                );
+            }
+        }
+    }
+
+    engine.remove_plugin(engine_plugin_id)
+}
+
 async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
@@ -2127,19 +2181,7 @@ async fn unload_plugin_runtime(
     };
 
     if let Some((engine_plugin_id, runtime)) = engine_plugin {
-        let scheduler_removal_result = {
-            let engine_guard = state
-                .engine
-                .lock()
-                .map_err(|e| format!("Failed to lock engine: {}", e));
-            match engine_guard {
-                Ok(mut engine_guard) => match engine_guard.as_mut() {
-                    Some(engine) => engine.remove_plugin(engine_plugin_id),
-                    None => Err("Native engine not running".to_string()),
-                },
-                Err(error) => Err(error),
-            }
-        };
+        let scheduler_removal_result = release_then_retire_engine_plugin(engine_plugin_id, state);
         if let Err(error) = scheduler_removal_result {
             runtime.cancel_unload();
             return Err(error);
@@ -6748,6 +6790,104 @@ mod tests {
             .lock()
             .expect("plugins lock")
             .contains_key("command-instance"));
+    }
+
+    /// The unload-relevant commands the engine received, in ring order.
+    ///
+    /// `GraphCommand` carries whole clips and has no `Debug`, so the shape is
+    /// reduced to names, and the fence beside them is dropped: what these
+    /// cases are about is which of the two arrived first.
+    fn released_then_retired(
+        commands: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
+    ) -> Vec<&'static str> {
+        let mut order = Vec::new();
+        while let Ok(command) = commands.pop() {
+            match command {
+                daw_engine::scheduler::GraphCommand::RemoveTrackDevice { .. } => {
+                    order.push("release")
+                }
+                daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(_) => {
+                    order.push("retire")
+                }
+                _ => {}
+            }
+        }
+        order
+    }
+
+    /// One track strip whose only device borrows the engine-owned fixture.
+    fn strip_binding_the_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                "state": { "gain": 1.0, "pan": 0, "muted": false, "soloGated": false,
+                           "vcaMultiplier": 1 },
+                "devices": [
+                    { "id": "d-plugin", "name": "Engine Owned Fixture", "type": "plugin",
+                      "bypassed": false, "parameterValues": {},
+                      "externalPluginId": "com.fixture", "externalInstanceId": "inst-1" }
+                ],
+                "honorMuted": true, "contributesAudio": true
+            }]
+        })
+    }
+
+    /// An unload releases the instance's chain entry before it retires the
+    /// instance. A chain entry naming a retired effect is not counted anywhere
+    /// — the scheduler's `run_device` returns on a failed effect-table lookup
+    /// — and a rolling engine gets no topology replacement to clear it, so the
+    /// two commands are ordered rather than merely both present.
+    #[test]
+    fn unloading_a_bound_instance_releases_its_chain_entry_before_retiring_it() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let applied = crate::block_on_test(crate::commands::graph::apply_graph_commands(
+            strip_binding_the_fixture(),
+            &state,
+            &crate::commands::crumbs::CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            applied["application"], "applied",
+            "the strip must bind the attached instance, or nothing is released later"
+        );
+        // Everything the setup pushed. What follows is the unload's alone.
+        while command_rx.pop().is_ok() {}
+
+        crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect("the bound instance unloads");
+
+        assert_eq!(
+            released_then_retired(&mut command_rx),
+            vec!["release", "retire"],
+            "the chain entry leaves the graph before the effect it names is retired"
+        );
+    }
+
+    /// No strip holds this instance, so there is nothing to release and the
+    /// unload is the retirement alone: the release must not manufacture a
+    /// chain command for a graph that never named the instance.
+    #[test]
+    fn unloading_an_unbound_instance_only_retires_it() {
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "inst-1", vec![]);
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        crate::block_on_test(unload_plugin_runtime("inst-1", None, &state))
+            .expect("the unbound instance unloads");
+
+        assert_eq!(
+            released_then_retired(&mut command_rx),
+            vec!["retire"],
+            "an instance in no chain is retired without a release before it"
+        );
     }
 
     #[test]

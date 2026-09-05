@@ -864,6 +864,51 @@ impl GraphRegistry {
         ops
     }
 
+    /// Take every chain entry naming `engine_plugin_id` out of the graph,
+    /// returning the engine ops that do it.
+    ///
+    /// The step an unload owes before it retires an instance. A chain entry
+    /// left naming a retired effect is not counted anywhere — the scheduler's
+    /// `run_device` returns on a failed effect-table lookup — so it is a
+    /// silent passthrough for as long as the entry stands, and only a topology
+    /// replacement would clear it. A rolling engine gets no topology
+    /// replacement, so the release has to be its own batch.
+    ///
+    /// Released, never retired, exactly as [`remove_device_op`] decides for any
+    /// engine-owned device: the instance's lifetime belongs to the load that
+    /// registered it, and the retirement this release precedes is
+    /// `RemovePluginWithBridge`'s.
+    ///
+    /// Usually one entry, possibly none when no strip holds the instance. The
+    /// loop over several is defensive — `map_device` refuses a device id that
+    /// is already in a chain, so one instance cannot be bound twice — and the
+    /// ids are ordered so the ops a `HashMap` produced do not depend on its
+    /// iteration order.
+    pub(crate) fn release_engine_plugin(&mut self, engine_plugin_id: usize) -> Vec<GraphCommand> {
+        let mut released: Vec<String> = self
+            .devices
+            .iter()
+            .filter(|(_, device)| {
+                device.engine_owned && device.native_effect_id == engine_plugin_id
+            })
+            .map(|(device_id, _)| device_id.clone())
+            .collect();
+        released.sort();
+
+        let mut ops = Vec::new();
+        for device_id in released {
+            let Some(device) = self.devices.remove(&device_id) else {
+                continue;
+            };
+            let Some(strip) = self.strips.get_mut(&device.strip_id) else {
+                continue;
+            };
+            ops.push(remove_device_op(strip.kind, strip.native_id, &device));
+            strip.device_ids.retain(|id| id != &device_id);
+        }
+        ops
+    }
+
     /// Subtract from the ledger exactly what the engine's progress echo
     /// proves has left its fixed queue — never a count, always a per-stamp
     /// proof, because a stamp the ledger's own mirrored cancellations already
@@ -1972,12 +2017,23 @@ fn map_command(
                 .get(track_id)
                 .ok_or_else(|| format!("remove-device: unknown strip '{track_id}'"))?
                 .clone();
-            let device = registry
-                .devices
-                .get(device_id)
-                .ok_or_else(|| format!("remove-device: unknown device '{device_id}'"))?
-                .clone();
+            // Touched before the device is even looked up, because the strip
+            // report is what the caller resyncs its chain from and it is owed
+            // whether or not an entry leaves here.
+            touch(touched, track_id);
+            let Some(device) = registry.devices.get(device_id).cloned() else {
+                // Already absent, which is this command's desired state rather
+                // than a fault. Two producers race for the same entry — the
+                // live mirror's `remove-device` and the release
+                // `unload_plugin` performs before it retires an instance — and
+                // whichever arrives second must find the entry gone and still
+                // succeed, or an ordinary plugin delete refuses a whole batch.
+                return Ok(());
+            };
             if device.strip_id != *track_id {
+                // A wrong-strip command, not an already-satisfied one: the
+                // device exists and this batch is addressing it on a chain it
+                // is not on.
                 return Err(format!(
                     "remove-device: device '{device_id}' is not on strip '{track_id}'"
                 ));
@@ -1997,7 +2053,6 @@ fn map_command(
                 .expect("strip fetched above")
                 .device_ids
                 .retain(|id| id != device_id);
-            touch(touched, track_id);
             Ok(())
         }
 
@@ -4005,6 +4060,167 @@ mod tests {
                 id: "t1".to_string(),
                 device_ids: vec!["d-front".to_string()],
             }]
+        );
+    }
+
+    /// `remove-device` naming a device the registry no longer holds is this
+    /// command's desired state, not a fault. Two producers race for the same
+    /// chain entry — the live mirror's `remove-device` and the release
+    /// `unload_plugin` performs before it retires an instance — so whichever
+    /// arrives second finds it gone and must still apply, or an ordinary
+    /// plugin delete refuses a whole batch. The strip is still reported,
+    /// because the report is what the caller resyncs its chain from. An
+    /// unknown strip and a device on a different strip stay refusals: neither
+    /// is an already-satisfied removal.
+    #[test]
+    fn remove_device_is_satisfied_by_a_device_the_registry_no_longer_holds() {
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T",
+                  "state": strip_state(1.0),
+                  "devices": [ { "id": "d-front", "type": "knead", "bypassed": false,
+                                 "parameterValues": {} } ],
+                  "honorMuted": true, "contributesAudio": true },
+                { "kind": "create-track-strip", "trackId": "t2", "name": "U",
+                  "state": strip_state(1.0),
+                  "devices": [ { "id": "d-other", "type": "knead", "bypassed": false,
+                                 "parameterValues": {} } ],
+                  "honorMuted": true, "contributesAudio": true }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("the creation batch maps");
+
+        let absent = map_unbound_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "t1", "deviceId": "d-already-gone" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a device the registry no longer holds is already removed");
+        assert!(
+            absent.ops.is_empty(),
+            "there is no entry left to unlink, so the batch carries no op"
+        );
+        assert_eq!(
+            absent.reports,
+            vec![StripReportPayload {
+                kind: "track",
+                id: "t1".to_string(),
+                device_ids: vec!["d-front".to_string()],
+            }],
+            "the strip still reports the chain the caller resyncs from"
+        );
+
+        let unknown_strip = map_unbound_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "no-such-strip", "deviceId": "d-front" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a strip this registry never built is still a refusal");
+        assert!(
+            unknown_strip.contains("unknown strip 'no-such-strip'"),
+            "the refusal names the strip, got: {unknown_strip}"
+        );
+
+        let wrong_strip = map_unbound_batch(
+            &batch(json!([
+                { "kind": "remove-device", "trackId": "t1", "deviceId": "d-other" }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a device that exists on another strip is still a refusal");
+        assert!(
+            wrong_strip.contains("is not on strip 't1'"),
+            "the refusal names the strip it was addressed to, got: {wrong_strip}"
+        );
+    }
+
+    /// The release an unload owes before it retires an instance: every chain
+    /// entry naming that engine plugin leaves the graph, on a track and on a
+    /// bus alike, and the op is the released form rather than the retiring one
+    /// — the retirement this precedes is `RemovePluginWithBridge`'s.
+    #[test]
+    fn releasing_an_engine_plugin_unlinks_its_chain_entry_from_its_strip() {
+        let mut registry = GraphRegistry::default();
+        map_batch(
+            &batch(json!([
+                { "kind": "create-track-strip", "trackId": "lead", "name": "Lead",
+                  "state": strip_state(0.8),
+                  "devices": [
+                      { "id": "d-plugin", "name": "Pro-Q", "type": "plugin", "bypassed": false,
+                        "parameterValues": {}, "externalPluginId": "com.fabfilter.proq",
+                        "externalInstanceId": "inst-track" }
+                  ],
+                  "honorMuted": true, "contributesAudio": true },
+                { "kind": "create-bus-strip", "busId": "verb", "name": "Verb",
+                  "state": strip_state(1.0),
+                  "devices": [
+                      { "id": "d-bus-plugin", "name": "Room", "type": "plugin", "bypassed": false,
+                        "parameterValues": {}, "externalPluginId": "com.valhalla.room",
+                        "externalInstanceId": "inst-bus" }
+                  ],
+                  "honorMuted": true, "contributesAudio": true }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &HashMap::from([
+                ("inst-track".to_string(), 1_007usize),
+                ("inst-bus".to_string(), 1_009usize),
+            ]),
+        )
+        .expect("both strips bind their attached instance");
+        let bus_native_id = registry.strips["verb"].native_id;
+
+        let track_release = registry.release_engine_plugin(1_007);
+        assert!(
+            matches!(
+                track_release.as_slice(),
+                [GraphCommand::RemoveTrackDevice {
+                    effect_id: 1_007,
+                    ..
+                }]
+            ),
+            "a track chain entry is released, never retired"
+        );
+        assert!(
+            !registry.devices.contains_key("d-plugin"),
+            "the registry no longer holds a device for the released instance"
+        );
+        assert_eq!(
+            registry.strips["lead"].device_ids,
+            Vec::<String>::new(),
+            "the strip's chain no longer lists the released device"
+        );
+
+        let bus_release = registry.release_engine_plugin(1_009);
+        assert!(
+            matches!(
+                bus_release.as_slice(),
+                [GraphCommand::RemoveBusDevice { bus_id, effect_id: 1_009 }] if *bus_id == bus_native_id
+            ),
+            "a bus chain entry is released through the bus op, on its own strip"
+        );
+        assert_eq!(
+            registry.strips["verb"].device_ids,
+            Vec::<String>::new(),
+            "the bus chain no longer lists the released device"
+        );
+
+        assert!(
+            registry.release_engine_plugin(1_007).is_empty(),
+            "a second release for the same instance has nothing left to unlink"
         );
     }
 
