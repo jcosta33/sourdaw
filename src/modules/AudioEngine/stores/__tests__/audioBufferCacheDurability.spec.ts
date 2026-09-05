@@ -170,12 +170,37 @@ describe('audio buffer save durability', () => {
         }
     });
 
+    it('protects every required row while an admitted ordinary write is still settling', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'inactive-arrangement-buffer', [0.5]);
+        expect(audioBufferCache.has('inactive-arrangement-buffer')).toBe(false);
+        controls.pauseWriteSettlements();
+        audioBufferCache.set('pending-buffer', makeBuffer([0.25]));
+        const durability = audioBufferCache.ensureDurable(['inactive-arrangement-buffer', 'pending-buffer']);
+        await waitForPendingWrite(controls);
+
+        const collection = audioBufferCache.garbageCollectBySize(0);
+        for (let attempt = 0; attempt < 100 && controls.writeTransactionCount() < 2; attempt++) {
+            await flushIndexedDbTasks(1);
+        }
+        expect(controls.writeTransactionCount()).toBe(2);
+        const [deleted, result] = await settlePromiseWithWrites(Promise.all([collection, durability]), controls);
+
+        expect(deleted).toBe(0);
+        expect(controls.committed.has('inactive-arrangement-buffer')).toBe(true);
+        expect(result.status).toBe('durable');
+        if (result.status === 'durable') {
+            result.release();
+        }
+    });
+
     it('fails the admitted barrier when its pending ordinary attempt aborts and retries only on a later barrier', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'released-after-failure', [0.5]);
         controls.pauseWriteSettlements();
         controls.abortNextWrite();
         audioBufferCache.set('pending-failure', makeBuffer([0.25]));
-        const durability = audioBufferCache.ensureDurable(['pending-failure']);
+        const durability = audioBufferCache.ensureDurable(['released-after-failure', 'pending-failure']);
         await waitForPendingWrite(controls);
 
         controls.releaseNextWriteSettlement();
@@ -186,13 +211,17 @@ describe('audio buffer save durability', () => {
         });
         expect(controls.writeTransactionCount()).toBe(1);
 
+        const collectedAfterFailure = await settlePromiseWithWrites(audioBufferCache.garbageCollectBySize(0), controls);
+        expect(collectedAfterFailure).toBe(1);
+        expect(controls.committed.has('released-after-failure')).toBe(false);
+
         const retry = audioBufferCache.ensureDurable(['pending-failure']);
         const receipt = await settlePromiseWithWrites(retry, controls);
         expect(receipt.status).toBe('durable');
         if (receipt.status === 'durable') {
             receipt.release();
         }
-        expect(controls.writeTransactionCount()).toBe(2);
+        expect(controls.writeTransactionCount()).toBe(4);
     });
 
     it('retains an exact failed source after LRU eviction, retries it once, and restores its samples', async () => {
@@ -298,6 +327,54 @@ describe('audio buffer save durability', () => {
 
         expect(imported.publish()).toBe(1);
         expect(receipt.isCurrent()).toBe(false);
+        receipt.release();
+    });
+
+    it('observes a failed import batch, then retries exact resident and nonresident sources on a later barrier', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'imported-replacement', [0.2]);
+        const imported = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: ['imported-replacement'],
+            decodedBuffers: {
+                'imported-replacement': makeBuffer([0.8]),
+                'inactive-import': makeBuffer([0.6]),
+            },
+            context: testContext(),
+        });
+        if (!imported) {
+            throw new Error('Expected a valid imported audio candidate');
+        }
+        expect(imported.publish()).toBe(1);
+        expect(audioBufferCache.has('inactive-import')).toBe(false);
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const persistence = imported.persist();
+        const firstBarrier = audioBufferCache.ensureDurable(['imported-replacement', 'inactive-import']);
+        await waitForPendingWrite(controls);
+        controls.releaseNextWriteSettlement();
+
+        await expect(persistence).resolves.toBe(false);
+        await expect(firstBarrier).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['imported-replacement', 'inactive-import'],
+        });
+        expect(audioBufferCache.get('imported-replacement')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+
+        const retry = audioBufferCache.ensureDurable(['imported-replacement', 'inactive-import']);
+        const receipt = await settlePromiseWithWrites(retry, controls);
+        expect(receipt.status).toBe('durable');
+        if (receipt.status !== 'durable') {
+            return;
+        }
+
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({
+            context: testContext(),
+            ids: ['imported-replacement', 'inactive-import'],
+        });
+        expect(audioBufferCache.get('imported-replacement')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+        expect(audioBufferCache.get('inactive-import')?.getChannelData(0)[0]).toBeCloseTo(0.6);
         receipt.release();
     });
 
@@ -420,6 +497,76 @@ describe('audio buffer save durability', () => {
         });
         expect(receipt.isCurrent()).toBe(true);
         receipt.release();
+    });
+
+    it('protects and awaits exact in-flight prepared persistence and promotion before strengthening the receipt', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        controls.pauseWriteSettlements();
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'prepared-in-flight',
+            buffer: makeBuffer([0.55]),
+            leaseId: 'prepared-in-flight-lease',
+        });
+        await waitForPendingWrite(controls);
+        const promotion = audioBufferCache.releasePreparedBuffer({
+            id: 'prepared-in-flight',
+            leaseId: 'prepared-in-flight-lease',
+            disposition: 'project-owned',
+        });
+        const durability = audioBufferCache.ensureDurable(['prepared-in-flight']);
+        let durabilitySettled = false;
+        void durability.then(() => {
+            durabilitySettled = true;
+        });
+        await flushIndexedDbTasks(2);
+        expect(durabilitySettled).toBe(false);
+
+        const [persisted, promoted, receipt] = await settlePromiseWithWrites(
+            Promise.all([persistence, promotion, durability]),
+            controls
+        );
+
+        expect(persisted).toEqual({
+            status: 'persisted',
+            bufferId: 'prepared-in-flight',
+            leaseId: 'prepared-in-flight-lease',
+        });
+        expect(promoted).toEqual({ status: 'released', disposition: 'project-owned' });
+        expect(receipt.status).toBe('durable');
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+    });
+
+    it('releases collection protection after an in-flight prepared persistence fails', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'released-after-prepared-failure', [0.5]);
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        const persistence = audioBufferCache.persistPreparedBuffer({
+            id: 'prepared-in-flight-failure',
+            buffer: makeBuffer([0.55]),
+            leaseId: 'prepared-in-flight-failure-lease',
+        });
+        await waitForPendingWrite(controls);
+        const durability = audioBufferCache.ensureDurable([
+            'released-after-prepared-failure',
+            'prepared-in-flight-failure',
+        ]);
+
+        controls.releaseNextWriteSettlement();
+        await expect(persistence).resolves.toEqual({
+            status: 'failed',
+            reason: 'IDB transaction aborted',
+        });
+        await expect(durability).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['prepared-in-flight-failure'],
+        });
+
+        const deleted = await settlePromiseWithWrites(audioBufferCache.garbageCollectBySize(0), controls);
+        expect(deleted).toBe(1);
+        expect(controls.committed.has('released-after-prepared-failure')).toBe(false);
     });
 
     it('restores only the exact finalized recovery source captured for the snapshot', async () => {

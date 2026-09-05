@@ -23,6 +23,7 @@ type InstallMultiDatabaseIndexedDbResult = {
     releaseNextAudioWriteSettlement: () => void;
     rejectedAudioWriteCount: () => number;
     resumeAudioWriteSettlements: () => void;
+    seed: (databaseName: string, storeName: string, key: IDBValidKey, value: unknown) => void;
 };
 
 function cloneValue<Value>(value: Value): Value {
@@ -357,6 +358,13 @@ export function installMultiDatabaseIndexedDb(): InstallMultiDatabaseIndexedDbRe
         rejectedAudioWriteCount: () => rejectedAudioWrites,
         resumeAudioWriteSettlements: () => {
             pauseAudioSettlements = false;
+        },
+        seed: (databaseName, storeName, key, value) => {
+            const store = databaseState(databaseName).stores.get(storeName);
+            if (!store) {
+                throw new DOMException(`Object store ${storeName} does not exist`, 'NotFoundError');
+            }
+            store.set(key, cloneValue(value));
         },
     };
 }

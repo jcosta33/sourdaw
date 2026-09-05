@@ -10,6 +10,7 @@ import { setProjectIdentityTransitionDependencies } from '../projectPersistence/
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
+import type { BuiltProjectData } from '../projectPersistence/fileIO/buildProjectData';
 import type { ProjectStoreState } from '../../stores/projectStore';
 
 const { emit } = vi.hoisted(() => ({
@@ -45,7 +46,7 @@ const mocks = vi.hoisted(() => ({
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
     captureExternalPluginStates: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    buildProjectData: vi.fn<() => Promise<{ data: unknown } | null>>(),
+    buildProjectData: vi.fn<() => Promise<BuiltProjectData | null>>(),
     getDurableProjectOwnerId: vi.fn<() => string>(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
     migrateAbsoluteMidiNotes: vi.fn<() => void>(),
     readLegacyChordTrackMigration: vi.fn(),
@@ -193,7 +194,8 @@ describe('Project Persistence Use Cases', () => {
         vi.clearAllMocks();
         installFakeIndexedDb();
         mocks.buildProjectData.mockResolvedValue({
-            data: { version: 1, meta: { name: 'My Song' } },
+            data: { version: 1, meta: { name: 'My Song' } } as BuiltProjectData['data'],
+            missingBufferCount: 0,
             requiredAudioBufferIds: [],
         });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });

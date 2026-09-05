@@ -4,9 +4,16 @@ export type PreparedPersistenceAttempt = {
     settle: () => void;
 };
 
+export type PreparedPersistenceWitness = {
+    sequenceById: ReadonlyMap<string, number>;
+    settlements: readonly Promise<void>[];
+};
+
 export function createPreparedAudioBufferPersistenceAttempts(onNoActiveLeases: (id: string) => void) {
     const activeLeaseCountsById = new Map<string, Map<string, number>>();
+    const activeAttemptsById = new Map<string, Set<PreparedPersistenceAttempt>>();
     const attemptById = new Map<string, PreparedPersistenceAttempt>();
+    const attemptSequenceById = new Map<string, number>();
 
     function register(id: string, generation: number, leaseId: string): PreparedPersistenceAttempt {
         let settle = (): void => undefined;
@@ -15,6 +22,10 @@ export function createPreparedAudioBufferPersistenceAttempts(onNoActiveLeases: (
         });
         const attempt = { generation, settled, settle };
         attemptById.set(id, attempt);
+        const activeAttempts = activeAttemptsById.get(id) ?? new Set<PreparedPersistenceAttempt>();
+        activeAttempts.add(attempt);
+        activeAttemptsById.set(id, activeAttempts);
+        attemptSequenceById.set(id, (attemptSequenceById.get(id) ?? 0) + 1);
         const leaseCounts = activeLeaseCountsById.get(id) ?? new Map<string, number>();
         leaseCounts.set(leaseId, (leaseCounts.get(leaseId) ?? 0) + 1);
         activeLeaseCountsById.set(id, leaseCounts);
@@ -25,6 +36,11 @@ export function createPreparedAudioBufferPersistenceAttempts(onNoActiveLeases: (
         attempt.settle();
         if (attemptById.get(id) === attempt) {
             attemptById.delete(id);
+        }
+        const activeAttempts = activeAttemptsById.get(id);
+        activeAttempts?.delete(attempt);
+        if (activeAttempts?.size === 0) {
+            activeAttemptsById.delete(id);
         }
         const leaseCounts = activeLeaseCountsById.get(id);
         const remainingForLease = (leaseCounts?.get(leaseId) ?? 1) - 1;
@@ -57,5 +73,16 @@ export function createPreparedAudioBufferPersistenceAttempts(onNoActiveLeases: (
         }
     }
 
-    return { hasActiveLeases, isLeaseActive, register, unregister, waitForSuperseding };
+    function capture(ids: readonly string[]): PreparedPersistenceWitness {
+        return {
+            sequenceById: new Map(ids.map((id) => [id, attemptSequenceById.get(id) ?? 0] as const)),
+            settlements: ids.flatMap((id) => [...(activeAttemptsById.get(id) ?? [])].map((attempt) => attempt.settled)),
+        };
+    }
+
+    function isCurrent(witness: PreparedPersistenceWitness): boolean {
+        return [...witness.sequenceById].every(([id, sequence]) => (attemptSequenceById.get(id) ?? 0) === sequence);
+    }
+
+    return { capture, hasActiveLeases, isCurrent, isLeaseActive, register, unregister, waitForSuperseding };
 }

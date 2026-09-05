@@ -79,6 +79,13 @@ function buildInvocations(): Record<string, () => unknown> {
         set: () => audioBufferCache.set('pcm-2', makeAudioBuffer([PCM])),
         remove: () => audioBufferCache.remove('pcm-2'),
         has: () => audioBufferCache.has('pcm'),
+        ensureDurable: async () => {
+            const result = await audioBufferCache.ensureDurable(['pcm']);
+            if (result.status === 'durable') {
+                result.release();
+            }
+            return result.status;
+        },
         persistPreparedBuffer: () =>
             audioBufferCache.persistPreparedBuffer({
                 id: 'prepared-pcm',

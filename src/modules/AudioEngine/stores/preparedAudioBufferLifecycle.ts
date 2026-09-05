@@ -17,7 +17,10 @@ import {
     type PreparedAudioBufferRecoveryRecord,
     type PreparedSerializedAudioBuffer,
 } from './preparedAudioBufferOwnership';
-import { createPreparedAudioBufferPersistenceAttempts } from './preparedAudioBufferPersistenceAttempts';
+import {
+    createPreparedAudioBufferPersistenceAttempts,
+    type PreparedPersistenceWitness,
+} from './preparedAudioBufferPersistenceAttempts';
 import {
     abortPreparedTransaction,
     awaitPreparedRequest,
@@ -51,9 +54,16 @@ type PromotionSettlement = {
 
 type ProjectDurabilityWitness = {
     ids: readonly string[];
+    persistence: PreparedPersistenceWitness;
     projectEpoch: number;
     promotionSequenceById: ReadonlyMap<string, number>;
     promotionSettlements: readonly Promise<void>[];
+};
+
+type ProjectDurabilityReservations = {
+    isCurrent: () => boolean;
+    release: () => void;
+    strengthen: () => boolean;
 };
 
 type ProjectReservations = {
@@ -196,6 +206,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     const activeReopenTokenById = new Map<string, number>();
     const activePromotionSettlementsById = new Map<string, Set<PromotionSettlement>>();
     const promotionSequenceById = new Map<string, number>();
+    const projectCollectionProtectionCountById = new Map<string, number>();
     const provisionalProjectReservationCountById = new Map<string, number>();
     const promotionBlockingReservationCountById = new Map<string, number>();
     const runtimeOwnerById = new Map<string, RuntimeOwner>();
@@ -336,6 +347,10 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         return host.hasPinnedReservation(id) || provisionalProjectReservationCountById.has(id);
     }
 
+    function hasProjectCollectionReservation(id: string): boolean {
+        return hasProjectReservation(id) || projectCollectionProtectionCountById.has(id);
+    }
+
     function hasPromotionBlockingProjectReservation(id: string): boolean {
         return promotionBlockingReservationCountById.has(id);
     }
@@ -390,10 +405,96 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         return { isCurrent, promote: finish, release: finish };
     }
 
+    function beginProjectDurabilityReservations(witness: ProjectDurabilityWitness): ProjectDurabilityReservations {
+        const reservedIds = [...witness.ids];
+        const admittedProjectEpoch = witness.projectEpoch;
+        const reservationEpochById = new Map<string, number>();
+        let active = isProjectDurabilityWitnessCurrent(witness);
+        let strengthened = false;
+        if (active) {
+            for (const id of reservedIds) {
+                projectCollectionProtectionCountById.set(id, (projectCollectionProtectionCountById.get(id) ?? 0) + 1);
+            }
+        }
+        const isCurrent = (): boolean => {
+            if (!active || projectEpoch !== admittedProjectEpoch || !isProjectDurabilityWitnessCurrent(witness)) {
+                return false;
+            }
+            if (!strengthened) {
+                return reservedIds.every((id) => projectCollectionProtectionCountById.has(id));
+            }
+            return reservedIds.every(
+                (id) =>
+                    provisionalProjectReservationCountById.has(id) &&
+                    projectReservationEpochById.get(id) === reservationEpochById.get(id)
+            );
+        };
+        const release = (): void => {
+            if (!active) {
+                return;
+            }
+            active = false;
+            for (const id of reservedIds) {
+                if (!strengthened) {
+                    const remainingProtection = (projectCollectionProtectionCountById.get(id) ?? 1) - 1;
+                    if (remainingProtection > 0) {
+                        projectCollectionProtectionCountById.set(id, remainingProtection);
+                    } else {
+                        projectCollectionProtectionCountById.delete(id);
+                    }
+                    continue;
+                }
+                const remainingPromotionBlocks = (promotionBlockingReservationCountById.get(id) ?? 1) - 1;
+                if (remainingPromotionBlocks > 0) {
+                    promotionBlockingReservationCountById.set(id, remainingPromotionBlocks);
+                } else {
+                    promotionBlockingReservationCountById.delete(id);
+                }
+                const remainingReservations = (provisionalProjectReservationCountById.get(id) ?? 1) - 1;
+                if (remainingReservations > 0) {
+                    provisionalProjectReservationCountById.set(id, remainingReservations);
+                } else {
+                    provisionalProjectReservationCountById.delete(id);
+                }
+                clearProjectReservationEpochIfIdle(id);
+            }
+        };
+        const strengthen = (): boolean => {
+            if (strengthened) {
+                return isCurrent();
+            }
+            if (!isCurrent()) {
+                release();
+                return false;
+            }
+            for (const id of reservedIds) {
+                provisionalProjectReservationCountById.set(
+                    id,
+                    (provisionalProjectReservationCountById.get(id) ?? 0) + 1
+                );
+                promotionBlockingReservationCountById.set(id, (promotionBlockingReservationCountById.get(id) ?? 0) + 1);
+                signalProjectReservation(id, false);
+                reservationEpochById.set(id, projectReservationEpochById.get(id)!);
+            }
+            strengthened = true;
+            for (const id of reservedIds) {
+                const remainingProtection = (projectCollectionProtectionCountById.get(id) ?? 1) - 1;
+                if (remainingProtection > 0) {
+                    projectCollectionProtectionCountById.set(id, remainingProtection);
+                } else {
+                    projectCollectionProtectionCountById.delete(id);
+                }
+            }
+            return isCurrent();
+        };
+        return { isCurrent, release, strengthen };
+    }
+
     function captureProjectDurabilityWitness(ids: readonly string[]): ProjectDurabilityWitness {
         const uniqueIds = [...new Set(ids)];
         return {
             ids: uniqueIds,
+            persistence: persistenceAttempts.capture(uniqueIds),
             projectEpoch,
             promotionSequenceById: new Map(uniqueIds.map((id) => [id, promotionSequenceById.get(id) ?? 0] as const)),
             promotionSettlements: uniqueIds.flatMap((id) =>
@@ -405,12 +506,13 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     function isProjectDurabilityWitnessCurrent(witness: ProjectDurabilityWitness): boolean {
         return (
             projectEpoch === witness.projectEpoch &&
+            persistenceAttempts.isCurrent(witness.persistence) &&
             witness.ids.every((id) => (promotionSequenceById.get(id) ?? 0) === witness.promotionSequenceById.get(id))
         );
     }
 
     async function waitForProjectDurabilityWitness(witness: ProjectDurabilityWitness): Promise<boolean> {
-        await Promise.all(witness.promotionSettlements);
+        await Promise.all([...witness.persistence.settlements, ...witness.promotionSettlements]);
         return isProjectDurabilityWitnessCurrent(witness);
     }
 
@@ -883,7 +985,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     async function recoverCapturedProjectReservations(
         recoveryRevisions: ReadonlyMap<string, string | null>,
         witness: ProjectDurabilityWitness,
-        reservations: ProjectReservations
+        reservations: Pick<ProjectReservations, 'isCurrent'>
     ): Promise<'failed' | 'recovered' | 'superseded'> {
         if (!isProjectDurabilityWitnessCurrent(witness) || !reservations.isCurrent()) {
             return 'superseded';
@@ -1677,7 +1779,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     key,
                     protected:
                         id !== undefined &&
-                        (hasProjectReservation(id) ||
+                        (hasProjectCollectionReservation(id) ||
                             activeDiscardCountById.has(id) ||
                             persistenceAttempts.hasActiveLeases(id)),
                     sizeInBytes: estimateStoredRecoveryBytes(value),
@@ -1727,7 +1829,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 (entry) =>
                     deletions.has(entry.key) &&
                     entry.id !== undefined &&
-                    (hasProjectReservation(entry.id) ||
+                    (hasProjectCollectionReservation(entry.id) ||
                         projectReservationEpochById.get(entry.id) !== entry.admittedReservationEpoch)
             );
             if (atRisk.length > 0) {
@@ -1791,7 +1893,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     owner.createdAtMs === undefined ||
                     owner.createdAtMs >= createdBeforeMs ||
                     liveLeases.has(owner.leaseId) ||
-                    hasProjectReservation(id) ||
+                    hasProjectCollectionReservation(id) ||
                     runtimeOwnerById.has(id)
                 ) {
                     continue;
@@ -1827,13 +1929,16 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             await awaitPreparedTransaction(transaction);
             let reclaimedCount = 0;
             for (const { admittedReservationEpoch, id, leaseId, persistenceRevision, recoveryRevision } of reclaimed) {
-                if (hasProjectReservation(id) || projectReservationEpochById.get(id) !== admittedReservationEpoch) {
+                if (
+                    hasProjectCollectionReservation(id) ||
+                    projectReservationEpochById.get(id) !== admittedReservationEpoch
+                ) {
                     await restorePreparedRecoveryIfExact(id, recoveryRevision);
                     continue;
                 }
                 const recoveryCleanup = await deletePreparedRecoveryIfExact(id, recoveryRevision, persistenceRevision);
                 if (recoveryCleanup !== 'deleted') {
-                    if (hasProjectReservation(id)) {
+                    if (hasProjectCollectionReservation(id)) {
                         await restorePreparedRecoveryIfExact(id, recoveryRevision);
                     }
                     continue;
@@ -1852,6 +1957,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     }
 
     return {
+        beginProjectDurabilityReservations,
         beginProjectTransition,
         beginProjectReservations,
         captureProjectDurabilityWitness,
@@ -1871,6 +1977,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         reopen,
         shouldSuppressNonLeaseRead,
         isProjectDurabilityWitnessCurrent,
+        hasProjectCollectionReservation,
         hasProjectReservation,
         waitForProjectDurabilityWitness,
     };

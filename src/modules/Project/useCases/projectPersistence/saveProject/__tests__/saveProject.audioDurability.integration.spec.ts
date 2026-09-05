@@ -5,8 +5,14 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
 
+import type { ProjectData } from '../../../../models/ProjectData';
+
 const CREATED_AT = 1_700_000_000_000;
+const IMPORTED_CREATED_AT = CREATED_AT + 100;
 const PCM = new Float32Array([0, 1, -1, 0]);
+const IMPORTED_SOURCE_PCM = new Float32Array([0.8]);
+const PREVIOUS_PCM = new Float32Array([0.2]);
+const IMPORTED_BUFFER_ID = 'imported-replacement';
 
 function makeMonoWave(samples: Float32Array, sampleRate = 48_000): File {
     const bytesPerSample = Int16Array.BYTES_PER_ELEMENT;
@@ -49,6 +55,12 @@ function decodeMonoWave(bytes: ArrayBuffer): AudioBuffer {
         channel[index] = view.getInt16(44 + index * Int16Array.BYTES_PER_ELEMENT, true) / 0x7fff;
     }
     return {
+        copyFromChannel: (destination: Float32Array, _channelNumber: number, startInChannel = 0) => {
+            destination.set(channel.subarray(startInChannel, startInChannel + destination.length));
+        },
+        copyToChannel: (source: Float32Array, _channelNumber: number, startInChannel = 0) => {
+            channel.set(source, startInChannel);
+        },
         duration: sampleCount / sampleRate,
         getChannelData: () => channel,
         length: sampleCount,
@@ -60,12 +72,39 @@ function decodeMonoWave(bytes: ArrayBuffer): AudioBuffer {
 function createAudioBuffer(numberOfChannels: number, length: number, sampleRate: number): AudioBuffer {
     const channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
     return {
+        copyFromChannel: (destination: Float32Array, channel: number, startInChannel = 0) => {
+            destination.set(channels[channel]!.subarray(startInChannel, startInChannel + destination.length));
+        },
+        copyToChannel: (source: Float32Array, channel: number, startInChannel = 0) => {
+            channels[channel]!.set(source, startInChannel);
+        },
         duration: length / sampleRate,
         getChannelData: (channel: number) => channels[channel]!,
         length,
         numberOfChannels,
         sampleRate,
     } as AudioBuffer;
+}
+
+function readStoredFirstSample(value: unknown): number | undefined {
+    if (value === null || typeof value !== 'object') {
+        return undefined;
+    }
+    const channelData = Reflect.get(value, 'channelData');
+    if (!Array.isArray(channelData) || channelData[0] === null || typeof channelData[0] !== 'object') {
+        return undefined;
+    }
+    const sample = Reflect.get(channelData[0], '0');
+    return typeof sample === 'number' ? sample : undefined;
+}
+
+function encodeFloat32(values: Float32Array): string {
+    const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
 }
 
 describe('saveProject audio durability integration', () => {
@@ -80,7 +119,7 @@ describe('saveProject audio durability integration', () => {
         vi.unstubAllGlobals();
     });
 
-    it('refuses an audio-only aborted save and keeps the imported PCM recoverable in the working project', async () => {
+    it('refuses failed PCM writes, retries exact sources, and reopens both save paths', async () => {
         const indexedDb = installMultiDatabaseIndexedDb();
         const [
             { audioEngine, clearRuntimeCachedAudioBuffers, getCachedAudioBuffer, restoreCachedAudioBuffersFromIdb },
@@ -112,6 +151,7 @@ describe('saveProject audio durability integration', () => {
         await restoreCachedAudioBuffersFromIdb({ audioContext: context });
 
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
+        project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetCrdtProjectAuthority('Durability');
         resetModuleStoresToDefault();
         projectStore.set({
@@ -155,7 +195,119 @@ describe('saveProject audio durability integration', () => {
         expect(indexedDb.get('sourdaw-audio', 'buffers', bufferId)).toBeDefined();
 
         clearRuntimeCachedAudioBuffers();
-        await restoreCachedAudioBuffersFromIdb({ audioContext: context, bufferIds: [bufferId] });
+        resetCrdtProjectAuthority('Blank project');
+        resetModuleStoresToDefault();
+        projectStore.set({
+            ...createFreshProjectMetadata({
+                name: 'Blank project',
+                loading: false,
+                initialized: true,
+            }),
+            createdAt: CREATED_AT + 1,
+            updatedAt: CREATED_AT + 1,
+            dirty: false,
+        });
+        expect(getCachedAudioBuffer({ bufferId })).toBeNull();
+        expect(trackStore.value?.tracks).toEqual([]);
+
+        await expect(project.loadRecentProject(project.getProjectSnapshotKey(CREATED_AT))).resolves.toBe('committed');
+        const reopenedClip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
+        expect(reopenedClip?.audioBufferId).toBe(bufferId);
         expect(getCachedAudioBuffer({ bufferId })?.getChannelData(0)).toEqual(PCM);
+        expect(projectStore.value).toMatchObject({
+            createdAt: CREATED_AT,
+            dirty: false,
+            name: 'Durability',
+        });
+
+        const savedJson = indexedDb.get('sourdaw-projects', 'projects', project.getProjectSnapshotKey(CREATED_AT));
+        if (typeof savedJson !== 'string') {
+            throw new Error('expected the first real save to provide a current-format project snapshot');
+        }
+        const importedProject = JSON.parse(savedJson) as ProjectData;
+        const sourceTrack = importedProject.arrangement.tracks[0];
+        const sourceClip = sourceTrack?.clips[0];
+        if (!sourceTrack || !sourceClip) {
+            throw new Error('expected the first saved project to provide a valid audio track fixture');
+        }
+        importedProject.meta = {
+            ...importedProject.meta,
+            name: 'Imported replacement',
+            createdAt: IMPORTED_CREATED_AT,
+            updatedAt: IMPORTED_CREATED_AT,
+        };
+        importedProject.arrangement = {
+            tracks: [
+                {
+                    ...sourceTrack,
+                    clips: [
+                        {
+                            ...sourceClip,
+                            bufferId: IMPORTED_BUFFER_ID,
+                        },
+                    ],
+                },
+            ],
+        };
+        importedProject.arrangements = undefined;
+        importedProject.activeArrangementId = undefined;
+        importedProject.audioBuffers = {
+            [IMPORTED_BUFFER_ID]: {
+                sampleRate: 48_000,
+                numberOfChannels: 1,
+                channelData: [encodeFloat32(IMPORTED_SOURCE_PCM)],
+            },
+        };
+        const importedProjectKey = project.getProjectSnapshotKey(IMPORTED_CREATED_AT);
+        indexedDb.seed('sourdaw-projects', 'projects', importedProjectKey, JSON.stringify(importedProject));
+        indexedDb.seed('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID, {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [PREVIOUS_PCM],
+            lastAccessed: 1,
+            sizeInBytes: PREVIOUS_PCM.byteLength,
+        });
+        indexedDb.seed('sourdaw-audio', 'bufferMeta', IMPORTED_BUFFER_ID, {
+            lastAccessed: 1,
+            sizeInBytes: PREVIOUS_PCM.byteLength,
+        });
+
+        indexedDb.abortAudioWrites();
+        await expect(project.loadRecentProject(importedProjectKey)).resolves.toBe('committed');
+        expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })?.getChannelData(0)).toEqual(IMPORTED_SOURCE_PCM);
+        expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.2);
+
+        expect(await project.saveProject()).toBe(false);
+        expect(projectStore.value?.dirty).toBe(true);
+        expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.2);
+
+        indexedDb.allowAudioWrites();
+        expect(await project.saveProject()).toBe(true);
+        expect(projectStore.value?.dirty).toBe(false);
+        expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.8);
+        const retriedSavedJson = indexedDb.get('sourdaw-projects', 'projects', importedProjectKey);
+        if (typeof retriedSavedJson !== 'string') {
+            throw new Error('expected the successful retry to persist the named project snapshot');
+        }
+        expect((JSON.parse(retriedSavedJson) as ProjectData).audioBuffers).toBeUndefined();
+
+        clearRuntimeCachedAudioBuffers();
+        resetCrdtProjectAuthority('Second blank project');
+        resetModuleStoresToDefault();
+        projectStore.set({
+            ...createFreshProjectMetadata({
+                name: 'Second blank project',
+                loading: false,
+                initialized: true,
+            }),
+            createdAt: IMPORTED_CREATED_AT + 1,
+            updatedAt: IMPORTED_CREATED_AT + 1,
+            dirty: false,
+        });
+        expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })).toBeNull();
+        await expect(project.loadRecentProject(importedProjectKey)).resolves.toBe('committed');
+        const reopenedImportedClip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
+        expect(reopenedImportedClip?.audioBufferId).toBe(IMPORTED_BUFFER_ID);
+        expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })?.getChannelData(0)).toEqual(IMPORTED_SOURCE_PCM);
     }, 20_000);
 });
