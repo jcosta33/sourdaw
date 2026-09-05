@@ -548,6 +548,10 @@ describe('the live automation writer', () => {
 
         const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
         expect(refusals).toEqual([]);
+        // A single-slot group takes its own curve in order — saturation is a
+        // shared-queue concept, and one strip position never shares its queue.
+        const saturations = mocks.warn.mock.calls.filter(([message]) => String(message).includes('saturated'));
+        expect(saturations).toEqual([]);
         // Every segment reached the engine, and none of them twice.
         const sent = writeBatches().flatMap((commands) => commands.map((command) => command.write));
         expect(sent).toEqual(curvedLane(60));
@@ -1439,6 +1443,41 @@ describe('the live automation writer — hosted device parameters', () => {
         const saturations = mocks.warn.mock.calls.filter(([message]) => String(message).includes('saturated'));
         expect(saturations).toHaveLength(1);
         expect(String(saturations[0]?.[0])).toContain('device:track-a:plugin-1');
+    });
+
+    /**
+     * Slot order and due order can disagree. `earliestDueWrite` has to follow
+     * the clock across the group's slots, not walk them in array order — a
+     * round-robin-by-position walk would admit A's second write ahead of B's
+     * first-due one, exactly the starvation shape the shared-queue admission
+     * exists to avoid.
+     */
+    it('admits a plugin group in due-time order even when a later slot owes the earlier write', async () => {
+        mocks.curve = [
+            { target: DEVICE_A, writes: [step(1.005, 0.1), step(1.05, 0.4)] },
+            { target: DEVICE_B, writes: [step(1.01, 0.2), step(1.02, 0.3)] },
+        ];
+        arm(0);
+        await flush();
+        expect(mocks.apply).not.toHaveBeenCalled();
+
+        // Pre-charge the shared queue to 60 of its 63-stamp ceiling
+        // (DEVICE_PARAM_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN), so only
+        // three more admissions fit before a fourth is refused.
+        slotFor(DEVICE_A)!.queued = Array.from({ length: 30 }, (_unused, index) => heldStamp(index));
+        slotFor(DEVICE_B)!.queued = Array.from({ length: 30 }, (_unused, index) => heldStamp(index));
+        expect(30 + 30).toBe(DEVICE_PARAM_QUEUE_CAPACITY - AUTOMATION_QUEUE_MARGIN - 3);
+
+        await pump(0.96, 0);
+
+        const [batch] = mocks.apply.mock.calls[0] ?? [];
+        expect(batch?.commands).toEqual([
+            { kind: 'write-device-parameter', target: DEVICE_A, write: step(1.005, 0.1) },
+            { kind: 'write-device-parameter', target: DEVICE_B, write: step(1.01, 0.2) },
+            { kind: 'write-device-parameter', target: DEVICE_B, write: step(1.02, 0.3) },
+        ]);
+        expect(slotFor(DEVICE_A)?.cursor).toBe(1);
+        expect(slotFor(DEVICE_B)?.cursor).toBe(2);
     });
 
     it('admits one parameter of a plugin whose shared queue has a slot left', async () => {

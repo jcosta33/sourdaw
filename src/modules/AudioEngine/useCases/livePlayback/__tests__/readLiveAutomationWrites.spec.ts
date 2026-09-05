@@ -184,6 +184,33 @@ function valueOnlySeam(): void {
     offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
 }
 
+/**
+ * A third missing shape: only the clamp is absent.
+ *
+ * The guard's three terms are independent — a missing clamp is invisible to a
+ * check that only ever drops the admission term alongside it. This isolates
+ * the clamp: a projection that read only accepts and quantise would stamp a
+ * value nothing has bounded to the instance's published range.
+ */
+function clampMissingSeam(): void {
+    emptySeam();
+    offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, parameterId) => parameterId === '7';
+    offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+}
+
+/**
+ * The fourth missing shape: only the quantiser is absent.
+ *
+ * Isolates the quantise term the same way {@link clampMissingSeam} isolates
+ * the clamp — a projection that read only accepts and clamp would stamp a
+ * value nothing has quantised to the parameter's declared grain.
+ */
+function quantiseMissingSeam(): void {
+    emptySeam();
+    offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, parameterId) => parameterId === '7';
+    offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => Math.min(value, PUBLISHED_CEILING);
+}
+
 function readOneRegion(): ReturnType<typeof readLiveAutomationWrites> {
     return readLiveAutomationWrites({
         stripTracks: [TRACK],
@@ -262,6 +289,22 @@ describe('readLiveAutomationWrites', () => {
 
     it('admits no hosted plugin lane while only the value halves of the seam are set', () => {
         valueOnlySeam();
+
+        const result = readOneRegion();
+
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+    });
+
+    it('admits no hosted plugin lane while only the clamp half of the seam is unset', () => {
+        clampMissingSeam();
+
+        const result = readOneRegion();
+
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+    });
+
+    it('admits no hosted plugin lane while only the quantise half of the seam is unset', () => {
+        quantiseMissingSeam();
 
         const result = readOneRegion();
 

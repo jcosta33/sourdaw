@@ -513,7 +513,7 @@ function reportSaturation(pass: LiveAutomationWriterPass, group: string, unserve
     pass.saturatedGroups.add(group);
     logger.warn(
         `[AudioEngine] live automation window saturated on ${group}: ` +
-            `${unserved} of ${slots} parameters still owe a write inside the window`
+            `${unserved} of ${slots} automated parameters still owe a write inside the window`
     );
 }
 
@@ -548,7 +548,12 @@ function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: n
             admitSlotInCurveOrder({ ...shared, draft: first });
             continue;
         }
-        reportSaturation(pass, group, admitGroupInDueOrder({ ...shared, drafts: groupDrafts }), groupDrafts.length);
+        // `carryQueuedStamps` can append curve-less, queued-only slots to a
+        // re-armed pass — a parameter with nothing left to admit but a stamp
+        // still to release. Counting those in the denominator would report a
+        // plugin saturated on parameters that were never due anything here.
+        const curveOwningSlots = groupDrafts.filter((draft) => draft.slot.writes.length > 0).length;
+        reportSaturation(pass, group, admitGroupInDueOrder({ ...shared, drafts: groupDrafts }), curveOwningSlots);
     }
     return drafts.filter((draft) => draft.writes.length > 0);
 }
