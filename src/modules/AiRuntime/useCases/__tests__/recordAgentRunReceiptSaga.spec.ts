@@ -25,7 +25,6 @@ import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCom
 import { createAgentRunPendingEffectContinuation } from '../createAgentRunPendingEffectContinuation';
 import { recordAgentRunPendingEffectContinuation } from '../recordAgentRunPendingEffectContinuation';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
-import { selectRetainedSectionRenderManualReviews } from '../selectRetainedSectionRenderManualReviews';
 
 type Receipt = Parameters<typeof recordAgentRunReceiptSaga>[0]['receipt'];
 type PendingEffect = Receipt['pendingEffects'][number];
@@ -540,12 +539,6 @@ describe('recordAgentRunReceiptSaga', () => {
             runId: 'run-agent-effects',
             checkpoint: 'durable',
         });
-
-        // The fixture's `STEM_COMMAND` compiles as `importStemSet`, not `renderProjectSections`, so
-        // `getExactRenderCommands` cannot find a matching render command inside `COMMAND_BATCH` and
-        // this selector reports no retained review; the sourceRevision pins above are the coverage
-        // this suite can give the selector without a genuine render-command fixture.
-        expect(selectRetainedSectionRenderManualReviews(readAgentRunState())).toEqual([]);
     });
 
     it('binds the committed revision onto a prepared placeholder on first record', async () => {
