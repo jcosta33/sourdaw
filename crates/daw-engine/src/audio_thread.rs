@@ -2808,18 +2808,29 @@ mod compensation_render_alloc_guards {
     /// `AddHostedPlugin` registers it homed detached, and the splice ships
     /// the generator's input hold with it, the same pair the scheduler's own
     /// `insert_track_generator` test helper sends.
+    ///
+    /// The allocation guard alone proves only that the callback stayed
+    /// allocation-free, not which code ran inside it: a mutation that routed
+    /// `DeviceKind::Generator` through `run_device` in place of
+    /// `run_generator`, or a refused splice that left the chain untouched,
+    /// would still pass it. Reading the master back below is what turns this
+    /// into a guard over `run_generator` and the `resolve_effect` lookup it
+    /// shares with `run_device`: only that path holds the strip's own
+    /// material back by the declared latency before summing the (silent)
+    /// generator output over it.
     #[test]
     fn compensating_a_generator_neither_allocates_nor_frees_on_the_callback() {
         const CALLBACKS: usize = 2;
         // Non-zero, so `run_generator`'s dry-line pass over the pass-through
         // signal actually runs the ring rather than the zero-delay no-op.
         const LATENCY: usize = 16;
+        const CLIP_VALUE: f32 = 0.5;
 
         let mut harness = CompensationHarness::new();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
         harness.send(GraphCommand::AddClip(
             1,
-            constant_clip(301, 0.5, CALLBACKS * CALLBACK_FRAMES),
+            constant_clip(301, CLIP_VALUE, CALLBACKS * CALLBACK_FRAMES),
         ));
         harness.send(GraphCommand::SetTransport(TransportState {
             is_playing: true,
@@ -2841,12 +2852,35 @@ mod compensation_render_alloc_guards {
         });
         harness.send(set_latency(LATENCY));
 
+        // Sized outside the guard, the way the sibling above sizes its own
+        // buffers: the callback is what is under test, not the buffer it is
+        // handed or the master it is read back from.
         let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+        let mut heard = vec![0.0f32; CALLBACKS * CALLBACK_FRAMES];
 
         assert_no_alloc(|| {
-            for _ in 0..CALLBACKS {
+            for callback in 0..CALLBACKS {
                 harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
+                for (frame, sample) in block.iter_mut().enumerate() {
+                    *sample = data[frame * DEVICE_CHANNELS];
+                }
             }
         });
+
+        // The first callback's dry line still holds its initial silence for
+        // the first LATENCY frames, so the strip's own clip only reaches the
+        // master LATENCY frames late; the second callback's line is already
+        // full of the clip's own material, so every frame is the clip.
+        // Bypassing `run_generator` for `run_device`, or refusing the
+        // splice, would leave the clip arriving with no hold at all, or not
+        // arriving.
+        let mut expected = vec![CLIP_VALUE; CALLBACKS * CALLBACK_FRAMES];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            heard, expected,
+            "the strip's own clip waited the generator's declared latency at the master, \
+             so the callback ran the generator's dry line rather than an effect splice or none at all"
+        );
     }
 }
