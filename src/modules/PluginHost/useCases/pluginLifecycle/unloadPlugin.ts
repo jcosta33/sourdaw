@@ -59,7 +59,6 @@
  */
 
 import { unloadPlugin as unloadPluginRepo } from '../../repositories/pluginBridge/unloadPlugin';
-import { forwardReleasedStripReports } from '../../services/releasedStripReportSink';
 import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
@@ -75,6 +74,7 @@ import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiSto
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
+import { forwardReleasedStripReports } from './forwardReleasedStripReports';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { serializePluginLifecycle } from './serializePluginLifecycle';
 

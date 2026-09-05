@@ -11,6 +11,7 @@ import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPlugi
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginLatencyChange } from '../../../repositories/pluginBridge/types';
+import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
 
 // Integration across the real load + restore use cases (and serializePluginLifecycle)
 // down to the IPC repository boundary, which is mocked. Proves that repeated
@@ -20,7 +21,7 @@ import type { PluginLatencyChange } from '../../../repositories/pluginBridge/typ
 const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn<(pluginId: string, instanceId: string, sampleRate: number) => Promise<unknown>>(),
     setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
-    unloadPluginRepo: vi.fn<(instanceId: string) => Promise<[string[], string[]]>>(),
+    unloadPluginRepo: vi.fn<typeof unloadPluginRepoSignature>(),
     subscribe: vi.fn<(handler: (change: PluginLatencyChange) => void) => Promise<() => void>>(),
     warn: vi.fn(),
 }));
@@ -75,7 +76,7 @@ describe('activateExternalPlugin', () => {
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'inst-1', parameters: [] });
         mocks.setPluginStateRepo.mockResolvedValue(undefined);
-        mocks.unloadPluginRepo.mockResolvedValue([[], []]);
+        mocks.unloadPluginRepo.mockResolvedValue({ unloadedInstanceIds: [], errors: [], reports: [] });
     });
 
     it('loads and restores exactly once across repeated activations (repeated ensureTrackStrips)', async () => {
@@ -200,7 +201,7 @@ describe('activateExternalPlugin', () => {
                 latency_ms: 0,
                 engine_plugin_id: 1000,
             });
-        mocks.unloadPluginRepo.mockResolvedValueOnce([['inst-1'], []]);
+        mocks.unloadPluginRepo.mockResolvedValueOnce({ unloadedInstanceIds: ['inst-1'], errors: [], reports: [] });
 
         await expect(
             activateExternalPlugin({ engineSampleRate: ENGINE_SAMPLE_RATE, pluginId: 'p', instanceId: 'inst-1' })
@@ -380,7 +381,7 @@ describe('activateExternalPlugin', () => {
             latency_samples: 0,
             latency_ms: 4,
         });
-        mocks.unloadPluginRepo.mockResolvedValue([['inst-1'], []]);
+        mocks.unloadPluginRepo.mockResolvedValue({ unloadedInstanceIds: ['inst-1'], errors: [], reports: [] });
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
         activateExternalPlugin({

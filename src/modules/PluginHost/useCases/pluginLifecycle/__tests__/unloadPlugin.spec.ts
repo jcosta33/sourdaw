@@ -1,12 +1,12 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-import { registerReleasedStripReportSink } from '../../../services/releasedStripReportSink';
 import {
     defaultExternalPluginParameterState,
     externalPluginParameterStore,
 } from '../../../stores/externalPluginParameterStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../../stores/pluginGuiStore';
 import { loadedExternalInstances } from '../loadedExternalInstances';
+import { registerReleasedStripReportSink } from '../registerReleasedStripReportSink';
 import * as subject from '../unloadPlugin';
 
 type ReleasedStripReport = { kind: 'track' | 'bus'; id: string; deviceIds: readonly string[] };

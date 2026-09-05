@@ -14,10 +14,15 @@ import { loadedExternalInstances } from '../loadedExternalInstances';
 import { resetExternalPluginRuntimeForGraphRebuild } from '../resetExternalPluginRuntimeForGraphRebuild';
 import { unloadPlugin } from '../unloadPlugin';
 
+import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
+
 const mocks = vi.hoisted(() => ({
     loadPlugin: vi.fn(),
-    unloadPlugin: vi.fn(),
+    unloadPlugin: vi.fn<typeof unloadPluginRepoSignature>(),
 }));
+
+/** The repository's own reply shape, for tests settling a deferred unload by hand. */
+type UnloadReply = Awaited<ReturnType<typeof unloadPluginRepoSignature>>;
 
 vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({ loadPlugin: mocks.loadPlugin }));
 vi.mock('../../../repositories/pluginBridge/unloadPlugin', () => ({ unloadPlugin: mocks.unloadPlugin }));
@@ -38,7 +43,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
             latency_ms: 4,
             engine_plugin_id: 1000,
         });
-        mocks.unloadPlugin.mockResolvedValue([['plugin-instance-1'], []]);
+        mocks.unloadPlugin.mockResolvedValue({ unloadedInstanceIds: ['plugin-instance-1'], errors: [], reports: [] });
     });
 
     it('invalidates the full lifecycle generation so an already-loaded plugin is reattached', async () => {
@@ -86,7 +91,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
                     'instance_id' | 'parameters' | 'latency_samples' | 'latency_ms' | 'engine_plugin_id'
                 >
             >();
-        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        const bulkUnload = Promise.withResolvers<UnloadReply>();
         mocks.loadPlugin.mockReturnValueOnce(firstLoad.promise).mockResolvedValueOnce({
             instance_id: 'late-instance',
             parameters: [],
@@ -118,7 +123,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         });
         await firstActivation;
         await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
-        bulkUnload.resolve([['plugin-instance-1'], []]);
+        bulkUnload.resolve({ unloadedInstanceIds: ['plugin-instance-1'], errors: [], reports: [] });
         await Promise.all([reset, lateActivation]);
 
         expect(mocks.unloadPlugin.mock.invocationCallOrder[0]).toBeLessThan(
@@ -128,7 +133,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
     });
 
     it('keeps activation admission fenced through project-session bulk retirement until the reused host reopens', async () => {
-        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        const bulkUnload = Promise.withResolvers<UnloadReply>();
         mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
         mocks.loadPlugin.mockResolvedValueOnce({
             instance_id: 'late-instance',
@@ -147,7 +152,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
 
         await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
         expect(mocks.loadPlugin).not.toHaveBeenCalled();
-        bulkUnload.resolve([[], []]);
+        bulkUnload.resolve({ unloadedInstanceIds: [], errors: [], reports: [] });
         await retiring;
         expect(mocks.loadPlugin).not.toHaveBeenCalled();
 
@@ -182,7 +187,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
                     'instance_id' | 'parameters' | 'latency_samples' | 'latency_ms' | 'engine_plugin_id'
                 >
             >();
-        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        const bulkUnload = Promise.withResolvers<UnloadReply>();
         mocks.loadPlugin.mockReturnValueOnce(admittedLoad.promise);
         mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
 
@@ -207,7 +212,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         });
         await expect(activation).resolves.toMatchObject({ status: 'failed', stage: 'attach' });
         await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
-        bulkUnload.resolve([['pre-admitted-instance'], []]);
+        bulkUnload.resolve({ unloadedInstanceIds: ['pre-admitted-instance'], errors: [], reports: [] });
         await retiring;
 
         expect(loadedExternalInstances.has('pre-admitted-instance')).toBe(false);
@@ -217,7 +222,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
     });
 
     it('waits for an already-active rebuild before acquiring the project-session retirement fence', async () => {
-        const activeUnload = Promise.withResolvers<[string[], string[]]>();
+        const activeUnload = Promise.withResolvers<UnloadReply>();
         mocks.unloadPlugin.mockReturnValueOnce(activeUnload.promise);
         const activeRebuild = resetExternalPluginRuntimeForGraphRebuild();
         const retirement = beginProjectSessionPluginRetirement();
@@ -233,7 +238,7 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         // graph rebuild still owns the lifecycle fence.
         expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
 
-        activeUnload.resolve([[], []]);
+        activeUnload.resolve({ unloadedInstanceIds: [], errors: [], reports: [] });
         await activeRebuild;
         const sessionRetirement = await retirement;
         await sessionRetirement.retire();
@@ -244,8 +249,8 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
 
     it('serializes bulk unload after an already admitted keyed lifecycle operation', async () => {
         loadedExternalInstances.add('plugin-instance-1');
-        const keyedUnload = Promise.withResolvers<[string[], string[]]>();
-        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        const keyedUnload = Promise.withResolvers<UnloadReply>();
+        const bulkUnload = Promise.withResolvers<UnloadReply>();
         let keyedUnloadSettled = false;
         let bulkObservedSettledKeyedUnload = false;
         void keyedUnload.promise.then(() => {
@@ -262,10 +267,10 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
         const keyed = unloadPlugin('plugin-instance-1');
         await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith('plugin-instance-1'));
         const reset = resetExternalPluginRuntimeForGraphRebuild();
-        keyedUnload.resolve([['plugin-instance-1'], []]);
+        keyedUnload.resolve({ unloadedInstanceIds: ['plugin-instance-1'], errors: [], reports: [] });
         await keyed;
         await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledWith(undefined));
-        bulkUnload.resolve([[], []]);
+        bulkUnload.resolve({ unloadedInstanceIds: [], errors: [], reports: [] });
         await reset;
 
         expect(bulkObservedSettledKeyedUnload).toBe(true);
