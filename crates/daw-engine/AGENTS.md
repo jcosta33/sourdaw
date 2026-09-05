@@ -27,11 +27,16 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   feeding it. Live input monitored through that track is not held: hearing yourself late is the one
   alignment a DAW must not make.
 - **A generator on a strip waits with that strip's own material**: an instrument produces at zero
-  wherever it sits, so a generator on a strip whose input summing depth is non-zero is held by that
-  depth before its output joins the chain signal, and meets the routed-in material exactly as a clip
-  does. The hold is a line built control-side and shipped with the splice that places the device,
-  and it takes its pass on every block the chain visits that device, bypassed or not — the silence
-  a bypassed instrument is handed is what drains the hold on schedule.
+  wherever it sits, so a generator is held before its output joins the chain signal, and meets the
+  routed-in material exactly as a clip does. Its material is summed at its own place in the chain,
+  where the signal has already taken the latency of the devices ahead of it, so the hold is the
+  depth of the strip's input plus that declared prefix — aimed at the input's depth alone, an
+  instrument behind a latent device would lead the very route it was placed to meet. The hold is a
+  line built control-side and shipped with the splice that places the device, and it takes its pass
+  on every block the chain visits that device, bypassed or not — the silence a bypassed instrument
+  is handed is what drains the hold on schedule. Every splice ships a fresh silent line and the
+  device installs it, so a generator arriving on a strip owes its hold's worth of silence there
+  without any line ever being cleared in place.
 - **Bypass keeps latency**: a bypassed latent device runs its dry line instead of processing, and
   bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
   the project — the common professional convention, and the reason the dry line is built with the

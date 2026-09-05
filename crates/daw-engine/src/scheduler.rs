@@ -2583,17 +2583,21 @@ impl AudioScheduler {
     /// that no chain holds it any more.
     ///
     /// A detached effect is in no strip chain and not on the master walk, so
-    /// nothing feeds the lines it owns — its dry line, and the input hold a
-    /// generator runs — and nothing reads them for as long as it waits. That
-    /// is the one break in the rule that every line is written on every block
-    /// it renders, and so the one place a line still owes silence: left
+    /// nothing feeds its dry line and nothing reads it for as long as it waits.
+    /// That is the one break in the rule that every line is written on every
+    /// block it renders, and so the one place a line still owes silence: left
     /// standing, it would hand the audio of the strip it left back over the
-    /// first held frames after some chain takes the device again. Both stay
-    /// silent until that placement starts feeding them.
+    /// first `latency` frames after some chain takes the device again. It stays
+    /// silent until that placement starts feeding it.
     ///
     /// Every route into `Detached` restarts it, because every route leaves the
     /// device in the same state: a strip torn down under it, and a hosted
     /// plugin released by the strip that borrowed it, both come to rest here.
+    ///
+    /// The input hold a generator runs owes nothing here, because it never
+    /// survives a detachment to owe anything: every splice ships a fresh silent
+    /// line and [`ActiveEffect::take_input_hold`] installs it unconditionally,
+    /// so the line a re-placed generator runs is the one that arrived with it.
     fn place_effect(&mut self, effect_id: usize, placement: EffectPlacement) {
         let Some(slot) = self.effect_index.lookup(effect_id) else {
             return;
@@ -2610,12 +2614,8 @@ impl AudioScheduler {
             self.master_work.append(slot);
         }
         if placement == EffectPlacement::Detached {
-            let effect = &mut self.effects[slot];
-            if let Some(delay) = effect.dry_delay.as_mut() {
+            if let Some(delay) = self.effects[slot].dry_delay.as_mut() {
                 delay.restart_from_silence();
-            }
-            if let Some(hold) = effect.input_hold.as_mut() {
-                hold.restart_from_silence();
             }
         }
     }
@@ -3243,15 +3243,11 @@ impl CompensationTable<'_> {
 }
 
 impl CompensationDevices for CompensationTable<'_> {
-    fn chain_latency(&self, chain: &[ChainEntry]) -> usize {
-        chain.iter().fold(0, |latency, entry| {
-            latency
-                + self
-                    .effect_index
-                    .lookup(entry.effect_id)
-                    .and_then(|slot| self.effects.get(slot))
-                    .map_or(0, |effect| effect.latency_frames)
-        })
+    fn device_latency(&self, effect_id: usize) -> usize {
+        self.effect_index
+            .lookup(effect_id)
+            .and_then(|slot| self.effects.get(slot))
+            .map_or(0, |effect| effect.latency_frames)
     }
 
     fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool {
@@ -9762,12 +9758,83 @@ mod timeline_tests {
         );
     }
 
-    /// A device released from a chain runs nowhere, so nothing feeds or reads
-    /// the hold it was running: left standing it would hand the material it
-    /// produced on the old strip back over the first held frames after some
-    /// chain takes it again.
+    /// The chain sums an instrument's material at that instrument's own index,
+    /// where the signal has already taken the latency of everything ahead of
+    /// it. So the hold is the input's depth plus that declared prefix: aimed at
+    /// the depth alone, a synth spliced behind the group's own lookahead
+    /// limiter would lead the drums feeding the group by the limiter's latency
+    /// — the group aligning every source except the one it hosts itself.
     #[test]
-    fn a_reinserted_generator_restarts_its_hold_from_silence() {
+    fn a_generator_after_a_latent_device_waits_for_that_device_too() {
+        const AHEAD: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
+        latent_track_routed_into(&mut harness, RouteTarget::Track(3));
+        insert_latent_device_at(&mut harness, 3, 902, AHEAD, 0);
+        insert_track_generator(
+            &mut harness,
+            3,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + AHEAD].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument joins the chain on the frame the routed-in material reaches that same point, not the frame it reached the strip's input"
+        );
+    }
+
+    /// A bus sums its chain exactly as a track does, so an instrument behind a
+    /// latent device on a bus owes the same prefix. Aiming the bus generators
+    /// by the input's depth alone would leave a synth on a send bus early by
+    /// the latency of the reverb the bus exists to host.
+    #[test]
+    fn a_generator_after_a_latent_device_on_a_bus_waits_for_that_device_too() {
+        const AHEAD: usize = 32;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        latent_track_routed_into(&mut harness, RouteTarget::Bus(50));
+
+        harness.send(GraphCommand::AddPlugin(
+            902,
+            Box::new(LatentPlugin::new(
+                Arc::new(AtomicUsize::new(AHEAD)),
+                LATENT_PLUGIN_CAPACITY,
+            )),
+        ));
+        harness.send(insert_bus_device(50, effect(902), 0));
+        harness.send(set_latency(902, AHEAD));
+
+        insert_bus_generator(
+            &mut harness,
+            50,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+
+        let (left, _) = harness.render(192);
+        let mut expected = vec![2.0; 192];
+        expected[..INPUT_DEPTH + AHEAD].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the instrument on the bus joins the chain on the frame the routed-in material reaches that same point"
+        );
+    }
+
+    /// A device released from a chain runs nowhere, so nothing feeds or reads
+    /// the hold it was running: kept across the release it would hand the
+    /// material it produced on the old strip back over the first held frames
+    /// after some chain takes it again. The splice that takes it ships a fresh
+    /// silent line and the device installs that one instead.
+    #[test]
+    fn a_reinserted_generator_takes_a_fresh_silent_hold() {
         let mut harness = Harness::new(32);
         harness.playing();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(3)));
@@ -9908,6 +9975,53 @@ mod timeline_tests {
             harness.diagnostics().pdc_clamped_routes,
             2,
             "the instrument waits on the input its strip's clips wait on, so the strip still counts once"
+        );
+    }
+
+    /// A bus's input is one summing point too, and it carries no clips — so the
+    /// generators on it are the whole of what the ceiling can cut short there.
+    /// The bus counts once whatever it hosts: counting each instrument would
+    /// report a project with more misaligned routes than it has summing points.
+    #[test]
+    fn a_clamped_generator_hold_on_a_bus_counts_the_bus_once() {
+        let declared = MAX_COMPENSATION_FRAMES + 1;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 64);
+        harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+        insert_latent_device(&mut harness, 1, 900, declared);
+
+        let base = harness.diagnostics().pdc_clamped_routes;
+        assert_eq!(
+            base, 1,
+            "with no instrument on it the bus contributes nothing to the count, and the device's own dry line is what the ceiling cut short"
+        );
+
+        insert_bus_generator(
+            &mut harness,
+            50,
+            901,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            0,
+        );
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            base + 1,
+            "the bus's input is a summing point the ceiling could not align, and the count says so"
+        );
+
+        insert_bus_generator(
+            &mut harness,
+            50,
+            902,
+            Box::new(ConstantGenerator { value: 1.0 }),
+            1,
+        );
+        assert_eq!(
+            harness.diagnostics().pdc_clamped_routes,
+            base + 1,
+            "a second instrument waits on the same input, so the bus still counts once"
         );
     }
 

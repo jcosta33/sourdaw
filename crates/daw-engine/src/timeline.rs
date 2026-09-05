@@ -1327,13 +1327,21 @@ pub(crate) trait DeviceChain {
 /// latency and re-aims a generator's line: two closures over one table cannot
 /// hold the shared and the exclusive borrow at once.
 pub(crate) trait CompensationDevices {
-    /// What one strip's chain declares, bypassed devices included: bypass
-    /// keeps latency, so an A/B never moves the mix.
-    fn chain_latency(&self, chain: &[ChainEntry]) -> usize;
+    /// What one device declares, bypassed or not: bypass keeps latency, so an
+    /// A/B never moves the mix.
+    fn device_latency(&self, effect_id: usize) -> usize;
 
-    /// Aim one generator's input hold at the depth of its strip's input, and
-    /// answer whether the ceiling cut that hold short.
+    /// Aim one generator's input hold at `depth`, and answer whether the
+    /// ceiling cut that hold short.
     fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool;
+
+    /// What a whole chain declares — the figure a strip's output arrives at.
+    fn chain_latency(&self, chain: &[ChainEntry]) -> usize {
+        chain
+            .iter()
+            .map(|entry| self.device_latency(entry.effect_id))
+            .sum()
+    }
 }
 
 /// What one removal hands back to the retirement channel, so the audio thread
@@ -2277,11 +2285,7 @@ impl TimelineGraph {
             // so one clamp however many of its lines the ceiling cut short.
             let depth = track_summing_depth[index];
             let mut input_clamped = tracks[index].source_delay.set_delay(depth);
-            for entry in &tracks[index].chain {
-                if entry.kind == DeviceKind::Generator {
-                    input_clamped |= devices.aim_generator(entry.effect_id, depth);
-                }
-            }
+            input_clamped |= aim_chain_generators(&tracks[index].chain, depth, devices);
             clamped += usize::from(input_clamped);
 
             let output = tracks[index].output;
@@ -2303,13 +2307,7 @@ impl TimelineGraph {
             // chain and nothing else — an instrument on a bus is the same
             // contributor a track's is, at the depth its own input carries.
             let depth = bus_summing_depth[index];
-            let mut input_clamped = false;
-            for entry in &buses[index].chain {
-                if entry.kind == DeviceKind::Generator {
-                    input_clamped |= devices.aim_generator(entry.effect_id, depth);
-                }
-            }
-            clamped += usize::from(input_clamped);
+            clamped += usize::from(aim_chain_generators(&buses[index].chain, depth, devices));
 
             let output = buses[index].output;
             let hold = hold_for(
@@ -2680,6 +2678,35 @@ fn run_device_chain(
             }
         }
     }
+}
+
+/// Aim every generator on one chain at the input its strip sums at, and answer
+/// whether the ceiling cut any of those holds short.
+///
+/// [`run_device_chain`] sums a generator's material at that generator's own
+/// index, so what it joins there has already taken the latency every effect
+/// ahead of it declares. The hold is therefore that prefix on top of the
+/// input's depth: aimed at the depth alone, an instrument spliced behind a
+/// latent device would lead the routed-in material it was placed to meet by
+/// exactly the latency standing in front of it. Only an effect contributes to
+/// the prefix — a generator ahead of another is summed in rather than run over
+/// the signal, so it delays nothing passing through.
+fn aim_chain_generators(
+    chain: &[ChainEntry],
+    depth: usize,
+    devices: &mut impl CompensationDevices,
+) -> bool {
+    let mut clamped = false;
+    let mut prefix = 0;
+    for entry in chain {
+        match entry.kind {
+            DeviceKind::Effect => prefix += devices.device_latency(entry.effect_id),
+            DeviceKind::Generator => {
+                clamped |= devices.aim_generator(entry.effect_id, depth + prefix);
+            }
+        }
+    }
+    clamped
 }
 
 /// Where one route's audio is summed with everything else arriving there.
