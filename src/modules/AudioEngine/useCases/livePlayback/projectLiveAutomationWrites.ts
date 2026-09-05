@@ -253,6 +253,13 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
                 clipBounds: clipBoundsById(track),
             });
             for (const lane of candidateLanes) {
+                // `carried` is a subset of `hosted`, and testing it separately
+                // is still not redundant: a legacy lane naming no device id
+                // resolves against a single accepting candidate and reports
+                // ambiguous against two (`resolveDeviceAutomationTargetIndex`),
+                // so a lane that resolves inside the carried subset can go
+                // unresolved across the whole chain. Excluding it then would
+                // report a fault in a lane the engine is stamping.
                 if (
                     laneAddresses(lane, carried, deviceParameterLaw) ||
                     laneAddresses(lane, hosted, deviceParameterLaw)

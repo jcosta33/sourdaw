@@ -137,6 +137,27 @@ function seedDeviceLane(options: {
     };
 }
 
+type SnapshotTrack = { devices: SeedDevice[] };
+
+/**
+ * Toggle a device's bypass the way the project actually commits one.
+ *
+ * `bypassDevice` rebuilds every track through `mapAllTracks`, so the store gets
+ * a new state object holding a new device object. Setting `bypassed` on the
+ * device already inside `trackStore.value` leaves the snapshot identity
+ * unchanged — a move no use case makes, and the one that hides whether
+ * `applyAutomation` survives a replaced snapshot with its bypass ledger intact.
+ */
+function commitBypass(deviceId: string, bypassed: boolean): void {
+    const tracks = mutableTrackStore.value.tracks as SnapshotTrack[];
+    mutableTrackStore.value = {
+        tracks: tracks.map((track) => ({
+            ...track,
+            devices: track.devices.map((device) => (device.id === deviceId ? { ...device, bypassed } : device)),
+        })),
+    };
+}
+
 /** One device carrying two lanes of its own, which is what a plugin usually looks like. */
 function seedTwoLanesOnOneDevice(device: SeedDevice): void {
     mutableTrackStore.value = {
@@ -595,23 +616,20 @@ describe('applyAutomation', () => {
             vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
             // The curve moves across the bypass. What the restatement owes the
             // plugin is where the lane is *now*, not the value it held when the
-            // engine stopped stamping it.
+            // engine stopped stamping it — and the un-bypass replaced the track
+            // snapshot, which drops the slew, so "now" is the curve value
+            // itself rather than one tick of glide toward it.
             vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
 
             applyAutomation(0);
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
 
-            device.bypassed = false;
+            commitBypass(device.id, false);
             applyAutomation(1);
 
             expect(updateDeviceParam).toHaveBeenCalledTimes(1);
-            expect(updateDeviceParam).toHaveBeenCalledWith(
-                'track-1',
-                'device-eq1',
-                'eq-low-gain',
-                slewStep(0.2, 0.8, AUTOMATION_SLEW_ALPHA)
-            );
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0.8);
 
             applyAutomation(2);
 
@@ -637,7 +655,7 @@ describe('applyAutomation', () => {
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
 
-            device.bypassed = false;
+            commitBypass(device.id, false);
             applyAutomation(1);
 
             expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[2])).toEqual([

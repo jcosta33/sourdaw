@@ -185,7 +185,8 @@ function takeLoopSeam(input: { pass: LiveAutomationWriterPass; positionSeconds: 
  *
  * Both the playhead proof and the seam proof first require the write's admitting
  * fenced batch to be at or behind the echoed batch horizon (`batchesApplied >=
- * stamp.admittedBatch`, matching `crates/sourdaw-native/src/commands/graph.rs:913-920, 950`).
+ * stamp.admittedBatch`, matching `proven_popped` in
+ * `crates/sourdaw-native/src/commands/graph.rs`).
  * Until then the engine has not even drained that batch (or has not yet been
  * handed it), so neither proof may release the stamp.
  *
@@ -199,7 +200,7 @@ function takeLoopSeam(input: { pass: LiveAutomationWriterPass; positionSeconds: 
  *
  * The anchor is the half's delicate piece. The engine sets it
  * (`landed_wraps`'s `get_or_insert`) only from `release_landed`, which runs
- * only as a batch is admitted (graph.rs:2671) — and only once the stamp's own
+ * only as a batch is admitted (`apply_graph_commands`) — and only once the stamp's own
  * batch has drained, because `admitted_batch > batches_applied` returns
  * unproven before the anchor is read. The mirror holds the same two facts per
  * stamp — the fence its batch was admitted at rides the apply result, and a
@@ -226,9 +227,9 @@ function releaseLanded(
 }
 
 /**
- * `proven_popped` in `graph.rs`: both proofs gate on `admittedBatch <= batchesApplied`
- * (`crates/sourdaw-native/src/commands/graph.rs:913-920, 950`), followed by the
- * playhead proof and the seam proof.
+ * `proven_popped` in `crates/sourdaw-native/src/commands/graph.rs`: both proofs
+ * gate on `admittedBatch <= batchesApplied`, followed by the playhead proof and
+ * the seam proof.
  */
 function provenPopped(
     pass: LiveAutomationWriterPass,

@@ -153,6 +153,21 @@ function emptySeam(): void {
     offlineDeviceParameterLawState.quantiseValue = null;
 }
 
+/**
+ * A seam the composition root has only started filling: the admission half is
+ * there and the value halves are not.
+ *
+ * All-set and all-null are the two cases that cannot tell the seam's rule
+ * apart, because a projection admitting a parameter whenever *any* half is set
+ * answers both of them identically. This is the shape the rule is actually
+ * about — a parameter that would be accepted with nothing to bound the value it
+ * stamps.
+ */
+function halfFilledSeam(): void {
+    emptySeam();
+    offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, parameterId) => parameterId === '7';
+}
+
 function readOneRegion(): ReturnType<typeof readLiveAutomationWrites> {
     return readLiveAutomationWrites({
         stripTracks: [TRACK],
@@ -215,6 +230,14 @@ describe('readLiveAutomationWrites', () => {
 
     it('admits no hosted plugin lane while the parameter-law seam is unset', () => {
         emptySeam();
+
+        const result = readOneRegion();
+
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+    });
+
+    it('admits no hosted plugin lane while any half of the parameter-law seam is unset', () => {
+        halfFilledSeam();
 
         const result = readOneRegion();
 

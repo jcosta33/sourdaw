@@ -19,8 +19,31 @@
  * pruning one would free a slot the engine still charges.
  */
 
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
+
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
+
+/**
+ * The pass's own strips, with each one's contents as project truth holds them
+ * now.
+ *
+ * Re-reading the contents is the whole of what a chain re-arm is for: the
+ * plugin that triggered it arrived in `trackStore` after the pass was taken, so
+ * projecting the arm-time objects again would find no parameters to carry while
+ * the tick path — which reads the engine's own chain — has already stopped
+ * writing that device over IPC.
+ *
+ * The strip *set* stays exactly the one the session's topology built. A strip
+ * missing from the store keeps its arm-time object rather than dropping out:
+ * `carriedStripIds` still names it, so its devices are still the engine's as
+ * far as every other reader is concerned, and a strip dropped here would be
+ * driven by neither engine.
+ */
+function currentStripTracks(stripTracks: readonly Track[]): readonly Track[] {
+    const byId = new Map((trackStore.value?.tracks ?? []).map((track): [string, Track] => [track.id, track]));
+    return stripTracks.map((track) => byId.get(track.id) ?? track);
+}
 
 export type RearmNativeLiveAutomationWriterInPlaceInput = Readonly<{
     /**
@@ -42,7 +65,7 @@ export function rearmNativeLiveAutomationWriterInPlace(input: RearmNativeLiveAut
         return;
     }
     armNativeLiveAutomationWriter({
-        stripTracks: pass.stripTracks,
+        stripTracks: currentStripTracks(pass.stripTracks),
         sampleRate: pass.sampleRate,
         programmeEndSeconds: pass.programmeEndSeconds,
         positionSeconds: input.positionSeconds ?? pass.entrySeconds,

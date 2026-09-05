@@ -105,7 +105,8 @@ export type LiveAutomationQueuedStamp = {
      * when the backend reports no fence (a mapping or an in-process renderer
      * has none), which is what the anchor's fallback answers for. Both the
      * playhead and seam release proofs in `provenPopped` require `batchesApplied >=
-     * admittedBatch` (matching `crates/sourdaw-native/src/commands/graph.rs:913-920, 950`).
+     * admittedBatch` (matching `proven_popped` in
+     * `crates/sourdaw-native/src/commands/graph.rs`).
      */
     admittedBatch: number | null;
     /**
@@ -145,10 +146,14 @@ export type LiveAutomationWriterTarget = {
  */
 export type LiveAutomationWriterPass = {
     /**
-     * The strips the session's topology actually built. Held rather than
-     * re-read, because a write addressed to a strip the engine does not hold
-     * refuses the whole batch — and a re-arm after a seek must not start
-     * naming strips a later project edit added.
+     * The strips the session's topology actually built.
+     *
+     * The set of them is held rather than re-read, because a write addressed to
+     * a strip the engine does not hold refuses the whole batch — so a re-arm
+     * must not start naming strips a later project edit added. Each strip's
+     * *contents* are re-read at every re-arm
+     * (`rearmNativeLiveAutomationWriterInPlace`): a chain edit is exactly what
+     * one of them answers.
      */
     stripTracks: readonly Track[];
     sampleRate: number;

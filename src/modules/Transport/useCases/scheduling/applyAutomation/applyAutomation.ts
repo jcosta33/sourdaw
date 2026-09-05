@@ -162,6 +162,35 @@ function takeBypassReleaseEdge(thisTick: Map<string, boolean>, deviceId: string,
     return released;
 }
 
+/**
+ * Drop the bypass ledger's entries for devices the new track snapshot no longer
+ * holds — and only those.
+ *
+ * The ledger survives a replaced snapshot deliberately. `bypassDevice` commits
+ * through `mapAllTracks`, so *every* bypass toggle replaces the snapshot: the
+ * tick that carries an un-bypass is the tick a clear would erase the `true` the
+ * release edge is measured against, and a carried plugin whose lane is sitting
+ * still would hold its pre-bypass value with nothing left to restate it. The
+ * map is keyed by device id, which a new snapshot does not invalidate; pruning
+ * the departed ids is only what keeps it from growing across project loads.
+ *
+ * Runs after {@link automationState.trackIndex} is rebuilt, which is what makes
+ * the index the answer to "does this snapshot still hold the device".
+ */
+function forgetBypassStateOfAbsentDevices(): void {
+    const present = new Set<string>();
+    for (const track of automationState.trackIndex.values()) {
+        for (const device of track.devices) {
+            present.add(device.id);
+        }
+    }
+    for (const deviceId of automationState.lastBypassed.keys()) {
+        if (!present.has(deviceId)) {
+            automationState.lastBypassed.delete(deviceId);
+        }
+    }
+}
+
 export function applyAutomation(currentBeat: number): Set<string> {
     // Track ids whose fader gain this tick's automation composed and wrote.
     // applyVcaGains skips these so the VCA writer defers to the composed value
@@ -211,10 +240,11 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // opening another project cannot restore a same-id track with stale data.
     // A lane-only undo leaves this snapshot unchanged and reaches the removal
     // restore below.
-    if (automationState.lastTrackStoreState !== undefined && automationState.lastTrackStoreState !== trackState) {
+    const trackSnapshotReplaced =
+        automationState.lastTrackStoreState !== undefined && automationState.lastTrackStoreState !== trackState;
+    if (trackSnapshotReplaced) {
         automationState.drivingLanes.clear();
         automationState.pluginParamSlew.clear();
-        automationState.lastBypassed.clear();
     }
     automationState.lastTrackStoreState = trackState;
 
@@ -223,6 +253,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
         for (const time of tracks) {
             automationState.trackIndex.set(time.id, time);
         }
+    }
+    if (trackSnapshotReplaced) {
+        forgetBypassStateOfAbsentDevices();
     }
 
     const currentLaneIds = new Set(autoState.lanes.map((lane) => lane.id));

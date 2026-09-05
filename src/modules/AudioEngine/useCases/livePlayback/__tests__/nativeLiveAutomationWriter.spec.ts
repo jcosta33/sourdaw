@@ -234,7 +234,7 @@ type QueuedStamp = {
  * playhead passing its start frame, or `SEAMS_PROVING_A_WHOLE_PASS` seams
  * closing since the wrap count the stamp anchored at with its start frame
  * below the last wrap frame, both gated on `admitted_batch <= batches_applied`
- * (`crates/sourdaw-native/src/commands/graph.rs:913-920, 950`) — a write that is
+ * (`proven_popped` in `crates/sourdaw-native/src/commands/graph.rs`) — a write that is
  * not a step first drops every stamp landing at or after its own start
  * (`RampedParam::cancel_stale`), and a batch that would take a parameter past the
  * capacity refuses whole.
