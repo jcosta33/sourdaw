@@ -62,6 +62,14 @@ impl PluginScanPolicy {
     /// The resolved path, not the caller's spelling: the checks below are made
     /// against the canonical path, so walking anything else would walk a
     /// directory this function never looked at.
+    ///
+    /// A requested path that is lexically exactly one of this policy's own
+    /// allowed roots is the platform's own layout, not a user-supplied escape
+    /// attempt, so it is authorized to its canonical path even when a path
+    /// component resolves through a symlink — for example a Linux
+    /// distribution that symlinks `/usr/lib64` to `/usr/lib`. Every other
+    /// symlink-bearing request, including a descendant reached through a
+    /// symlinked allowed root, is refused exactly as before.
     pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<PathBuf, String> {
         if requested_path.as_os_str().is_empty() {
             return Err("Plugin scan path cannot be empty".to_string());
@@ -77,6 +85,15 @@ impl PluginScanPolicy {
         let requested_path_exists = requested_path.exists();
         if requested_path_exists {
             match path_has_symlink_component(requested_path) {
+                Ok(true) if self.is_own_allowed_root(requested_path) => {
+                    return fs::canonicalize(requested_path).map_err(|error| {
+                        format!(
+                            "Plugin scan path cannot be resolved: {}: {}",
+                            requested_path.display(),
+                            error
+                        )
+                    });
+                }
                 Ok(true) => return Err(unauthorized_scan_path(requested_path)),
                 Ok(false) => {}
                 Err(error) => return Err(error),
@@ -122,6 +139,22 @@ impl PluginScanPolicy {
         }
 
         Err(unauthorized_scan_path(&requested_path))
+    }
+
+    /// Whether `path` is lexically exactly one of this policy's own allowed
+    /// roots.
+    ///
+    /// The platform defines these paths itself, so a symlink component in one
+    /// of them — a Linux distribution's `/usr/lib64` pointing at `/usr/lib`
+    /// — is the platform's own layout choice, not a path a caller built to
+    /// slip past the symlink check. The comparison is lexical, not
+    /// canonicalized: canonicalizing first would resolve the very symlink
+    /// this check exists to look past, before the comparison ever ran.
+    fn is_own_allowed_root(&self, path: &Path) -> bool {
+        let normalized_path = normalize_path_lexically(path);
+        self.allowed_roots
+            .iter()
+            .any(|allowed_root| normalize_path_lexically(allowed_root) == normalized_path)
     }
 }
 
@@ -415,6 +448,34 @@ mod tests {
                 .as_ref()
                 .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
             "expected symlink escape to be rejected, got {result:?}"
+        );
+    }
+
+    /// A path that is exactly one of the policy's own allowed roots is the
+    /// platform's layout, not a user-supplied escape: it is authorized to its
+    /// canonical path even through a symlinked component, which is how a Linux
+    /// `/usr/lib64/vst3` resolves where `/usr/lib64` symlinks to `/usr/lib`.
+    #[cfg(unix)]
+    #[test]
+    fn authorizes_an_allowed_root_reached_through_the_platforms_own_symlink() {
+        let temp_root = unique_temp_scan_root("symlink-policy-own-root");
+        let real_root = temp_root.join("real");
+        let real_vst3 = real_root.join("VST3");
+        let linked_root = temp_root.join("linked");
+        std::fs::create_dir_all(&real_vst3).expect("real VST3 root should be created");
+        std::os::unix::fs::symlink(&real_root, &linked_root)
+            .expect("linked root symlink should be created");
+
+        let allowed_root = linked_root.join("VST3");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![allowed_root.clone()]);
+        let result = policy.authorize_scan_root(&allowed_root);
+        let expected = std::fs::canonicalize(&real_vst3).expect("real VST3 root should resolve");
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert_eq!(
+            result,
+            Ok(expected),
+            "expected the platform's own symlinked default root to be authorized, got {result:?}"
         );
     }
 
