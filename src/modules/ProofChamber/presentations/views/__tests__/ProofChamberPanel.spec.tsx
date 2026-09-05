@@ -108,13 +108,29 @@ describe('ProofChamberPanel', () => {
     });
 
     /**
+     * The refusal wording, pinned against the three sibling-outcome messages
+     * that also satisfy a bare once/space-name/'warning' probe: the ambiguous
+     * hedge, the degraded-history warning, and the failed toast.
+     */
+    function expectRefusalWording(message: string | undefined): void {
+        expect(message).toContain('plate');
+        expect(message).toContain("can't be changed right now");
+        expect(message).not.toContain('reload the project');
+        expect(message).not.toContain('undo history');
+        expect(message).not.toContain('see logs for details');
+    }
+
+    /**
      * The space tiles are the panel's one `executeAppActionBatch` gesture, and
      * the batch resolves rather than rejecting when the project refuses the
      * write, so a call site that drops the result makes the click silently do
      * nothing on a repair-required or brief-locked project. The refusal must
-     * reach the user as exactly one warning that names the space they clicked.
+     * reach the user as exactly one warning carrying the refusal wording: the
+     * hedged and degraded-history messages satisfy a loose
+     * once/space-name/'warning' probe just as well, so the wording is asserted
+     * against those outcomes rather than left to whichever branch answers.
      */
-    it('warns once with the space name when the space-load batch is refused', async () => {
+    it('warns once with the refusal wording when the space-load batch is conflicted', async () => {
         vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
             status: 'conflicted',
             reason: 'Project repair is required before project actions can execute',
@@ -129,7 +145,35 @@ describe('ProofChamberPanel', () => {
         await waitFor(() => {
             expect(notifyUser).toHaveBeenCalledTimes(1);
         });
-        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('plate'), 'warning');
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining("can't be changed right now"), 'warning');
+        const [conflictedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expectRefusalWording(conflictedMessage);
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    });
+
+    /**
+     * `rejected` and `conflicted` are the two refusal statuses and route to the
+     * same branch, so a wording regression there must fail on both fixtures —
+     * exercising only `conflicted` would leave `rejected` an untested promise
+     * that the shared branch keeps them worded alike.
+     */
+    it('warns once with the same refusal wording when the space-load batch is rejected', async () => {
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'rejected',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledTimes(1);
+        });
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining("can't be changed right now"), 'warning');
+        const [rejectedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
+        expectRefusalWording(rejectedMessage);
+        expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
     });
 
     it('stays silent when the space-load batch commits', async () => {
