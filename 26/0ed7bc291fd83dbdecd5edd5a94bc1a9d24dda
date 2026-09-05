@@ -1,0 +1,79 @@
+src/modules/AudioEngine/stores/__tests__/preparedAudioBufferLifecycleRace.spec.ts
+  s_87ab0a2f60ccf8::t_57dcd98a8013c0 128,186
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_87ab0a2f60ccf8::t_09fe44202227ff 33-35,39-42,145-149
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_09fe44202227ff 52-54,167,195-198
+src/modules/Project/useCases/__tests__/agentProjectModelContract.spec.ts
+  s_87ab0a2f60ccf8::t_b544a601ce12f7 287-291
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_2aee75edc31c54 1284
+  s_87ab0a2f60ccf8::t_2806176e6f443a 873
+  s_87ab0a2f60ccf8::t_d3a724b8332ee5 484-494,548-599,801,906,995,1168-1283,1285-1329,1348-1349,1353,1363-1364,1865,1889-1893
+  s_87ab0a2f60ccf8::t_6f1dc119171ed9 1916,1970,2045,2114
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_e9186ccaf9ae09 1-140,151-172,199-208,214-216,218-232,264-285,304-430,434-484,487-490,493-495
+  s_87ab0a2f60ccf8::t_316ae236c6856a 217,431-433,485-486,491-492
+  s_87ab0a2f60ccf8::t_7db9d72265411e 286-303
+  s_87ab0a2f60ccf8::t_d50a68e64329c6 141-150,233-263
+  s_87ab0a2f60ccf8::t_5b573e962ea230 198,209-213
+  s_87ab0a2f60ccf8::t_012fd00ebbcae0 173-197
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  s_87ab0a2f60ccf8::t_15c3b6d9e1a47d 5,8-9,39-40
+  s_87ab0a2f60ccf8::t_62b27e2452c6a5 30-35,197-261
+  s_87ab0a2f60ccf8::t_09fe44202227ff 41-45,103,117,138,336
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_09fe44202227ff 31-33,82,180-184
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_7d5bc02b5fdebd 1-30
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_87ab0a2f60ccf8::t_53d5ecef4d566e 105-107,111,331
+src/modules/AudioEngine/stores/preparedAudioBufferLifecycle.ts
+  s_87ab0a2f60ccf8::t_2aee75edc31c54 65-68,200,339-346,353-355,357,365-372
+  s_87ab0a2f60ccf8::t_14c205770662c6 1345
+  s_87ab0a2f60ccf8::t_d3a724b8332ee5 52-64,112,198,226,294,327,348-349,383-414,750-753,758-760,853-976,1339-1341
+  s_87ab0a2f60ccf8::t_82211ccf8ab7be 382,1023,1338,1857-1858,1864,1873-1875
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/multiDatabaseIndexedDb.ts
+  s_87ab0a2f60ccf8::t_b837ced3c2a068 1-24,26-39,42-91,94,98-99,118-119,126,129-143,145-219,221-346,348-357,361-362
+  s_87ab0a2f60ccf8::t_ed555a2f28969b 25,40,92-93,95-97,100-117,120-125,127-128,347,358-360
+  s_87ab0a2f60ccf8::t_8e2c8daae828b2 41,144,220
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_0e31674f893a1c 3-5,74
+  s_87ab0a2f60ccf8::t_1c4869f724f74f 1-2,6-8,10-35,41-73,75-84,106-111,113,127,129-130,139-143,146-150,161
+  s_87ab0a2f60ccf8::t_ed555a2f28969b 9,36-40,86,91-94,101-104,112,114-126,128,132-138,151-158
+  s_87ab0a2f60ccf8::t_2fa67141e4a804 145,159
+  s_87ab0a2f60ccf8::t_d60fabf8978651 160
+  s_87ab0a2f60ccf8::t_15c38b21fd3203 85,87-90,95-100,105,131,144
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_87ab0a2f60ccf8::t_ea38ef9f6884be 3,18-22,68,123-142,145,150,157,159-163,169-170
+src/modules/AudioEngine/useCases/ensureCachedAudioBuffersDurable.ts
+  s_d6ace10e454924::t_4a2f038937294d 1-24
+src/modules/AudioEngine/useCases/index.ts
+  s_d6ace10e454924::t_a9d0ad2272f09c 26
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_d6ace10e454924::t_b3f0ddd47328fa 350-372,401-405,410,414-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "260ed7bc291fd83dbdecd5edd5a94bc1a9d24dda",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d6ace10e454924": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a071ed-09ff-7413-b6f3-fe55281eaffe",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
