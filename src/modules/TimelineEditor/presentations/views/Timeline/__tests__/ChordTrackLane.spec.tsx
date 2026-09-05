@@ -561,4 +561,14 @@ describe('ChordTrackLane', () => {
         fireEvent.mouseDown(document.body);
         expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
     });
+
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open popover deletes the arrangement clips behind it.
+    it('chord picker options sit inside a [role="menu"] surface', () => {
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
+        fireEvent.click(screen.getByLabelText('Add chord event'));
+
+        expect(screen.getByRole('button', { name: 'C' }).closest('[role="menu"]')).not.toBeNull();
+    });
 });
