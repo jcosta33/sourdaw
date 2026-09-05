@@ -327,6 +327,7 @@ fn retirement_count(app_state: &AppState) -> usize {
 mod tests {
     use super::*;
     use crate::host::plugin_window::{NoWindowHost, PluginEditorWindow};
+    use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ProcessingGate;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Arc, Mutex};
@@ -426,6 +427,7 @@ mod tests {
                     name: "Live Fixture".to_string(),
                     parameters: Vec::new(),
                     has_gui: true,
+                    chain_kind: DeviceKind::Effect,
                     bridge: None,
                     relay_scratch: crate::state::PluginRelayScratch::default(),
                     parameter_events: None,

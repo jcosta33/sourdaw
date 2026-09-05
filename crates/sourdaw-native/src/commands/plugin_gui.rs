@@ -1051,6 +1051,7 @@ mod tests {
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::host::ui_thread::{UiThread, UiThreadTask};
     use crate::state::{AppState, EnginePluginInstanceData};
+    use daw_engine::timeline::DeviceKind;
     use daw_plugin_host::ClapWrapper;
     use std::cell::Cell;
     use std::sync::{Arc, Mutex};
@@ -1105,6 +1106,7 @@ mod tests {
                 name: "Engine Owned Fixture".to_string(),
                 parameters: Vec::new(),
                 has_gui,
+                chain_kind: DeviceKind::Effect,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,
@@ -1139,6 +1141,7 @@ mod tests {
                 name: "Engine Owned Fixture".to_string(),
                 parameters: Vec::new(),
                 has_gui: true,
+                chain_kind: DeviceKind::Effect,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
                 parameter_events: None,

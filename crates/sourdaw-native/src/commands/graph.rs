@@ -1332,6 +1332,18 @@ fn no_native_body(device: &DevicePayload) -> Option<String> {
     None
 }
 
+/// One instance the engine already owns, as a device may bind to it: the
+/// effect-table id the load reserved, and how it splices into a strip chain.
+///
+/// `Copy` because the map holding these is read once per batch and every
+/// lookup only ever needs a snapshot of the two numbers, never the instance
+/// itself.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EngineOwnedDevice {
+    engine_plugin_id: usize,
+    chain_kind: DeviceKind,
+}
+
 /// What one device maps onto natively, and who owns the effect it names.
 ///
 /// Two populations reach a strip chain. A built-in Knead device is *built*
@@ -1349,10 +1361,16 @@ fn no_native_body(device: &DevicePayload) -> Option<String> {
 /// through the engine's fixed built-in vocabulary, so its `parameterValues` are
 /// carried by the panel and never validated against `DeviceParam::from_name`
 /// here.
+///
+/// `chain_kind` is what the three `ChainEntry` insert sites splice with: an
+/// engine-owned device carries the instance's own scanned category
+/// (`PluginRegistryEntry::chain_kind`), and a built-in Knead device is always
+/// `Effect` — knead has no generator form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct MappedDevice {
     effect_id: usize,
     engine_owned: bool,
+    chain_kind: DeviceKind,
 }
 
 fn map_device(
@@ -1360,7 +1378,7 @@ fn map_device(
     registry: &mut GraphRegistry,
     contributes_audio: bool,
     sample_rate: f32,
-    engine_plugin_ids: &HashMap<String, usize>,
+    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<Option<MappedDevice>, String> {
     if registry.devices.contains_key(&device.id) {
@@ -1368,7 +1386,11 @@ fn map_device(
     }
 
     if let Some(instance_id) = device.external_instance_id.as_deref() {
-        let Some(&effect_id) = engine_plugin_ids.get(instance_id) else {
+        let Some(&EngineOwnedDevice {
+            engine_plugin_id: effect_id,
+            chain_kind,
+        }) = engine_owned_devices.get(instance_id)
+        else {
             let reason = format!(
                 "device '{}' names hosted plugin instance '{instance_id}', which is not attached \
                  to the engine",
@@ -1390,6 +1412,7 @@ fn map_device(
         return Ok(Some(MappedDevice {
             effect_id,
             engine_owned: true,
+            chain_kind,
         }));
     }
 
@@ -1443,6 +1466,7 @@ fn map_device(
     Ok(Some(MappedDevice {
         effect_id,
         engine_owned: false,
+        chain_kind: DeviceKind::Effect,
     }))
 }
 
@@ -1554,17 +1578,18 @@ fn touch(touched: &mut Vec<String>, strip_id: &str) {
 /// nothing built here may be applied and the clone is discarded — including
 /// the queue ledger, which is written back onto the clone only on success.
 ///
-/// `engine_plugin_ids` is instance id → engine plugin id for every hosted
-/// plugin the engine owns, read once on the control thread before the batch is
-/// mapped. It is empty for every offline path: those render with no live
-/// engine, so no instance exists for a device to bind to and an external device
-/// on a sounding strip refuses there exactly as it did before binding existed.
+/// `engine_owned_devices` is instance id → engine plugin id and chain splice
+/// kind for every hosted plugin the engine owns, read once on the control
+/// thread before the batch is mapped. It is empty for every offline path:
+/// those render with no live engine, so no instance exists for a device to
+/// bind to and an external device on a sounding strip refuses there exactly
+/// as it did before binding existed.
 fn map_batch(
     batch: &GraphBatchPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
-    engine_plugin_ids: &HashMap<String, usize>,
+    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
 ) -> Result<MappedBatch, String> {
     if batch.schema_version != 1 {
         return Err(format!(
@@ -1597,7 +1622,7 @@ fn map_batch(
             registry,
             samples,
             sample_rate,
-            engine_plugin_ids,
+            engine_owned_devices,
             &mut budgets,
             &mut ops,
             &mut touched,
@@ -1677,7 +1702,7 @@ fn map_command(
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
-    engine_plugin_ids: &HashMap<String, usize>,
+    engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
     budgets: &mut QueueBudgets,
     ops: &mut Vec<GraphCommand>,
     touched: &mut Vec<String>,
@@ -1739,7 +1764,7 @@ fn map_command(
                     registry,
                     *contributes_audio,
                     sample_rate,
-                    engine_plugin_ids,
+                    engine_owned_devices,
                     ops,
                 )?
                 else {
@@ -1750,7 +1775,7 @@ fn map_command(
                     native_id,
                     ChainEntry {
                         effect_id: mapped.effect_id,
-                        kind: DeviceKind::Effect,
+                        kind: mapped.chain_kind,
                     },
                     chain_index,
                 ));
@@ -1845,7 +1870,7 @@ fn map_command(
                     registry,
                     *contributes_audio,
                     sample_rate,
-                    engine_plugin_ids,
+                    engine_owned_devices,
                     ops,
                 )?
                 else {
@@ -1856,7 +1881,7 @@ fn map_command(
                     native_id,
                     ChainEntry {
                         effect_id: mapped.effect_id,
-                        kind: DeviceKind::Effect,
+                        kind: mapped.chain_kind,
                     },
                     chain_index,
                 ));
@@ -2032,7 +2057,7 @@ fn map_command(
                 registry,
                 strip.contributes_audio,
                 sample_rate,
-                engine_plugin_ids,
+                engine_owned_devices,
                 ops,
             )?
             else {
@@ -2044,7 +2069,7 @@ fn map_command(
                 strip.native_id,
                 ChainEntry {
                     effect_id: mapped.effect_id,
-                    kind: DeviceKind::Effect,
+                    kind: mapped.chain_kind,
                 },
                 insert_at,
             ));
@@ -2783,12 +2808,20 @@ pub async fn apply_graph_commands(
     // lookup and binds on the *next* batch instead. That one-batch lag is the
     // cost of never reporting an engine-owned plugin on a rejected result, and
     // the producer resends its topology on every play.
-    let engine_plugin_ids: HashMap<String, usize> = state
+    let engine_owned_devices: HashMap<String, EngineOwnedDevice> = state
         .engine_plugins
         .lock()
         .map_err(|error| format!("Failed to lock engine plugins: {error}"))?
         .iter()
-        .map(|(instance_id, instance)| (instance_id.clone(), instance.engine_plugin_id))
+        .map(|(instance_id, instance)| {
+            (
+                instance_id.clone(),
+                EngineOwnedDevice {
+                    engine_plugin_id: instance.engine_plugin_id,
+                    chain_kind: instance.chain_kind,
+                },
+            )
+        })
         .collect();
 
     let mut engine_guard = state
@@ -2821,7 +2854,7 @@ pub async fn apply_graph_commands(
         &mut working,
         &samples,
         engine.sample_rate(),
-        &engine_plugin_ids,
+        &engine_owned_devices,
     ) {
         Ok(mapped) => mapped,
         Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
@@ -4370,8 +4403,20 @@ mod tests {
             &sample_pool(),
             48_000.0,
             &HashMap::from([
-                ("inst-track".to_string(), 1_007usize),
-                ("inst-bus".to_string(), 1_009usize),
+                (
+                    "inst-track".to_string(),
+                    EngineOwnedDevice {
+                        engine_plugin_id: 1_007,
+                        chain_kind: DeviceKind::Effect,
+                    },
+                ),
+                (
+                    "inst-bus".to_string(),
+                    EngineOwnedDevice {
+                        engine_plugin_id: 1_009,
+                        chain_kind: DeviceKind::Effect,
+                    },
+                ),
             ]),
         )
         .expect("both strips bind their attached instance");
@@ -5408,6 +5453,7 @@ mod tests {
                     name: "Filler".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
+                    chain_kind: DeviceKind::Effect,
                     bridge: None,
                     relay_scratch: crate::state::PluginRelayScratch::default(),
                     parameter_events,
@@ -6755,8 +6801,20 @@ mod tests {
     fn a_live_topology_batch_with_attached_plugins_binds_them_and_maps_again_over_itself() {
         let samples = sample_pool();
         let lookup = HashMap::from([
-            ("inst-1".to_string(), 1_007usize),
-            ("inst-2".to_string(), 1_008usize),
+            (
+                "inst-1".to_string(),
+                EngineOwnedDevice {
+                    engine_plugin_id: 1_007,
+                    chain_kind: DeviceKind::Effect,
+                },
+            ),
+            (
+                "inst-2".to_string(),
+                EngineOwnedDevice {
+                    engine_plugin_id: 1_008,
+                    chain_kind: DeviceKind::Effect,
+                },
+            ),
         ]);
         let mut registry = GraphRegistry::default();
 
@@ -6931,9 +6989,26 @@ mod tests {
     }
 
     /// One attached hosted plugin instance, at the engine plugin id the load
-    /// reserved for it.
-    fn attached(instance_id: &str, engine_plugin_id: usize) -> HashMap<String, usize> {
-        HashMap::from([(instance_id.to_string(), engine_plugin_id)])
+    /// reserved for it, splicing as a plain effect — the category every
+    /// existing binding test is about.
+    fn attached(instance_id: &str, engine_plugin_id: usize) -> HashMap<String, EngineOwnedDevice> {
+        attached_as(instance_id, engine_plugin_id, DeviceKind::Effect)
+    }
+
+    /// The same attachment, at a chosen chain-splice kind — for the tests that
+    /// are specifically about an instrument binding as a generator.
+    fn attached_as(
+        instance_id: &str,
+        engine_plugin_id: usize,
+        chain_kind: DeviceKind,
+    ) -> HashMap<String, EngineOwnedDevice> {
+        HashMap::from([(
+            instance_id.to_string(),
+            EngineOwnedDevice {
+                engine_plugin_id,
+                chain_kind,
+            },
+        )])
     }
 
     fn inserted_effect_ids(ops: &[GraphCommand]) -> Vec<usize> {
@@ -6944,6 +7019,55 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    fn inserted_chain_kinds(ops: &[GraphCommand]) -> Vec<DeviceKind> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::InsertTrackDevice { entry, .. }
+                | GraphCommand::InsertBusDevice { entry, .. } => Some(entry.kind),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// An attached instance whose registry entry carries `Generator` — an
+    /// instrument, scanned as such — splices in as one: the pushed
+    /// `InsertTrackDevice`'s `ChainEntry.kind` must be `Generator`, or the
+    /// clip it shares a strip with is what the splice replaces.
+    #[test]
+    fn an_engine_owned_instrument_inserts_as_a_generator() {
+        let mapped = map_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_as("inst-1", 1_007, DeviceKind::Generator),
+        )
+        .expect("an attached instrument binds on a sounding strip");
+
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator]
+        );
+    }
+
+    /// The same binding with a registry entry carrying `Effect` must splice as
+    /// `Effect`, the way it always has — the two categories share `map_device`
+    /// and must not become indistinguishable from each other by way of a
+    /// dropped kind.
+    #[test]
+    fn an_engine_owned_effect_inserts_as_an_effect() {
+        let mapped = map_batch(
+            &batch(hosted_plugin_strip(true, false)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_as("inst-1", 1_007, DeviceKind::Effect),
+        )
+        .expect("an attached effect binds on a sounding strip");
+
+        assert_eq!(inserted_chain_kinds(&mapped.ops), vec![DeviceKind::Effect]);
     }
 
     /// An instance the engine does not hold cannot be spliced, so the device
