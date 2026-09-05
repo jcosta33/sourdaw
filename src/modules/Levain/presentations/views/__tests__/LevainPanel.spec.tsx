@@ -97,8 +97,8 @@ vi.mock('#/components/daw/DawPluginMetricTile', () => ({
 }));
 
 vi.mock('#/components/daw/DawPluginSectionCard', () => ({
-    DawPluginSectionCard: ({ title, children }: any) => (
-        <div data-testid="section-card">
+    DawPluginSectionCard: ({ title, children, className }: any) => (
+        <div data-testid="section-card" className={className}>
             <h3>{title}</h3>
             {children}
         </div>
@@ -169,6 +169,14 @@ describe('LevainPanel', () => {
     it('should render section cards', () => {
         render(<LevainPanel deviceId="test-device" />);
         expect(screen.getAllByTestId('section-card').length).toBeGreaterThan(0);
+    });
+
+    it('keeps all section cards from shrinking and eliminates inner subgrid collapse', () => {
+        const { container } = render(<LevainPanel deviceId="test-device" />);
+        const cards = screen.getAllByTestId('section-card');
+        expect(cards.length).toBeGreaterThanOrEqual(6);
+        expect(cards.every((card) => card.className.includes('shrink-0'))).toBe(true);
+        expect(container.querySelector('.grid-cols-\\[minmax\\(0\\,1fr\\)_18rem\\]')).toBeNull();
     });
 
     it('should display engine status', () => {
