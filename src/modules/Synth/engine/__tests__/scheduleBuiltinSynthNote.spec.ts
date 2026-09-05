@@ -383,7 +383,7 @@ describe('scheduleBuiltinSynthNote envelope note-off interruption', () => {
             destination,
             pitch: 69,
             startTime: 0,
-            duration: 0.5,
+            duration: 0.35,
             velocity: 127,
             params: {
                 ...baseBuiltinSynthParams,
@@ -401,10 +401,9 @@ describe('scheduleBuiltinSynthNote envelope note-off interruption', () => {
         expect(gainEvents).toEqual([
             { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
             { method: 'linearRampToValueAtTime', value: 1.0, time: 0.25, param: 'gain' },
-            { method: 'linearRampToValueAtTime', value: 0.6, time: 0.5, param: 'gain' },
-            { method: 'linearRampToValueAtTime', value: 0, time: 0.9, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: expect.closeTo(0.84), time: 0.35, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 0.75, param: 'gain' },
         ]);
-        expect(gainEvents.some((event) => event.time === 0.75)).toBe(false);
         expect(gainEvents.some((event) => event.value === 0.2)).toBe(false);
     });
 
@@ -462,11 +461,12 @@ describe('scheduleBuiltinSynthNote envelope note-off interruption', () => {
         });
 
         const gainEvents = events.filter((event) => event.param === 'gain');
-        const postReleaseEvents = gainEvents.filter((event) => event.time >= 0.1);
 
-        for (let i = 1; i < postReleaseEvents.length; i++) {
-            expect(postReleaseEvents[i].value).toBeLessThan(postReleaseEvents[i - 1].value);
-        }
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.03, time: 0.1, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 2.1, param: 'gain' },
+        ]);
         expect(gainEvents.some((event) => event.time === 1.0)).toBe(false);
     });
 
