@@ -1,0 +1,31 @@
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_3a3bdf76bd447c 2803-2848
+  s_9b530f08172a54::t_dfef301dc363b9 2849-2851
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_93bcd079b881ee 2201-2204
+crates/daw-engine/AGENTS.md
+  s_9b530f08172a54::t_6208e6151bde56 53-58
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_eb9cb74064dd2b 3196,3198-3206
+  s_9b530f08172a54::t_39fcd66ce8dc85 9337-9369
+  s_9b530f08172a54::t_914fc10c77217c 10182-10183,10186,10189-10199,10203
+  s_9b530f08172a54::t_fc25eabad55fd2 6188-6215
+  s_9b530f08172a54::t_c0ba6494c2cb6d 10172-10181,10184-10185,10187-10188,10200-10202,10204-10213
+  s_9b530f08172a54::t_22cc9017d92511 7980-8020
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c27c34bc8d30c1fd804d0d1c78f726facd3f48ff",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
