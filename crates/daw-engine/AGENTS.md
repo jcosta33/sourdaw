@@ -29,11 +29,17 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
   the project — the common professional convention, and the reason the dry line is built with the
   latency rather than with the device.
-- **A dry line is primed while its device runs**: on every block the chain visits a latent device
-  exactly one pass over its dry line happens — a bypassed device reads the line, a running one
-  writes the signal it was handed into it — so the line always holds the last `latency` frames of
-  that strip. Bypass and un-bypass therefore shift no alignment, open no hole of silence, and never
-  replay audio from an earlier part of the session.
+- **Every line is written on every block it renders**: a route line and a dry line alike take
+  exactly one pass per block — read-and-write while they hold, write-only otherwise. A route line
+  holding nothing is fed rather than skipped, and a dry line is fed on every block the chain visits
+  its device, including the blocks a shadowed or otherwise skipped device is passed over. So a line
+  always holds the last frames of the signal its route carries, a change of hold is a read-offset
+  jump into audio that is already current, and neither a re-aiming nor a bypass can open a hole of
+  silence or replay audio from an earlier part of the session.
+- **A detached device's line restarts from silence**: the strip a device sat on can be removed under
+  it, and nothing then feeds or reads its line. That is the one break in the rule above, so it is
+  the one place a line is cleared — bounded by the declared latency, at the detach — and it stays
+  silent until a chain takes the device again and starts feeding it.
 - **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
   real-time diagnostics, alongside the deepest arrival the graph was asked for. A route that could
   not be aligned is reported, never silently misaligned.

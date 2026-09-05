@@ -2382,7 +2382,18 @@ impl TimelineGraph {
                         // Last on the strip, after the post-fader tap: the
                         // sends carry their own compensation, and only what
                         // leaves for the summing point is held back here.
-                        track.output_delay.process(left, right, frames);
+                        //
+                        // Written on every block this strip renders, whether
+                        // or not it holds. Nothing above skips the line —
+                        // mute and solo zero the block rather than leaving
+                        // it — so the ring keeps pace with the strip, and a
+                        // hold taken up after a spell at zero reads on from
+                        // the signal instead of replaying the era it froze in.
+                        if track.output_delay.delay() > 0 {
+                            track.output_delay.process(left, right, frames);
+                        } else {
+                            track.output_delay.feed(left, right, frames);
+                        }
                     }
 
                     route_sum(
@@ -2434,7 +2445,17 @@ impl TimelineGraph {
                             right.fill(0.0);
                         }
                         apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
-                        bus.output_delay.process(left, right, frames);
+                        // Written on every block this bus renders, whether or
+                        // not it holds, for the reason a track's output line
+                        // is: mute and solo zero the block rather than leaving
+                        // it, so nothing above skips the line and a hold taken
+                        // up later reads current audio rather than the era the
+                        // ring froze in.
+                        if bus.output_delay.delay() > 0 {
+                            bus.output_delay.process(left, right, frames);
+                        } else {
+                            bus.output_delay.feed(left, right, frames);
+                        }
                     }
 
                     route_sum(
@@ -2523,6 +2544,11 @@ fn apply_master_fader(fader: &mut MasterFader, frames: usize, left: &mut [f32], 
 /// pair would delay every contributor a second time — and with them the live
 /// input monitored through this track, which is the one signal that must not
 /// wait.
+///
+/// The staging happens on every block, at zero hold and with no clip to render
+/// alike, because the line is written on every block this strip renders: a
+/// source line skipped while it holds nothing would freeze, and the next hold
+/// it is aimed at would replay the passage it froze in.
 #[allow(clippy::too_many_arguments)]
 fn render_track_source(
     track: &mut TimelineTrack,
@@ -2534,15 +2560,6 @@ fn render_track_source(
     source_left: &mut [f32],
     source_right: &mut [f32],
 ) {
-    if track.source_delay.delay() == 0 {
-        if render_clips {
-            for clip in &track.clips {
-                clip.render_into(block_start, frames, left, right);
-            }
-        }
-        return;
-    }
-
     // Staged over silence, and staged even on a stopped transport: the line
     // has to keep running for the material still inside it to come out, which
     // is what the rest of the strip does with its tails.
@@ -2553,9 +2570,13 @@ fn render_track_source(
             clip.render_into(block_start, frames, source_left, source_right);
         }
     }
-    track
-        .source_delay
-        .process(source_left, source_right, frames);
+    if track.source_delay.delay() > 0 {
+        track
+            .source_delay
+            .process(source_left, source_right, frames);
+    } else {
+        track.source_delay.feed(source_left, source_right, frames);
+    }
     sum_into(left, source_left);
     sum_into(right, source_right);
 }
@@ -2736,18 +2757,21 @@ fn run_sends(
             continue;
         }
 
-        // Ahead of every reason this send might contribute nothing this block.
-        // The line has to see every frame of the tap or its content stops
-        // matching the time it is asked for, and a bus that comes back, or a
-        // level that leaves zero, would then read audio from whenever the send
-        // last ran.
-        let (left, right) = if send.delay.delay() == 0 {
-            (left, right)
-        } else {
+        // Ahead of every reason this send might contribute nothing this block:
+        // a bus that was removed or never added, and a level that leaves zero,
+        // both `continue` below. The line has to see every frame of the tap or
+        // its content stops matching the time it is asked for, and the send
+        // would then read audio from whenever it last ran. At zero hold it is
+        // written and not read, which is what keeps a send re-aimed after a
+        // spell at zero from replaying the passage it stood through.
+        let (left, right) = if send.delay.delay() > 0 {
             send_left.copy_from_slice(&left[..frames]);
             send_right.copy_from_slice(&right[..frames]);
             send.delay.process(send_left, send_right, frames);
             (&send_left[..frames], &send_right[..frames])
+        } else {
+            send.delay.feed(left, right, frames);
+            (left, right)
         };
 
         let Some(bus) = buses.iter_mut().find(|bus| bus.id == send.bus_id) else {

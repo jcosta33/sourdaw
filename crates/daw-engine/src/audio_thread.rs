@@ -2854,11 +2854,29 @@ mod compensation_render_alloc_guards {
             }
         });
 
-        // The guard only covers what the callback ran, and the group's source
-        // line is skipped outright at zero delay. Aiming it says the graph
-        // asked for the hold; the master says the render took it. Both are
-        // needed, because compensation aims a line whether or not the render
-        // path that runs it was ever reached.
+        // The feed a route line takes while it holds nothing is callback code
+        // too, and this graph runs it inside the guard: the latent track
+        // arrives at the group's input at exactly the group's depth, so its
+        // output line holds nothing and is written rather than read on every
+        // block above.
+        assert_eq!(
+            harness
+                .renderer
+                .scheduler
+                .timeline()
+                .track(3)
+                .expect("the latent track is in the graph")
+                .output_delay_frames(),
+            0,
+            "the latent track's output line held nothing, so the guard covered the \
+             zero-hold feed as well as the holds"
+        );
+
+        // The guard only covers what the callback ran, and a line holding
+        // nothing reads nothing back. Aiming it says the graph asked for the
+        // hold; the master says the render took it. Both are needed, because
+        // compensation aims a line whether or not the render path that runs it
+        // was ever reached.
         assert_eq!(
             harness
                 .renderer

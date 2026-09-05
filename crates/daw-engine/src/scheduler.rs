@@ -2216,7 +2216,7 @@ impl AudioScheduler {
                         for entry in track.device_chain() {
                             if let Some(slot) = self.effect_index.lookup(entry.effect_id) {
                                 if self.effects[slot].placement == placed_on {
-                                    self.place_effect(entry.effect_id, EffectPlacement::Detached);
+                                    self.detach_effect(entry.effect_id);
                                 }
                             }
                         }
@@ -2335,7 +2335,7 @@ impl AudioScheduler {
                         for entry in bus.device_chain() {
                             if let Some(slot) = self.effect_index.lookup(entry.effect_id) {
                                 if self.effects[slot].placement == placed_on {
-                                    self.place_effect(entry.effect_id, EffectPlacement::Detached);
+                                    self.detach_effect(entry.effect_id);
                                 }
                             }
                         }
@@ -2569,6 +2569,25 @@ impl AudioScheduler {
         }
         self.push_effect(ActiveEffect::with_placement(id, instance, placement));
         None
+    }
+
+    /// Take an effect off the chain that has just been torn down under it.
+    ///
+    /// A detached effect is in no strip chain and not on the master walk, so
+    /// nothing feeds its dry line and nothing reads it for as long as it waits.
+    /// That is the one break in the rule that every line is written on every
+    /// block it renders, and so the one place a line still owes silence: left
+    /// standing, it would hand the removed strip's audio back over the first
+    /// `latency` frames after some chain takes the device again. It stays
+    /// silent until that placement starts feeding it.
+    fn detach_effect(&mut self, effect_id: usize) {
+        self.place_effect(effect_id, EffectPlacement::Detached);
+        let Some(slot) = self.effect_index.lookup(effect_id) else {
+            return;
+        };
+        if let Some(delay) = self.effects[slot].dry_delay.as_mut() {
+            delay.restart_from_silence();
+        }
     }
 
     /// Record where an effect now runs, after a chain has accepted it.
@@ -6750,6 +6769,31 @@ mod timeline_tests {
         ));
     }
 
+    /// A track carrying one mono clip of `1.0` that starts at `onset`.
+    ///
+    /// The silence ahead of the onset and the material after it are different
+    /// numbers, so a line replaying what it held during an earlier passage
+    /// shows up in the mix instead of hiding inside a constant.
+    fn track_with_onset_clip(
+        harness: &mut Harness,
+        track_id: usize,
+        clip_id: usize,
+        onset: u64,
+        frames: u64,
+    ) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddClip(
+            track_id,
+            TimelineClip::new(
+                clip_id,
+                vec![1.0; frames as usize].into(),
+                [].into(),
+                placement(onset, 0, frames),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+    }
+
     #[test]
     fn a_clip_sounds_on_the_frame_it_starts_and_stops_on_the_frame_it_ends() {
         let mut harness = Harness::new(16);
@@ -9374,6 +9418,203 @@ mod timeline_tests {
         assert_eq!(right, left);
     }
 
+    /// The master insert chain runs its own active feed, over the whole mix
+    /// rather than one strip's signal. A line left standing there replays the
+    /// last bypass exactly as one on a track chain does.
+    #[test]
+    fn a_master_insert_bypassed_again_after_running_reads_current_audio_rather_than_the_last_bypass(
+    ) {
+        const LATENCY: usize = 7;
+        const ONSET: u64 = 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_onset_clip(&mut harness, 1, 101, ONSET, 192);
+
+        let declared = Arc::new(AtomicUsize::new(LATENCY));
+        harness.send(GraphCommand::AddEffect(
+            900,
+            PluginCore::Native(Box::new(LatentPlugin::new(
+                declared,
+                LATENT_PLUGIN_CAPACITY,
+            ))),
+        ));
+        harness.send(set_latency(900, LATENCY));
+
+        // Bypassed over the silent passage: the line fills with silence.
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.render(16);
+        harness.render(16);
+
+        // Then the device runs on the mix, across the onset and past it.
+        harness.send(GraphCommand::SetBypass(900, false));
+        for _ in 0..4 {
+            harness.render(16);
+        }
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        let (left, right) = harness.render(16);
+
+        assert_eq!(
+            left,
+            vec![1.0; 16],
+            "the master chain's line hands back the mix it was being fed, not the silence \
+             it last held while bypassed"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// While the monitor is shadowed the app owns a bridged instance, so the
+    /// strip chain skips the device — and that skip is the only thing keeping
+    /// its dry line current. Un-shadowing onto a bypass is what reads the line
+    /// back, and it has to hand over the signal the strip carries now.
+    #[test]
+    fn a_shadowed_bridged_device_keeps_its_dry_line_current_for_the_bypass_that_reads_it() {
+        const LATENCY: usize = 7;
+        const ONSET: u64 = 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_onset_clip(&mut harness, 1, 101, ONSET, 192);
+
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(900);
+        let declared = Arc::new(AtomicUsize::new(LATENCY));
+        harness.send(GraphCommand::AddPluginWithBridge(
+            900,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            bridge,
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(900),
+            index: 0,
+        });
+        harness.send(set_latency(900, LATENCY));
+
+        // Bypassed and audible over the silent passage: the line fills with
+        // silence, which is what the last bypass leaves in it.
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.render(16);
+        harness.render(16);
+
+        // Shadowed and running: the chain skips the instance, so only the feed
+        // over that skip carries the line across the onset.
+        harness.send(GraphCommand::SetBypass(900, false));
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        for _ in 0..4 {
+            harness.render(16);
+        }
+
+        // Handed back to the strip while bypassed, which is the pass that
+        // reads the line.
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        let (left, right) = harness.render(16);
+
+        assert_eq!(
+            left,
+            vec![1.0; 16],
+            "the strip hands back the signal it carries now, not the silence the line \
+             held before the shadow"
+        );
+        assert_eq!(right, left);
+    }
+
+    /// A route line holding nothing is written all the same. Skipped, it
+    /// freezes with the audio it held when its hold was dropped, and the next
+    /// hold the graph aims it at bursts that era into every sibling route.
+    #[test]
+    fn a_route_line_at_zero_hold_is_written_so_a_later_hold_never_replays_it() {
+        const FIRST: usize = 8;
+        const SECOND: usize = 4;
+        const THIRD: usize = 8;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_ramp_clip(&mut harness, 1, 101, 256);
+        // Carries latency and nothing else, so the master reads track 1's
+        // contribution alone and every assertion is about its hold.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        insert_latent_device(&mut harness, 2, 900, FIRST);
+
+        let (held, _) = harness.render(16);
+        assert_eq!(
+            held,
+            delayed_ramp(0, 16, FIRST),
+            "the sibling waits the latent track's depth"
+        );
+
+        // The latent track goes, taking its device out of every chain: the
+        // hold drops to zero, and the graph runs on for two blocks with the
+        // line writing but reading nothing back.
+        harness.send(GraphCommand::RemoveTrack(2));
+        let (unheld, _) = harness.render(32);
+        assert_eq!(
+            unheld,
+            delayed_ramp(16, 32, 0),
+            "with nothing left to wait for the sibling plays where it stands"
+        );
+
+        // A new latent track, at a shallower figure than the first: the line
+        // reads the frames just behind its write head, which are the ones it
+        // took while it was holding nothing.
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        let declared = insert_latent_device(&mut harness, 2, 901, SECOND);
+        let (re_aimed, _) = harness.render(16);
+        assert_eq!(
+            re_aimed,
+            delayed_ramp(48, 16, SECOND),
+            "the re-aimed line reads on from the passage it was just written with"
+        );
+
+        // Deeper, across a line that never stopped: still a read-offset jump.
+        declared.store(THIRD, Ordering::Relaxed);
+        harness.send(set_latency(901, THIRD));
+        let (deeper, _) = harness.render(16);
+        assert_eq!(
+            deeper,
+            delayed_ramp(64, 16, THIRD),
+            "deepening the hold reads further back into current audio, never into the \
+             era the line spent at zero"
+        );
+    }
+
+    /// A device whose track was torn down under it is in no chain at all:
+    /// nothing feeds its dry line and nothing reads it. Left standing, the
+    /// line hands the removed track's audio back the moment a chain takes the
+    /// device again.
+    #[test]
+    fn a_device_detached_by_a_removed_track_restarts_its_dry_line_from_silence() {
+        const LATENCY: usize = 7;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 256);
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        // Runs, so the line fills with the track's material.
+        harness.render(16);
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.send(GraphCommand::RemoveTrack(1));
+        harness.render(16);
+
+        // The same device on a new track, still bypassed, so the line is what
+        // hands the strip's signal on.
+        track_with_constant_clip(&mut harness, 1, 102, 1.0, 256);
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry: effect(900),
+            index: 0,
+        });
+
+        let (left, right) = harness.render(16);
+        let mut expected = vec![1.0; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the re-placed device's line owes silence for its own hold rather than \
+             replaying the audio it held when its track was removed"
+        );
+        assert_eq!(right, left);
+    }
+
     /// A send is a second route out of a track, and it sums somewhere else. It
     /// carries its own compensation because the bus it lands on has an arrival
     /// time of its own, unrelated to the master's.
@@ -9689,9 +9930,16 @@ mod timeline_tests {
     /// whatever it feeds. A send aimed at a bus that is itself a contributor
     /// rather than the last stop is two hops from the master, and every hop
     /// has to be on the path the graph compensates.
+    ///
+    /// The second hop carries latency of its own, so the send's hold at the
+    /// bus it lands on and the master's depth are different figures: a send
+    /// aimed at anything but its own summing point arrives late here rather
+    /// than passing by coincidence.
     #[test]
     fn a_send_into_a_bus_feeding_another_bus_lands_with_the_track_beside_it() {
         const LATENCY: usize = 7;
+        const SECOND_HOP: usize = 5;
+        const MASTER_ONSET: usize = LATENCY + SECOND_HOP;
         const SEND_LEVEL: f32 = 0.5;
         const ALIGNED: f32 = 2.0 + SEND_LEVEL;
         let mut harness = Harness::new(64);
@@ -9702,6 +9950,17 @@ mod timeline_tests {
         harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
         harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Bus(51)));
         insert_latent_device(&mut harness, 1, 900, LATENCY);
+        let declared = Arc::new(AtomicUsize::new(SECOND_HOP));
+        harness.send(GraphCommand::AddPlugin(
+            901,
+            Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+        ));
+        harness.send(GraphCommand::InsertBusDevice {
+            bus_id: 51,
+            entry: effect(901),
+            index: 0,
+        });
+        harness.send(set_latency(901, SECOND_HOP));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
             bus_id: 50,
@@ -9710,9 +9969,31 @@ mod timeline_tests {
             delay: uncompensated(),
         });
 
+        let track_one = harness
+            .scheduler
+            .timeline()
+            .track(1)
+            .expect("track 1 is in the graph");
+        assert_eq!(
+            track_one.send_delay_frames(50),
+            Some(0),
+            "the send is aimed at the depth of the bus it lands on, which its own \
+             arrival already matches"
+        );
+        assert_eq!(
+            harness
+                .scheduler
+                .timeline()
+                .track(2)
+                .expect("track 2 is in the graph")
+                .output_delay_frames(),
+            MASTER_ONSET,
+            "the direct track waits the whole path the send takes to the master"
+        );
+
         let (left, _) = harness.render(16);
         let mut expected = vec![ALIGNED; 16];
-        expected[..LATENCY].fill(0.0);
+        expected[..MASTER_ONSET].fill(0.0);
         assert_eq!(
             left, expected,
             "the send arrives at the master over both bus hops on the frame the direct \

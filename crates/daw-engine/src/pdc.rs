@@ -96,44 +96,39 @@ impl CompensationDelay {
     /// Delay by `frames`, or by the capacity when more is asked for than the
     /// line holds. Returns whether it clamped, so a route the ceiling cut short
     /// is counted rather than left silently misaligned.
+    ///
+    /// Nothing is cleared, on any transition. Every line is written on every
+    /// block the strip owning it renders — at zero delay too, where its caller
+    /// feeds it instead of processing it — so the ring always holds the last
+    /// `capacity` frames of that route's signal. Re-aiming one is therefore a
+    /// read-offset jump into audio that is already current, and silence here
+    /// would open a hole rather than close one.
     pub(crate) fn set_delay(&mut self, frames: usize) -> bool {
         let capacity = self.capacity();
         let clamped = frames > capacity;
-        let delay = frames.min(capacity);
-        if delay == self.delay {
-            return clamped;
-        }
-
-        // A line at zero delay is skipped by its caller and so writes nothing.
-        // Its ring therefore still holds whatever it held when it last ran, and
-        // reading that back would burst old audio into the mix. Silence is what
-        // a newly introduced delay owes in any case: the signal has just been
-        // pushed forward, and nothing has arrived to fill the gap. Between two
-        // non-zero delays the ring is current, so the change is a read-offset
-        // jump and nothing is cleared.
-        if self.delay == 0 {
-            self.silence_the_delayed_tail(delay);
-        }
-        self.delay = delay;
+        self.delay = frames.min(capacity);
         clamped
     }
 
     /// Silence the only region that can still hand back stale audio, and
     /// restart the ring at its head.
     ///
+    /// The one case a line is not written on every block: a device whose strip
+    /// was torn down under it is in no chain at all, so nothing feeds or reads
+    /// its line until some chain takes the device again. Left standing, the
+    /// line would hand the removed strip's audio back at that re-placement.
+    ///
     /// With `write` back at zero, [`Self::process`] starts reading at
     /// `slots - delay` and reaches slot zero exactly `delay` frames later, by
     /// which point every slot it visits was written earlier in that same call.
     /// So the leading tail is the whole of what the line owes silence, and
     /// clearing more is work the callback pays for nothing: every line the
-    /// graph builds is sized at [`MAX_COMPENSATION_FRAMES`], and one
-    /// compensation pass re-aims every sibling route at once, so a full fill
-    /// here costs two ceiling-sized memsets per route on the audio thread to
-    /// silence a handful of frames.
-    fn silence_the_delayed_tail(&mut self, delay: usize) {
+    /// graph builds is sized at [`MAX_COMPENSATION_FRAMES`], so a full fill
+    /// here costs two ceiling-sized memsets to silence a handful of frames.
+    pub(crate) fn restart_from_silence(&mut self) {
         let slots = self.left.len();
-        self.left[slots - delay..].fill(0.0);
-        self.right[slots - delay..].fill(0.0);
+        self.left[slots - self.delay..].fill(0.0);
+        self.right[slots - self.delay..].fill(0.0);
         self.write = 0;
     }
 
@@ -153,8 +148,9 @@ impl CompensationDelay {
     /// Delay `frames` of stereo audio in place.
     ///
     /// A line at zero delay is the identity and returns without touching the
-    /// ring, which is what makes the common case — a graph whose strips all
-    /// arrive together — cost nothing.
+    /// ring. Its caller runs [`Self::feed`] over the same block instead, so
+    /// the ring stays current while the route holds nothing; the guard here is
+    /// what keeps the two passes from writing it twice.
     pub(crate) fn process(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
         if self.delay == 0 {
             return;
@@ -176,23 +172,16 @@ impl CompensationDelay {
 
     /// Write `frames` of stereo audio into the line and read nothing back.
     ///
-    /// A dry line is only read while its device is bypassed, but it has to
-    /// hold current audio the instant that bypass is taken. A line left
-    /// standing while its device runs still contains whatever was passing
-    /// through it when the device was last bypassed, and reading that back is
-    /// a burst of stale audio at the switch. Fed on every block the chain
-    /// visits the device, the line always holds the last [`Self::delay`]
-    /// frames of the signal the device was handed, so bypass and un-bypass
-    /// shift nothing and hand back neither silence nor an older take.
-    ///
-    /// A line at zero delay is skipped for the reason [`Self::process`] skips
-    /// it: its caller never reads it, and writing to one would defeat the
-    /// silence [`Self::set_delay`] owes when the line is next aimed.
+    /// The pass a line takes on a block it is not read on: a route line while
+    /// it holds nothing, a dry line while its device runs. Either has to hold
+    /// current audio the instant it *is* read, and a line left standing
+    /// contains whatever was passing through it when it was last read —
+    /// reading that back is a burst of audio from an earlier part of the
+    /// session at full level. Written on every block its strip renders, at
+    /// zero delay included, the ring always holds the last [`Self::capacity`]
+    /// frames of the signal the route carries, so taking up a hold or taking a
+    /// bypass reads on from where that signal actually is.
     pub(crate) fn feed(&mut self, left: &[f32], right: &[f32], frames: usize) {
-        if self.delay == 0 {
-            return;
-        }
-
         let slots = self.left.len();
         let mut write = self.write;
         for index in 0..frames {
@@ -328,63 +317,61 @@ mod tests {
         assert_eq!(next_right, next_left);
     }
 
+    /// A line holding nothing is still written, so a hold taken up after a
+    /// spell at zero — and one raised again after that — reads the audio that
+    /// was passing while it stood at zero, never the era it was in when the
+    /// hold was last dropped.
     #[test]
-    fn a_line_leaving_zero_delay_starts_from_silence_rather_than_stale_audio() {
-        let mut delay = CompensationDelay::new(8);
-        delay.set_delay(2);
-        let mut left = ramp(8);
-        let mut right = ramp(8);
-        delay.process(&mut left, &mut right, 8);
-
-        // Off, so the caller skips it and the ring stops advancing; then on
-        // again, where the ring's contents are as old as that gap.
-        delay.set_delay(0);
-        delay.set_delay(2);
-        let mut next_left = vec![9.0; 4];
-        let mut next_right = vec![9.0; 4];
-        delay.process(&mut next_left, &mut next_right, 4);
-
-        assert_eq!(next_left, vec![0.0, 0.0, 9.0, 9.0]);
-        assert_eq!(next_right, next_left);
-    }
-
-    #[test]
-    fn a_shorter_delay_taken_up_after_zero_reads_silence_before_the_new_material() {
+    fn a_line_written_while_it_holds_nothing_never_replays_the_era_it_left() {
+        const NOW: f32 = -1.0;
         let mut delay = CompensationDelay::new(8);
         delay.set_delay(4);
         let mut left = ramp(8);
         let mut right = ramp(8);
         delay.process(&mut left, &mut right, 8);
 
-        // Off: the caller skips the line, so the graph runs on while the ring
-        // keeps the audio it was holding.
+        // At zero the caller feeds rather than processes, so the ring goes on
+        // holding what the route actually carries.
         delay.set_delay(0);
-        let mut skipped_left = vec![9.0; 8];
-        let mut skipped_right = vec![9.0; 8];
-        delay.process(&mut skipped_left, &mut skipped_right, 8);
-        assert_eq!(skipped_left, vec![9.0; 8]);
+        let passing = vec![NOW; 8];
+        delay.feed(&passing, &passing, 8);
 
         delay.set_delay(2);
-        let mut next_left = vec![5.0; 6];
-        let mut next_right = vec![5.0; 6];
-        delay.process(&mut next_left, &mut next_right, 6);
+        let mut short_left = vec![NOW; 2];
+        let mut short_right = vec![NOW; 2];
+        delay.process(&mut short_left, &mut short_right, 2);
 
-        // Two frames of silence for the hold the line has just taken up, then
-        // the new material — never the ramp the ring was still holding.
-        assert_eq!(next_left, vec![0.0, 0.0, 5.0, 5.0, 5.0, 5.0]);
-        assert_eq!(next_right, next_left);
+        delay.set_delay(6);
+        let mut long_left = vec![NOW; 6];
+        let mut long_right = vec![NOW; 6];
+        delay.process(&mut long_left, &mut long_right, 6);
+
+        assert_eq!(
+            short_left,
+            vec![NOW; 2],
+            "the hold taken up after the zero span reads what was fed during it"
+        );
+        assert_eq!(short_right, short_left);
+        assert_eq!(
+            long_left,
+            vec![NOW; 6],
+            "and deepening it again reads on, rather than back into the ramp"
+        );
+        assert_eq!(long_right, long_left);
     }
 
+    /// The one case a line still owes silence: its device's strip was torn
+    /// down under it, so nothing wrote the ring while it waited.
     #[test]
-    fn taking_up_a_delay_silences_the_tail_the_read_head_traverses_and_nothing_else() {
+    fn restarting_from_silence_clears_the_tail_the_read_head_traverses_and_nothing_else() {
         let mut delay = CompensationDelay::new(8);
         delay.set_delay(8);
         let mut left = ramp(8);
         let mut right = ramp(8);
         delay.process(&mut left, &mut right, 8);
 
-        delay.set_delay(0);
         delay.set_delay(2);
+        delay.restart_from_silence();
 
         // The read head starts two slots from the end and reaches the slots
         // this line's next call writes immediately after, so those two are the
