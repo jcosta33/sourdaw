@@ -130,6 +130,11 @@ pub fn macos_executable_path(bundle: &Path) -> Result<PathBuf, String> {
     Ok(bundle.join("Contents").join("MacOS").join(stem))
 }
 
+/// [`macos_executable_path`] states the convention; `bundle_executable_path`
+/// reads the bundle's own answer, and only macOS can be asked.
+#[cfg(target_os = "macos")]
+pub use platform::bundle_executable_path;
+
 // ── Platform module handles ─────────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
@@ -137,19 +142,91 @@ mod platform {
     use super::GET_PLUGIN_FACTORY;
     use core_foundation_sys::base::{CFRelease, CFTypeRef};
     use core_foundation_sys::bundle::{
-        CFBundleCreate, CFBundleGetFunctionPointerForName, CFBundleLoadExecutableAndReturnError,
-        CFBundleRef, CFBundleUnloadExecutable,
+        CFBundleCopyExecutableURL, CFBundleCreate, CFBundleGetFunctionPointerForName,
+        CFBundleLoadExecutableAndReturnError, CFBundleRef, CFBundleUnloadExecutable,
     };
     use core_foundation_sys::error::CFErrorRef;
     use core_foundation_sys::string::{
         kCFStringEncodingUTF8, CFStringCreateWithBytes, CFStringRef,
     };
-    use core_foundation_sys::url::CFURLCreateFromFileSystemRepresentation;
+    use core_foundation_sys::url::{
+        CFURLCreateFromFileSystemRepresentation, CFURLGetFileSystemRepresentation, CFURLRef,
+    };
     use std::ffi::c_void;
-    use std::path::Path;
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    use std::path::{Path, PathBuf};
 
     type BundleEntry = unsafe extern "C" fn(CFBundleRef) -> bool;
     type BundleExit = unsafe extern "C" fn() -> bool;
+
+    /// `PATH_MAX` on macOS, which is the buffer size
+    /// `CFURLGetFileSystemRepresentation` is documented against.
+    const MAX_FILE_SYSTEM_PATH_BYTES: usize = 1024;
+
+    /// A bundle URL, as CoreFoundation's own file-system representation.
+    ///
+    /// `CFURLCreateFromFileSystemRepresentation` returns null for a path
+    /// CoreFoundation cannot express, which is the only failure it has.
+    unsafe fn file_system_url(path: &Path) -> Option<CFURLRef> {
+        let bytes = path.as_os_str().as_encoded_bytes();
+        let url = CFURLCreateFromFileSystemRepresentation(
+            std::ptr::null(),
+            bytes.as_ptr(),
+            bytes.len() as isize,
+            true as u8,
+        );
+        (!url.is_null()).then_some(url)
+    }
+
+    /// The path a URL names, or `None` when it names no file-system location or
+    /// one longer than a path may be.
+    unsafe fn url_file_system_path(url: CFURLRef) -> Option<PathBuf> {
+        let mut buffer = [0u8; MAX_FILE_SYSTEM_PATH_BYTES];
+        let written = CFURLGetFileSystemRepresentation(
+            url,
+            true as u8,
+            buffer.as_mut_ptr(),
+            buffer.len() as isize,
+        );
+        if written == 0 {
+            return None;
+        }
+        let length = buffer.iter().position(|byte| *byte == 0)?;
+        Some(PathBuf::from(OsString::from_vec(buffer[..length].to_vec())))
+    }
+
+    /// The executable `CFBundleCreate` would load out of this bundle.
+    ///
+    /// The bundle's `Info.plist` names its own `CFBundleExecutable`, and is
+    /// under no obligation to name it after the bundle. Asking CoreFoundation
+    /// is the only way to learn which file that is, and creating the bundle ref
+    /// loads no code — the executable is opened by
+    /// `CFBundleLoadExecutableAndReturnError`, which this never calls, so a
+    /// hostile binary is described rather than run.
+    ///
+    /// `None` whenever CoreFoundation declines: not a bundle it recognises, or
+    /// a bundle whose named executable is not there to point at.
+    pub fn bundle_executable_path(bundle: &Path) -> Option<PathBuf> {
+        unsafe {
+            let url = file_system_url(bundle)?;
+            let bundle_ref = CFBundleCreate(std::ptr::null(), url);
+            CFRelease(url as CFTypeRef);
+            if bundle_ref.is_null() {
+                return None;
+            }
+
+            let executable_url = CFBundleCopyExecutableURL(bundle_ref);
+            CFRelease(bundle_ref as CFTypeRef);
+            if executable_url.is_null() {
+                return None;
+            }
+
+            let executable = url_file_system_path(executable_url);
+            CFRelease(executable_url as CFTypeRef);
+            executable
+        }
+    }
 
     /// A loaded `.vst3` CFBundle whose `bundleEntry` has returned true.
     pub struct LoadedModule {
@@ -191,20 +268,13 @@ mod platform {
         /// the host it is not usable, and every later call would be made into a
         /// module that said so.
         pub fn open(bundle_path: &Path) -> Result<Self, String> {
-            let path_bytes = bundle_path.as_os_str().as_encoded_bytes();
             unsafe {
-                let url = CFURLCreateFromFileSystemRepresentation(
-                    std::ptr::null(),
-                    path_bytes.as_ptr(),
-                    path_bytes.len() as isize,
-                    true as u8,
-                );
-                if url.is_null() {
+                let Some(url) = file_system_url(bundle_path) else {
                     return Err(format!(
                         "VST3 bundle path is not a usable URL: {}",
                         bundle_path.display()
                     ));
-                }
+                };
                 let bundle = CFBundleCreate(std::ptr::null(), url);
                 CFRelease(url as CFTypeRef);
                 if bundle.is_null() {

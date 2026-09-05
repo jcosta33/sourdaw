@@ -279,6 +279,16 @@ fn retain_first_plugin_per_identity(plugins: &mut Vec<ScannedPlugin>) {
 /// An empty descriptor id is never a key: a format with no identity of its own
 /// would otherwise have every plugin collide on `""`.
 ///
+/// The most registry keys [`key_scanned_plugins`] writes for one scanned
+/// plugin: its path hash, and its own descriptor id.
+///
+/// `pub(crate)` because the persisted registry multiplies its row cap by it
+/// (`host::plugin_registry_store`). The producer owns the number, so a key this
+/// function starts writing raises that cap in the same edit rather than
+/// silently overflowing a bound restated elsewhere — which would refuse, at
+/// every launch, a document this build's own scan wrote.
+pub(crate) const SCANNED_PLUGIN_KEY_CAPACITY: usize = 2;
+
 /// The one keying rule, so the in-memory lookup table and the persisted
 /// registry cannot come to disagree about which keys resolve a plugin.
 fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
@@ -289,13 +299,19 @@ fn key_scanned_plugins(plugins: &[ScannedPlugin]) -> Vec<ScanRow> {
     plugins
         .iter()
         .map(|plugin| {
-            let mut keys = vec![plugin.id.clone()];
+            let mut keys = Vec::with_capacity(SCANNED_PLUGIN_KEY_CAPACITY);
+            keys.push(plugin.id.clone());
             let takes_descriptor_key = !plugin.descriptor_id.is_empty()
                 && !claimed_primary_keys.contains(plugin.descriptor_id.as_str())
                 && claimed_descriptor_keys.insert(plugin.descriptor_id.clone());
             if takes_descriptor_key {
                 keys.push(plugin.descriptor_id.clone());
             }
+            debug_assert!(
+                keys.len() <= SCANNED_PLUGIN_KEY_CAPACITY,
+                "the registry row cap multiplies by SCANNED_PLUGIN_KEY_CAPACITY, so a plugin \
+                 keyed more times than that writes rows the reader will refuse"
+            );
             ScanRow {
                 keys,
                 plugin: plugin.clone(),
@@ -7968,6 +7984,30 @@ mod tests {
         let entry = registry.get("aaaa1111").expect("path hash resolves");
         assert_eq!(entry.path, "/plugins/aaaa1111.clap");
         assert_eq!(entry.descriptor_id, "com.vendor.reverb");
+    }
+
+    /// The persisted registry's row cap multiplies by
+    /// `SCANNED_PLUGIN_KEY_CAPACITY`, and this is the producer the number
+    /// describes. A cap above what the producer writes wastes nothing, but a
+    /// cap below it makes the reader refuse a document this build's own scan
+    /// wrote — at every launch, with no recovery but deleting the file.
+    ///
+    /// Mutation this catches: moving the constant without moving the keying,
+    /// or keying a plugin an extra way without raising the constant.
+    #[test]
+    fn key_scanned_plugins_fills_the_capacity_the_registry_row_cap_multiplies_by() {
+        let rows = key_scanned_plugins(&[scanned("aaaa1111", "com.vendor.reverb", "clap")]);
+
+        let [row] = rows.as_slice() else {
+            panic!("one scanned plugin is one row, got {}", rows.len());
+        };
+        assert_eq!(
+            row.keys.len(),
+            SCANNED_PLUGIN_KEY_CAPACITY,
+            "a plugin with its own descriptor id takes every key the row cap \
+             budgets for it, got {:?}",
+            row.keys
+        );
     }
 
     #[test]
