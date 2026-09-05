@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 
+import type { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import type { ProjectStoreState } from '../../../../stores/projectStore';
+
+type AudioDurabilityResult = Awaited<ReturnType<typeof ensureCachedAudioBuffersDurable>>;
 
 const RECENT_KEY = 'sourdaw:project:1700000000000';
 
@@ -24,10 +27,22 @@ const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn<() => string>(),
     flushAutomergeStorageWrites: vi.fn<() => void>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
-    buildProjectData: vi.fn<(input?: { includeAudioBuffers?: boolean }) => Promise<{ data: unknown } | null>>(),
+    buildProjectData: vi.fn<
+        (input?: { includeAudioBuffers?: boolean }) => Promise<{
+            data: unknown;
+            requiredAudioBufferIds: readonly string[];
+        } | null>
+    >(),
     captureExternalPluginStates: vi.fn<() => Promise<void>>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
+    ensureCachedAudioBuffersDurable: vi.fn<(ids: readonly string[]) => Promise<AudioDurabilityResult>>(() =>
+        Promise.resolve({ status: 'durable', isCurrent: () => true, release: vi.fn() })
+    ),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -85,7 +100,7 @@ function makeProject(): ProjectStoreState {
     } as unknown as ProjectStoreState;
 }
 
-function makeProjectDataWithSixtySecondsOfStereoAudio(): { data: unknown } {
+function makeProjectDataWithSixtySecondsOfStereoAudio(): { data: unknown; requiredAudioBufferIds: readonly string[] } {
     return {
         data: {
             version: 1,
@@ -99,6 +114,7 @@ function makeProjectDataWithSixtySecondsOfStereoAudio(): { data: unknown } {
                 },
             },
         },
+        requiredAudioBufferIds: ['buffer-1'],
     };
 }
 
@@ -119,6 +135,7 @@ describe('saveProject durability', () => {
         mocks.captureExternalPluginStates.mockResolvedValue(undefined);
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } },
+            requiredAudioBufferIds: [],
         });
     });
 
@@ -175,6 +192,71 @@ describe('saveProject durability', () => {
             'Save failed — your latest changes could not be persisted.',
             'error'
         );
+    });
+
+    it('waits for the required-audio barrier before persisting or clearing dirty', async () => {
+        installFakeIndexedDb();
+        const pending = Promise.withResolvers<{
+            status: 'durable';
+            isCurrent: () => boolean;
+            release: () => void;
+        }>();
+        const release = vi.fn();
+        mocks.buildProjectData.mockResolvedValue({
+            data: { version: 1, meta: { name: 'My Song' } },
+            requiredAudioBufferIds: ['required-buffer'],
+        });
+        mocks.ensureCachedAudioBuffersDurable.mockReturnValueOnce(pending.promise);
+        const saveProject = await importSaveProject();
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith(['required-buffer']));
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+
+        pending.resolve({ status: 'durable', isCurrent: () => true, release });
+        await expect(saving).resolves.toBe(true);
+        expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('reports failure and remains dirty when a required audio source cannot be made durable', async () => {
+        installFakeIndexedDb();
+        mocks.buildProjectData.mockResolvedValue({
+            data: { version: 1, meta: { name: 'My Song' } },
+            requiredAudioBufferIds: ['missing-buffer'],
+        });
+        mocks.ensureCachedAudioBuffersDurable.mockResolvedValueOnce({
+            status: 'failed',
+            failedIds: ['missing-buffer'],
+        });
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
+    it('releases the receipt and refuses completion when audio changes during document persistence', async () => {
+        installFakeIndexedDb();
+        let receiptCurrent = true;
+        const release = vi.fn();
+        mocks.ensureCachedAudioBuffersDurable.mockResolvedValueOnce({
+            status: 'durable',
+            isCurrent: () => receiptCurrent,
+            release,
+        });
+        mocks.persistCrdtProject.mockImplementation(async () => {
+            receiptCurrent = false;
+        });
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+        expect(release).toHaveBeenCalledOnce();
     });
 
     // AC-3. The listed-project-points-at-nothing case: buildProjectData returns
@@ -251,6 +333,7 @@ describe('saveProject durability', () => {
         mocks.buildProjectData.mockImplementation((input) =>
             Promise.resolve({
                 data: input?.includeAudioBuffers === false ? snapshotWithoutAudio : embedAudio(snapshotWithoutAudio),
+                requiredAudioBufferIds: ['buffer-1'],
             })
         );
 

@@ -49,6 +49,23 @@ type PromotionSettlement = {
     settle: () => void;
 };
 
+type ProjectDurabilityWitness = {
+    ids: readonly string[];
+    projectEpoch: number;
+    promotionSequenceById: ReadonlyMap<string, number>;
+    promotionSettlements: readonly Promise<void>[];
+};
+
+type ProjectReservations = {
+    isCurrent: () => boolean;
+    promote: () => void;
+    release: () => void;
+};
+
+type BeginProjectReservationsOptions = {
+    blockPromotions?: boolean;
+};
+
 type PreparedRuntimeSnapshot = {
     buffer: AudioBuffer;
     lastAccessed: number;
@@ -92,6 +109,7 @@ type PreparedAudioBufferLifecycleHost = {
     hasPinnedReservation: (id: string) => boolean;
     hasRuntime: (id: string) => boolean;
     isDurableMutationCurrent: (id: string, generation: number) => boolean;
+    invalidateDurabilitySource: (id: string) => void;
     isValidSerializedBuffer: (data: PreparedSerializedAudioBuffer | undefined) => data is PreparedSerializedAudioBuffer;
     metadataStoreName: string;
     openDatabase: () => Promise<IDBDatabase>;
@@ -177,7 +195,9 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     const activeDiscardCountById = new Map<string, number>();
     const activeReopenTokenById = new Map<string, number>();
     const activePromotionSettlementsById = new Map<string, Set<PromotionSettlement>>();
+    const promotionSequenceById = new Map<string, number>();
     const provisionalProjectReservationCountById = new Map<string, number>();
+    const promotionBlockingReservationCountById = new Map<string, number>();
     const runtimeOwnerById = new Map<string, RuntimeOwner>();
     const projectReservationEpochById = new Map<string, number>();
     const transactions = createPreparedAudioBufferTransactionLedger();
@@ -203,6 +223,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     }
 
     function beginPromotionSettlement(id: string): PromotionSettlement {
+        promotionSequenceById.set(id, (promotionSequenceById.get(id) ?? 0) + 1);
         let settle = (): void => undefined;
         const settled = new Promise<void>((resolve) => {
             settle = resolve;
@@ -270,6 +291,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         transactions.abortAll('promotion');
         transactions.abortAll('reclamation');
         transactions.abortAll('recovery-cleanup');
+        transactions.abortAll('reconciliation');
         for (const [id, owner] of runtimeOwnerById) {
             if (owner.kind === 'reservation') {
                 runtimeOwnerById.delete(id);
@@ -302,6 +324,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         transactions.abort(id, 'persistence');
         transactions.abort(id, 'reclamation');
         transactions.abort(id, 'recovery-cleanup');
+        transactions.abort(id, 'reconciliation');
         transactions.abort(id, 'reopen');
         const runtimeOwner = runtimeOwnerById.get(id);
         if (evictTemporaryRuntime && runtimeOwner?.kind === 'prepared' && runtimeOwner.status === 'temporary') {
@@ -313,12 +336,25 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         return host.hasPinnedReservation(id) || provisionalProjectReservationCountById.has(id);
     }
 
-    function beginProjectReservations(ids: readonly string[]) {
+    function hasPromotionBlockingProjectReservation(id: string): boolean {
+        return promotionBlockingReservationCountById.has(id);
+    }
+
+    function beginProjectReservations(
+        ids: readonly string[],
+        { blockPromotions = false }: BeginProjectReservationsOptions = {}
+    ): ProjectReservations {
         const reservedIds = [...new Set(ids)];
+        const admittedProjectEpoch = projectEpoch;
+        const reservationEpochById = new Map<string, number>();
         let active = true;
         for (const id of reservedIds) {
             provisionalProjectReservationCountById.set(id, (provisionalProjectReservationCountById.get(id) ?? 0) + 1);
+            if (blockPromotions) {
+                promotionBlockingReservationCountById.set(id, (promotionBlockingReservationCountById.get(id) ?? 0) + 1);
+            }
             signalProjectReservation(id, false);
+            reservationEpochById.set(id, projectReservationEpochById.get(id)!);
         }
         const finish = (): void => {
             if (!active) {
@@ -326,6 +362,14 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
             }
             active = false;
             for (const id of reservedIds) {
+                if (blockPromotions) {
+                    const remainingPromotionBlocks = (promotionBlockingReservationCountById.get(id) ?? 1) - 1;
+                    if (remainingPromotionBlocks > 0) {
+                        promotionBlockingReservationCountById.set(id, remainingPromotionBlocks);
+                    } else {
+                        promotionBlockingReservationCountById.delete(id);
+                    }
+                }
                 const remaining = (provisionalProjectReservationCountById.get(id) ?? 1) - 1;
                 if (remaining > 0) {
                     provisionalProjectReservationCountById.set(id, remaining);
@@ -335,7 +379,39 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 clearProjectReservationEpochIfIdle(id);
             }
         };
-        return { promote: finish, release: finish };
+        const isCurrent = (): boolean =>
+            active &&
+            projectEpoch === admittedProjectEpoch &&
+            reservedIds.every(
+                (id) =>
+                    provisionalProjectReservationCountById.has(id) &&
+                    projectReservationEpochById.get(id) === reservationEpochById.get(id)
+            );
+        return { isCurrent, promote: finish, release: finish };
+    }
+
+    function captureProjectDurabilityWitness(ids: readonly string[]): ProjectDurabilityWitness {
+        const uniqueIds = [...new Set(ids)];
+        return {
+            ids: uniqueIds,
+            projectEpoch,
+            promotionSequenceById: new Map(uniqueIds.map((id) => [id, promotionSequenceById.get(id) ?? 0] as const)),
+            promotionSettlements: uniqueIds.flatMap((id) =>
+                [...(activePromotionSettlementsById.get(id) ?? [])].map((settlement) => settlement.settled)
+            ),
+        };
+    }
+
+    function isProjectDurabilityWitnessCurrent(witness: ProjectDurabilityWitness): boolean {
+        return (
+            projectEpoch === witness.projectEpoch &&
+            witness.ids.every((id) => (promotionSequenceById.get(id) ?? 0) === witness.promotionSequenceById.get(id))
+        );
+    }
+
+    async function waitForProjectDurabilityWitness(witness: ProjectDurabilityWitness): Promise<boolean> {
+        await Promise.all(witness.promotionSettlements);
+        return isProjectDurabilityWitnessCurrent(witness);
     }
 
     function isRuntimeSlotAvailable(id: string, leaseId: string): boolean {
@@ -671,9 +747,15 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         }
     }
 
-    async function recoverProjectReservations(ids: readonly string[]): Promise<void> {
+    async function recoverProjectReservations(
+        ids: readonly string[],
+        reservations?: ProjectReservations
+    ): Promise<void> {
         const uniqueIds = [...new Set(ids)];
         if (uniqueIds.length === 0) {
+            return;
+        }
+        if (uniqueIds.some(hasProjectReservation) && reservations?.isCurrent() !== true) {
             return;
         }
         const database = await host.openDatabase();
@@ -768,6 +850,130 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         }
     }
 
+    async function captureProjectRecoveryRevisions(
+        witness: ProjectDurabilityWitness
+    ): Promise<ReadonlyMap<string, string | null> | null> {
+        if (!isProjectDurabilityWitnessCurrent(witness)) {
+            return null;
+        }
+        if (witness.ids.length === 0) {
+            return new Map();
+        }
+        const database = await host.openDatabase();
+        if (!isProjectDurabilityWitnessCurrent(witness)) {
+            return null;
+        }
+        const transaction = database.transaction(host.recoveryStoreName, 'readonly');
+        const recoveryStore = transaction.objectStore(host.recoveryStoreName);
+        const values = await Promise.all(
+            witness.ids.map((id) => awaitPreparedRequest(recoveryStore.get(id) as IDBRequest<unknown>))
+        );
+        await awaitPreparedTransaction(transaction);
+        if (!isProjectDurabilityWitnessCurrent(witness)) {
+            return null;
+        }
+        return new Map(
+            witness.ids.map((id, index) => {
+                const recovery = readPreparedAudioRecoveryRecord(values[index]);
+                return [id, recovery?.id === id ? recovery.revision : null] as const;
+            })
+        );
+    }
+
+    async function recoverCapturedProjectReservations(
+        recoveryRevisions: ReadonlyMap<string, string | null>,
+        witness: ProjectDurabilityWitness,
+        reservations: ProjectReservations
+    ): Promise<'failed' | 'recovered' | 'superseded'> {
+        if (!isProjectDurabilityWitnessCurrent(witness) || !reservations.isCurrent()) {
+            return 'superseded';
+        }
+        const recoveryIds = witness.ids.filter((id) => recoveryRevisions.get(id) !== null);
+        if (recoveryIds.length === 0) {
+            return 'recovered';
+        }
+        let tracked: Array<{ id: string; transaction: PreparedTransaction }> = [];
+        try {
+            const database = await host.openDatabase();
+            if (!isProjectDurabilityWitnessCurrent(witness) || !reservations.isCurrent()) {
+                return 'superseded';
+            }
+            const transaction = database.transaction(
+                [host.bufferStoreName, host.metadataStoreName, host.recoveryStoreName],
+                'readwrite'
+            );
+            tracked = recoveryIds.map((id) => ({
+                id,
+                transaction: transactions.track(id, 'reconciliation', transaction),
+            }));
+            const bufferStore = transaction.objectStore(host.bufferStoreName);
+            const metadataStore = transaction.objectStore(host.metadataStoreName);
+            const recoveryStore = transaction.objectStore(host.recoveryStoreName);
+            const snapshots = await Promise.all(
+                recoveryIds.map(async (id) => {
+                    const [data, metadata, recoveryValue] = await Promise.all([
+                        awaitPreparedRequest(
+                            bufferStore.get(id) as IDBRequest<PreparedSerializedAudioBuffer | undefined>
+                        ),
+                        awaitPreparedRequest(
+                            metadataStore.get(id) as IDBRequest<PreparedAudioBufferMetadata | undefined>
+                        ),
+                        awaitPreparedRequest(recoveryStore.get(id) as IDBRequest<unknown>),
+                    ]);
+                    return { data, id, metadata, recoveryValue };
+                })
+            );
+            if (!isProjectDurabilityWitnessCurrent(witness) || !reservations.isCurrent()) {
+                try {
+                    await abortPreparedTransaction(transaction);
+                } catch {
+                    // Expected abort after a project/source reservation supersedes this recovery.
+                }
+                return 'superseded';
+            }
+            for (const snapshot of snapshots) {
+                const recovery = readPreparedAudioRecoveryRecord(snapshot.recoveryValue);
+                const actualRevision = recovery?.id === snapshot.id ? recovery.revision : null;
+                if (actualRevision !== recoveryRevisions.get(snapshot.id)) {
+                    try {
+                        await abortPreparedTransaction(transaction);
+                    } catch {
+                        // The recovery source changed after admission.
+                    }
+                    return 'superseded';
+                }
+                if (
+                    snapshot.data !== undefined ||
+                    snapshot.metadata !== undefined ||
+                    recovery === null ||
+                    actualRevision === null
+                ) {
+                    continue;
+                }
+                const owner = readPreparedOwner(recovery.metadata);
+                if (
+                    owner === null ||
+                    owner === 'invalid' ||
+                    owner.status !== 'project-owned' ||
+                    requiresPromotionReconciliation(owner)
+                ) {
+                    continue;
+                }
+                bufferStore.put(recovery.data, snapshot.id);
+                metadataStore.put(recovery.metadata, snapshot.id);
+                recoveryStore.delete(snapshot.id);
+            }
+            await awaitPreparedTransaction(transaction);
+            return isProjectDurabilityWitnessCurrent(witness) && reservations.isCurrent() ? 'recovered' : 'superseded';
+        } catch {
+            return isProjectDurabilityWitnessCurrent(witness) && reservations.isCurrent() ? 'failed' : 'superseded';
+        } finally {
+            for (const entry of tracked) {
+                transactions.untrack(entry.id, entry.transaction);
+            }
+        }
+    }
+
     async function readPreparedRuntimeSnapshot(
         id: string,
         leaseId: string
@@ -814,6 +1020,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         }
         transactions.abort(id, 'promotion');
         transactions.abort(id, 'reclamation');
+        host.invalidateDurabilitySource(id);
         const admittedOwner = runtimeOwnerById.get(id);
         const admittedToken = nextToken();
         if (admittedOwner?.kind === 'prepared') {
@@ -1128,10 +1335,14 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         if (invalidIdentity) {
             return { status: 'failed' as const, reason: invalidIdentity };
         }
-        if (disposition === 'discard' && hasProjectReservation(id)) {
+        if (
+            (disposition === 'discard' && hasProjectReservation(id)) ||
+            (disposition === 'project-owned' && hasPromotionBlockingProjectReservation(id))
+        ) {
             return { status: 'failed' as const, reason: 'Prepared audio buffer ID is reserved by the project.' };
         }
         if (disposition === 'discard') {
+            host.invalidateDurabilitySource(id);
             beginDiscardAttempt(id);
         }
         const admittedProjectEpoch = projectEpoch;
@@ -1643,11 +1854,14 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
     return {
         beginProjectTransition,
         beginProjectReservations,
+        captureProjectDurabilityWitness,
+        captureProjectRecoveryRevisions,
         captureTemporaryPublications,
         collectRecoveries,
         evictCapturedTemporaryPublication,
         persist,
         readPreparedOwner,
+        recoverCapturedProjectReservations,
         recoverProjectReservations,
         reclaimOrphans,
         recordOrdinaryRuntimeMutation,
@@ -1656,5 +1870,8 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         release,
         reopen,
         shouldSuppressNonLeaseRead,
+        isProjectDurabilityWitnessCurrent,
+        hasProjectReservation,
+        waitForProjectDurabilityWitness,
     };
 }

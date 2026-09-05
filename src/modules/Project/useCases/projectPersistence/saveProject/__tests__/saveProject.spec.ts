@@ -30,8 +30,15 @@ const mocks = vi.hoisted(() => {
         setSemanticContext: vi.fn(),
         clearSemanticContext: vi.fn(),
         writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
+        ensureCachedAudioBuffersDurable: vi.fn(() =>
+            Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+        ),
     };
 });
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
+}));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
@@ -135,7 +142,11 @@ describe('saveProject', () => {
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
-        mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
+        mocks.buildProjectData.mockResolvedValue({
+            data: makeProjectData(),
+            missingBufferCount: 0,
+            requiredAudioBufferIds: [],
+        });
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         mocks.repairState.value = null;

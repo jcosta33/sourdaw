@@ -347,6 +347,29 @@ describe('buildProjectData', () => {
                             {
                                 id: 'track-2',
                                 freezeState: { status: 'frozen', frozenBufferId: 'mixed-buffer' },
+                                alternatives: [
+                                    {
+                                        id: 'alternative-2',
+                                        name: 'Alternative 2',
+                                        clips: [
+                                            {
+                                                id: 'alternative-clip-2',
+                                                trackId: 'track-2',
+                                                name: 'Inactive source',
+                                                startBeat: 0,
+                                                endBeat: 4,
+                                                type: 'audio',
+                                                audioBufferId: 'alternative-buffer',
+                                                fadeInBeats: 0,
+                                                fadeOutBeats: 0,
+                                                gain: 1,
+                                                color: '#fff',
+                                                locked: false,
+                                                muted: false,
+                                            },
+                                        ],
+                                    },
+                                ],
                                 clips: [
                                     {
                                         id: 'clip-2',
@@ -375,14 +398,22 @@ describe('buildProjectData', () => {
             activeArrangementId: 'arrangement-1',
         });
         const buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['QUJD'] };
-        exportCachedAudioBuffersMock.mockResolvedValue({ 'freeze-track-1': buffer, 'mixed-buffer': buffer });
+        exportCachedAudioBuffersMock.mockResolvedValue({
+            'alternative-buffer': buffer,
+            'freeze-track-1': buffer,
+            'mixed-buffer': buffer,
+        });
 
         const built = await buildProjectData({ includeAudioBuffers: true });
 
         expect(built?.data.audioBuffers).toEqual({
+            'alternative-buffer': buffer,
             'freeze-track-1': { ...buffer, freezeProjectId: 1 },
             'mixed-buffer': buffer,
         });
+        expect(new Set(built?.requiredAudioBufferIds)).toEqual(
+            new Set(['alternative-buffer', 'freeze-track-1', 'mixed-buffer'])
+        );
     });
 
     it('serializes the current chord-track read contract into project truth', async () => {

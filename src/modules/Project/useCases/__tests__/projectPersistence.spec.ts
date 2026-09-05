@@ -49,6 +49,9 @@ const mocks = vi.hoisted(() => ({
     getDurableProjectOwnerId: vi.fn<() => string>(() => 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa'),
     migrateAbsoluteMidiNotes: vi.fn<() => void>(),
     readLegacyChordTrackMigration: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(() =>
+        Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+    ),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -161,6 +164,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         cancelPendingAudioBufferImport: vi.fn(),
         getAudioContext: vi.fn(() => ({})),
         prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
+        ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
     };
 });
 
@@ -188,7 +192,10 @@ describe('Project Persistence Use Cases', () => {
         emit.mockClear();
         vi.clearAllMocks();
         installFakeIndexedDb();
-        mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
+        mocks.buildProjectData.mockResolvedValue({
+            data: { version: 1, meta: { name: 'My Song' } },
+            requiredAudioBufferIds: [],
+        });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         mocks.projectStoreValue.value = {
             loading: false,

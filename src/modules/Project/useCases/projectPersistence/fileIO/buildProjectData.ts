@@ -102,12 +102,13 @@ function collectOrdinaryBufferIds(trackState: TrackStoreState | null | undefined
     return ids;
 }
 
-/** Result of serializing the live project: the `ProjectData` snapshot plus the
- * count of referenced audio buffers that could not be embedded (so the export
- * UX can warn the user; the in-app save snapshot ignores it). */
+/** Result of serializing the live project: the `ProjectData` snapshot, the
+ * referenced audio ids that must remain durable, and the count that could not
+ * be embedded (so the export UX can warn the user). */
 export type BuiltProjectData = {
     data: ProjectData;
     missingBufferCount: number;
+    requiredAudioBufferIds: readonly string[];
 };
 
 type BuildProjectDataInput = {
@@ -327,5 +328,5 @@ export async function buildProjectData({
         history: { checkpoints: [] },
     };
 
-    return { data, missingBufferCount };
+    return { data, missingBufferCount, requiredAudioBufferIds: [...allBufferIds] };
 }
