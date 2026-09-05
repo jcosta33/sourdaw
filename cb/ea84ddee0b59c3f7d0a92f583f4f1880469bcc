@@ -1,0 +1,29 @@
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_28abfd94826e36::t_e5a1db43752409 191
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_d7a288466fd16e::t_d8d5c31e82eb1c 180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cbea84ddee0b59c3f7d0a92f583f4f1880469bcc",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d7a288466fd16e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a91d20bcee4aa6e1b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
