@@ -1,0 +1,33 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_81c4807793c1a7 351-365,369,371
+  s_87ab0a2f60ccf8::t_9d57ed8c29bad8 389
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_a53b3977a9e8cc 650,652-664
+  s_87ab0a2f60ccf8::t_328ed4081b4551 495-499
+  s_87ab0a2f60ccf8::t_e17604daf3684f 1010,1020-1022
+  s_87ab0a2f60ccf8::t_f8e6c1c37d319d 490,500,568,588,606,644-649
+  s_87ab0a2f60ccf8::t_434780f6a23083 686-737
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_fec84e17e831fc 523-535
+  s_87ab0a2f60ccf8::t_ea5f24a9435959 637-684
+  s_87ab0a2f60ccf8::t_2406d2254023fb 252-335
+  s_87ab0a2f60ccf8::t_1738d06e37b672 602-636,685-713
+.agents/skills/review-stances/project-integrity.md
+  s_87ab0a2f60ccf8::t_4d5d0162443fe7 55-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7bf62df49d391869d67d3d1ac5d0a95c22d8210c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
