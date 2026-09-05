@@ -9,6 +9,9 @@ describe('ACTION_LABELS', () => {
         expect(ACTION_LABELS.addTrack).toBe('Add track');
         expect(ACTION_LABELS.togglePlayback).toBe('Play/pause');
         expect(ACTION_LABELS.undo).toBe('Undo');
+        // #3623 — cutClip refusals describe through this map; a missing entry
+        // surfaces the raw action token in the user-facing warning.
+        expect(ACTION_LABELS.cutClip).toBe('Cut clip');
     });
 });
 

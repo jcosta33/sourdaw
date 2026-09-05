@@ -175,6 +175,8 @@ export const TrackListView = ({
             }
         } else if (event.key === 'Enter' && selectedTrackId) {
             event.preventDefault();
+            // Claim the key: it would otherwise bubble to the window layer, where Enter also stops playback.
+            event.stopPropagation();
             setWorkspaceMode('clip');
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
             if (selectedTrackId) {

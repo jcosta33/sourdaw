@@ -179,6 +179,13 @@ vi.mock('../../trackShortcuts/duplicateTrack', () => ({ duplicateTrack: vi.fn() 
 const realCommandUseCases =
     await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
 
+// The default-binding test drives the shipped `defaultKeys` — this file mocks
+// the shortcut store — so the real combo meets the same `matches()` scan
+// production runs.
+const realShortcutStoreModule = await vi.importActual<typeof import('../../../../stores/shortcutStore')>(
+    '../../../../stores/shortcutStore'
+);
+
 const notificationEventBusMock = {
     emit: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(() => () => undefined),
@@ -468,6 +475,27 @@ describe('handleKeydown', () => {
 
             expect(prevent).toBe(true);
             expect(toggleCommandPalette).toHaveBeenCalledTimes(1);
+        });
+
+        it('fires deleteTimeRange from its shipped default keys on mod+Backspace', () => {
+            // #3619 — the shipped combo once read `mod+backspace`, which the
+            // case-sensitive multi-char match can never hit: the browser
+            // reports the key as `Backspace`.
+            const realState = realShortcutStoreModule.shortcutStore.value;
+            if (!realState) {
+                throw new Error('expected the shipped shortcut definitions');
+            }
+            const realDefinition = realState.definitions.find((def) => def.id === 'arrangement.deleteTimeRange');
+            if (!realDefinition) {
+                throw new Error('expected the shipped arrangement.deleteTimeRange definition');
+            }
+            shortcutStoreMock.value.definitions = [realDefinition];
+            clipSelectionStoreMock.value.marqueeSelection = { startBeat: 1, endBeat: 5, trackIds: ['t1'] };
+
+            const prevent = handleKeydown(descriptor({ key: 'Backspace', mod: true }));
+
+            expect(prevent).toBe(true);
+            expect(deleteTimeRange).toHaveBeenCalledWith(1, 5, ['t1']);
         });
     });
 

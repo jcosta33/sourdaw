@@ -33,6 +33,7 @@ export const ACTION_LABELS: Record<string, string> = {
     toggleInspector: 'Toggle inspector',
     setEditingTool: 'Set tool',
     duplicateClip: 'Duplicate clip',
+    cutClip: 'Cut clip',
     removeClip: 'Remove clip',
     trimClipStart: 'Trim start',
     trimClipEnd: 'Trim end',
