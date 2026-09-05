@@ -1,0 +1,16 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationContextMenu.tsx
+  h_1228e573df1f42 46
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationContextMenu.spec.tsx
+  h_1228e573df1f42 88-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a10cd885c21e7de01846d7f6e0688226c036a770",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
