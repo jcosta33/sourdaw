@@ -288,6 +288,7 @@ describe('agent project model contract', () => {
             data: projectData(),
             missingBufferCount: 0,
             requiredAudioBufferIds: ['buffer-1', 'freeze-1'],
+            snapshotRevision: 'snapshot-revision',
         });
 
         const contract = await getAgentProjectModelContract();

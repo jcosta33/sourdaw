@@ -116,18 +116,31 @@ describe('saveProject audio durability integration', () => {
     afterEach(async () => {
         const { stopActiveAutoSave } = await import('../../helpers/stopActiveAutoSave');
         stopActiveAutoSave();
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
 
     it('refuses failed PCM writes, retries exact sources, and reopens both save paths', async () => {
         const indexedDb = installMultiDatabaseIndexedDb();
+        const buildProjectDataModule = await import('../../fileIO/buildProjectData');
+        const realBuildProjectData = buildProjectDataModule.buildProjectData;
+        let queuedSnapshotEdit: (() => void) | undefined;
+        vi.spyOn(buildProjectDataModule, 'buildProjectData').mockImplementation((...args) => {
+            const built = realBuildProjectData(...args);
+            const edit = queuedSnapshotEdit;
+            if (edit) {
+                queuedSnapshotEdit = undefined;
+                queueMicrotask(edit);
+            }
+            return built;
+        });
         const [
             { audioEngine, clearRuntimeCachedAudioBuffers, getCachedAudioBuffer, restoreCachedAudioBuffersFromIdb },
-            { importAudioFile },
+            { importAudioFile, renameTrack },
             project,
             { projectStore },
             { trackStore },
-            { resetCrdtProjectAuthority },
+            { registerCrdtStorageRuntime, resetCrdtProjectAuthority },
             { resetModuleStoresToDefault },
             { createFreshProjectMetadata },
             { configureCollaborationAssetOwner },
@@ -150,6 +163,7 @@ describe('saveProject audio durability integration', () => {
         context.decodeAudioData = (bytes) => Promise.resolve(decodeMonoWave(bytes));
         await restoreCachedAudioBuffersFromIdb({ audioContext: context });
 
+        registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetCrdtProjectAuthority('Durability');
@@ -190,6 +204,21 @@ describe('saveProject audio durability integration', () => {
         expect(workingSamples).toEqual(PCM);
 
         indexedDb.allowAudioWrites();
+        const importedTrack = trackStore.value?.tracks.find((track) =>
+            track.clips.some((clip) => clip.id === importedClip?.id)
+        );
+        if (!importedTrack) {
+            throw new Error('expected the imported clip to belong to a live track');
+        }
+        const queuedTrackName = 'Edited after snapshot construction';
+        queuedSnapshotEdit = () => renameTrack(importedTrack.id, queuedTrackName);
+        expect(await project.saveProject()).toBe(false);
+        expect(projectStore.value?.dirty).toBe(true);
+        expect(trackStore.value?.tracks.find((track) => track.id === importedTrack.id)?.name).toBe(queuedTrackName);
+        expect(
+            indexedDb.get('sourdaw-projects', 'projects', project.getProjectSnapshotKey(CREATED_AT))
+        ).toBeUndefined();
+
         expect(await project.saveProject()).toBe(true);
         expect(projectStore.value?.dirty).toBe(false);
         expect(indexedDb.get('sourdaw-audio', 'buffers', bufferId)).toBeDefined();

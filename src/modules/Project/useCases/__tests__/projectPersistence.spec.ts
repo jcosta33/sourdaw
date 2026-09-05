@@ -10,8 +10,8 @@ import { setProjectIdentityTransitionDependencies } from '../projectPersistence/
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
-import type { BuiltProjectData } from '../projectPersistence/fileIO/buildProjectData';
 import type { ProjectStoreState } from '../../stores/projectStore';
+import type { BuiltProjectData } from '../projectPersistence/fileIO/buildProjectData';
 
 const { emit } = vi.hoisted(() => ({
     emit: vi.fn(),
@@ -197,6 +197,7 @@ describe('Project Persistence Use Cases', () => {
             data: { version: 1, meta: { name: 'My Song' } } as BuiltProjectData['data'],
             missingBufferCount: 0,
             requiredAudioBufferIds: [],
+            snapshotRevision: 'saved-revision',
         });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         mocks.projectStoreValue.value = {

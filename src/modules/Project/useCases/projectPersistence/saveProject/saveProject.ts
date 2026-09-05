@@ -114,47 +114,46 @@ export async function saveProject(): Promise<boolean> {
             throw new Error('[saveProject] Project snapshot could not be built');
         }
 
-        // buildProjectData synchronizes the current arrangement projection into
-        // project truth. Flush that known write before capturing the snapshot's
-        // revision so persistCrdtProject cannot make an ordinary save look
-        // concurrent with itself.
+        // buildProjectData binds its snapshot to the revision captured during
+        // synchronous serialization. Flush pending writes here so an edit queued
+        // after construction is visible before this continuation adopts it.
         flushAutomergeStorageWrites();
-        const snapshotRevision = captureProjectRevision();
-        const assertSnapshotContinuation = (): void => {
+        const assertSnapshotContinuation = (requiresAudioReceipt: boolean): void => {
             assertProjectSnapshotAuthority();
             const activeProject = projectStore.value;
             if (
                 !activeProject ||
                 activeProject.createdAt !== persistedProject.createdAt ||
                 activeProject.projectId !== persistedProject.projectId ||
-                captureProjectRevision() !== snapshotRevision ||
-                !audioDurabilityReceipt?.isCurrent()
+                captureProjectRevision() !== built.snapshotRevision ||
+                (requiresAudioReceipt && !audioDurabilityReceipt?.isCurrent())
             ) {
                 throw new Error('[saveProject] Project or audio changed during snapshot persistence');
             }
         };
 
+        assertSnapshotContinuation(false);
         const audioDurability = await ensureCachedAudioBuffersDurable(built.requiredAudioBufferIds);
         if (audioDurability.status !== 'durable') {
             throw new Error('[saveProject] Required audio PCM could not be made durable');
         }
         audioDurabilityReceipt = audioDurability;
-        assertSnapshotContinuation();
+        assertSnapshotContinuation(true);
 
         await persistCrdtProject();
-        assertSnapshotContinuation();
+        assertSnapshotContinuation(true);
 
         // Awaited, so a rejected transaction reaches the catch below rather
         // than being reported as a successful save.
         await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
-        assertSnapshotContinuation();
+        assertSnapshotContinuation(true);
 
         // Only record the recent-projects entry once the snapshot write is
         // observed to have committed for the exact revision it serialized.
         // A newer edit leaves the stale snapshot unadvertised and the project
         // dirty so the next save can replace it.
         addToRecentProjects(persistedProject.name, recentKey);
-        assertSnapshotContinuation();
+        assertSnapshotContinuation(true);
 
         // The CRDT snapshot and named project file above establish the same
         // durable project identity and exact PCM set. Only this receipt may

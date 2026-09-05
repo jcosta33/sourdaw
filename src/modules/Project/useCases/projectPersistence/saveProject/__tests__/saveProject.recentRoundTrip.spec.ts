@@ -181,6 +181,7 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
             data: makeProjectData(),
             missingBufferCount: 0,
             requiredAudioBufferIds: [],
+            snapshotRevision: 'saved-revision',
         });
     });
 

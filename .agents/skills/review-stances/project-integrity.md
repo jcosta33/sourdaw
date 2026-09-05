@@ -28,3 +28,20 @@ The review blind spot was treating an observed write inside the asset repository
 aggregate Save observed it. For any snapshot that replaces embedded data with durable references,
 apply the selective-failure probe above at the aggregate Save boundary. Restore the old success
 path as a mutation; the real import/Save/clear/restore test must fail on Save=true or missing PCM.
+
+## Lesson from the PR #1077 and PR #2822 escape
+
+PR #1077 (`17c4afde8828e5e61e783006e6e907f23ee92db0`) introduced Save's revision guard, but
+captured the revision only after the awaited serializer had already constructed its snapshot. PR
+#2822 (`367a186e970d9f7a27662a08c6bd6653220d232a`) made the pre-persist capture explicit after
+flushing project writes while preserving that post-serializer placement. A synchronous serializer
+wrapped in an async function can return a fulfilled promise, leaving a microtask boundary where a
+queued edit runs before the caller captures its revision; the old snapshot then inherits the new
+revision and can clear dirty.
+
+The serializer's revision must travel with the data it describes. Capture it before reading project
+state, reject the build if it changes across any serializer await, and make Save validate that same
+token before starting persistence. The discriminating probe queues one real owning edit immediately
+after synchronous snapshot construction and before the caller continuation, without adding another
+await. Save must fail and remain dirty or persist a snapshot that includes the edit. Tests that only
+mutate state during CRDT or named-project writes do not cover this boundary.

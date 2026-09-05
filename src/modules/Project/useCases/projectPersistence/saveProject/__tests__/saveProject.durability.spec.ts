@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
         (input?: { includeAudioBuffers?: boolean }) => Promise<{
             data: unknown;
             requiredAudioBufferIds: readonly string[];
+            snapshotRevision: string;
         } | null>
     >(),
     captureExternalPluginStates: vi.fn<() => Promise<void>>(),
@@ -100,7 +101,11 @@ function makeProject(): ProjectStoreState {
     } as unknown as ProjectStoreState;
 }
 
-function makeProjectDataWithSixtySecondsOfStereoAudio(): { data: unknown; requiredAudioBufferIds: readonly string[] } {
+function makeProjectDataWithSixtySecondsOfStereoAudio(): {
+    data: unknown;
+    requiredAudioBufferIds: readonly string[];
+    snapshotRevision: string;
+} {
     return {
         data: {
             version: 1,
@@ -115,6 +120,7 @@ function makeProjectDataWithSixtySecondsOfStereoAudio(): { data: unknown; requir
             },
         },
         requiredAudioBufferIds: ['buffer-1'],
+        snapshotRevision: 'saved-revision',
     };
 }
 
@@ -136,6 +142,7 @@ describe('saveProject durability', () => {
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song', updatedAt: 1700000000000 } },
             requiredAudioBufferIds: [],
+            snapshotRevision: 'saved-revision',
         });
     });
 
@@ -205,6 +212,7 @@ describe('saveProject durability', () => {
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song' } },
             requiredAudioBufferIds: ['required-buffer'],
+            snapshotRevision: 'saved-revision',
         });
         mocks.ensureCachedAudioBuffersDurable.mockReturnValueOnce(pending.promise);
         const saveProject = await importSaveProject();
@@ -225,6 +233,7 @@ describe('saveProject durability', () => {
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song' } },
             requiredAudioBufferIds: requiredIds,
+            snapshotRevision: 'saved-revision',
         });
         mocks.ensureCachedAudioBuffersDurable.mockImplementationOnce(async (ids) => {
             if (ids.includes('second-required-buffer')) {
@@ -247,6 +256,7 @@ describe('saveProject durability', () => {
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song' } },
             requiredAudioBufferIds: ['missing-buffer'],
+            snapshotRevision: 'saved-revision',
         });
         mocks.ensureCachedAudioBuffersDurable.mockResolvedValueOnce({
             status: 'failed',
@@ -324,6 +334,24 @@ describe('saveProject durability', () => {
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
+    it('refuses a snapshot whose serialized revision is already superseded', async () => {
+        installFakeIndexedDb();
+        mocks.buildProjectData.mockResolvedValue({
+            data: { version: 1, meta: { name: 'My Song' } },
+            requiredAudioBufferIds: [],
+            snapshotRevision: 'serialized-revision',
+        });
+        mocks.captureProjectRevision.mockReturnValue('newer-revision');
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.ensureCachedAudioBuffersDurable).not.toHaveBeenCalled();
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
     it('rejects the saved snapshot when project truth changes while it is being written', async () => {
         installFakeIndexedDb();
         mocks.captureProjectRevision
@@ -338,7 +366,7 @@ describe('saveProject durability', () => {
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
     });
 
-    it('captures and persists the revision produced by project serialization', async () => {
+    it('validates the revision produced by project serialization before persistence', async () => {
         installFakeIndexedDb();
         const saveProject = await importSaveProject();
 
@@ -348,9 +376,8 @@ describe('saveProject durability', () => {
         const flushOrder = mocks.flushAutomergeStorageWrites.mock.invocationCallOrder[0];
         const captureOrder = mocks.captureProjectRevision.mock.invocationCallOrder[0];
         const persistOrder = mocks.persistCrdtProject.mock.invocationCallOrder[0];
-        // Build → flush → capture → persist: the explicit flush puts the
-        // serializer's own arrangement synchronization into the baseline. A
-        // later revision change can therefore only be outside the snapshot.
+        // Build returns its own revision. Save flushes queued writes and checks
+        // that revision before it starts either durability barrier.
         expect(buildOrder ?? 0).toBeLessThan(flushOrder ?? 0);
         expect(flushOrder ?? 0).toBeLessThan(captureOrder ?? 0);
         expect(captureOrder ?? 0).toBeLessThan(persistOrder ?? 0);
@@ -383,6 +410,7 @@ describe('saveProject durability', () => {
             Promise.resolve({
                 data: input?.includeAudioBuffers === false ? snapshotWithoutAudio : embedAudio(snapshotWithoutAudio),
                 requiredAudioBufferIds: ['buffer-1'],
+                snapshotRevision: 'saved-revision',
             })
         );
 
