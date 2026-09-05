@@ -17,7 +17,7 @@ peak(l, r) = max(abs(l), abs(r)) : si.smooth(ba.tau2pole(0.005));
 // would close the gate under a sustained signal (review #563).
 // Open flag, peak-held for `hold` seconds: the counter re-arms while the
 // peak is above threshold and counts down afterwards.
-open_held(p) = ba.if(counter > 0, 1.0, 0.0)
+open_held(p) = max(raw, ba.if(counter > 0, 1.0, 0.0))
 with {
     raw = ba.if(p > ba.db2linear(thresh), 1.0, 0.0);
     hold_samples = float(int(hold * ma.SR));
