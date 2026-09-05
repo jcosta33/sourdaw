@@ -63,6 +63,9 @@ test.describe('BrowserAi panels — ModelManagerPanel state change', () => {
         // modelManagerAdmission installs for this URL.
         await page.route(KOKORO_DOWNLOAD_URL, (route) => route.abort('failed'));
 
+        const page_errors: Error[] = [];
+        page.on('pageerror', (error) => page_errors.push(error));
+
         // State change: the click drives downloadModel, whose fetch is aborted
         // by the route. After the download manager's bounded retries exhaust,
         // updateModelStatus lands the row in the 'error' state.
@@ -81,6 +84,16 @@ test.describe('BrowserAi panels — ModelManagerPanel state change', () => {
         // progress bar — both left with the states that preceded the failure.
         await expect(downloadButton).toHaveCount(0);
         await expect(page.getByRole('progressbar', { name: /Downloading Kokoro-82M \(q8f16\):/ })).toHaveCount(0);
+
+        expect(page_errors).toHaveLength(0);
+
+        // Retry follows the same bounded abort path and must settle back into
+        // the terminal failure state without leaking a browser page error.
+        await retryButton.click();
+        await expect(page.getByRole('progressbar', { name: /Downloading Kokoro-82M \(q8f16\):/ })).toBeVisible();
+        await expect(failedBadge).toBeVisible({ timeout: 15_000 });
+        await expect(retryButton).toBeVisible();
+        expect(page_errors).toHaveLength(0);
     });
 
     test('CapabilityReportPanel surfaces a resolved capability verdict after boot detection', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 
@@ -73,6 +73,10 @@ function create_base_registry(): ModelRegistryState {
 }
 
 describe('ModelManagerPanel', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         release_gate.ddsp = true;
@@ -250,6 +254,49 @@ describe('ModelManagerPanel', () => {
         });
     });
 
+    it('should log an error when the initial Kokoro download fails', async () => {
+        mocks.registryState = create_base_registry();
+        const download_failure = new Error('model fetch denied');
+        use_case_mocks.downloadModel.mockRejectedValue(download_failure);
+        const logger_error_spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+        render(<ModelManagerPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /Download Kokoro-82M \(q8f16\)/ }));
+
+        await vi.waitFor(() => {
+            expect(logger_error_spy).toHaveBeenCalledTimes(1);
+        });
+        const logged = logger_error_spy.mock.calls[0]?.[0];
+        if (!(logged instanceof Error)) {
+            throw new Error('Expected logger.error to receive an Error');
+        }
+        expect(logged.message).toContain(`Failed to download model "${KOKORO_MODEL_ENTRY.id}"`);
+        expect(logged.cause).toBe(download_failure);
+    });
+
+    it('should log an error when retrying the Kokoro download fails', async () => {
+        mocks.registryState = {
+            ...create_base_registry(),
+            kokoroModel: { ...KOKORO_MODEL_ENTRY, status: 'error', downloadProgress: 0 },
+        };
+        const download_failure = new Error('retry fetch denied');
+        use_case_mocks.downloadModel.mockRejectedValue(download_failure);
+        const logger_error_spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+
+        render(<ModelManagerPanel />);
+        fireEvent.click(screen.getByRole('button', { name: 'Retry downloading Kokoro-82M (q8f16)' }));
+
+        await vi.waitFor(() => {
+            expect(logger_error_spy).toHaveBeenCalledTimes(1);
+        });
+        const logged = logger_error_spy.mock.calls[0]?.[0];
+        if (!(logged instanceof Error)) {
+            throw new Error('Expected logger.error to receive an Error');
+        }
+        expect(logged.message).toContain(`Failed to download model "${KOKORO_MODEL_ENTRY.id}"`);
+        expect(logged.cause).toBe(download_failure);
+    });
+
     it('should render a Kokoro download progress bar while downloading', () => {
         mocks.registryState = {
             ...create_base_registry(),
@@ -297,11 +344,12 @@ describe('ModelManagerPanel', () => {
         await vi.waitFor(() => {
             expect(logger_error_spy).toHaveBeenCalledTimes(1);
         });
-        const logged = logger_error_spy.mock.calls[0]?.[0] as Error;
+        const logged = logger_error_spy.mock.calls[0]?.[0];
+        if (!(logged instanceof Error)) {
+            throw new Error('Expected logger.error to receive an Error');
+        }
         expect(logged.message).toContain(`Failed to remove model "${KOKORO_MODEL_ENTRY.id}"`);
         expect(logged.cause).toBe(removal_failure);
-
-        logger_error_spy.mockRestore();
     });
 
     it('should flag storage usage near the 2 GB limit', () => {
