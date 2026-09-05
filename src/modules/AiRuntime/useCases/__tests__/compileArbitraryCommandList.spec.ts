@@ -4881,7 +4881,38 @@ describe('compileArbitraryCommandList', () => {
                 context: deviceContext,
                 revision: 'revision-created-device-parameter',
             })
-        ).toMatchObject({ status: 'rejected' });
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'Structured command compiler evidence order or dependencies are invalid.',
+        });
+
+        const unsupportedParameter = structuredClone(result.compilerEvidence);
+        const unsupportedParameterCommand = unsupportedParameter.commands[2];
+        const unsupportedParameterItem = unsupportedParameter.items[2];
+        if (unsupportedParameterCommand === undefined || unsupportedParameterItem === undefined) {
+            throw new Error('Expected a parameter command and item to tamper with');
+        }
+        unsupportedParameter.commands[2] = {
+            ...unsupportedParameterCommand,
+            arguments: { deviceId: '$radio', paramId: 'unknown-parameter', value: 1 },
+        };
+        unsupportedParameter.items[2] = {
+            ...unsupportedParameterItem,
+            declaredCommandIdentities: [
+                '{"arguments":{"deviceId":"$radio","paramId":"unknown-parameter","value":1},"name":"setDeviceParameter"}',
+            ],
+        };
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: unsupportedParameter,
+                calls: unsupportedParameter.commands,
+                context: deviceContext,
+                revision: 'revision-created-device-parameter',
+            })
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'Structured command compiler evidence batch-local device parameter is invalid.',
+        });
 
         const tamperedDependency = structuredClone(result.compilerEvidence);
         const parameterItem = tamperedDependency.items[2];
