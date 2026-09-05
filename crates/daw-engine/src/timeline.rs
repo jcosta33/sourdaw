@@ -2126,20 +2126,6 @@ impl TimelineGraph {
         );
     }
 
-    /// Render one block of the timeline, summing the master output into
-    /// `master_left` / `master_right`.
-    ///
-    /// `block_start` is the absolute timeline frame of the block's first
-    /// sample, which is what makes clip starts and parameter stamps land on
-    /// the sample they name rather than at a block boundary.
-    ///
-    /// `render_clips` is false while the transport is not playing. The
-    /// playhead stands still then, so a clip under it would re-render the same
-    /// span every callback — a buffer-length loop, and one its pre-fader sends
-    /// would keep pumping into the buses. Every other stage still runs on a
-    /// stopped transport: the device chains, the sends, the buses and the
-    /// master sum drain the tails of what was already sounding, which is what
-    /// a stopped transport does in any DAW.
     /// Re-aim every route's compensation delay so that each summing point
     /// receives every contributor at the same latency.
     ///
@@ -2261,6 +2247,20 @@ impl TimelineGraph {
         );
     }
 
+    /// Render one block of the timeline, summing the master output into
+    /// `master_left` / `master_right`.
+    ///
+    /// `block_start` is the absolute timeline frame of the block's first
+    /// sample, which is what makes clip starts and parameter stamps land on
+    /// the sample they name rather than at a block boundary.
+    ///
+    /// `render_clips` is false while the transport is not playing. The
+    /// playhead stands still then, so a clip under it would re-render the same
+    /// span every callback — a buffer-length loop, and one its pre-fader sends
+    /// would keep pumping into the buses. Every other stage still runs on a
+    /// stopped transport: the device chains, the sends, the buses and the
+    /// master sum drain the tails of what was already sounding, which is what
+    /// a stopped transport does in any DAW.
     pub(crate) fn render(
         &mut self,
         block_start: u64,

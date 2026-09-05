@@ -303,6 +303,44 @@ mod tests {
         assert_eq!(json, r#"{"instance_id":"inst-7","latency_ms":2.5}"#);
     }
 
+    /// The two figures a compensation carries are both `usize`, so nothing but
+    /// a test that reads the command back proves the effect is addressed by the
+    /// id and aimed at the frame count rather than the other way round.
+    #[test]
+    fn publishing_a_compensation_aims_the_named_effect_at_the_declared_frame_count() {
+        let (handle, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        let engine: Engine = Arc::new(Mutex::new(Some(handle)));
+
+        publish_compensation(
+            &engine,
+            "inst-1",
+            LatencyCompensation {
+                effect_id: 7,
+                latency_frames: 441,
+            },
+        );
+
+        let mut published = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            if let daw_engine::scheduler::GraphCommand::SetEffectLatency {
+                effect_id,
+                latency_frames,
+                dry_delay,
+            } = command
+            {
+                published.push((effect_id, latency_frames, dry_delay.is_some()));
+            }
+        }
+
+        assert_eq!(
+            published,
+            vec![(7, 441, true)],
+            "the command names the instance's effect, the latency the plugin reported, and \
+             the dry line a bypassed pass runs at it"
+        );
+    }
+
     #[test]
     fn notifying_before_the_watcher_starts_is_a_no_op() {
         // The sender is only installed by `start`, which no unit test runs; this

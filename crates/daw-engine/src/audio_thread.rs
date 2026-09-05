@@ -2781,6 +2781,10 @@ mod compensation_render_alloc_guards {
         const GROUP_CLIP_ID: usize = 202;
         const GROUP_CLIP_VALUE: f32 = 0.5;
         const HELD_FRAMES: usize = 128;
+        /// The callback each bypass switch is sent on, so the guard covers a
+        /// running device's dry line and a bypassed one's alike.
+        const BYPASS_AT: usize = 1;
+        const UNBYPASS_AT: usize = 2;
 
         let mut harness = CompensationHarness::new();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
@@ -2833,6 +2837,15 @@ mod compensation_render_alloc_guards {
 
         assert_no_alloc(|| {
             for callback in 0..CALLBACKS {
+                // The two passes a dry line takes are different code on the
+                // callback: a running device feeds its line, a bypassed one
+                // reads it. Switching inside the guard puts both under it,
+                // along with the block each switch lands on.
+                match callback {
+                    BYPASS_AT => harness.send(GraphCommand::SetBypass(EFFECT_ID, true)),
+                    UNBYPASS_AT => harness.send(GraphCommand::SetBypass(EFFECT_ID, false)),
+                    _ => {}
+                }
                 harness.renderer.render(&mut data, DEVICE_CHANNELS);
                 let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
                 for (frame, sample) in block.iter_mut().enumerate() {

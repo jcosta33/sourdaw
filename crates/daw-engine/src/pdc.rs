@@ -137,6 +137,19 @@ impl CompensationDelay {
         self.write = 0;
     }
 
+    /// One step round the ring: the only branch either pass over it takes per
+    /// sample, and shared so a fed line and a processed one cannot advance
+    /// differently.
+    #[inline]
+    const fn step(slots: usize, position: usize) -> usize {
+        let next = position + 1;
+        if next == slots {
+            0
+        } else {
+            next
+        }
+    }
+
     /// Delay `frames` of stereo audio in place.
     ///
     /// A line at zero delay is the identity and returns without touching the
@@ -155,14 +168,37 @@ impl CompensationDelay {
             self.right[write] = right[index];
             left[index] = self.left[read];
             right[index] = self.right[read];
-            write += 1;
-            if write == slots {
-                write = 0;
-            }
-            read += 1;
-            if read == slots {
-                read = 0;
-            }
+            write = Self::step(slots, write);
+            read = Self::step(slots, read);
+        }
+        self.write = write;
+    }
+
+    /// Write `frames` of stereo audio into the line and read nothing back.
+    ///
+    /// A dry line is only read while its device is bypassed, but it has to
+    /// hold current audio the instant that bypass is taken. A line left
+    /// standing while its device runs still contains whatever was passing
+    /// through it when the device was last bypassed, and reading that back is
+    /// a burst of stale audio at the switch. Fed on every block the chain
+    /// visits the device, the line always holds the last [`Self::delay`]
+    /// frames of the signal the device was handed, so bypass and un-bypass
+    /// shift nothing and hand back neither silence nor an older take.
+    ///
+    /// A line at zero delay is skipped for the reason [`Self::process`] skips
+    /// it: its caller never reads it, and writing to one would defeat the
+    /// silence [`Self::set_delay`] owes when the line is next aimed.
+    pub(crate) fn feed(&mut self, left: &[f32], right: &[f32], frames: usize) {
+        if self.delay == 0 {
+            return;
+        }
+
+        let slots = self.left.len();
+        let mut write = self.write;
+        for index in 0..frames {
+            self.left[write] = left[index];
+            self.right[write] = right[index];
+            write = Self::step(slots, write);
         }
         self.write = write;
     }
@@ -208,6 +244,56 @@ mod tests {
 
         assert!(delay.set_delay(MAX_COMPENSATION_FRAMES + 1));
         assert_eq!(delay.delay(), MAX_COMPENSATION_FRAMES);
+    }
+
+    /// The line a bypass reads has to hold what the running device was handed,
+    /// so feeding it is what makes the switch seamless rather than a replay of
+    /// whatever passed through the last time the device was bypassed.
+    #[test]
+    fn a_fed_line_hands_back_the_frames_it_was_fed_when_it_is_next_read() {
+        let mut delay = CompensationDelay::new(4);
+        delay.set_delay(4);
+
+        let fed_left = ramp(8);
+        let fed_right = ramp(8);
+        delay.feed(&fed_left, &fed_right, 8);
+
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        delay.process(&mut left, &mut right, 4);
+
+        assert_eq!(
+            left,
+            vec![5.0, 6.0, 7.0, 8.0],
+            "the read picks up on the frame after the last one fed"
+        );
+        assert_eq!(right, left);
+        assert_eq!(
+            (fed_left, fed_right),
+            (ramp(8), ramp(8)),
+            "a feed reads nothing back into the block it was handed"
+        );
+    }
+
+    /// Feeding is the same walk round the ring processing is, so a feed longer
+    /// than the ring leaves exactly the last `capacity` frames standing in it.
+    #[test]
+    fn a_feed_past_the_ring_leaves_the_last_frames_of_it_to_be_read_back() {
+        let mut delay = CompensationDelay::new(4);
+        delay.set_delay(4);
+
+        delay.feed(&ramp(12), &ramp(12), 12);
+
+        let mut left = vec![0.0; 4];
+        let mut right = vec![0.0; 4];
+        delay.process(&mut left, &mut right, 4);
+
+        assert_eq!(
+            left,
+            vec![9.0, 10.0, 11.0, 12.0],
+            "the four frames still in the ring are the four most recently fed"
+        );
+        assert_eq!(right, left);
     }
 
     #[test]

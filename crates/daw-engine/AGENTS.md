@@ -29,6 +29,11 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   bypass never triggers a recompensation. Auditioning one plugin must not move every other route in
   the project — the common professional convention, and the reason the dry line is built with the
   latency rather than with the device.
+- **A dry line is primed while its device runs**: on every block the chain visits a latent device
+  exactly one pass over its dry line happens — a bypassed device reads the line, a running one
+  writes the signal it was handed into it — so the line always holds the last `latency` frames of
+  that strip. Bypass and un-bypass therefore shift no alignment, open no hole of silence, and never
+  replay audio from an earlier part of the session.
 - **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
   real-time diagnostics, alongside the deepest arrival the graph was asked for. A route that could
   not be aligned is reported, never silently misaligned.

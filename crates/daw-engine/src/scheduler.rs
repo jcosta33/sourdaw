@@ -3273,6 +3273,16 @@ impl AudioScheduler {
                 master_visits += 1;
             }
             let effect = &mut self.effects[slot];
+            // Only an effect no track claims belongs on the master insert
+            // chain. One on a track chain already ran over that track's signal
+            // in `render_timeline`, which owns feeding its dry line and
+            // clearing its MIDI exactly as this loop does — so it is decided
+            // ahead of the dry line, which would otherwise be fed twice on one
+            // block and run at half speed.
+            if effect.placement != EffectPlacement::MasterChain {
+                continue;
+            }
+
             // A bridged plugin is driven by `process_audio_bridges` above, from
             // real worklet audio. This standalone chain runs over zeroed
             // scratch, so processing a bridged plugin here would push phantom
@@ -3292,15 +3302,12 @@ impl AudioScheduler {
             // once full and records `scheduler_event_buffer_overflows` — so
             // leaving it alone is a deliberate, observable tradeoff, not an
             // unbounded leak.
+            //
+            // Its dry line is fed all the same. The device is skipped here
+            // rather than bypassed, and a line left standing over the skip
+            // would hand back audio from whenever it last ran.
             if self.bridge_index.lookup(effect.id).is_some() {
-                continue;
-            }
-
-            // Only an effect no track claims belongs on the master insert
-            // chain. One on a track chain already ran over that track's signal
-            // in `render_timeline`, which owns clearing its MIDI exactly as
-            // this loop does.
-            if effect.placement != EffectPlacement::MasterChain {
+                feed_dry_delay(effect, left, right, num_samples);
                 continue;
             }
 
@@ -3309,6 +3316,8 @@ impl AudioScheduler {
                 effect.pending_midi.clear();
                 continue;
             }
+
+            feed_dry_delay(effect, left, right, num_samples);
 
             effect.probability_evaluator.process_midi_with_diagnostics(
                 &mut effect.pending_midi,
@@ -3405,6 +3414,25 @@ fn run_dry_delay(effect: &mut ActiveEffect, left: &mut [f32], right: &mut [f32],
     }
 }
 
+/// Keep a running device's dry line holding the signal that device is handed.
+///
+/// The line is what the next bypass reads back, so it has to be current on
+/// every block the chain visits the device. Left standing while the device
+/// runs, it would hand back the audio that was passing through it when the
+/// device was last bypassed — the whole of the first `latency` frames after
+/// the switch — and a line cleared at the switch instead would hand back a
+/// hole of silence. Fed, the switch moves nothing at all.
+///
+/// Exactly one of this and [`run_dry_delay`] runs per device per block: the
+/// bypassed pass reads the line and writes it in the same walk, so a feed
+/// beside it would advance the ring twice and halve the delay.
+#[inline]
+fn feed_dry_delay(effect: &mut ActiveEffect, left: &[f32], right: &[f32], frames: usize) {
+    if let Some(delay) = effect.dry_delay.as_mut() {
+        delay.feed(left, right, frames);
+    }
+}
+
 /// Runs one track's device chain over that track's signal.
 ///
 /// The effects stay in the scheduler's id-indexed table alongside their
@@ -3428,22 +3456,27 @@ struct TrackDeviceChain<'a> {
 
 impl DeviceChain for TrackDeviceChain<'_> {
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize) {
-        // While the monitor is shadowed the app is what the user hears, and a
-        // bridged plugin is driven from the app's own audio in
-        // `process_audio_bridges`. Running it here as well would push the
-        // strip's signal through the same stateful instance on a second path.
-        // Once the monitor is audible this chain owns the instance instead, and
-        // the bridge returns its blocks untouched.
-        if self.monitor_shadowed && self.bridge_index.lookup(effect_id).is_some() {
-            return;
-        }
-
+        // The effect is resolved ahead of every early-out, because a device
+        // this chain skips still owns a dry line the next bypass will read.
         let Some(slot) = self.effect_index.lookup(effect_id) else {
             return;
         };
         let Some(effect) = self.effects.get_mut(slot) else {
             return;
         };
+
+        // While the monitor is shadowed the app is what the user hears, and a
+        // bridged plugin is driven from the app's own audio in
+        // `process_audio_bridges`. Running it here as well would push the
+        // strip's signal through the same stateful instance on a second path.
+        // Once the monitor is audible this chain owns the instance instead, and
+        // the bridge returns its blocks untouched. The dry line is fed over the
+        // skip all the same: a line left standing hands back audio from
+        // whenever it last ran.
+        if self.monitor_shadowed && self.bridge_index.lookup(effect_id).is_some() {
+            feed_dry_delay(effect, left, right, frames);
+            return;
+        }
 
         if effect.bypassed {
             // Same contract as the master chain: a bypassed device passes its
@@ -3453,6 +3486,8 @@ impl DeviceChain for TrackDeviceChain<'_> {
             effect.pending_midi.clear();
             return;
         }
+
+        feed_dry_delay(effect, left, right, frames);
 
         effect.probability_evaluator.process_midi_with_diagnostics(
             &mut effect.pending_midi,
@@ -9262,9 +9297,20 @@ mod timeline_tests {
 
         harness.render(16);
         harness.send(GraphCommand::SetBypass(900, true));
-        // The dry line starts empty, so the switch itself costs one block of
-        // fill. What must not move is where the track sits once it has filled.
-        harness.render(16);
+
+        // The device ran on the block before, and its dry line was fed the
+        // signal it was handed, so the line already holds the last LATENCY
+        // frames of the ramp. The switch reads straight on from where the
+        // device left off: no hole and no jump on the block it happens.
+        let (across_the_switch, _) = harness.render(16);
+        let aligned_across: Vec<f32> = delayed_ramp(16, 16, LATENCY)
+            .iter()
+            .map(|sample| sample * 2.0)
+            .collect();
+        assert_eq!(
+            across_the_switch, aligned_across,
+            "the block the bypass lands on continues the ramp rather than costing a block of fill"
+        );
 
         let (left, _) = harness.render(32);
         let aligned: Vec<f32> = delayed_ramp(32, 32, LATENCY)
@@ -9275,6 +9321,57 @@ mod timeline_tests {
             left, aligned,
             "a bypassed latent device runs its dry line, so the mix does not move"
         );
+    }
+
+    /// A dry line only reads while its device is bypassed, but it has to be
+    /// written on every block the chain visits the device: left standing while
+    /// the device runs, it replays the audio that was passing through it when
+    /// the device was last bypassed. Auditioning a plugin over a passage and
+    /// switching it back out would burst the start of that passage into the
+    /// mix.
+    #[test]
+    fn a_device_bypassed_again_after_running_reads_current_audio_rather_than_the_last_bypass() {
+        const LATENCY: usize = 7;
+        const ONSET: u64 = 64;
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        // Silent until ONSET, so the audio standing in the line during the
+        // first bypass and the audio passing through it later are different
+        // numbers rather than the same constant.
+        harness.send(GraphCommand::AddClip(
+            1,
+            TimelineClip::new(
+                101,
+                vec![1.0; 192].into(),
+                [].into(),
+                placement(ONSET, 0, 192),
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+
+        // Bypassed over the silent passage: the line fills with silence.
+        harness.send(GraphCommand::SetBypass(900, true));
+        harness.render(16);
+        harness.render(16);
+
+        // Then the device runs, across the onset and for two blocks past it.
+        harness.send(GraphCommand::SetBypass(900, false));
+        for _ in 0..4 {
+            harness.render(16);
+        }
+
+        harness.send(GraphCommand::SetBypass(900, true));
+        let (left, right) = harness.render(16);
+
+        assert_eq!(
+            left,
+            vec![1.0; 16],
+            "the line hands back the material the device was being fed, not the silence \
+             it last held while bypassed"
+        );
+        assert_eq!(right, left);
     }
 
     /// A send is a second route out of a track, and it sums somewhere else. It
@@ -9586,5 +9683,45 @@ mod timeline_tests {
         let mut expected = vec![2.0; 16];
         expected[..FIRST_HOP + SECOND_HOP].fill(0.0);
         assert_eq!(left, expected);
+    }
+
+    /// A send lands on a bus's input, and that bus's own arrival carries on to
+    /// whatever it feeds. A send aimed at a bus that is itself a contributor
+    /// rather than the last stop is two hops from the master, and every hop
+    /// has to be on the path the graph compensates.
+    #[test]
+    fn a_send_into_a_bus_feeding_another_bus_lands_with_the_track_beside_it() {
+        const LATENCY: usize = 7;
+        const SEND_LEVEL: f32 = 0.5;
+        const ALIGNED: f32 = 2.0 + SEND_LEVEL;
+        let mut harness = Harness::new(64);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 128);
+        track_with_constant_clip(&mut harness, 2, 102, 1.0, 128);
+        harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+        harness.send(GraphCommand::AddBus(TimelineBus::new(51)));
+        harness.send(GraphCommand::SetBusOutput(50, RouteTarget::Bus(51)));
+        insert_latent_device(&mut harness, 1, 900, LATENCY);
+        harness.send(GraphCommand::AddSend {
+            track_id: 1,
+            bus_id: 50,
+            tap: SendTap::PreFader,
+            level: SEND_LEVEL,
+            delay: uncompensated(),
+        });
+
+        let (left, _) = harness.render(16);
+        let mut expected = vec![ALIGNED; 16];
+        expected[..LATENCY].fill(0.0);
+        assert_eq!(
+            left, expected,
+            "the send arrives at the master over both bus hops on the frame the direct \
+             track and the latent track's own output arrive"
+        );
+        assert_eq!(
+            harness.render(16).0,
+            vec![ALIGNED; 16],
+            "past the onset every frame carries all three routes"
+        );
     }
 }
