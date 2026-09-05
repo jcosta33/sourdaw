@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/undoTreeCursorSync.spec.ts
+  s_563dd4c595c37c::t_62399c388be999 6,86-106,151,219-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3da18251f164c70b706993e16582fcbc2b4a36a3",
+  "prompts": {},
+  "sessions": {
+    "s_563dd4c595c37c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a073db-60b3-7d40-ab6d-8a554aee2f5d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
