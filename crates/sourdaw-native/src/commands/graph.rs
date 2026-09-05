@@ -6988,6 +6988,25 @@ mod tests {
         }])
     }
 
+    /// The bus-strip counterpart of `hosted_plugin_strip`: one bus carrying
+    /// one hosted plugin device, so the create-bus-strip `ChainEntry` site
+    /// gets the same coverage the create-track-strip site already has.
+    fn hosted_plugin_bus_strip(contributes_audio: bool) -> Value {
+        json!([{
+            "kind": "create-bus-strip",
+            "busId": "verb",
+            "name": "Reverb",
+            "state": strip_state(0.9),
+            "devices": [
+                { "id": "d-bus-plugin", "name": "Valhalla", "type": "plugin", "bypassed": false,
+                  "parameterValues": {},
+                  "externalPluginId": "com.valhalla.room", "externalInstanceId": "inst-2" }
+            ],
+            "honorMuted": true,
+            "contributesAudio": contributes_audio
+        }])
+    }
+
     /// One attached hosted plugin instance, at the engine plugin id the load
     /// reserved for it, splicing as a plain effect — the category every
     /// existing binding test is about.
@@ -7068,6 +7087,64 @@ mod tests {
         .expect("an attached effect binds on a sounding strip");
 
         assert_eq!(inserted_chain_kinds(&mapped.ops), vec![DeviceKind::Effect]);
+    }
+
+    /// The create-bus-strip `ChainEntry` site (`map_command`'s `CreateBusStrip`
+    /// arm) is a second, distinct call to `insert_device_op` from the
+    /// create-track-strip one above — an attached instrument bound there must
+    /// splice as `Generator` too, or a bus-hosted synth silently loses its
+    /// category the moment it lands on a bus instead of a track.
+    #[test]
+    fn an_engine_owned_instrument_on_a_bus_inserts_as_a_generator() {
+        let mapped = map_batch(
+            &batch(hosted_plugin_bus_strip(true)),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+            &attached_as("inst-2", 1_007, DeviceKind::Generator),
+        )
+        .expect("an attached instrument binds on a sounding bus");
+
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator]
+        );
+    }
+
+    /// The insert-device `ChainEntry` site (`map_command`'s `InsertDevice`
+    /// arm) is the third, and the only one that splices onto a strip already
+    /// built rather than one under construction — an attached instrument
+    /// bound there must splice as `Generator` too.
+    #[test]
+    fn an_engine_owned_instrument_inserted_onto_a_built_strip_splices_as_a_generator() {
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(json!([track_strip("t1")])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("an empty strip should map");
+
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "insert-device", "trackId": "t1", "index": 0,
+                  "device": { "id": "d-plugin", "name": "Pro-Q", "type": "plugin",
+                              "bypassed": false, "parameterValues": {},
+                              "externalPluginId": "com.fabfilter.proq",
+                              "externalInstanceId": "inst-1" } }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached_as("inst-1", 1_007, DeviceKind::Generator),
+        )
+        .expect("an attached instrument binds via insert-device onto a built strip");
+
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator]
+        );
     }
 
     /// An instance the engine does not hold cannot be spliced, so the device

@@ -4411,6 +4411,52 @@ mod tests {
         );
     }
 
+    /// The dormant-attach path is a second route onto the engine record the
+    /// load path above already covers: an instance parked in `state.plugins`
+    /// before an engine existed carries its own scanned `chain_kind`, and
+    /// `attach_one_dormant_plugin` must carry that through to the engine
+    /// record exactly as `register_runtime_with_engine` does for a fresh
+    /// load, or a project reopened before the engine started would silence
+    /// every instrument it holds the moment it attaches.
+    #[test]
+    fn a_dormant_instrument_attaches_as_a_generator() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Dormant Synth", Vec::new(), false);
+        state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available")
+            .insert(
+                "dormant-instrument".to_string(),
+                PluginInstanceData {
+                    plugin: HostedRuntime::from(wrapper),
+                    name: "Dormant Synth".to_string(),
+                    parameters: Vec::new(),
+                    has_gui: false,
+                    chain_kind: DeviceKind::Generator,
+                },
+            );
+
+        attach_dormant_plugins(&state, 1).expect("the dormant instance must reach the engine");
+
+        assert_eq!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .get("dormant-instrument")
+                .expect("the attach must have registered the instance")
+                .chain_kind,
+            DeviceKind::Generator,
+            "a dormant instrument's chain kind must carry through the attach"
+        );
+    }
+
     /// And the attach path does the same, for the same reason.
     ///
     /// It is the worse of the two: `apply_graph_commands` holds the graph

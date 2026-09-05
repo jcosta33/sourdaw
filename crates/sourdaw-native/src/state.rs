@@ -98,9 +98,10 @@ pub struct EnginePluginInstanceData {
     pub has_gui: bool,
     /// How this instance splices into a strip chain — read once off the
     /// registry entry the load resolved (`PluginRegistryEntry::chain_kind`)
-    /// and registered under exactly that, the same way `name` and `parameters`
-    /// are. `map_device` (`commands/graph.rs`) reads it back at splice time so
-    /// an instrument replaces nothing and a plain effect still does.
+    /// and registered under exactly that, the same way `name` is: frozen at
+    /// load, and no rescan updates it. `map_device` (`commands/graph.rs`)
+    /// reads it back at splice time so an instrument replaces nothing and a
+    /// plain effect still does.
     pub chain_kind: DeviceKind,
     /// Main-thread end of this instance's audio bridge.
     ///
@@ -566,7 +567,7 @@ impl PluginRegistryEntry {
 /// `Instrument` sub-categories (`scanner.rs`, `vst3_scanner.rs`); every other
 /// category — including a note effect or an unqueried default — replaces the
 /// chain signal rather than joining it.
-pub(crate) fn chain_kind_for_category(category: &str) -> DeviceKind {
+fn chain_kind_for_category(category: &str) -> DeviceKind {
     if category == "instrument" {
         DeviceKind::Generator
     } else {
