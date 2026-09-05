@@ -1,0 +1,43 @@
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_28abfd94826e36::t_11bb480f8fbe17 15-18,20-24
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_9b530f08172a54::t_267fbe91f8513b 68-69,71-72,74,80-81,83
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_28abfd94826e36::t_5e793f8a3516bd 430-442,454-465,594-595,597-600,610-613
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_28abfd94826e36::t_1a2cd7c6a7addc 471-473,514-515,517
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_87ab0a2f60ccf8::t_f11157e27edaed 3,5,15-25,27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d4406baab073f761509bb54a8449794bec9605d2",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
