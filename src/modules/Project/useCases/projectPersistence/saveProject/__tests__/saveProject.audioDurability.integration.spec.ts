@@ -348,12 +348,27 @@ describe('saveProject audio durability integration', () => {
         expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.2);
 
         indexedDb.allowAudioWrites();
+        const metadataOnlyProject = structuredClone(importedProject);
+        delete metadataOnlyProject.audioBuffers;
+        metadataOnlyProject.meta = {
+            ...metadataOnlyProject.meta,
+            name: 'Retained metadata-only project',
+            createdAt: IMPORTED_CREATED_AT + 50,
+            updatedAt: IMPORTED_CREATED_AT + 50,
+        };
+        const metadataOnlyKey = project.getProjectSnapshotKey(metadataOnlyProject.meta.createdAt);
+        indexedDb.seed('sourdaw-projects', 'projects', metadataOnlyKey, JSON.stringify(metadataOnlyProject));
+
+        await expect(project.loadRecentProject(metadataOnlyKey)).resolves.toBe('committed');
+        expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })?.getChannelData(0)).toEqual(IMPORTED_SOURCE_PCM);
+        expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.2);
+
         expect(await project.saveProject()).toBe(true);
         expect(projectStore.value?.dirty).toBe(false);
         expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.8);
-        const retriedSavedJson = indexedDb.get('sourdaw-projects', 'projects', importedProjectKey);
+        const retriedSavedJson = indexedDb.get('sourdaw-projects', 'projects', metadataOnlyKey);
         if (typeof retriedSavedJson !== 'string') {
-            throw new TypeError('expected the successful retry to persist the named project snapshot');
+            throw new TypeError('expected the successful retry to persist the metadata-only project snapshot');
         }
         expect((JSON.parse(retriedSavedJson) as ProjectData).audioBuffers).toBeUndefined();
 
@@ -371,7 +386,7 @@ describe('saveProject audio durability integration', () => {
             dirty: false,
         });
         expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })).toBeNull();
-        await expect(project.loadRecentProject(importedProjectKey)).resolves.toBe('committed');
+        await expect(project.loadRecentProject(metadataOnlyKey)).resolves.toBe('committed');
         const reopenedImportedClip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
         expect(reopenedImportedClip?.audioBufferId).toBe(IMPORTED_BUFFER_ID);
         expect(getCachedAudioBuffer({ bufferId: IMPORTED_BUFFER_ID })?.getChannelData(0)).toEqual(IMPORTED_SOURCE_PCM);

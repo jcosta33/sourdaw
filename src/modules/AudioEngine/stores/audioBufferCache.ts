@@ -487,9 +487,16 @@ type CachedAudioDurabilitySource = {
     dataFactory: (() => SerializedBuffer) | undefined;
     freezeProjectId: number | undefined;
     isAuthoritative: () => boolean;
+    persistence: Promise<boolean> | undefined;
     revision: number;
     status: 'durable' | 'external' | 'failed' | 'pending' | 'removed' | 'unpersisted';
 };
+
+type RetainedCachedAudioDurabilitySource = Readonly<
+    Pick<CachedAudioDurabilitySource, 'data' | 'dataFactory' | 'freezeProjectId' | 'persistence'> & {
+        status: 'durable' | 'failed' | 'pending' | 'unpersisted';
+    }
+>;
 
 let nextDurabilitySourceRevision = 0;
 const durabilitySourceById = new Map<string, CachedAudioDurabilitySource>();
@@ -558,6 +565,7 @@ function recordCachedAudioDurabilitySource(
         dataFactory: undefined,
         freezeProjectId,
         isAuthoritative: () => true,
+        persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
         status: 'unpersisted',
     };
@@ -577,6 +585,7 @@ function recordLazyCachedAudioDurabilitySource(
         dataFactory,
         freezeProjectId,
         isAuthoritative,
+        persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
         status: 'unpersisted',
     };
@@ -594,6 +603,7 @@ function invalidateCachedAudioDurabilitySource(
         dataFactory: undefined,
         freezeProjectId: undefined,
         isAuthoritative: () => true,
+        persistence: undefined,
         revision: ++nextDurabilitySourceRevision,
         status,
     });
@@ -631,26 +641,27 @@ function trackCachedAudioDurabilityAttempt(
         return Promise.resolve(false);
     }
     source.status = 'pending';
-    const attempt = persistence
-        .then(
-            (persisted) => persisted,
-            () => false
-        )
-        .then((persisted) => {
-            if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
-                return false;
-            }
-            if (persisted) {
-                source.status = 'durable';
-                source.data = undefined;
-                source.dataFactory = undefined;
-                source.attempt = undefined;
-                return true;
-            }
-            source.status = 'failed';
-            source.attempt = undefined;
+    const settlement = persistence.then(
+        (persisted) => persisted,
+        () => false
+    );
+    source.persistence = settlement;
+    const attempt = settlement.then((persisted) => {
+        if (durabilitySourceById.get(id) !== source || !source.isAuthoritative()) {
             return false;
-        });
+        }
+        source.persistence = undefined;
+        if (persisted) {
+            source.status = 'durable';
+            source.data = undefined;
+            source.dataFactory = undefined;
+            source.attempt = undefined;
+            return true;
+        }
+        source.status = 'failed';
+        source.attempt = undefined;
+        return false;
+    });
     source.attempt = attempt;
     return attempt;
 }
@@ -670,6 +681,58 @@ function startCachedAudioDurabilityAttempt(id: string, source: CachedAudioDurabi
         return Promise.resolve(false);
     }
     return trackCachedAudioDurabilityAttempt(id, source, persistSerializedToIdb(id, data, source.freezeProjectId));
+}
+
+function captureRetainedCachedAudioDurabilitySources(
+    retainedIds: ReadonlySet<string>
+): Map<string, RetainedCachedAudioDurabilitySource> {
+    const retainedSources = new Map<string, RetainedCachedAudioDurabilitySource>();
+    for (const id of retainedIds) {
+        if (!cache.has(id)) {
+            continue;
+        }
+        const source = durabilitySourceById.get(id);
+        if (!source || !source.isAuthoritative() || source.status === 'external' || source.status === 'removed') {
+            continue;
+        }
+        retainedSources.set(id, {
+            data: source.data,
+            dataFactory: source.dataFactory,
+            freezeProjectId: source.freezeProjectId,
+            persistence: source.persistence,
+            status: source.status,
+        });
+    }
+    return retainedSources;
+}
+
+function restoreRetainedCachedAudioDurabilitySources(
+    retainedSources: ReadonlyMap<string, RetainedCachedAudioDurabilitySource>
+): void {
+    for (const [id, retained] of retainedSources) {
+        if (!cache.has(id)) {
+            continue;
+        }
+        const source: CachedAudioDurabilitySource = {
+            attempt: undefined,
+            data: retained.data,
+            dataFactory: retained.dataFactory,
+            freezeProjectId: retained.freezeProjectId,
+            isAuthoritative: () => true,
+            persistence: undefined,
+            revision: ++nextDurabilitySourceRevision,
+            status: retained.status,
+        };
+        durabilitySourceById.set(id, source);
+        if (retained.status !== 'pending') {
+            continue;
+        }
+        if (!retained.persistence) {
+            source.status = 'failed';
+            continue;
+        }
+        void trackCachedAudioDurabilityAttempt(id, source, retained.persistence);
+    }
 }
 
 function createRuntimeBuffer(data: SerializedBuffer): AudioBuffer {
@@ -944,6 +1007,7 @@ function evictCachedBuffer(id: string): void {
 }
 
 function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
+    const retainedSources = retainedIds ? captureRetainedCachedAudioDurabilitySources(retainedIds) : undefined;
     preparedAudioBufferLifecycle.beginProjectTransition(retainedIds);
     durabilitySourceById.clear();
     if (retainedIds) {
@@ -953,6 +1017,9 @@ function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
             }
         }
         pinnedBufferIds.clear();
+        if (retainedSources) {
+            restoreRetainedCachedAudioDurabilitySources(retainedSources);
+        }
         return;
     }
     cache.clear();

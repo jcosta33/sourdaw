@@ -52,3 +52,23 @@ writes before it reads project identity, revision, or asset receipts; one flush 
 does not protect later continuations. Hold the named-project transaction and the animation frame,
 invoke a public owning edit, then settle the transaction before the frame. Save must fail and remain
 dirty, and a later Save/reopen must contain the edit.
+
+## Lesson from the PR #3877 retained-source escape
+
+A project replacement may keep a decoded buffer because the incoming project references the same
+ID while still advancing the project epoch and replacing import authority. Clearing the old source
+witness in that transition lets a valid but stale durable row certify newer PCM that survived only
+in memory. Keeping the witness object is also insufficient: even a metadata-only import publishes a
+new candidate, so an imported witness still bound to the previous candidate loses authority.
+
+Treat retained decoded PCM as an explicit source transfer. Capture only authoritative sources whose
+runtime buffers actually survive the lifecycle transition, then re-establish each under a fresh
+source identity with the exact payload, freeze metadata and pending settlement. The fresh identity
+invalidates receipts from the previous project, and a late completion may update it only while it
+still owns the same ID. Removed, evicted and temporary prepared buffers transfer no ordinary source.
+
+The discriminating probe seeds durable PCM A, publishes PCM B under the same ID and fails or holds
+that write, then loads a metadata-only project that retains the decoded ID. Save must observe the
+captured failure, retry B only on a later Save, and cold reopen B rather than A. Repeat with a held
+success and with a same-ID replacement before the old attempt settles; neither an old receipt nor an
+old completion may certify the replacement.

@@ -249,6 +249,90 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.get('failed-buffer')?.getChannelData(0)).toEqual(new Float32Array(values));
     });
 
+    it('retains an exact failed ordinary source across a project replacement that keeps its decoded buffer', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'retained-failed-buffer', [0.2]);
+        controls.abortWritesTo(BUFFER_STORE);
+        audioBufferCache.set('retained-failed-buffer', makeBuffer([0.8]));
+        await flushIndexedDbTasks();
+
+        controls.allowWrites();
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-failed-buffer'] });
+        expect(audioBufferCache.get('retained-failed-buffer')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+
+        const receipt = await expectDurableReceipt(['retained-failed-buffer']);
+        receipt.release();
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['retained-failed-buffer'] });
+        expect(audioBufferCache.get('retained-failed-buffer')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+    });
+
+    it('carries a retained pending failure into the admitted barrier and retries only on a later barrier', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'retained-pending-failure', [0.2]);
+        controls.pauseWriteSettlements();
+        controls.abortNextWrite();
+        audioBufferCache.set('retained-pending-failure', makeBuffer([0.8]));
+        await waitForPendingWrite(controls);
+
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-pending-failure'] });
+        const firstBarrier = audioBufferCache.ensureDurable(['retained-pending-failure']);
+        controls.releaseNextWriteSettlement();
+
+        await expect(firstBarrier).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['retained-pending-failure'],
+        });
+        expect(controls.committed.get('retained-pending-failure')?.channelData[0]?.[0]).toBeCloseTo(0.2);
+
+        const retry = audioBufferCache.ensureDurable(['retained-pending-failure']);
+        const receipt = await settlePromiseWithWrites(retry, controls);
+        expect(receipt.status).toBe('durable');
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['retained-pending-failure'] });
+        expect(audioBufferCache.get('retained-pending-failure')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+    });
+
+    it('carries a retained pending success into the admitted barrier', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        controls.pauseWriteSettlements();
+        audioBufferCache.set('retained-pending-success', makeBuffer([0.8]));
+        await waitForPendingWrite(controls);
+
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-pending-success'] });
+        const durability = audioBufferCache.ensureDurable(['retained-pending-success']);
+        controls.releaseNextWriteSettlement();
+
+        const receipt = await durability;
+        expect(receipt.status).toBe('durable');
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+        expect(controls.writeTransactionCount()).toBe(1);
+    });
+
+    it('does not retain a failed source whose decoded buffer is discarded by the project replacement', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'discarded-failed-buffer', [0.2]);
+        controls.abortWritesTo(BUFFER_STORE);
+        audioBufferCache.set('discarded-failed-buffer', makeBuffer([0.8]));
+        await flushIndexedDbTasks();
+
+        controls.allowWrites();
+        clearRuntimeAudioBufferCache({ retainedIds: ['different-buffer'] });
+        const writeCountBeforeBarrier = controls.writeTransactionCount();
+        const receipt = await expectDurableReceipt(['discarded-failed-buffer']);
+
+        expect(controls.writeTransactionCount()).toBe(writeCountBeforeBarrier);
+        expect(audioBufferCache.has('discarded-failed-buffer')).toBe(false);
+        receipt.release();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['discarded-failed-buffer'] });
+        expect(audioBufferCache.get('discarded-failed-buffer')?.getChannelData(0)[0]).toBeCloseTo(0.2);
+    });
+
     it('retains an ordinary failed source when a stale prepared discard is rejected', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         seedOrdinaryBuffer(controls, 'rejected-discard', [0.2]);
@@ -436,6 +520,19 @@ describe('audio buffer save durability', () => {
         }
     );
 
+    it('invalidates an old receipt when a project transition retains its decoded source', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        audioBufferCache.set('retained-receipt', makeBuffer([0.8]));
+        await vi.waitFor(() => expect(controls.committed.has('retained-receipt')).toBe(true));
+        const receipt = await expectDurableReceipt(['retained-receipt']);
+
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-receipt'] });
+
+        expect(receipt.isCurrent()).toBe(false);
+        expect(audioBufferCache.get('retained-receipt')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+        receipt.release();
+    });
+
     it('invalidates a held receipt when an imported buffer publishes the same ID', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         seedOrdinaryBuffer(controls, 'imported-replacement', [0.2]);
@@ -500,6 +597,118 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.get('imported-replacement')?.getChannelData(0)[0]).toBeCloseTo(0.8);
         expect(audioBufferCache.get('inactive-import')?.getChannelData(0)[0]).toBeCloseTo(0.6);
         receipt.release();
+    });
+
+    it('rebinds a retained imported source when a metadata-only project replaces its import candidate', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'retained-import', [0.2]);
+        const imported = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: ['retained-import'],
+            decodedBuffers: { 'retained-import': makeBuffer([0.8]) },
+            context: testContext(),
+        });
+        if (!imported) {
+            throw new Error('Expected a valid imported audio candidate');
+        }
+        expect(imported.publish()).toBe(1);
+        controls.abortWritesTo(BUFFER_STORE);
+        await expect(imported.persist()).resolves.toBe(false);
+
+        controls.allowWrites();
+        const metadataOnly = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: ['retained-import'],
+            context: testContext(),
+        });
+        if (!metadataOnly) {
+            throw new Error('Expected a valid metadata-only import candidate');
+        }
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-import'] });
+        expect(metadataOnly.publish()).toBe(0);
+
+        const receipt = await expectDurableReceipt(['retained-import']);
+        receipt.release();
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['retained-import'] });
+        expect(audioBufferCache.get('retained-import')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+    });
+
+    it('observes a retained pending import failure after candidate replacement, then retries its exact source', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'retained-pending-import', [0.2]);
+        const imported = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: ['retained-pending-import'],
+            decodedBuffers: { 'retained-pending-import': makeBuffer([0.8]) },
+            context: testContext(),
+        });
+        if (!imported) {
+            throw new Error('Expected a valid imported audio candidate');
+        }
+        expect(imported.publish()).toBe(1);
+        controls.pauseWriteSettlements();
+        const importPersistence = imported.persist();
+        await waitForPendingWrite(controls);
+
+        const metadataOnly = audioBufferCache.importBuffers({
+            buffers: {},
+            cacheIds: ['retained-pending-import'],
+            context: testContext(),
+        });
+        if (!metadataOnly) {
+            throw new Error('Expected a valid metadata-only import candidate');
+        }
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-pending-import'] });
+        expect(metadataOnly.publish()).toBe(0);
+        const firstBarrier = audioBufferCache.ensureDurable(['retained-pending-import']);
+        controls.releaseNextWriteSettlement();
+
+        await expect(importPersistence).resolves.toBe(false);
+        await expect(firstBarrier).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['retained-pending-import'],
+        });
+        expect(controls.writeTransactionCount()).toBe(1);
+
+        const retry = audioBufferCache.ensureDurable(['retained-pending-import']);
+        const receipt = await settlePromiseWithWrites(retry, controls);
+        expect(receipt.status).toBe('durable');
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['retained-pending-import'] });
+        expect(audioBufferCache.get('retained-pending-import')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+    });
+
+    it('does not let a retained old attempt completion certify a later same-ID replacement', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        controls.pauseWriteSettlements();
+        audioBufferCache.set('retained-then-replaced', makeBuffer([0.4]));
+        await waitForPendingWrite(controls);
+        clearRuntimeAudioBufferCache({ retainedIds: ['retained-then-replaced'] });
+
+        audioBufferCache.set('retained-then-replaced', makeBuffer([0.9]));
+        const durability = audioBufferCache.ensureDurable(['retained-then-replaced']);
+        let durabilitySettled = false;
+        void durability.then(() => {
+            durabilitySettled = true;
+        });
+        controls.releaseNextWriteSettlement();
+        await waitForPendingWrite(controls);
+        await flushIndexedDbTasks(2);
+        expect(durabilitySettled).toBe(false);
+
+        controls.releaseNextWriteSettlement();
+        const receipt = await durability;
+        expect(receipt.status).toBe('durable');
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['retained-then-replaced'] });
+        expect(audioBufferCache.get('retained-then-replaced')?.getChannelData(0)[0]).toBeCloseTo(0.9);
     });
 
     it.each(['replacement', 'removal', 'project transition'] as const)(
