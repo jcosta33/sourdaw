@@ -90,7 +90,15 @@ use crate::state::PluginRegistryEntry;
 /// the scan that produced it — which is exactly what the walk now asks of an
 /// unchanged file's row. Same policy as every earlier bump: the document reads
 /// as absent, and the next scan refills it in full.
-const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 5;
+///
+/// Bumped to 6 because a version 5 row persisted a fabricated `has_custom_ui:
+/// false` with no reason beside it for every inspected VST3 plugin: the scan
+/// answered a question it had never asked. `reusable_rows` republishes an
+/// inspected row for as long as its file is unchanged, so those rows would
+/// outlive the fix and keep hiding the editor control the runtime host can
+/// operate. Same policy as every earlier bump: the document reads as absent,
+/// and the next scan refills it.
+const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 6;
 
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
 const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
@@ -1442,12 +1450,12 @@ mod tests {
     }
 
     /// The version gate on its own, with a body this build can parse: only the
-    /// declared version stops it. Version 4 is written literally rather than
+    /// declared version stops it. Version 5 is written literally rather than
     /// derived from the constant, because a test that says
     /// `SCAN_REGISTRY_SCHEMA_VERSION - 1` moves with the constant and can never
     /// notice a bump that was not made.
     ///
-    /// Mutation this catches: leaving `SCAN_REGISTRY_SCHEMA_VERSION` at 4
+    /// Mutation this catches: leaving `SCAN_REGISTRY_SCHEMA_VERSION` at 5
     /// admits this document, and the row hydrates.
     #[test]
     fn a_current_row_labelled_with_the_previous_schema_version_does_not_hydrate() {
@@ -1461,7 +1469,7 @@ mod tests {
         let mut document: PersistedScanRegistry =
             serde_json::from_slice(&fs::read(&location).expect("registry should be readable"))
                 .expect("registry should parse");
-        document.schema_version = 4;
+        document.schema_version = 5;
         fs::write(
             &location,
             serde_json::to_vec(&document).expect("registry should serialize"),
@@ -1478,7 +1486,7 @@ mod tests {
                 .lock()
                 .expect("registry lock")
                 .is_empty(),
-            "the row shape changed under version 5; a document still claiming 4 must read as absent"
+            "the row shape changed under version 6; a document still claiming 5 must read as absent"
         );
     }
 
@@ -1730,7 +1738,7 @@ mod tests {
     /// this file at all.
     #[test]
     fn a_document_read_past_the_byte_bound_is_refused_rather_than_parsed() {
-        let document = br#"{"schema_version":5,"entries":{},"quarantine":{}}"#;
+        let document = br#"{"schema_version":6,"entries":{},"quarantine":{}}"#;
         let document_bytes = document.len() as u64;
 
         assert!(

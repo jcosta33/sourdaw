@@ -81,6 +81,20 @@ pub const CAPABILITY_METADATA_UNAVAILABLE_REASON: &str =
 pub const AUDIO_PORTS_EXTENSION_ABSENT_REASON: &str =
     "This plugin does not implement clap.audio-ports, so it declares no audio ports.";
 
+/// Why a plugin the scanner *did* inspect still reports no editor.
+///
+/// The bounded worker asks a plugin only what it can ask without a window.
+/// Where a format's sole editor query is itself an editor call — one that must
+/// run on the shell's UI thread against a real window host — the worker has
+/// neither, and the runtime host asks the plugin when it loads instead. The
+/// default beside this reason is "not asked", and a caller that reads it as "no
+/// editor" hides an editor the host can open.
+///
+/// It qualifies editor support alone. The port counts beside it are the
+/// inspected instance's own answers.
+pub const EDITOR_SUPPORT_UNQUERIED_REASON: &str =
+    "The scanner did not ask this plugin whether it offers an editor; the host asks the plugin itself when it loads.";
+
 /// Metadata extracted from a single plugin bundle on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScannedPlugin {
@@ -105,9 +119,9 @@ pub struct ScannedPlugin {
     /// and same caveat as `num_inputs`.
     pub num_outputs: u32,
     pub num_parameters: u32,
-    /// Whether the plugin implements `clap.gui`, which is the only way a CLAP
-    /// plugin can offer its own editor. False with a
-    /// `capability_metadata_reason` means "not asked", not "no editor".
+    /// Whether the inspected instance answered that it offers its own editor.
+    /// False is an answer only when no `capability_metadata_reason` covering
+    /// this field is present; with one it means "not asked", not "no editor".
     pub has_custom_ui: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<Vec<ScannedParameterDescriptor>>,
@@ -121,7 +135,9 @@ pub struct ScannedPlugin {
     /// [`CAPABILITY_METADATA_UNAVAILABLE_REASON`] covers all of them: no
     /// inspection ran. [`AUDIO_PORTS_EXTENSION_ABSENT_REASON`] covers the two
     /// port counts only — an instance was inspected and `has_custom_ui` is that
-    /// instance's answer, a queried fact standing beside two defaults. Read the
+    /// instance's answer, a queried fact standing beside two defaults.
+    /// [`EDITOR_SUPPORT_UNQUERIED_REASON`] is its mirror: the port counts are
+    /// the instance's answers and `has_custom_ui` is the default. Read the
     /// reason, not just its presence, before calling a field unmeasured.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_metadata_reason: Option<String>,
@@ -155,9 +171,18 @@ pub struct ScannedInstanceCapabilities {
     /// same as `Some(zero, zero)`, which is a plugin that implements the
     /// extension and declares no ports through it.
     pub audio_channels: Option<ScannedAudioChannelCounts>,
-    /// Whether `clap.gui` is present on the instance. Absence is an answer: a
-    /// CLAP plugin without that extension has no plugin-provided editor.
-    pub has_custom_ui: bool,
+    /// `Some(answer)` when the inspected instance answered the editor
+    /// question. For CLAP that question is whether `clap.gui` is present, and
+    /// absence is itself an answer: a plugin without that extension has no
+    /// plugin-provided editor.
+    ///
+    /// `None` when the scanner did not ask. VST3's only editor query is
+    /// `createView`, an editor call that must run on the shell's UI thread
+    /// against a real window host, and the bounded worker has neither; the
+    /// runtime host asks at load instead. `None` is what keeps that silence
+    /// distinguishable from a `Some(false)`, so it may never be filled in with
+    /// a placeholder.
+    pub has_custom_ui: Option<bool>,
 }
 
 /// A bounded, scan-time CLAP parameter contract. Values are descriptor facts only:
@@ -648,10 +673,11 @@ pub fn scan_directory_bounded(
 /// Why at least one of this plugin's capability fields is not a queried fact,
 /// or `None` when every one of them is.
 ///
-/// Two distinguishable absences, and they are not the same claim: the scanner
-/// never asked, or the scanner asked and the plugin declares no audio ports.
-/// The second one leaves `has_custom_ui` a fact — the instance answered — so
-/// the reason a caller reads decides which fields it qualifies.
+/// Three distinguishable absences, and no two of them are the same claim: the
+/// scanner never inspected the plugin, or it inspected one and the plugin
+/// declares no audio ports, or it inspected one and could not ask the editor
+/// question. Each of the last two leaves the other fields facts, so the reason a
+/// caller reads decides which fields it qualifies.
 fn capability_metadata_reason(
     capabilities: Option<&ScannedInstanceCapabilities>,
 ) -> Option<&'static str> {
@@ -659,6 +685,9 @@ fn capability_metadata_reason(
         None => Some(CAPABILITY_METADATA_UNAVAILABLE_REASON),
         Some(capabilities) if capabilities.audio_channels.is_none() => {
             Some(AUDIO_PORTS_EXTENSION_ABSENT_REASON)
+        }
+        Some(capabilities) if capabilities.has_custom_ui.is_none() => {
+            Some(EDITOR_SUPPORT_UNQUERIED_REASON)
         }
         Some(_) => None,
     }
@@ -741,7 +770,9 @@ fn scanned_plugin_with_id(path: &Path, descriptor: ScannedDescriptor, id: String
             .parameters
             .as_ref()
             .map_or(0, |parameters| parameters.len() as u32),
-        has_custom_ui: capabilities.is_some_and(|capabilities| capabilities.has_custom_ui),
+        has_custom_ui: capabilities
+            .and_then(|capabilities| capabilities.has_custom_ui)
+            .unwrap_or(false),
         parameters: descriptor.parameters,
         parameter_metadata_reason: descriptor.parameter_metadata_reason,
         capability_metadata_reason: capability_metadata_reason(capabilities.as_ref())
@@ -1579,7 +1610,7 @@ unsafe fn extract_instance_metadata_from_factory(
                 parameters: Vec::new(),
                 capabilities: ScannedInstanceCapabilities {
                     audio_channels: None,
-                    has_custom_ui: false,
+                    has_custom_ui: Some(false),
                 },
             });
         };
@@ -1602,7 +1633,7 @@ unsafe fn extract_instance_metadata_from_factory(
                 // extension: the scan worker never creates a window, and
                 // `clap.gui` being there is exactly what the runtime host
                 // (`ClapWrapper::has_gui`) treats as "this plugin has an editor".
-                has_custom_ui: !get_extension(plugin, CLAP_EXT_GUI.as_ptr()).is_null(),
+                has_custom_ui: Some(!get_extension(plugin, CLAP_EXT_GUI.as_ptr()).is_null()),
             },
         })
     })();
@@ -2295,7 +2326,7 @@ mod instance_metadata_tests {
                 outputs: 2
             })
         );
-        assert!(metadata.capabilities.has_custom_ui);
+        assert_eq!(metadata.capabilities.has_custom_ui, Some(true));
         assert_eq!(
             AUDIO_PORT_QUERY_CALLS.load(Ordering::Relaxed),
             3,
@@ -2338,7 +2369,7 @@ mod instance_metadata_tests {
             .expect("a plugin with no extensions is a legal plugin, not a scan failure");
 
         assert_eq!(metadata.capabilities.audio_channels, None);
-        assert!(!metadata.capabilities.has_custom_ui);
+        assert_eq!(metadata.capabilities.has_custom_ui, Some(false));
 
         let scanned = scanned_plugin(
             Path::new("/plugins/Bare.clap"),
@@ -2355,6 +2386,40 @@ mod instance_metadata_tests {
             scanned.capability_metadata_reason.as_deref(),
             Some(AUDIO_PORTS_EXTENSION_ABSENT_REASON),
             "zeros from a plugin that declares no ports must carry the declaration as their reason"
+        );
+    }
+
+    /// An inspected instance the worker could not ask about its editor is a
+    /// fourth state, and publishing it as the third would throw away the port
+    /// counts the worker did measure. `false` here is the wire's only shape for
+    /// "no answer", so the reason beside it is the whole of what tells a caller
+    /// the field is a default — without it the browse list reads a fabricated
+    /// "no editor" and hides a control the runtime host can operate.
+    #[test]
+    fn an_inspected_plugin_the_scanner_could_not_ask_about_its_editor_says_so() {
+        let scanned = scanned_plugin(
+            Path::new("/plugins/Unasked.vst3"),
+            ClapDescriptorMetadata {
+                capabilities: Some(ScannedInstanceCapabilities {
+                    audio_channels: Some(ScannedAudioChannelCounts {
+                        inputs: 1,
+                        outputs: 2,
+                    }),
+                    has_custom_ui: None,
+                }),
+                ..ClapDescriptorMetadata::default()
+            }
+            .into_scanned_descriptor(),
+        );
+
+        assert!(!scanned.has_custom_ui);
+        assert_eq!(scanned.num_inputs, 1);
+        assert_eq!(scanned.num_outputs, 2);
+        assert_eq!(
+            scanned.capability_metadata_reason.as_deref(),
+            Some(EDITOR_SUPPORT_UNQUERIED_REASON),
+            "an unasked editor question must be published as a default with its reason, \
+             never as a queried absence"
         );
     }
 

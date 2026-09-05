@@ -228,17 +228,29 @@ pub fn extract_vst3_instance_metadata(path: &Path) -> Result<ScannedInstance, St
 
     Ok(ScannedInstance {
         parameters,
-        capabilities: ScannedInstanceCapabilities {
-            // Always `Some`: VST3 declares buses on `IComponent` itself, so a
-            // plugin that was inspected at all answered this. There is no
-            // optional extension to be absent, which is what the `None` case
-            // records for CLAP.
-            audio_channels: Some(audio_channel_counts(&instance)),
-            // The editor is not embeddable by this host yet, so claiming one
-            // would put a button in the browser that opens nothing.
-            has_custom_ui: false,
-        },
+        capabilities: vst3_instance_capabilities(audio_channel_counts(&instance)),
     })
+}
+
+/// What one inspected VST3 instance can and cannot be asked.
+///
+/// Buses are declared on `IComponent` itself, so a plugin inspected at all
+/// answered that; there is no optional extension to be absent, which is what the
+/// `None` audio-channels case records for CLAP.
+///
+/// The editor question has no such answer here. VST3 offers only `createView`,
+/// an editor call that must run on the shell's UI thread against a real window
+/// host, and the bounded scan worker is neither — so the scanner does not ask,
+/// and the runtime host asks the plugin when it loads. `None` says that; a
+/// `Some(false)` would claim the plugin has no editor and hide the control that
+/// opens the one it has.
+fn vst3_instance_capabilities(
+    audio_channels: ScannedAudioChannelCounts,
+) -> ScannedInstanceCapabilities {
+    ScannedInstanceCapabilities {
+        audio_channels: Some(audio_channels),
+        has_custom_ui: None,
+    }
 }
 
 /// A scanned parameter descriptor from a live parameter.
@@ -328,6 +340,23 @@ mod tests {
 
     fn categories(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    /// The scan publishes the bus totals it read and leaves the editor
+    /// question open, because it never asked one. A `Some(false)` here reaches
+    /// the rack as a queried "no editor" and removes the control that opens the
+    /// editor the runtime host does implement.
+    #[test]
+    fn an_inspected_instance_publishes_its_buses_and_leaves_its_editor_unqueried() {
+        let channels = ScannedAudioChannelCounts {
+            inputs: 2,
+            outputs: 2,
+        };
+
+        let capabilities = vst3_instance_capabilities(channels);
+
+        assert_eq!(capabilities.audio_channels, Some(channels));
+        assert_eq!(capabilities.has_custom_ui, None);
     }
 
     /// The browser routes instruments differently from effects, so a synth that

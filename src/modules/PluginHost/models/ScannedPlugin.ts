@@ -48,10 +48,10 @@ export type ScannedPlugin = {
     num_outputs: number;
     num_parameters: number;
     /**
-     * Whether the plugin implements `clap.gui`, the only way a CLAP plugin can
-     * offer its own editor. `false` means "not asked" only when
-     * `capability_metadata_reason` is the one that covers this field — see
-     * that field's own note.
+     * Whether the scanned instance answered that it offers its own editor.
+     * `false` is an answer only when no `capability_metadata_reason` covering
+     * this field is present; with one it means "not asked" — see that field's
+     * own note.
      */
     has_custom_ui: boolean;
     /**
@@ -71,8 +71,11 @@ export type ScannedPlugin = {
      * no instance was inspected. "does not implement clap.audio-ports" covers
      * the two port counts only — an instance was inspected to learn that, so
      * `has_custom_ui` beside it is that instance's own answer and a queried
-     * fact. Read the reason, not just its presence, before calling a field
-     * unmeasured.
+     * fact. "did not ask this plugin whether it offers an editor" is that one's
+     * mirror: the port counts are the instance's answers and `has_custom_ui` is
+     * the default, because the format's only editor query is an editor call the
+     * bounded scanner cannot make. Read the reason, not just its presence,
+     * before calling a field unmeasured.
      *
      * A safe scanner disposition; never a plugin-originated diagnostic payload.
      */
