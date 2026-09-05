@@ -201,6 +201,9 @@ describe('GrandBoulePanel', () => {
 
         const [morphTitle] = screen.getAllByText('Morph', { selector: 'div' });
         expect(morphTitle).toBeDefined();
+        if (!morphTitle) {
+            throw new Error('Morph title not found');
+        }
         const morphSection = morphTitle.closest('section');
         expect(morphSection).not.toBeNull();
         expect(morphSection).toHaveClass('shrink-0');
