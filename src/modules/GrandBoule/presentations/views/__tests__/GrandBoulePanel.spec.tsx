@@ -196,9 +196,19 @@ describe('GrandBoulePanel', () => {
         expect(faceplate?.className).not.toContain('overflow-hidden');
     });
 
-    it('keeps the section cards from shrinking when the faceplate is compressed', () => {
+    it('applies shrink-0 to Grand Boule section cards including MorphPanel', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        const cards = document.querySelectorAll('.grand-boule-window.shrink-0');
-        expect(cards.length).toBeGreaterThanOrEqual(5);
+
+        const [morphTitle] = screen.getAllByText('Morph', { selector: 'div' });
+        expect(morphTitle).toBeDefined();
+        const morphSection = morphTitle.closest('section');
+        expect(morphSection).not.toBeNull();
+        expect(morphSection).toHaveClass('shrink-0');
+
+        const sections = document.querySelectorAll('aside > section.grand-boule-window');
+        expect(sections.length).toBe(11);
+        for (const section of sections) {
+            expect(section).toHaveClass('shrink-0');
+        }
     });
 });
