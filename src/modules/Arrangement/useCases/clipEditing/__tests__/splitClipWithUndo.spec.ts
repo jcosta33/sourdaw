@@ -20,6 +20,7 @@ vi.mock('../../../repositories/track/updateClip', () => ({ updateClip: mocks.upd
 vi.mock('../splitClip', () => ({ splitClip: mocks.splitClip }));
 vi.mock('../../clip/removeClip', () => ({ removeClip: mocks.removeClip }));
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
     REDO_NOT_APPLIED: mocks.redoNotApplied,
 }));

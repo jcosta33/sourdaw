@@ -18,6 +18,7 @@ const { executeAppAction } = vi.hoisted(() => ({
 vi.mock('#/modules/Command/useCases', async () => ({
     ...(await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases')),
     executeAppAction: (action: Parameters<typeof executeAppAction>[0]) => executeAppAction(action),
+    executeUserAppAction: vi.fn(),
 }));
 
 const oneEvent = { id: 'c1', beat: 4, duration: 4, root: 0, quality: 'major' };

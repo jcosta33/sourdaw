@@ -23,7 +23,11 @@ vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
     commandParsing.parse.mockImplementation(actual.parseVersionedCommandBatchEnvelope);
-    return { ...actual, parseVersionedCommandBatchEnvelope: commandParsing.parse };
+    return {
+        ...actual,
+        executeUserAppAction: vi.fn(),
+        parseVersionedCommandBatchEnvelope: commandParsing.parse,
+    };
 });
 
 const verse: RenderProjectSectionJobSnapshot = {

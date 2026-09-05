@@ -31,7 +31,10 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
 vi.mock('../reconcileGrandBouleDeviceStateFromProject', () => ({
     reconcileGrandBouleDeviceStateFromProject: mocks.reconcile,

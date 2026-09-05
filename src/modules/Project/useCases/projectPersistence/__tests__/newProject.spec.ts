@@ -117,6 +117,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 // newProject imports clearUndoHistory.
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({

@@ -55,6 +55,7 @@ beforeAll(() => {
 });
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     syncActionReplayMetadata: command_mocks.sync_action_replay_metadata,
 }));
 

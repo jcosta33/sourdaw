@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     getVersionedCommandBatchIdempotentReplay: mocks.getReplay,
     refreshVersionedCommandBatchForApproval: mocks.refreshBatch,
 }));

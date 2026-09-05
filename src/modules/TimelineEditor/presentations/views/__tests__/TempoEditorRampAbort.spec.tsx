@@ -13,7 +13,7 @@ import type { TransportState } from '#/modules/Transport/stores';
  * comes from the consumer, and only this composition shows it. Real
  * `TempoEditor`, real `useTempoEditorState`, real `resolveTempoFieldState`, real
  * `TempoMap` interpolation, real `ValueField`. Only the two store subscriptions,
- * the non-reactive playhead channel, the rAF clock and `executeAppAction` are
+ * the non-reactive playhead channel, the rAF clock and `executeUserAppAction` are
  * substituted — everything that decides what the field shows and whether it may
  * be written is the production code.
  *
@@ -52,7 +52,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
         ...actual,
-        executeAppAction: (...args: unknown[]): unknown => mockExecuteAppAction(...args),
+        executeUserAppAction: (...args: unknown[]): unknown => mockExecuteAppAction(...args),
     };
 });
 

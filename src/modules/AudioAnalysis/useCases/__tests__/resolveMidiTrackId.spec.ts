@@ -11,6 +11,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
 }));
 
 import { resolveMidiTrackId } from '../resolveMidiTrackId';

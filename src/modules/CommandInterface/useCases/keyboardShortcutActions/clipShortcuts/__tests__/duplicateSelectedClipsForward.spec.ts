@@ -42,7 +42,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     removeClip: mockRemoveClip,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({ duplicateClipAutomation: mockDuplicateClipAutomation }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mockPushUndoEntry }));
+vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mockPushUndoEntry, executeUserAppAction: vi.fn() }));
 
 import { duplicateSelectedClipsForward } from '../duplicateSelectedClipsForward';
 

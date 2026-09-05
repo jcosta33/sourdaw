@@ -223,6 +223,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/MIDI/stores', async () => {

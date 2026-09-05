@@ -22,6 +22,7 @@ const transportRuntime = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));
 
