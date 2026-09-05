@@ -128,10 +128,17 @@ export const Fader = ({
     const trackRef = useRef<HTMLDivElement>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
-    /** The value the gesture began from, so the finalizer knows whether the drag moved anything. */
-    const gestureStartValue = useRef(value);
     /** The latest value emitted during the gesture — the one the finalizer commits. */
     const currentValue = useRef(value);
+    /**
+     * Whether this gesture emitted at least one transient sample. A drag that
+     * moves away and returns to its start pixel still moved the cap and drove
+     * the engine with transient samples along the way — `currentValue` landing
+     * back on the value the gesture began from does not mean nothing
+     * happened, so the finalizer cannot use value equality to decide whether
+     * to settle.
+     */
+    const hasEmittedTransient = useRef(false);
     /** audit M-082: the id of the captured pointer, so a finalizer that has no event can still release it. */
     const activePointerIdRef = useRef<number | null>(null);
     const finalizeDragRef = useRef<() => void>(() => {});
@@ -165,9 +172,13 @@ export const Fader = ({
         // The commit that closes the gesture. It is emitted for every way a drag
         // can end — pointerup, cancel, lost capture, blur, tab switch — because a
         // caller that only persists on the commit would otherwise lose the whole
-        // sweep when the OS steals the gesture. A drag that never moved emits
-        // nothing, so a bare click on the cap stays a no-op.
-        if (!Object.is(currentValue.current, gestureStartValue.current)) {
+        // sweep when the OS steals the gesture. Emitted whenever the gesture sent
+        // at least one transient sample, not when the final value differs from the
+        // start: a drag that moves away and returns to its start pixel still drove
+        // the engine through transients and must still settle project truth, even
+        // though `currentValue` lands back on the value the gesture began from. A
+        // bare click on the cap emits no transient and therefore stays a no-op.
+        if (hasEmittedTransient.current) {
             onChange(currentValue.current, false);
         }
         if (pointerId === null || !rootRef.current) {
@@ -207,6 +218,13 @@ export const Fader = ({
         window.addEventListener('blur', handleWindowBlur);
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
+            // A panel switch (e.g. a keyboard shortcut) can unmount the fader
+            // mid-drag without ever firing blur, visibilitychange, or
+            // pointerup. Finalizing here — before the listeners come off —
+            // settles the gesture the same way those paths do; it is a no-op
+            // when no drag is open, since `finalizeDrag` itself guards on
+            // `draggingRef.current`.
+            finalizeDragRef.current();
             window.removeEventListener('blur', handleWindowBlur);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
@@ -214,6 +232,15 @@ export const Fader = ({
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (event.button !== 0 || !trackRef.current) {
+            return;
+        }
+        // A second pointer (touch or pen; a mouse cannot repeat a pointerdown
+        // under capture) pressing while a drag is already open must not reset
+        // this gesture: it would clear `hasEmittedTransient` and steal
+        // `activePointerIdRef`, so the open pointer's later moves keep driving
+        // the engine but its release finalizes with the flag cleared and never
+        // settles. The already-captured pointer keeps the gesture exclusively.
+        if (draggingRef.current) {
             return;
         }
         if (event.altKey) {
@@ -224,10 +251,7 @@ export const Fader = ({
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         setIsDragging(true);
-        // Where the gesture began, not where the press landed: a press on the
-        // groove jumps the value immediately, and that jump is part of what the
-        // finalizer has to commit.
-        gestureStartValue.current = value;
+        hasEmittedTransient.current = false;
 
         const capEl = event.currentTarget.querySelector('[data-role="fader-cap"]');
         const isCapClick = capEl?.contains(event.target as Node);
@@ -237,6 +261,7 @@ export const Fader = ({
             const percent = 1 - (event.clientY - rect.top) / rect.height;
             const newValue = clampAndSnap(min + percent * (max - min));
             onChange(newValue, true);
+            hasEmittedTransient.current = true;
             currentValue.current = newValue;
             startValue.current = newValue;
             startY.current = event.clientY;
@@ -248,7 +273,13 @@ export const Fader = ({
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (!draggingRef.current) {
+        // A second pointer (touch or pen) can move while the first pointer's
+        // drag is still open — its capture belongs to the first pointer, but
+        // React's synthetic pointer events still bubble from the element to
+        // this handler regardless of which pointer moved. Without this check
+        // a second finger sliding across the fader would steer the cap out
+        // from under the pointer that actually owns the gesture.
+        if (!draggingRef.current || event.pointerId !== activePointerIdRef.current) {
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -262,10 +293,33 @@ export const Fader = ({
         newValue = Math.round(newValue / currentStep) * currentStep;
         const clamped = clampAndSnap(newValue);
         currentValue.current = clamped;
+        hasEmittedTransient.current = true;
         onChange(clamped, true);
     };
 
-    const handlePointerUp = () => {
+    // A foreign pointer's release, cancel, or implicit-capture loss all bubble
+    // here — bound to the same element, a second pointer's own pointerup,
+    // pointercancel, or lostpointercapture fires just as readily as the
+    // owning pointer's release, and must not close the owner's still-open
+    // gesture. Measured in Chromium: a second touch that `handlePointerDown`
+    // ignored still gets implicit capture, and still fires `lostpointercapture`
+    // here when it lifts. Compare against the captured pointer before
+    // finalizing. When no drag is open, `activePointerIdRef.current` is `null`
+    // and every real `pointerId` fails the comparison, which is the same
+    // no-op `finalizeDrag` already produces by guarding on
+    // `draggingRef.current`. Only `onBlur` and the window
+    // `blur`/`visibilitychange` listeners finalize unconditionally, because
+    // those carry no `pointerId` at all.
+    const handlePointerInterrupt = (event: PointerEvent<HTMLDivElement>): void => {
+        if (event.pointerId !== activePointerIdRef.current) {
+            return;
+        }
+        finalizeDrag();
+    };
+
+    // `onBlur` carries no `pointerId`, so it finalizes unconditionally — same
+    // as the window `blur`/`visibilitychange` listeners above.
+    const handleForceFinalize = (): void => {
         finalizeDrag();
     };
 
@@ -351,18 +405,20 @@ export const Fader = ({
             aria-valuenow={reportedValue}
             aria-valuetext={valueText}
             className={cn(
-                'relative flex items-center select-none group',
+                'relative flex items-center select-none touch-none group',
+                // `touch-none`: without it a single-finger vertical drag inside a
+                // scrolling strip is a pan candidate, and the browser answers our
+                // capture with `pointercancel` instead of letting the drag scrub.
                 'outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
                 className
             )}
             style={{ height }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            // audit M-082: every non-pointerup end of a drag, not just the happy path.
-            onPointerCancel={handlePointerUp}
-            onLostPointerCapture={handlePointerUp}
-            onBlur={handlePointerUp}
+            onPointerUp={handlePointerInterrupt}
+            onPointerCancel={handlePointerInterrupt}
+            onLostPointerCapture={handlePointerInterrupt}
+            onBlur={handleForceFinalize}
             onKeyDown={handleKeyDown}
             onDoubleClick={handleDoubleClick}
         >
