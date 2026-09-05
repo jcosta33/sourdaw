@@ -62,6 +62,7 @@ type CreateMockHandlerInput<Action extends AppAction> = {
     isNoop?: (action: Action) => boolean;
     materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
     undoable?: boolean;
+    validate?: ActionHandler<Action>['validate'];
 };
 
 type CreateMockHandlerOutput<Action extends AppAction> = MockCommandHandler<Action>;
@@ -75,6 +76,7 @@ function create_mock_handler<Action extends AppAction>({
     isNoop,
     materializeCommandArguments,
     undoable = true,
+    validate,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
         batchExecution,
@@ -85,6 +87,7 @@ function create_mock_handler<Action extends AppAction>({
         undoable,
         isNoop,
         materializeCommandArguments,
+        validate,
     };
 }
 
@@ -978,6 +981,23 @@ describe('executeAppAction', () => {
         expect(metadata?.groupLabel).toBeUndefined();
         expect(undoEntry?.groupId).toBeUndefined();
         expect(undoEntry?.groupLabel).toBeUndefined();
+    });
+
+    it('does not consult validate on the single-action dispatch path', async () => {
+        // validate is a batch co-execution preflight only: a per-clip dispatch
+        // (menu delete, keyboard delete) must execute even while the predicate
+        // refuses, so single-action behavior stays owned by execute's own guards.
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>({
+            validate: () => false,
+            execute: () => ({ status: 'written' as const }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.commitUndoEntry).toHaveBeenCalled();
     });
 
     it('keeps macro recording enabled when only undo-history recording is suppressed', async () => {

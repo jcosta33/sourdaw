@@ -710,7 +710,10 @@ describe('handleKeydown', () => {
             trackStoreMock.value.tracks = [{ id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] }];
             const clipPrevent = handleKeydown(descriptor({ key: 'F1' }));
             expect(clipPrevent).toBe(true);
-            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip-1' } });
+            expect(executeUserAppAction).toHaveBeenCalledWith(
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 1 clip' }
+            );
             expect(clearClipSelection).toHaveBeenCalled();
             expect(removeClip).not.toHaveBeenCalled();
             expect(pushUndoEntry).not.toHaveBeenCalled();
@@ -736,17 +739,47 @@ describe('handleKeydown', () => {
 
             expect(prevent).toBe(true);
             expect(executeUserAppAction).toHaveBeenCalledTimes(2);
-            expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
-                type: 'removeClip',
-                payload: { clipId: 'clip-2' },
-            });
-            expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
-                type: 'removeClip',
-                payload: { clipId: 'clip-1' },
-            });
+            expect(executeUserAppAction).toHaveBeenNthCalledWith(
+                1,
+                { type: 'removeClip', payload: { clipId: 'clip-2' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+            );
+            expect(executeUserAppAction).toHaveBeenNthCalledWith(
+                2,
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+            );
+            // One keypress is one undo group: both per-clip dispatches share it.
+            const [firstOptions, secondOptions] = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]);
+            expect(secondOptions?.groupId).toBe(firstOptions?.groupId);
             expect(removeClip).not.toHaveBeenCalled();
             expect(pushUndoEntry).not.toHaveBeenCalled();
             expect(clearClipSelection).toHaveBeenCalled();
+        });
+
+        it('mints a fresh undo group id per delete keypress', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
+            ];
+            trackStoreMock.value.tracks = [
+                { id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] },
+                { id: 't2', clips: [{ id: 'clip-2', startBeat: 4, endBeat: 6 }] },
+            ];
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
+
+            handleKeydown(descriptor({ key: 'F1' }));
+            // The selection the first keypress asked to clear is still set on
+            // the mock store, so the second keypress is the same gesture shape.
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
+            handleKeydown(descriptor({ key: 'F1' }));
+
+            const groupIds = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]?.groupId);
+            expect(groupIds).toHaveLength(4);
+            // Within one keypress the id is shared; across two it is fresh, so
+            // each keypress is its own undo step.
+            expect(groupIds[0]).toBe(groupIds[1]);
+            expect(groupIds[2]).toBe(groupIds[3]);
+            expect(groupIds[0]).not.toBe(groupIds[2]);
         });
 
         it('does nothing when the selected clip ids no longer resolve to real clips', () => {
