@@ -37,6 +37,27 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
      */
     const gestureStartPercent = useRef<number | null>(null);
 
+    /**
+     * Put the engine back on project truth after a settle that never moved
+     * the store — a conflict `executeUserAppAction` folded into a toast, an
+     * admission refusal, or a throw.
+     *
+     * `executeUserAppAction` swallows `AppActionConflictError` (the store
+     * moved mid-gesture) into a notification and resolves, so a conflicted
+     * settle runs only this `finally` with nothing else to restore the
+     * engine from the value the gesture released. On the written path
+     * `afterCommit` already reconciles the engine, so the extra transient
+     * write here is idempotent — nothing branches on outcome. Same
+     * precedent as `useChannelStripActions`'s `restoreEngineFromProjectTruth`.
+     */
+    const restoreEngineFromProjectTruth = (): void => {
+        const storeMasterGain = transportStore.value?.masterGain;
+        if (storeMasterGain === undefined) {
+            return;
+        }
+        setMasterGain(storeMasterGain, true);
+    };
+
     const commitMasterGain = (value: number, expectedPercent: number): void => {
         void (async () => {
             try {
@@ -49,21 +70,22 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                     new Error('Master channel strip commit failed for action: setMasterGain', { cause: error })
                 );
             } finally {
+                restoreEngineFromProjectTruth();
                 setGestureGain(null);
             }
         })();
     };
 
     const handleFaderChange = (value: number, isTransient?: boolean): void => {
-        const isSettling = isTransient !== true;
-        if (!isSettling && gestureStartPercent.current === null) {
-            gestureStartPercent.current = masterGain;
-        }
-        setGestureGain(value);
-        if (!isSettling) {
+        if (isTransient === true) {
+            if (gestureStartPercent.current === null) {
+                gestureStartPercent.current = masterGain;
+            }
+            setGestureGain(value);
             setMasterGain(value * 100, true);
             return;
         }
+        setGestureGain(value);
         const expectedPercent = gestureStartPercent.current ?? masterGain;
         gestureStartPercent.current = null;
         commitMasterGain(value, expectedPercent);
