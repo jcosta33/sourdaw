@@ -1,0 +1,16 @@
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  h_1228e573df1f42 178-224
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  h_1228e573df1f42 23-29,72-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f16b7d48e8b471990671f5beed9ff09eef75f9a8",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
