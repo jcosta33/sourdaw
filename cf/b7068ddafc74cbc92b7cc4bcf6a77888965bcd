@@ -1,0 +1,41 @@
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_87ab0a2f60ccf8::t_0c62d87675cdf4 123-155,163,175,250-311,331,335-339,342,346-360
+  s_87ab0a2f60ccf8::t_5cd2ea52aea4e4 312-330,340-341,343-345
+  s_87ab0a2f60ccf8::t_50f54ed9d1a646 361,363-433
+  s_87ab0a2f60ccf8::t_1f4d21e8ac220f 515
+  s_87ab0a2f60ccf8::t_82e8f516b2d3e8 332-334
+  s_9b530f08172a54::t_3feb88271d0131 362
+src/modules/AiRuntime/useCases/compilePendingActionCommandEnvelopes.ts
+  s_87ab0a2f60ccf8::t_b5f5d0b0640c91 17-64,73,75,77-78,85,87-90,99
+  s_87ab0a2f60ccf8::t_ce4842c99450c6 86
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_87ab0a2f60ccf8::t_92ffad1ec41d79 34,36-47,128-149,157-164,166-174,176,179-187,189-228,230,233-236,244-251,253-260,262-271,273-288
+  s_87ab0a2f60ccf8::t_44f1055e9a4a27 165,175,177-178,188,229,231-232,252,272
+  s_87ab0a2f60ccf8::t_82e8f516b2d3e8 150-156,237-243,261
+  s_87ab0a2f60ccf8::t_5e5395b82ad964 3,35
+  s_87ab0a2f60ccf8::t_80c559c8ef60b7 289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "cfb7068ddafc74cbc92b7cc4bcf6a77888965bcd",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
