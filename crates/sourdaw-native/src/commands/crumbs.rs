@@ -1546,9 +1546,10 @@ mod tests {
         );
     }
 
-    /// The instances mutex is the create transaction boundary: while one
-    /// create is parked on engine registration, another create of the same id
-    /// cannot pass the identity check or register a second runtime.
+    /// The first create holds the instances mutex while parked on engine
+    /// registration, observed directly with the `try_lock` probe below, and a
+    /// second create of the same id is refused rather than registering a
+    /// second runtime.
     #[test]
     fn concurrent_duplicate_create_holds_the_instances_lock_through_registration() {
         const INSTANCE_ID: &str = "concurrent-duplicate-crumbs";

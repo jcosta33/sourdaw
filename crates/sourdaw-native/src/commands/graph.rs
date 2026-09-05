@@ -5302,9 +5302,7 @@ mod tests {
     /// second. The batch's own fence must therefore be numbered one past the
     /// attach's, not on top of it. Before the fix, the attach never called
     /// `record_fenced_batch`, so this batch's fence collided with the
-    /// attach's un-numbered one and reported 1 instead of 2 (confirmed by
-    /// temporarily removing the `record_fenced_batch` call in
-    /// `register_crumbs_slot` and rerunning this test).
+    /// attach's un-numbered one and reported 1 instead of 2.
     #[test]
     fn a_crumbs_attach_fence_counts_toward_the_batch_it_precedes() {
         let state = AppState::default();
