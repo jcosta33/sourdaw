@@ -7,7 +7,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
@@ -31,7 +31,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                 size="icon-xs"
                                 onClick={() => {
                                     const name = `Alt ${track.alternatives.length + 1}`;
-                                    void executeAppAction({
+                                    void executeUserAppAction({
                                         type: 'createTrackAlternative',
                                         payload: { trackId: track.id, name, duplicateActive: false },
                                     });
@@ -53,7 +53,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         selected={alt.id === track.activeAlternativeId}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {
-                                void executeAppAction({
+                                void executeUserAppAction({
                                     type: 'switchTrackAlternative',
                                     payload: { trackId: track.id, alternativeId: alt.id },
                                 });
@@ -71,7 +71,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                         className="h-6 w-6"
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            void executeAppAction({
+                                            void executeUserAppAction({
                                                 type: 'deleteTrackAlternative',
                                                 payload: { trackId: track.id, alternativeId: alt.id },
                                             });

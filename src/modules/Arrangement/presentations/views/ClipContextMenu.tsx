@@ -9,7 +9,7 @@ import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { detectTempo, detectKey, describeDetectedKey } from '#/modules/AudioAnalysis/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -135,15 +135,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
-                    void runAiActionWithToast(
-                        () => executeUserAppAction({ type: 'audioToMidi', payload: { clipId } }),
-                        {
-                            startMsg: 'Converting audio to MIDI…',
-                            successMsg: 'Audio converted to MIDI',
-                            successDetails: ['New MIDI clip created from detected onsets'],
-                            failMsg: 'Audio-to-MIDI conversion failed',
-                        }
-                    );
+                    void runAiActionWithToast(() => executeAppAction({ type: 'audioToMidi', payload: { clipId } }), {
+                        startMsg: 'Converting audio to MIDI…',
+                        successMsg: 'Audio converted to MIDI',
+                        successDetails: ['New MIDI clip created from detected onsets'],
+                        failMsg: 'Audio-to-MIDI conversion failed',
+                    });
                 })}
             >
                 Convert to MIDI
@@ -215,7 +212,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
                     void runAiActionWithToast(
-                        () => executeUserAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } }),
+                        () => executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } }),
                         {
                             startMsg: 'Generating MIDI continuation…',
                             successMsg: 'MIDI continuation generated',
@@ -232,7 +229,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
                     void runAiActionWithToast(
-                        () => executeUserAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } }),
+                        () => executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } }),
                         {
                             startMsg: 'Creating MIDI variation…',
                             successMsg: 'MIDI variation created',
@@ -249,7 +246,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
                     void runAiActionWithToast(
-                        () => executeUserAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } }),
+                        () => executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } }),
                         {
                             startMsg: 'Regenerating with wilder divergence…',
                             successMsg: 'MIDI re-imagined',
@@ -267,7 +264,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 onClick={act(() => {
                     void runAiActionWithToast(
                         () =>
-                            executeUserAppAction({
+                            executeAppAction({
                                 type: 'generateBassline',
                                 payload: { clipId, style: 'root-fifth' },
                             }),

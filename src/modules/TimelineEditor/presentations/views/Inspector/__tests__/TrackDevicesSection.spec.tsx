@@ -72,12 +72,12 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-const mockExecuteAppAction = vi.fn<(action: unknown) => void>();
+const mockExecuteUserAppAction = vi.fn<(action: unknown) => void>();
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
-    executeAppAction: (action: unknown): void => {
-        mockExecuteAppAction(action);
+    executeAppAction: vi.fn(),
+    executeUserAppAction: (action: unknown): void => {
+        mockExecuteUserAppAction(action);
     },
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
@@ -311,7 +311,7 @@ describe('TrackDevicesSection', () => {
         fireEvent.click(bypassButton);
         // Action boundary: the action is undoable; the raw use-case write
         // this replaced never entered history.
-        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
             type: 'bypassDevice',
             payload: { deviceId: 'device-1', bypassed: true },
         });
@@ -322,7 +322,7 @@ describe('TrackDevicesSection', () => {
         const removeButton = screen.getByLabelText('Remove Compressor');
         fireEvent.click(removeButton);
         // removeDevice is undoable via its restoreDevice inverse.
-        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
             type: 'removeDevice',
             payload: { deviceId: 'device-1' },
         });
@@ -350,7 +350,7 @@ describe('TrackDevicesSection', () => {
         fireEvent.drop(targetCard, { dataTransfer });
 
         expect(mockCompileReorderDevicesAction).toHaveBeenCalledWith('track-1', 'device-1', 'device-2');
-        expect(mockExecuteAppAction).toHaveBeenCalledWith(action);
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(action);
     });
 
     it('should add a platform device from the menu and close the menu', () => {
@@ -394,7 +394,7 @@ describe('TrackDevicesSection', () => {
         expect(screen.queryByRole('menuitem', { name: /Stale AU/ })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('menuitem', { name: /Working CLAP/ }));
-        expect(mockExecuteAppAction).toHaveBeenCalledWith({
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
             type: 'loadExternalPlugin',
             payload: { pluginId: 'clap-1', trackId: 'track-1' },
         });
@@ -494,7 +494,7 @@ describe('TrackDevicesSection', () => {
             trackId: 'track-1',
             activateDormantExternalPlugins: true,
         });
-        expect(mockExecuteAppAction).not.toHaveBeenCalled();
+        expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
     });
 
     it('surfaces a degraded plugin that activated without a running native engine', () => {

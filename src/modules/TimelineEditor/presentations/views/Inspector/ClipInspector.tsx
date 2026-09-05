@@ -16,7 +16,7 @@ import {
     renameClip,
     setClipFollowAction,
 } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
@@ -106,7 +106,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
         if (gain === gestureStart) {
             return;
         }
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'setClipGain',
             payload: { clipId: clip.id, gain, expectedGain: gestureStart },
         });

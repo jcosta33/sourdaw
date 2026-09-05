@@ -1,9 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
+import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
@@ -166,6 +167,7 @@ vi.mock('../../../useCases/clipEditing/reverseClip', () => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -406,6 +408,43 @@ describe('ClipContextMenu', () => {
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
         expect(reverseClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
+    });
+    it('fires the AI failure toast on a refused action, not the success toast', async () => {
+        // An admission refusal rejects the bare dispatch; runAiActionWithToast
+        // consumes that rejection and fires the failure toast. Wrapping the
+        // dispatch in executeUserAppAction would resolve the conflict instead,
+        // routing the same refusal into the success toast — the exact defect
+        // this pin exists to catch.
+        const refusal = Object.assign(new Error('Action conflicts with current project state: variationMidi'), {
+            name: 'AppActionConflictError',
+        });
+        vi.mocked(executeAppAction).mockRejectedValueOnce(refusal);
+        // Load the real wrapper (its module graph is light; the barrel itself stays
+        // mocked) so the failure path under test is the shipped one, not a stub.
+        // The shape is spelled inline: a typeof-import here would be a deep
+        // cross-module edge the boundary gate rightly refuses.
+        const actual = await vi.importActual<{
+            runAiActionWithToast: (
+                action: () => Promise<void>,
+                messages: { startMsg: string; successMsg: string; successDetails: string[]; failMsg: string }
+            ) => Promise<void>;
+        }>('#/modules/AiRuntime/useCases/runAiActionWithToast');
+        vi.mocked(runAiActionWithToast).mockImplementationOnce(actual.runAiActionWithToast);
+
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Generate Variation' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'variationMidi',
+            payload: { clipId: 'midi1', amount: 0.3 },
+        });
+        await waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                expect.stringMatching(/^MIDI variation failed:/),
+                'error'
+            )
+        );
     });
 
     it('does not dispatch denoise for a clip without an audioBufferId', () => {
