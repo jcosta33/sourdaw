@@ -1,0 +1,21 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_5a5293e7a5d234::t_5fc1e501dc970c 756-800
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownDeleteSelection.integration.spec.ts
+  s_5a5293e7a5d234::t_3c42b2cd1ae0be 1-279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c0bff3005c78c01f102abe78e7e2815d87f464cb",
+  "prompts": {},
+  "sessions": {
+    "s_5a5293e7a5d234": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-adc817664e34476f0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
