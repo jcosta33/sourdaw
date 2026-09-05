@@ -1,0 +1,36 @@
+crates/daw-engine/src/midi/diagnostics.rs
+  s_9b530f08172a54::t_c3c4b7e37debd5 22-37
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_9b530f08172a54::t_0095333aa7fc9a 1402-1493
+  s_9b530f08172a54::t_70bf4476bfc7f4 270-284,287-292
+  s_9b530f08172a54::t_e48478ede8e737 474-484
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_5358a9383c54c4 4877-4878
+  s_9b530f08172a54::t_089365545d0a38 4930-4935
+  s_9b530f08172a54::t_c92d686348628f 4726-4727
+  s_9b530f08172a54::t_20d6fe4207d133 4774
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_b0374738e00743 2773,2779-2797
+  s_9b530f08172a54::t_9f752a66729dec 7014-7019,7026-7031,7042-7043,7047-7052,7057
+  s_9b530f08172a54::t_15aeabe8f51770 7153-7194
+crates/daw-engine/src/plugin_slot.rs
+  s_9b530f08172a54::t_07fa97994a76db 140-145
+crates/daw-engine/src/timeline.rs
+  s_9b530f08172a54::t_f9f8cc72dbf55c 622-631
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "982016c633cf93387c64b2a461b015813ca7f6ee",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
