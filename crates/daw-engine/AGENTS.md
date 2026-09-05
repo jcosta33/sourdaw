@@ -36,16 +36,25 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   always holds the last frames of the signal its route carries, a change of hold is a read-offset
   jump into audio that is already current, and neither a re-aiming nor a bypass can open a hole of
   silence or replay audio from an earlier part of the session.
-- **A detached device's line restarts from silence**: the strip a device sat on can be removed under
-  it, and nothing then feeds or reads its line. That is the one break in the rule above, so it is
-  the one place a line is cleared — bounded by the declared latency, at the detach — and it stays
-  silent until a chain takes the device again and starts feeding it.
+- **Every line is sized at the ceiling and re-aimed in place**: a route line and a dry line alike
+  are built to hold anything the ceiling admits, so no change of figure ever needs a new ring. A
+  device's declared latency moving is therefore a read-offset jump into audio that line is already
+  holding, exactly like a recompensation — one bounded repeat or skip of the difference, never a
+  hold's worth of silence. Swapping a fresh ring in would empty the line the graph has been keeping
+  current, which is the very thing the rule above exists to prevent.
+- **A detached device's line restarts from silence**: a device can be left holding no placement at
+  all — the strip it sat on removed under it, or a hosted plugin taken off the strip that borrowed
+  it — and nothing then feeds or reads its line. That is the one break in the rule above, so it is
+  the one place a line is cleared — bounded by the declared latency, on every transition into
+  detachment — and it stays silent until a chain takes the device again and starts feeding it.
 - **A ceiling, and a count**: compensation past the ceiling clamps and is counted in the timeline's
   real-time diagnostics, alongside the deepest arrival the graph was asked for. A route that could
   not be aligned is reported, never silently misaligned.
 - **Lines are built control-side**: every delay line reaches the callback owning its buffers, and one
-  the callback replaces or gives up leaves over the ADR 0020 retirement route. A latency figure and
-  the line sized for it travel on one command, so no caller can publish one without the other.
+  the callback declines or gives up leaves over the ADR 0020 retirement route. A latency figure and
+  a line to hold a bypassed pass at it travel on one command, so no caller can publish one without
+  the other; the control thread cannot see whether the device already runs a line, so it ships one
+  whenever the figure is non-zero and the callback returns whichever is spare.
 - **What dirties compensation**: a change to declared latency, to the device chains, or to the shape
   of the routing graph. Gain, pan, mute, solo, bypass and transport do not.
 

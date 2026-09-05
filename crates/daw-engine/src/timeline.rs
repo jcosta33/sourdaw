@@ -2383,17 +2383,11 @@ impl TimelineGraph {
                         // sends carry their own compensation, and only what
                         // leaves for the summing point is held back here.
                         //
-                        // Written on every block this strip renders, whether
-                        // or not it holds. Nothing above skips the line —
-                        // mute and solo zero the block rather than leaving
-                        // it — so the ring keeps pace with the strip, and a
-                        // hold taken up after a spell at zero reads on from
-                        // the signal instead of replaying the era it froze in.
-                        if track.output_delay.delay() > 0 {
-                            track.output_delay.process(left, right, frames);
-                        } else {
-                            track.output_delay.feed(left, right, frames);
-                        }
+                        // Run on every block this strip renders, whether or
+                        // not it holds: nothing above skips the line — mute
+                        // and solo zero the block rather than leaving it — so
+                        // the ring keeps pace with the strip.
+                        track.output_delay.run(left, right, frames);
                     }
 
                     route_sum(
@@ -2445,17 +2439,11 @@ impl TimelineGraph {
                             right.fill(0.0);
                         }
                         apply_pan(&mut bus.pan, block_start, frames, left, right, diagnostics);
-                        // Written on every block this bus renders, whether or
-                        // not it holds, for the reason a track's output line
-                        // is: mute and solo zero the block rather than leaving
-                        // it, so nothing above skips the line and a hold taken
-                        // up later reads current audio rather than the era the
-                        // ring froze in.
-                        if bus.output_delay.delay() > 0 {
-                            bus.output_delay.process(left, right, frames);
-                        } else {
-                            bus.output_delay.feed(left, right, frames);
-                        }
+                        // Run on every block this bus renders, for the reason
+                        // a track's output line is: mute and solo zero the
+                        // block rather than leaving it, so nothing above skips
+                        // the line.
+                        bus.output_delay.run(left, right, frames);
                     }
 
                     route_sum(
@@ -2570,13 +2558,7 @@ fn render_track_source(
             clip.render_into(block_start, frames, source_left, source_right);
         }
     }
-    if track.source_delay.delay() > 0 {
-        track
-            .source_delay
-            .process(source_left, source_right, frames);
-    } else {
-        track.source_delay.feed(source_left, source_right, frames);
-    }
+    track.source_delay.run(source_left, source_right, frames);
     sum_into(left, source_left);
     sum_into(right, source_right);
 }
@@ -2761,18 +2743,18 @@ fn run_sends(
         // a bus that was removed or never added, and a level that leaves zero,
         // both `continue` below. The line has to see every frame of the tap or
         // its content stops matching the time it is asked for, and the send
-        // would then read audio from whenever it last ran. At zero hold it is
-        // written and not read, which is what keeps a send re-aimed after a
-        // spell at zero from replaying the passage it stood through.
-        let (left, right) = if send.delay.delay() > 0 {
-            send_left.copy_from_slice(&left[..frames]);
-            send_right.copy_from_slice(&right[..frames]);
-            send.delay.process(send_left, send_right, frames);
-            (&send_left[..frames], &send_right[..frames])
-        } else {
-            send.delay.feed(left, right, frames);
-            (left, right)
-        };
+        // would then read audio from whenever it last ran.
+        //
+        // The copy into the scratch pair is unconditional, because the line
+        // runs in place and the strip still needs the tapped block unchanged
+        // for everything downstream of the tap. Copying only while the send
+        // holds would put a second branch on the hold here, beside the one
+        // `run` already owns; one block copy per send is what keeps that
+        // decision in a single place.
+        send_left.copy_from_slice(&left[..frames]);
+        send_right.copy_from_slice(&right[..frames]);
+        send.delay.run(send_left, send_right, frames);
+        let (left, right) = (&send_left[..frames], &send_right[..frames]);
 
         let Some(bus) = buses.iter_mut().find(|bus| bus.id == send.bus_id) else {
             // A send is the one command whose target is resolved at render

@@ -71,16 +71,22 @@ impl CompensationDelay {
     /// The dry line a device declaring `latency_frames` needs while bypassed,
     /// or `None` for a device that declares none.
     ///
-    /// Sized to the declared figure and clamped to the ceiling, so a device
-    /// that reports an absurd latency costs the ceiling's memory rather than
-    /// its own claim. The declared figure itself is kept by the caller: it is
-    /// what the graph's arrivals are computed from, and clamping it here would
-    /// hide the claim the engineer has to see.
+    /// Built at the ceiling whatever the figure is, and aimed at the declared
+    /// one, clamped there. Capacity is what a later latency change has to
+    /// re-aim inside: a line sized to its own figure could not take a deeper
+    /// one, and swapping a fresh ring in instead would hand the next bypassed
+    /// pass a hold's worth of silence. So every dry line is a ring the graph
+    /// can point anywhere up to the ceiling, and a latency change is a
+    /// read-offset jump like the one every route line takes.
+    ///
+    /// The declared figure itself is kept by the caller: it is what the
+    /// graph's arrivals are computed from, and clamping it here would hide the
+    /// claim the engineer has to see.
     pub fn for_latency(latency_frames: usize) -> Option<Box<Self>> {
         if latency_frames == 0 {
             return None;
         }
-        let mut delay = Box::new(Self::new(latency_frames.min(MAX_COMPENSATION_FRAMES)));
+        let mut delay = Box::new(Self::new(MAX_COMPENSATION_FRAMES));
         delay.set_delay(latency_frames);
         Some(delay)
     }
@@ -121,10 +127,12 @@ impl CompensationDelay {
     /// With `write` back at zero, [`Self::process`] starts reading at
     /// `slots - delay` and reaches slot zero exactly `delay` frames later, by
     /// which point every slot it visits was written earlier in that same call.
-    /// So the leading tail is the whole of what the line owes silence, and
-    /// clearing more is work the callback pays for nothing: every line the
-    /// graph builds is sized at [`MAX_COMPENSATION_FRAMES`], so a full fill
-    /// here costs two ceiling-sized memsets to silence a handful of frames.
+    /// So the trailing `delay` slots are the whole of what the line owes
+    /// silence, and the bound on this work is the declared latency rather than
+    /// the ring: every line the graph builds is sized at
+    /// [`MAX_COMPENSATION_FRAMES`] so that it can be re-aimed anywhere, and a
+    /// full fill would pay two ceiling-sized memsets on the callback to
+    /// silence the handful of frames a device actually declares.
     pub(crate) fn restart_from_silence(&mut self) {
         let slots = self.left.len();
         self.left[slots - self.delay..].fill(0.0);
@@ -190,6 +198,23 @@ impl CompensationDelay {
             write = Self::step(slots, write);
         }
         self.write = write;
+    }
+
+    /// Take this line's one pass over a block: read the hold back when it
+    /// holds, write the block through when it does not.
+    ///
+    /// Every line is written on every block the route carrying it renders. A
+    /// line at zero hold is fed rather than skipped, so the ring stays as
+    /// current as the route it belongs to; taking up a hold later is then a
+    /// read-offset jump into audio that is already there, and never a burst of
+    /// the era the line was in when its hold was last dropped. The branch
+    /// lives here so that no caller can write one half of that invariant.
+    pub(crate) fn run(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
+        if self.delay > 0 {
+            self.process(left, right, frames);
+        } else {
+            self.feed(left, right, frames);
+        }
     }
 
     /// The ring itself, for a test that has to prove which slots a re-aiming
@@ -362,6 +387,10 @@ mod tests {
 
     /// The one case a line still owes silence: its device's strip was torn
     /// down under it, so nothing wrote the ring while it waited.
+    ///
+    /// The shape every dry line is in: a ring built at the ceiling, aimed at
+    /// the figure its device declares, so the region that owes silence is the
+    /// declared latency rather than the ring.
     #[test]
     fn restarting_from_silence_clears_the_tail_the_read_head_traverses_and_nothing_else() {
         let mut delay = CompensationDelay::new(8);
@@ -385,20 +414,75 @@ mod tests {
         assert_eq!(ring_right, ring_left);
     }
 
+    /// The far end of the same bound: a line aimed at everything its ring
+    /// holds. The read head still never reaches the one slot the next call
+    /// writes first, so even here the fill stops one slot short.
+    #[test]
+    fn restarting_from_silence_at_a_delay_the_whole_ring_holds_still_spares_the_first_slot() {
+        let mut delay = CompensationDelay::new(4);
+        delay.set_delay(4);
+        let mut left = ramp(4);
+        let mut right = ramp(4);
+        delay.process(&mut left, &mut right, 4);
+
+        delay.restart_from_silence();
+
+        let (ring_left, ring_right) = delay.ring();
+        assert_eq!(ring_left, [1.0, 0.0, 0.0, 0.0, 0.0].as_slice());
+        assert_eq!(ring_right, ring_left);
+
+        let mut next_left = vec![9.0; 4];
+        let mut next_right = vec![9.0; 4];
+        delay.process(&mut next_left, &mut next_right, 4);
+        assert_eq!(
+            next_left,
+            vec![0.0; 4],
+            "the slot left standing is written before the read head arrives at it"
+        );
+        assert_eq!(next_right, next_left);
+    }
+
     #[test]
     fn a_device_declaring_no_latency_needs_no_dry_line() {
         assert!(CompensationDelay::for_latency(0).is_none());
     }
 
+    /// A dry line is built at the ceiling whatever its device declares, so a
+    /// later latency change is re-aimed into the ring the device is already
+    /// running rather than swapped for a fresh one holding nothing.
     #[test]
-    fn a_dry_line_is_sized_to_the_declared_latency_and_capped_at_the_ceiling() {
+    fn a_dry_line_is_built_at_the_ceiling_and_aimed_at_the_declared_latency() {
         let modest = CompensationDelay::for_latency(512).expect("a latent device gets a line");
-        assert_eq!(modest.capacity(), 512);
+        assert_eq!(modest.capacity(), MAX_COMPENSATION_FRAMES);
         assert_eq!(modest.delay(), 512);
 
         let absurd = CompensationDelay::for_latency(MAX_COMPENSATION_FRAMES * 4)
             .expect("a latent device gets a line");
         assert_eq!(absurd.capacity(), MAX_COMPENSATION_FRAMES);
         assert_eq!(absurd.delay(), MAX_COMPENSATION_FRAMES);
+    }
+
+    /// The branch every route-line site takes, in one place: a line that holds
+    /// reads its hold back, and a line that holds nothing is still written.
+    #[test]
+    fn running_a_line_that_holds_nothing_writes_the_block_through_and_keeps_the_ring_current() {
+        let mut delay = CompensationDelay::new(8);
+
+        let mut passing = ramp(8);
+        let mut passing_right = ramp(8);
+        delay.run(&mut passing, &mut passing_right, 8);
+        assert_eq!(passing, ramp(8), "a line at zero hold passes its block on");
+        assert_eq!(passing_right, passing);
+
+        delay.set_delay(4);
+        let mut held = vec![-1.0; 4];
+        let mut held_right = vec![-1.0; 4];
+        delay.run(&mut held, &mut held_right, 4);
+        assert_eq!(
+            held,
+            vec![5.0, 6.0, 7.0, 8.0],
+            "and the hold taken up after it reads the frames that ran through while it held nothing"
+        );
+        assert_eq!(held_right, held);
     }
 }
