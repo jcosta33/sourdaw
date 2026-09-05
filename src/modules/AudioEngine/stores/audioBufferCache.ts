@@ -599,6 +599,17 @@ function invalidateCachedAudioDurabilitySource(
     });
 }
 
+function captureCachedAudioDurabilitySourceInvalidation(id: string): () => boolean {
+    const source = durabilitySourceById.get(id);
+    return () => {
+        if (durabilitySourceById.get(id) !== source || (source !== undefined && !source.isAuthoritative())) {
+            return false;
+        }
+        invalidateCachedAudioDurabilitySource(id);
+        return true;
+    };
+}
+
 function materializeCachedAudioDurabilitySource(source: CachedAudioDurabilitySource): SerializedBuffer | undefined {
     if (source.data) {
         return source.data;
@@ -957,6 +968,7 @@ function clearRuntimeCacheState(retainedIds?: ReadonlySet<string>): void {
 
 const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     bufferStoreName: STORE_NAME,
+    captureDurabilitySourceInvalidation: captureCachedAudioDurabilitySourceInvalidation,
     claimDurableMutation: claimPersistenceGeneration,
     createRuntimeBuffer,
     evictRuntime: dropCachedBufferEntry,
@@ -967,7 +979,6 @@ const preparedAudioBufferLifecycle = createPreparedAudioBufferLifecycle({
     },
     hasPinnedReservation: (id) => pinnedBufferIds.has(id),
     hasRuntime: (id) => cache.has(id),
-    invalidateDurabilitySource: invalidateCachedAudioDurabilitySource,
     isDurableMutationCurrent: (id, generation) => persistenceGenerationById.get(id) === generation,
     isValidSerializedBuffer,
     metadataStoreName: META_STORE_NAME,

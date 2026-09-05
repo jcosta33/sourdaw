@@ -66,7 +66,7 @@ function decodeMonoWave(bytes: ArrayBuffer): AudioBuffer {
         length: sampleCount,
         numberOfChannels: 1,
         sampleRate,
-    } as AudioBuffer;
+    };
 }
 
 function createAudioBuffer(numberOfChannels: number, length: number, sampleRate: number): AudioBuffer {
@@ -83,7 +83,7 @@ function createAudioBuffer(numberOfChannels: number, length: number, sampleRate:
         length,
         numberOfChannels,
         sampleRate,
-    } as AudioBuffer;
+    };
 }
 
 function readStoredFirstSample(value: unknown): number | undefined {
@@ -222,7 +222,7 @@ describe('saveProject audio durability integration', () => {
 
         const savedJson = indexedDb.get('sourdaw-projects', 'projects', project.getProjectSnapshotKey(CREATED_AT));
         if (typeof savedJson !== 'string') {
-            throw new Error('expected the first real save to provide a current-format project snapshot');
+            throw new TypeError('expected the first real save to provide a current-format project snapshot');
         }
         const importedProject = JSON.parse(savedJson) as ProjectData;
         const sourceTrack = importedProject.arrangement.tracks[0];
@@ -287,7 +287,7 @@ describe('saveProject audio durability integration', () => {
         expect(readStoredFirstSample(indexedDb.get('sourdaw-audio', 'buffers', IMPORTED_BUFFER_ID))).toBeCloseTo(0.8);
         const retriedSavedJson = indexedDb.get('sourdaw-projects', 'projects', importedProjectKey);
         if (typeof retriedSavedJson !== 'string') {
-            throw new Error('expected the successful retry to persist the named project snapshot');
+            throw new TypeError('expected the successful retry to persist the named project snapshot');
         }
         expect((JSON.parse(retriedSavedJson) as ProjectData).audioBuffers).toBeUndefined();
 

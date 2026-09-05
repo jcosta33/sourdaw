@@ -249,6 +249,130 @@ describe('audio buffer save durability', () => {
         expect(audioBufferCache.get('failed-buffer')?.getChannelData(0)).toEqual(new Float32Array(values));
     });
 
+    it('retains an ordinary failed source when a stale prepared discard is rejected', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'rejected-discard', [0.2]);
+        controls.abortWritesTo(BUFFER_STORE);
+        audioBufferCache.set('rejected-discard', makeBuffer([0.8]));
+        await flushIndexedDbTasks();
+
+        controls.allowWrites();
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'rejected-discard',
+                leaseId: 'stale-lease',
+                disposition: 'discard',
+            })
+        ).resolves.toEqual({ status: 'mismatched' });
+
+        const receipt = await expectDurableReceipt(['rejected-discard']);
+        receipt.release();
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['rejected-discard'] });
+        expect(audioBufferCache.get('rejected-discard')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+    });
+
+    it('retains an LRU-evicted ordinary failed source when prepared persistence rejects its ID', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        seedOrdinaryBuffer(controls, 'rejected-persistence', [0.2]);
+        controls.abortWritesTo(BUFFER_STORE);
+        audioBufferCache.set('rejected-persistence', makeBuffer([0.8]));
+        await flushIndexedDbTasks();
+
+        controls.allowWrites();
+        for (let index = 0; index < 64; index++) {
+            audioBufferCache.set(`rejected-persistence-filler-${index}`, makeBuffer([index / 64]));
+        }
+        await vi.waitFor(() => expect(controls.committed.size).toBe(65));
+        expect(audioBufferCache.has('rejected-persistence')).toBe(false);
+
+        await expect(
+            audioBufferCache.persistPreparedBuffer({
+                id: 'rejected-persistence',
+                buffer: makeBuffer([0.6]),
+                leaseId: 'different-lease',
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio buffer ID is already occupied.',
+        });
+
+        const receipt = await expectDurableReceipt(['rejected-persistence']);
+        receipt.release();
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['rejected-persistence'] });
+        expect(audioBufferCache.get('rejected-persistence')?.getChannelData(0)[0]).toBeCloseTo(0.8);
+    });
+
+    it('lets accepted prepared persistence replace an LRU-evicted ordinary failed source', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        controls.abortWritesTo(BUFFER_STORE);
+        audioBufferCache.set('accepted-persistence', makeBuffer([0.8]));
+        await flushIndexedDbTasks();
+
+        controls.allowWrites();
+        for (let index = 0; index < 64; index++) {
+            audioBufferCache.set(`accepted-persistence-filler-${index}`, makeBuffer([index / 64]));
+        }
+        await vi.waitFor(() => expect(controls.committed.size).toBe(64));
+        expect(audioBufferCache.has('accepted-persistence')).toBe(false);
+
+        const persistence = await audioBufferCache.persistPreparedBuffer({
+            id: 'accepted-persistence',
+            buffer: makeBuffer([0.6]),
+            leaseId: 'accepted-persistence-lease',
+        });
+        expect(persistence).toEqual({
+            status: 'persisted',
+            bufferId: 'accepted-persistence',
+            leaseId: 'accepted-persistence-lease',
+        });
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'accepted-persistence',
+                leaseId: 'accepted-persistence-lease',
+                disposition: 'project-owned',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'project-owned' });
+
+        const receipt = await expectDurableReceipt(['accepted-persistence']);
+        receipt.release();
+        clearRuntimeAudioBufferCache();
+        await audioBufferCache.restoreFromIdb({ context: testContext(), ids: ['accepted-persistence'] });
+        expect(audioBufferCache.get('accepted-persistence')?.getChannelData(0)[0]).toBeCloseTo(0.6);
+    });
+
+    it('invalidates an ordinary failed source when its prepared owner is accepted for discard', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
+        await audioBufferCache.persistPreparedBuffer({
+            id: 'accepted-discard',
+            buffer: makeBuffer([0.6]),
+            leaseId: 'accepted-discard-lease',
+        });
+        controls.abortWritesTo(BUFFER_STORE);
+        audioBufferCache.set('accepted-discard', makeBuffer([0.8]));
+        await flushIndexedDbTasks();
+
+        controls.allowWrites();
+        for (let index = 0; index < 64; index++) {
+            audioBufferCache.set(`accepted-discard-filler-${index}`, makeBuffer([index / 64]));
+        }
+        await vi.waitFor(() => expect(controls.committed.size).toBe(65));
+        expect(audioBufferCache.has('accepted-discard')).toBe(false);
+
+        await expect(
+            audioBufferCache.releasePreparedBuffer({
+                id: 'accepted-discard',
+                leaseId: 'accepted-discard-lease',
+                disposition: 'discard',
+            })
+        ).resolves.toEqual({ status: 'released', disposition: 'discarded' });
+        await expect(audioBufferCache.ensureDurable(['accepted-discard'])).resolves.toEqual({
+            status: 'failed',
+            failedIds: ['accepted-discard'],
+        });
+    });
+
     it('accepts a valid current-format durable row when its decoded runtime buffer is absent', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
         seedOrdinaryBuffer(controls, 'runtime-absent', [0.4]);

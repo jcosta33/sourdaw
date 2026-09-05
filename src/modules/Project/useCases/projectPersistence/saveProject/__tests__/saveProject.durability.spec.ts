@@ -219,6 +219,29 @@ describe('saveProject durability', () => {
         expect(release).toHaveBeenCalledOnce();
     });
 
+    it('forwards every required audio ID to the durability barrier', async () => {
+        installFakeIndexedDb();
+        const requiredIds = ['first-required-buffer', 'second-required-buffer'];
+        mocks.buildProjectData.mockResolvedValue({
+            data: { version: 1, meta: { name: 'My Song' } },
+            requiredAudioBufferIds: requiredIds,
+        });
+        mocks.ensureCachedAudioBuffersDurable.mockImplementationOnce(async (ids) => {
+            if (ids.includes('second-required-buffer')) {
+                return { status: 'failed', failedIds: ['second-required-buffer'] };
+            }
+            return { status: 'durable', isCurrent: () => true, release: vi.fn() };
+        });
+        const saveProject = await importSaveProject();
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.ensureCachedAudioBuffersDurable).toHaveBeenCalledWith(requiredIds);
+        expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+    });
+
     it('reports failure and remains dirty when a required audio source cannot be made durable', async () => {
         installFakeIndexedDb();
         mocks.buildProjectData.mockResolvedValue({
@@ -254,6 +277,32 @@ describe('saveProject durability', () => {
 
         await expect(saveProject()).resolves.toBe(false);
 
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+        expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
+        expect(release).toHaveBeenCalledOnce();
+    });
+
+    it('refuses recent publication when audio changes during the named-project transaction', async () => {
+        const controls = installFakeIndexedDb();
+        controls.pauseWriteSettlements();
+        let receiptCurrent = true;
+        const release = vi.fn();
+        mocks.ensureCachedAudioBuffersDurable.mockResolvedValueOnce({
+            status: 'durable',
+            isCurrent: () => receiptCurrent,
+            release,
+        });
+        const saveProject = await importSaveProject();
+
+        const saving = saveProject();
+        await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+        expect(controls.values.has(RECENT_KEY)).toBe(false);
+        receiptCurrent = false;
+        controls.releaseNextWriteSettlement();
+
+        await expect(saving).resolves.toBe(false);
+
+        expect(controls.values.has(RECENT_KEY)).toBe(true);
         expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
         expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
         expect(release).toHaveBeenCalledOnce();

@@ -29,6 +29,12 @@ type FakeIndexedDbControls = {
     failOpen: () => void;
     /** Aborts every subsequent readwrite transaction, after its requests succeed. */
     abortWrites: () => void;
+    /** Hold readwrite completion after its requests have been staged. */
+    pauseWriteSettlements: () => void;
+    /** Release the oldest held readwrite completion. */
+    releaseNextWriteSettlement: () => void;
+    /** Readwrite completions held after request delivery and before commit. */
+    pendingWriteSettlementCount: () => number;
     /**
      * Kills the live connection the way a `versionchange` from another tab or a
      * UA-forced close does: fires `onversionchange` then `onclose`, after which
@@ -51,9 +57,10 @@ class FakeTransaction {
     constructor(
         private readonly committed: Map<string, string>,
         private readonly staged: Map<string, string | null>,
-        private readonly willAbort: boolean
+        private readonly willAbort: boolean,
+        scheduleSettlement: (settle: () => void) => void
     ) {
-        queueMicrotask(() => this.flush());
+        queueMicrotask(() => this.flushRequests(scheduleSettlement));
     }
 
     enqueue(operation: () => void): void {
@@ -64,17 +71,21 @@ class FakeTransaction {
         return new FakeObjectStore(this, this.committed, this.staged);
     }
 
-    private flush(): void {
+    private flushRequests(scheduleSettlement: (settle: () => void) => void): void {
+        if (this.settled) {
+            return;
+        }
+        for (const operation of this.operations) {
+            operation();
+        }
+        scheduleSettlement(() => this.settle());
+    }
+
+    private settle(): void {
         if (this.settled) {
             return;
         }
         this.settled = true;
-
-        // Requests report success before the transaction reaches a verdict —
-        // this is the ordering the whole AC-2 defect rests on.
-        for (const operation of this.operations) {
-            operation();
-        }
 
         if (this.willAbort) {
             this.staged.clear();
@@ -138,8 +149,10 @@ type InstallFakeIndexedDbInput = {
 export function installFakeIndexedDb({ deferOpen = false }: InstallFakeIndexedDbInput = {}): FakeIndexedDbControls {
     const values = new Map<string, string>();
     let abortWrites = false;
+    let pauseWriteSettlements = false;
     let writeTransactionCount = 0;
     const pendingOpens: Array<{ succeed: () => void; fail: () => void }> = [];
+    const pendingWriteSettlements: Array<() => void> = [];
 
     type FakeDatabase = {
         objectStoreNames: { contains: () => boolean };
@@ -172,7 +185,14 @@ export function installFakeIndexedDb({ deferOpen = false }: InstallFakeIndexedDb
                 if (isWrite) {
                     writeTransactionCount++;
                 }
-                return new FakeTransaction(values, new Map<string, string | null>(), isWrite && abortWrites);
+                return new FakeTransaction(
+                    values,
+                    new Map<string, string | null>(),
+                    isWrite && abortWrites,
+                    isWrite && pauseWriteSettlements
+                        ? (settle) => pendingWriteSettlements.push(settle)
+                        : (settle) => settle()
+                );
             },
         };
         liveDatabases.push(database);
@@ -235,6 +255,13 @@ export function installFakeIndexedDb({ deferOpen = false }: InstallFakeIndexedDb
         abortWrites: () => {
             abortWrites = true;
         },
+        pauseWriteSettlements: () => {
+            pauseWriteSettlements = true;
+        },
+        releaseNextWriteSettlement: () => {
+            pendingWriteSettlements.shift()?.();
+        },
+        pendingWriteSettlementCount: () => pendingWriteSettlements.length,
         closeConnection: () => {
             const databases = liveDatabases.splice(0, liveDatabases.length);
             for (const database of databases) {

@@ -112,6 +112,7 @@ type CollectPreparedAudioBufferRecoveriesInput = {
 
 type PreparedAudioBufferLifecycleHost = {
     bufferStoreName: string;
+    captureDurabilitySourceInvalidation: (id: string) => () => boolean;
     claimDurableMutation: (id: string) => number;
     createRuntimeBuffer: (data: PreparedSerializedAudioBuffer) => AudioBuffer;
     evictRuntime: (id: string) => void;
@@ -119,7 +120,6 @@ type PreparedAudioBufferLifecycleHost = {
     hasPinnedReservation: (id: string) => boolean;
     hasRuntime: (id: string) => boolean;
     isDurableMutationCurrent: (id: string, generation: number) => boolean;
-    invalidateDurabilitySource: (id: string) => void;
     isValidSerializedBuffer: (data: PreparedSerializedAudioBuffer | undefined) => data is PreparedSerializedAudioBuffer;
     metadataStoreName: string;
     openDatabase: () => Promise<IDBDatabase>;
@@ -129,6 +129,14 @@ type PreparedAudioBufferLifecycleHost = {
 
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+async function abortRejectedPreparedTransition(transaction: IDBTransaction): Promise<void> {
+    try {
+        await abortPreparedTransaction(transaction);
+    } catch {
+        // The abort is the intended terminal state for this rejected transition.
+    }
 }
 
 function estimateStoredRecoveryBytes(value: unknown, visited = new WeakSet<object>()): number {
@@ -1122,7 +1130,7 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         }
         transactions.abort(id, 'promotion');
         transactions.abort(id, 'reclamation');
-        host.invalidateDurabilitySource(id);
+        const invalidateDurabilitySource = host.captureDurabilitySourceInvalidation(id);
         const admittedOwner = runtimeOwnerById.get(id);
         const admittedToken = nextToken();
         if (admittedOwner?.kind === 'prepared') {
@@ -1154,7 +1162,11 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 awaitPreparedRequest(bufferStore.get(id) as IDBRequest<PreparedSerializedAudioBuffer | undefined>),
                 awaitPreparedRequest(metadataStore.get(id) as IDBRequest<PreparedAudioBufferMetadata | undefined>),
             ]);
-            if (hasProjectReservation(id) || projectReservationEpochById.get(id) !== admittedReservationEpoch) {
+            if (
+                projectEpoch !== admittedProjectEpoch ||
+                hasProjectReservation(id) ||
+                projectReservationEpochById.get(id) !== admittedReservationEpoch
+            ) {
                 await abortPreparedTransaction(transaction);
             }
             const existingOwner = readPreparedOwner(existingMetadata);
@@ -1181,6 +1193,10 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                         reason: 'Prepared audio retry does not match its durable PCM.',
                     };
                 }
+                if (!host.isDurableMutationCurrent(id, generation) || !invalidateDurabilitySource()) {
+                    await abortRejectedPreparedTransition(transaction);
+                    return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
+                }
                 committedData = existingData;
                 if (existingOwner.persistenceRevision === undefined) {
                     metadataStore.put(
@@ -1206,6 +1222,10 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                 if (!isRuntimeSlotAvailableForPersist(id, leaseId) || (occupied && !replaceableActiveOwner)) {
                     await awaitPreparedTransaction(transaction);
                     return { status: 'failed' as const, reason: 'Prepared audio buffer ID is already occupied.' };
+                }
+                if (!host.isDurableMutationCurrent(id, generation) || !invalidateDurabilitySource()) {
+                    await abortRejectedPreparedTransition(transaction);
+                    return { status: 'failed' as const, reason: 'Prepared audio persistence was superseded.' };
                 }
                 bufferStore.put(data, id);
                 metadataStore.put(
@@ -1443,8 +1463,8 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
         ) {
             return { status: 'failed' as const, reason: 'Prepared audio buffer ID is reserved by the project.' };
         }
+        const invalidateDurabilitySource = host.captureDurabilitySourceInvalidation(id);
         if (disposition === 'discard') {
-            host.invalidateDurabilitySource(id);
             beginDiscardAttempt(id);
         }
         const admittedProjectEpoch = projectEpoch;
@@ -1596,6 +1616,14 @@ export function createPreparedAudioBufferLifecycle(host: PreparedAudioBufferLife
                     }
                 }
                 return { status: 'released' as const, disposition: 'project-owned' as const };
+            }
+            if (
+                isDiscardSuperseded(id, admittedProjectEpoch, admittedReservationEpoch) ||
+                (generation !== undefined && !host.isDurableMutationCurrent(id, generation)) ||
+                !invalidateDurabilitySource()
+            ) {
+                await abortRejectedPreparedTransition(transaction);
+                return { status: 'failed' as const, reason: 'Prepared audio discard was superseded.' };
             }
             const discardedPersistenceRevision = owner.persistenceRevision ?? crypto.randomUUID();
             const recoveryMetadata: PreparedAudioBufferMetadata =
