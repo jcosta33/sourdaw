@@ -1,0 +1,83 @@
+.agents/decisions/0020-deferred-deallocation-off-the-audio-thread.md
+  s_9b530f08172a54::t_60fe991c093972 9,30,43,66,82,104
+.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md
+  s_9b530f08172a54::t_9dd0972bea445d 9-10,25-26,31-32,45-46,64
+.agents/decisions/open-decision-docket.md
+  s_9b530f08172a54::t_70e1c684228290 593
+.agents/specs/plugin-hosting-clap/spec.md
+  s_9b530f08172a54::t_79c996b03b454d 8-9,121-129,131-153,155,161
+electron/__tests__/bridge.spec.ts
+  s_9b530f08172a54::t_83c88ef3fad846 377-382,387,389,391-396,398
+electron/bridge.ts
+  s_9b530f08172a54::t_3c9ff9ba060a1a 303-306
+electron/channels.ts
+  s_9b530f08172a54::t_f4b64f3e8a34ed 133-136
+release/open-source-inventory.json
+  s_9b530f08172a54::t_64f07aff3a3504 1197,1200,1384
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_9b530f08172a54::t_636c65607d7fbc 4143
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  s_9b530f08172a54::t_94195b8045504c 186-187,189,193,195
+scripts/checkReleaseInventory.ts
+  s_9b530f08172a54::t_c079ba66f0f1cc 792
+src/modules/AiGeneration/repositories/nativeAIBridge/audioDenoising.ts
+  s_9b530f08172a54::t_0a7059b09a65b5 15
+src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts
+  s_9b530f08172a54::t_dcf48cbdcbbee8 2
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_9b530f08172a54::t_db8de8ce090f81 211
+src/modules/AudioEngine/AGENTS.md
+  s_9b530f08172a54::t_98fb91a0f8f2f6 19,38
+src/modules/AudioEngine/engine/dropoutCounter.ts
+  s_9b530f08172a54::t_c8f3c431cc45d6 54-55,64
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_9b530f08172a54::t_82228705c8d7e4 620-623
+src/modules/AudioEngine/models/__tests__/AudioEngineState.spec.ts
+  s_9b530f08172a54::t_3955d7bd30a380 37,55
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_9b530f08172a54::t_a5f5bb40896804 569-570,1757-1758
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_29559b787501fd 59,130
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_9b530f08172a54::t_8e24e57ac231e9 111-113,122,124-126,134
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_9b530f08172a54::t_e991345cb099b3 85,94,97
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_2e05465e4ce448 52
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/externalPluginCompensation.spec.ts
+  s_9b530f08172a54::t_9670b193e6ce38 31,92
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/clearReportedLatency.ts
+  s_9b530f08172a54::t_fea9e03726bb35 1
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_001b627da51602 73,377,383
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_1be0972b218c47 88,481,491-492,504,513,542,599-600,613-614,636,676,1214,1264,1622,1627,1730,1735
+src/modules/AudioEngine/useCases/livePlayback/markAttachedInstances.ts
+  s_9b530f08172a54::t_145753ba7fbd36 18
+src/modules/PluginHost/AGENTS.md
+  s_9b530f08172a54::t_6ff0574b67c079 7,12,23,32
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/markExternalPluginEngineAttached.spec.ts
+  s_9b530f08172a54::t_74314a105957ef 1,47,50,68,75,87
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_9b530f08172a54::t_1ebce042f8e8a9 80
+src/modules/PluginHost/useCases/pluginLifecycle/markExternalPluginEngineAttached.ts
+  s_9b530f08172a54::t_b76fedfcc1dce0 27
+src/utils/__tests__/desktopBridge.spec.ts
+  s_9b530f08172a54::t_9c377f466ced74 198,200-205,207,214-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "51a64921c2b9b7bcd72eb412582062952b496fa9",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
