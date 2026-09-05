@@ -17,6 +17,14 @@
  * track marked native the engine cannot build goes silent, and a track left on
  * Web Audio the engine also plays is heard twice.
  *
+ * "Everything that reaches the speakers" covers what a strip *sounds*, not only
+ * what it processes. A hosted plugin is the one device on a chain that has a
+ * native body and only a native body — Web Audio builds nothing for it, and the
+ * engine splices an instrument plugin into the chain as a generator (#3826) —
+ * so a strip holding an attached plugin can sound with no clip under the
+ * playhead at all. That is why rule 1 asks about the chain as well as the
+ * programme; {@link firstFailure} states the order the two are weighed in.
+ *
  * Buses get no entry. They are shared: a native-carried track feeds the native
  * bus while a web-carried one feeds the Web Audio bus of the same name, and the
  * two sum at the hardware output. That is what makes the split per track
@@ -116,6 +124,50 @@ function chainOf(track: Track, context: CarrierContext): AudioGraphDeviceChain {
     return context.programme.bakedStripIds.has(track.id) ? [] : track.devices;
 }
 
+/**
+ * Whether this strip's own chain names an externally hosted plugin instance
+ * the engine reports attached.
+ *
+ * Only an attached plugin counts, not a `knead` insert: `knead` processes an
+ * input and generates nothing on its own, so it gives a clip-less strip
+ * nothing to sound.
+ */
+function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
+    return chainOf(track, context).some(
+        (device) =>
+            device.externalInstanceId !== undefined && context.attachedInstanceIds.has(device.externalInstanceId)
+    );
+}
+
+/**
+ * The rule-1 reason a strip with no native playback stays on Web Audio, or
+ * `null` when rule 1 passes it. Read in the order the code checks it:
+ *
+ * - No attached plugin on the chain: `'nothing scheduled'` — nothing native is
+ *   scheduled and no attached plugin gives the strip a native body, so Web
+ *   Audio keeps whatever the strip plays and no plugin notice is owed.
+ * - A MIDI-kind track: `'MIDI plays on Web Audio'` — no native MIDI route
+ *   exists (`AudioGraphCommand` carries no MIDI), so `scheduleMidiNotes` and
+ *   `handleWebMidiNoteOn` voice the track on Web Audio regardless of what the
+ *   programme found; the clause goes the day a native MIDI route lands. Kind
+ *   is read rather than the live-input target, because the target follows
+ *   selection while carriers are decided once, when the topology is built.
+ * - The strip is in `programme.webVoicedStripIds`: `'its clips play on Web
+ *   Audio'` — Web Audio is already voicing this strip's clips, so carrying it
+ *   natively would silence them with no notice given.
+ * - Otherwise `null`: the attached plugin is uncontested, so it carries the
+ *   strip natively with no clip under the playhead at all.
+ */
+function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): string | null {
+    if (!hostsAttachedPlugin(track, context)) {
+        return 'nothing scheduled';
+    }
+    if (track.kind === 'midi') {
+        return 'MIDI plays on Web Audio';
+    }
+    return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
+}
+
 function chainObstruction(track: Track, context: CarrierContext): AudioGraphDeviceChain[number] | null {
     return chainOf(track, context).find((device) => !hasNativeBody(device, context.attachedInstanceIds)) ?? null;
 }
@@ -180,14 +232,26 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * Order is the contract, not an implementation detail: the reason a musician
  * reads has to be the first thing that is actually wrong, and a track with no
  * clips on it is not "missing a plugin".
+ *
+ * Rule 1 reads the programme first, exactly as the code does: a strip the
+ * programme scheduled native playback for passes rule 1 outright. Only a
+ * strip with no native playback falls to
+ * {@link webReasonWithoutNativePlayback}, whose guards state the one
+ * exception — an attached plugin gives a strip something to sound only when
+ * nothing on the Web Audio path still voices that strip, whether that is a
+ * MIDI track's kind or the programme's own `webVoicedStripIds`.
  */
 function firstFailure(
     track: Track,
     context: CarrierContext,
     inputMonitoredTrackIds: ReadonlySet<string>
 ): string | null {
-    if ((context.programme.playbacksByStripId.get(track.id)?.length ?? 0) === 0) {
-        return 'nothing scheduled';
+    const plays = (context.programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
+    if (!plays) {
+        const webReason = webReasonWithoutNativePlayback(track, context);
+        if (webReason) {
+            return webReason;
+        }
     }
     if (inputMonitoredTrackIds.has(track.id)) {
         // The live input reaches the Web Audio strip and nothing else, so

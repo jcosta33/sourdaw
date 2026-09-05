@@ -217,6 +217,9 @@ describe('projectLiveGraphProgramme', () => {
         expect(programme.exclusions).toEqual([
             { stripId: 'audio-1', subjectId: 'bake-1', reason: expect.stringContaining('baked buffer is not loaded') },
         ]);
+        // The frozen track's own clips are still on the Web Audio path, so the
+        // carrier law must not read this empty entry as nothing to sound.
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
     });
 
     it('admits a stretched clip with its projected playbackRate, alongside its unstretched neighbour', () => {
@@ -332,6 +335,83 @@ describe('projectLiveGraphProgramme', () => {
 });
 
 /**
+ * The strips this producer leaves to the other carrier.
+ *
+ * An empty native entry has two meanings — nothing to play, and nothing this
+ * producer could take — and only the strip's own material tells them apart. The
+ * carrier law reads `webVoicedStripIds` to keep them apart, because carrying a
+ * strip natively gates its Web Audio twin out of the mix: get this set wrong
+ * and a MIDI track goes silent for a whole take with no notice given.
+ */
+describe('projectLiveGraphProgramme — the strips Web Audio is left to voice', () => {
+    it('names the strip of a MIDI clip, which it schedules nothing for', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    clips: [audioClip({ id: 'notes', trackId: 'audio-1', type: 'midi' })],
+                }),
+            ],
+        });
+
+        expect(programme.playbacksByStripId.get('audio-1')).toBeUndefined();
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
+    });
+
+    it('names the strip of a clip whose material is not decoded, alongside excluding the clip', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    clips: [audioClip({ id: 'clip-1', trackId: 'audio-1', audioBufferId: 'missing' })],
+                }),
+            ],
+        });
+
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
+        expect(programme.exclusions).toEqual([
+            { stripId: 'audio-1', subjectId: 'clip-1', reason: expect.stringContaining('no decoded material') },
+        ]);
+    });
+
+    it('leaves a strip whose every clip it admitted out of the set', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    clips: [audioClip({ id: 'clip-1', trackId: 'audio-1', audioBufferId: 'mat-1' })],
+                }),
+            ],
+            buffers: { 'mat-1': material(10) },
+        });
+
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1);
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
+    });
+
+    it('leaves a strip with no clips at all out of the set, which is what lets its plugin carry it', () => {
+        const programme = projectProgramme({ stripTracks: [createTrack({ id: 'audio-1' })] });
+
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
+    });
+
+    it('leaves a strip whose only MIDI clip is muted out of the set, because neither carrier sounds it', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    clips: [audioClip({ id: 'notes', trackId: 'audio-1', type: 'midi', muted: true })],
+                }),
+            ],
+        });
+
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
+    });
+});
+
+/**
  * The one ceiling a producer owes the engine: a strip holds `MAX_TRACK_CLIPS`.
  *
  * A `schedule-clip` past it is a refusal, and a refusal is whole-batch — so what
@@ -410,6 +490,9 @@ describe('projectLiveGraphProgramme — what one clip may cost', () => {
                 reason: expect.stringContaining('needs 2 of the 0 native clip slots'),
             },
         ]);
+        // The refused clip is still material, and Web Audio is the only carrier
+        // left playing it — so the strip is named alongside the clip.
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
     });
 });
 
