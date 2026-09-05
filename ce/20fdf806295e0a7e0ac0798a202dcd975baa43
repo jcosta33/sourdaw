@@ -1,0 +1,31 @@
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_ac03a4ebaa3f6e::t_28566a780e4bd1 127,130-131
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_6c403bfd87a97d::t_1c7d0c0d3cf6b3 87-117
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_6c403bfd87a97d::t_31c9bc19bae335 487-514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ce20fdf806295e0a7e0ac0798a202dcd975baa43",
+  "prompts": {},
+  "sessions": {
+    "s_6c403bfd87a97d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0dd719f5cf9d5af9",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
