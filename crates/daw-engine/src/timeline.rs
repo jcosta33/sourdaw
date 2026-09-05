@@ -1200,6 +1200,90 @@ enum MixNode {
     Bus(usize),
 }
 
+/// Where a pull to silence stops. A one-pole approach only ever covers a
+/// fraction of what is left, so a fader pulled to silence would never reach it
+/// and would keep multiplying the mix by numbers small enough to cost a
+/// denormal on every frame of the rest of the session.
+///
+/// The epsilon ends approaches to targets near silence, below roughly -25 dB
+/// at 48 kHz (the crossover moves with the coefficient): there an `f32` step
+/// stays representable past this distance, so the descent runs out of
+/// distance before it runs out of step. Everywhere louder the step underflows
+/// first, and [`MasterFader::next`] ends the approach on that stall instead.
+const MASTER_FADER_SETTLED_EPSILON: f32 = 1e-6;
+
+/// The master fader: a level the mix approaches sample by sample, holding no
+/// timeline coordinate of its own.
+///
+/// A fader gesture names no frame. It says where the hand left the fader, not
+/// what the arrangement does to the master at frame `F`, so it is not
+/// automation and is not carried as a stamped ramp on
+/// [`AutomationTarget::MasterGain`]: a stamped ramp answers to the seek, hold
+/// and loop-wrap laws that govern the lane, and a wrap re-renders frames below
+/// the ramp's start, where a ramp resolves to the value it started from. The
+/// mix would step at the seam and play the whole next pass at the level the
+/// gesture moved away from. An approach has no start frame to be below.
+///
+/// The law is the one `setTargetAtTime` applies on the Web Audio fader the same
+/// gesture moves, so the two carriers of one mix arrive at one level together.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MasterFader {
+    value: f32,
+    target: f32,
+    /// The fraction of the distance left that one sample covers.
+    smoothing: f32,
+}
+
+impl MasterFader {
+    const fn new(value: f32) -> Self {
+        Self {
+            value,
+            target: value,
+            smoothing: 1.0,
+        }
+    }
+
+    /// Aim at `target`, from wherever the fader currently stands.
+    fn set_target(&mut self, target: f32, smoothing: f32) {
+        self.target = target;
+        self.smoothing = smoothing;
+    }
+
+    /// Whether the fader holds one level for as long as nothing re-aims it.
+    const fn settled(&self) -> bool {
+        self.value == self.target
+    }
+
+    /// The level for one sample, advancing the approach by that sample. A
+    /// sample is multiplied by the level the fader stood at when it arrived, so
+    /// the first sample after a gesture still carries the level the sample
+    /// before it did and nothing steps.
+    ///
+    /// The approach ends for either of two reasons, and both are needed to
+    /// reach [`Self::settled`] from anywhere in the audible range. Close to
+    /// silence the distance left falls under
+    /// [`MASTER_FADER_SETTLED_EPSILON`] first, which is what keeps a pull to
+    /// silence out of the denormals. Everywhere else the increment underflows
+    /// before that: one step covers a coefficient's worth of what is left, and
+    /// that lands below half an ULP of `value` while roughly `1e-4` dB of
+    /// distance remains — inaudible, but enough that a fader which never
+    /// settled would leave the block-constant path in
+    /// `apply_master_fader` unreachable for the rest of the session.
+    /// A step that cannot move the value is that end, so it settles there.
+    fn next(&mut self) -> f32 {
+        let level = self.value;
+        let advanced = self.value + (self.target - self.value) * self.smoothing;
+        let stalled = advanced == self.value;
+        let within_epsilon = (self.target - advanced).abs() < MASTER_FADER_SETTLED_EPSILON;
+        self.value = if stalled || within_epsilon {
+            self.target
+        } else {
+            advanced
+        };
+        level
+    }
+}
+
 /// The routed graph.
 pub struct TimelineGraph {
     tracks: Vec<Box<TimelineTrack>>,
@@ -1214,6 +1298,7 @@ pub struct TimelineGraph {
     /// Kahn ready-queue scratch for a mix-order rebuild.
     mix_ready: Vec<usize>,
     master_gain: RampedParam,
+    master_fader: MasterFader,
     scratch_left: Vec<f32>,
     scratch_right: Vec<f32>,
     /// Where a generator writes before it is summed into the chain it sits on.
@@ -1233,6 +1318,7 @@ impl TimelineGraph {
             mix_in_degree: Vec::with_capacity(MIX_NODE_CAPACITY),
             mix_ready: Vec::with_capacity(MIX_NODE_CAPACITY),
             master_gain: RampedParam::new(1.0),
+            master_fader: MasterFader::new(1.0),
             scratch_left: vec![0.0; MAX_CALLBACK_FRAMES],
             scratch_right: vec![0.0; MAX_CALLBACK_FRAMES],
             generator_left: vec![0.0; MAX_CALLBACK_FRAMES],
@@ -1254,6 +1340,7 @@ impl TimelineGraph {
             mix_in_degree: Vec::new(),
             mix_ready: Vec::new(),
             master_gain: RampedParam::new(1.0),
+            master_fader: MasterFader::new(1.0),
             scratch_left: Vec::new(),
             scratch_right: Vec::new(),
             generator_left: Vec::new(),
@@ -2052,8 +2139,17 @@ impl TimelineGraph {
         }
     }
 
-    /// Apply the master fader, the last stage of the strip, after the master
-    /// insert chain has run.
+    /// Aim the master fader at a new level, which it approaches from wherever
+    /// it stands. Nothing here is stamped, so nothing the transport does to the
+    /// playhead reaches it.
+    pub(crate) fn set_master_fader_target(&mut self, target: f32, smoothing: f32) {
+        self.master_fader.set_target(target, smoothing);
+    }
+
+    /// Apply the master stage, the last stage of the strip, after the master
+    /// insert chain has run: the automation lane's gain, then the fader over
+    /// it. The two are separate levels on one signal — the arrangement's master
+    /// curve, and where the hand left the fader — so they multiply.
     pub(crate) fn apply_master_gain(
         &mut self,
         block_start: u64,
@@ -2069,6 +2165,38 @@ impl TimelineGraph {
             &mut right[..frames],
             &mut self.diagnostics,
         );
+        apply_master_fader(
+            &mut self.master_fader,
+            frames,
+            &mut left[..frames],
+            &mut right[..frames],
+        );
+    }
+}
+
+/// Multiply the master fader into one span.
+///
+/// A settled fader is one number for the whole span, which is the common case:
+/// the fader only moves while a hand is on it. A moving one is walked sample by
+/// sample and takes no frame, because where it stands is a function of how many
+/// samples it has passed rather than of the position those samples play at.
+fn apply_master_fader(fader: &mut MasterFader, frames: usize, left: &mut [f32], right: &mut [f32]) {
+    if fader.settled() {
+        let level = fader.value;
+        if level == 1.0 {
+            return;
+        }
+        for index in 0..frames {
+            left[index] *= level;
+            right[index] *= level;
+        }
+        return;
+    }
+
+    for index in 0..frames {
+        let level = fader.next();
+        left[index] *= level;
+        right[index] *= level;
     }
 }
 

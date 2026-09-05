@@ -18,6 +18,11 @@
  *   at the frame each span starts on. So the engine reports the arrangement's
  *   tempo at the new position without being told it again.
  *
+ * - The master fader is a smoother the engine advances per sample rather than a
+ *   stamped write (`MasterFader`, `timeline.rs`), so a locate cannot reach it:
+ *   it holds no frame for the seek to invalidate, and a glide the locate
+ *   interrupts simply continues at the new position.
+ *
  * The native `set-transport` maps to `SetTransportPlayback` followed by
  * `SeekFrames` (`commands/graph.rs`) — playback state, then the locate — and
  * the locate is what drops the automation writes the move made stale

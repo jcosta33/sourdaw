@@ -7,12 +7,12 @@ const mocks = vi.hoisted(() => {
     const transportStore: { value: { masterGain: number } | null } = { value: { masterGain: 80 } };
     return {
         replaceMasterGain: vi.fn(),
-        setMasterGain: vi.fn(),
+        setMasterGainValue: vi.fn(),
         transportStore,
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({ setMasterGain: mocks.setMasterGain }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({ setMasterGainValue: mocks.setMasterGainValue }));
 vi.mock('../../../stores/transportStore', () => ({ transportStore: mocks.transportStore }));
 vi.mock('../../../useCases/replaceMasterGain', () => ({ replaceMasterGain: mocks.replaceMasterGain }));
 
@@ -40,14 +40,14 @@ describe('master-gain guarded replay handlers', () => {
         const result = await handleSetMasterGain.execute(action);
         expect(result).toMatchObject({ status: 'written' });
         expect(mocks.replaceMasterGain).toHaveBeenCalledWith({ expectedPercent: 80, replacementPercent: 65 });
-        expect(mocks.setMasterGain).not.toHaveBeenCalled();
+        expect(mocks.setMasterGainValue).not.toHaveBeenCalled();
 
         mocks.transportStore.value = { masterGain: 65 };
         await result?.afterCommit?.();
         mocks.transportStore.value = { masterGain: 70 };
         await result?.afterAmbiguousCommit?.();
-        expect(mocks.setMasterGain).toHaveBeenNthCalledWith(1, 0.65);
-        expect(mocks.setMasterGain).toHaveBeenNthCalledWith(2, 0.7);
+        expect(mocks.setMasterGainValue).toHaveBeenNthCalledWith(1, 0.65);
+        expect(mocks.setMasterGainValue).toHaveBeenNthCalledWith(2, 0.7);
     });
 
     it('conflicts instead of overwriting a newer durable value during replay', () => {

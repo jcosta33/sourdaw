@@ -538,6 +538,27 @@ pub enum GraphCommand {
         target: AutomationTarget,
         write: AutomationWrite,
     },
+    /// Aim the master fader at `value`, approaching it by `smoothing` of the
+    /// distance left per sample.
+    ///
+    /// A fader gesture carries no timeline coordinate, which is why this is a
+    /// command of its own rather than an [`GraphCommand::AutomateParam`] on
+    /// [`AutomationTarget::MasterGain`]. That lane holds what the arrangement
+    /// does to the master at a named frame, and every write in it answers to
+    /// seek, hold and the loop wrap; the fader answers to none of them, because
+    /// where the hand left it is true at every position. Sending it as a
+    /// stamped ramp put it under those laws: a wrap re-renders frames below the
+    /// ramp's start, and a ramp asked for a value there gives the level it
+    /// started from, so the seam clicked and the next pass played at the
+    /// pre-gesture level.
+    ///
+    /// A drag is a stream of these, and each one re-aims the same smoother from
+    /// the level it has reached. Nothing queues, so no gesture rate can overrun
+    /// the engine.
+    SetMasterGain {
+        value: f32,
+        smoothing: f32,
+    },
     /// A time-stamped change to a built-in device parameter, addressed without
     /// a name so consuming the command frees nothing on the audio thread.
     ///
@@ -674,6 +695,7 @@ impl GraphCommand {
             | Self::SetClipPlayback(..)
             | Self::SeekFrames(..)
             | Self::AutomateParam { .. }
+            | Self::SetMasterGain { .. }
             | Self::AutomateDeviceParam { .. }
             // The input bus addresses effects the table already holds; it
             // takes no slot of its own.
@@ -2159,6 +2181,13 @@ impl AudioScheduler {
                 }
                 GraphCommand::AutomateParam { target, write } => {
                     self.timeline.automate(target, write);
+                    None
+                }
+                // No frame: the smoother continues from the level it holds
+                // whatever the playhead does, so the seek, hold and wrap laws
+                // that govern the automation lane have nothing to reach.
+                GraphCommand::SetMasterGain { value, smoothing } => {
+                    self.timeline.set_master_fader_target(value, smoothing);
                     None
                 }
                 GraphCommand::AutomateDeviceParam {
@@ -6926,6 +6955,219 @@ mod timeline_tests {
         // the engineer expects to be last on the strip.
         let (left, _) = harness.render(4);
         assert_eq!(left, vec![0.25; 4]);
+    }
+
+    /// The coefficient the master fader command carries at 48 kHz.
+    ///
+    /// `commands/graph.rs` maps a gesture to `1 - exp(-1 / (T * sample_rate))`
+    /// with `T` the 10 ms time constant the Web Audio fader smooths on, so this
+    /// is the same number the desktop app sends.
+    fn master_smoothing() -> f32 {
+        1.0 - (-1.0f32 / (0.010 * 48_000.0)).exp()
+    }
+
+    /// One time constant at 48 kHz, in frames: the point a one-pole approach
+    /// has covered `1 - 1/e` of the distance by.
+    const MASTER_TIME_CONSTANT_FRAMES: usize = 480;
+
+    /// The fader glides on its own law, from the level it is holding.
+    ///
+    /// A step from unity to silence is the loudest click a mix can make, so the
+    /// first sample after the gesture has to still carry the level the sample
+    /// before it did, and the descent has to be the exponential approach the
+    /// Web Audio fader beside it makes rather than a straight line.
+    #[test]
+    fn master_fader_approaches_its_target_by_the_one_pole_law_without_a_step() {
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 8_192);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            smoothing,
+        });
+
+        let (first, _) = harness.render(4_096);
+        let (second, _) = harness.render(4_096);
+
+        assert_eq!(
+            first[0], 1.0,
+            "the first sample must carry the level the fader was holding"
+        );
+        let one_time_constant = first[MASTER_TIME_CONSTANT_FRAMES];
+        assert!(
+            (one_time_constant - 1.0 / std::f32::consts::E).abs() < 1e-3,
+            "one time constant in, the fader stands at 1/e of the way it started from, got {one_time_constant}"
+        );
+        let mut previous = 1.0;
+        for (index, sample) in first.iter().enumerate() {
+            let step = previous - sample;
+            assert!(
+                (0.0..=smoothing).contains(&step),
+                "the descent must be monotone and cover at most one coefficient's worth of what is left, stepped by {step} at {index}"
+            );
+            previous = *sample;
+        }
+        assert_eq!(
+            *second.last().expect("the second block rendered"),
+            0.0,
+            "a fader pulled to silence has to reach true zero rather than approach it forever"
+        );
+    }
+
+    /// A drag is a stream of gestures, and each one re-aims the same fader.
+    ///
+    /// The new approach starts from the level the fader has actually reached,
+    /// so the mix never jumps to where a superseded gesture was heading, and it
+    /// travels on the one-pole law from there rather than on a straight line to
+    /// the new target.
+    #[test]
+    fn master_fader_re_anchors_from_the_level_it_has_reached() {
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4_096);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            smoothing,
+        });
+        harness.render(MASTER_TIME_CONSTANT_FRAMES);
+
+        harness.send(GraphCommand::SetMasterGain {
+            value: 1.0,
+            smoothing,
+        });
+        let (rising, _) = harness.render(MASTER_TIME_CONSTANT_FRAMES);
+
+        let anchor = 1.0 / std::f32::consts::E;
+        assert!(
+            (rising[0] - anchor).abs() < 1e-3,
+            "the second gesture must continue from where the first had reached, got {}",
+            rising[0]
+        );
+        let last = *rising.last().expect("the rising block rendered");
+        assert!(
+            rising[0] > 0.0 && last > 0.0,
+            "the span this samples must sound at both ends, got {} and {last}",
+            rising[0]
+        );
+        // Sampled strictly inside that span, against the approach's own
+        // formula: a straight line between the same endpoints stands well over
+        // a tenth away from it here.
+        let interior = MASTER_TIME_CONSTANT_FRAMES / 2;
+        let expected = 1.0 - (1.0 - anchor) * (1.0 - smoothing).powi(interior as i32);
+        assert!(
+            (rising[interior] - expected).abs() < 1e-3,
+            "the rise must follow the one-pole law from its anchor: sample {interior} is {}, the law says {expected}",
+            rising[interior]
+        );
+    }
+
+    /// The fader arrives at its target rather than parking beside it.
+    ///
+    /// A one-pole approach covers a fraction of what is left, so the step
+    /// shrinks with the distance and underflows `f32` before the distance
+    /// reaches zero: the fader stops moving a hair off its target, and a fader
+    /// that never settles walks every block sample by sample and holds a level
+    /// that is not the one the gesture asked for, for the rest of the session.
+    /// The residue is inaudible; being permanently unsettled is not.
+    #[test]
+    fn master_fader_settles_exactly_on_a_target_it_cannot_reach_by_halving() {
+        const BLOCK: usize = 4_096;
+        const BLOCKS: usize = 4;
+
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(16);
+        harness.playing();
+        // The clip must be exactly unity: the master automation lane's unity
+        // fast path leaves the signal untouched, so a rendered sample equal
+        // to 0.8 proves the fader's own value is bit-equal to its target
+        // rather than merely close to it.
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, BLOCK * BLOCKS);
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.8,
+            smoothing,
+        });
+
+        // Well past six time constants, by which an approach has covered all
+        // but a quarter percent of the distance and long since stopped moving.
+        let mut last = Vec::new();
+        for _ in 0..BLOCKS {
+            let (block, _) = harness.render(BLOCK);
+            last = block;
+        }
+
+        assert!(
+            last.iter().all(|sample| *sample == 0.8),
+            "the fader must land on the level the gesture named, not beside it: the last block ends at {}",
+            last.last().expect("the last block rendered")
+        );
+    }
+
+    /// A loop wrap is not a fader move.
+    ///
+    /// The wrap sends the playhead back below the frame the gesture arrived on,
+    /// and anything stamped in timeline frames answers there with the value it
+    /// started from — a step at the seam, and a whole pass at the pre-gesture
+    /// level. The fader holds no frame, so the seam is not a coordinate it can
+    /// be read at.
+    #[test]
+    fn master_fader_crosses_a_loop_seam_without_a_step() {
+        const LOOP_END: u64 = 1_024;
+        const BEFORE_SEAM: usize = 1_020;
+        const ACROSS_SEAM: usize = 480;
+        /// Where the first frame of the second pass lands in the block below.
+        const SEAM_AT: usize = (LOOP_END - BEFORE_SEAM as u64) as usize;
+
+        let smoothing = master_smoothing();
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 9, 1.0, 4_096);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        let (approaching, _) = harness.render(BEFORE_SEAM);
+        // Sent before the wrap, and the case has power only that way round: a
+        // fader still travelling when the seam arrives is what distinguishes an
+        // approach from a stamped ramp, which would resolve back to its start.
+        harness.send(GraphCommand::SetMasterGain {
+            value: 0.0,
+            smoothing,
+        });
+        let (across, _) = harness.render(ACROSS_SEAM);
+
+        assert_eq!(
+            harness.scheduler.transport_position().loop_wraps,
+            1,
+            "this block has to hold the seam for the case to say anything"
+        );
+        for (index, sample) in across.iter().enumerate() {
+            let expected = (1.0 - smoothing).powi(index as i32);
+            assert!(
+                (sample - expected).abs() < 1e-3,
+                "the approach must not notice the wrap: sample {index} is {sample}, the law says {expected}"
+            );
+        }
+        let mut previous = *approaching.last().expect("the first pass sounded");
+        for (index, sample) in across.iter().enumerate() {
+            let step = previous - sample;
+            assert!(
+                (0.0..=smoothing).contains(&step),
+                "no sample may step by more than one coefficient's worth of what is left, stepped by {step} at {index}"
+            );
+            previous = *sample;
+        }
+        assert!(
+            across[SEAM_AT] > 0.0 && *across.last().expect("the block rendered") > 0.0,
+            "the span this samples must sound at both ends"
+        );
+        assert!(
+            *across.last().expect("the block rendered") < across[SEAM_AT],
+            "the fader must keep travelling after the wrap rather than parking where the seam found it"
+        );
     }
 
     #[test]

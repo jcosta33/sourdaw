@@ -504,6 +504,30 @@ export type AudioGraphSetMonitorShadowCommand = Readonly<{
     shadowed: boolean;
 }>;
 
+/**
+ * Where the master fader stands, as a linear amplitude on the same scale a
+ * strip's `gain` uses — `1` is unity and the ceiling is the fader's headroom,
+ * not unity.
+ *
+ * Session-level, like the monitor gate above and unlike everything else in
+ * this union: it addresses no strip, so it appears in no
+ * {@link AudioGraphStripReport}, and it is deliberately not a
+ * {@link AudioGraphStripParameterTarget}. A fader is a gesture, and a gesture
+ * has no timeline coordinate: where the hand left it is true at every position,
+ * including one the transport reaches by seeking or by wrapping a loop. So this
+ * is a target the backend approaches from wherever its fader currently stands,
+ * never a change stamped at a frame — which also means no ordering against a
+ * locate, and no queue for a drag to overrun.
+ *
+ * A backend that applies the master level from the project rather than from a
+ * live gesture — an offline render is one — refuses this rather than accepting
+ * it and doing nothing.
+ */
+export type AudioGraphSetMasterGainCommand = Readonly<{
+    kind: 'set-master-gain';
+    gain: number;
+}>;
+
 export type AudioGraphCommand =
     | AudioGraphCreateTrackStripCommand
     | AudioGraphCreateBusStripCommand
@@ -516,7 +540,8 @@ export type AudioGraphCommand =
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphSetTransportCommand
-    | AudioGraphSetMonitorShadowCommand;
+    | AudioGraphSetMonitorShadowCommand
+    | AudioGraphSetMasterGainCommand;
 
 /**
  * The correlation a graph write carries, shared with the live delta protocol

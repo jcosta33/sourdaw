@@ -26,6 +26,7 @@ import { type SetEngineTransportMapsResult } from '../../../repositories/engineT
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
+import { masterGainState } from '../../engineAccess/masterGainState';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
@@ -413,6 +414,10 @@ beforeEach(() => {
     // one's would read a strip as built that this session never built.
     nativeLiveGraphSession.nativeChainByStripId = new Map();
     nativeLiveGraphSession.pending = Promise.resolve();
+    // The fader's position is module state too, and every batch below states
+    // it, so a case inheriting the previous one's would open a session at a
+    // level no gesture in it ever set.
+    masterGainState.gain = 0.8;
     // The start and the maps update arm the real writer, and its pass is what
     // the arm-wiring cases below read — so it is reset with the session's own.
     nativeLiveAutomationWriter.epoch += 1;
@@ -720,6 +725,7 @@ describe('startNativeLiveGraphSession', () => {
         expect(appliedBatches()[0]?.commands).toEqual([
             { kind: 'set-monitor-shadow', shadowed: false },
             { kind: 'set-transport', playing: false, positionSeconds: 2.5 },
+            { kind: 'set-master-gain', gain: 0.8 },
             expect.objectContaining({ kind: 'create-track-strip', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'create-bus-strip', busId: 'bus-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
@@ -997,6 +1003,19 @@ describe('startNativeLiveGraphSession', () => {
         // Web Audio and sound them nowhere.
         expect(appliedBatches()[0]?.commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: false });
         expect(nativeLiveGraphSession.monitorShadowed).toBe(false);
+    });
+
+    // A strip this engine carries leaves through the native device and never
+    // crosses the Web Audio master node, so a session opened at unity would
+    // play those tracks hot against every strip Web Audio is still sounding.
+    it('opens at the level the master fader is standing at', async () => {
+        masterGainState.gain = 0.35;
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        // In the opening group, ahead of every strip it governs, so the first
+        // block this session renders is already at the fader's level.
+        expect(appliedBatches()[0]?.commands[2]).toEqual({ kind: 'set-master-gain', gain: 0.35 });
     });
 
     it('shadows the monitor only when the caller asks for a silent mirror', async () => {
@@ -1634,6 +1653,20 @@ describe('repositionNativeLiveGraphSession', () => {
         // A locate that replaced would tear down the topology the plugin
         // runtimes are standing on to move the playhead a few beats.
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
+    });
+
+    // The fader is a smoother the engine advances per sample, holding no frame
+    // for the seek to invalidate, so a locate leaves the master level exactly
+    // where it stands and a restate here would carry no work.
+    it('leaves the master level alone, because a locate cannot reach the fader', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        masterGainState.gain = 0.6;
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(appliedBatches().at(-1)?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
+        ]);
     });
 
     // Every route that applies a batch carries the correction, because any

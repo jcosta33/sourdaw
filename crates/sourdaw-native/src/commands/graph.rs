@@ -183,6 +183,24 @@ fn fader_max_gain() -> f32 {
     10f32.powf(FADER_HEADROOM_DB / 20.0)
 }
 
+/// The time constant the master fader approaches a new level on.
+///
+/// The law is the Web Audio fader's own: `setMasterGain` in
+/// `src/modules/AudioEngine/repositories/createWebAudioEngine.ts` smooths with
+/// `setTargetAtTime(value, now, 0.01)`, a one-pole approach that covers the
+/// same fraction of the distance left every sample. Both carriers of one mix
+/// answer one gesture by one law, so a strip the native engine carries arrives
+/// at the new level together with the strips beside it. Ten milliseconds is
+/// also slow enough to make the loudest move a fader can make — unity to
+/// silence — click-free.
+const MASTER_GAIN_TIME_CONSTANT_SECONDS: f64 = 0.010;
+
+/// The per-sample coefficient of that approach: `1 - exp(-1 / (T * fs))`, the
+/// fraction of the distance left one sample covers.
+fn master_gain_smoothing(sample_rate: f32) -> f32 {
+    (1.0 - (-1.0 / (MASTER_GAIN_TIME_CONSTANT_SECONDS * f64::from(sample_rate))).exp()) as f32
+}
+
 /// This app's pan scale is −50…+50; the engine's pan law takes −1…+1.
 const PROJECT_PAN_SCALE: f32 = 50.0;
 
@@ -334,6 +352,15 @@ pub enum GraphCommandPayload {
     /// that is already rolling.
     #[serde(rename_all = "camelCase")]
     SetMonitorShadow { shadowed: bool },
+    /// The master fader, as a linear amplitude on the same scale a strip's
+    /// `gain` uses (`1.0` is unity, and the ceiling is the fader's headroom
+    /// rather than unity). Session-level like the monitor gate: it addresses
+    /// no strip, appears in no report, and is never a `write-parameter`
+    /// target. Where the hand left the fader is true at every position, so the
+    /// engine takes it as a target to approach rather than as a change stamped
+    /// at a frame.
+    #[serde(rename_all = "camelCase")]
+    SetMasterGain { gain: f64 },
 }
 
 #[derive(Debug, Deserialize)]
@@ -2177,6 +2204,29 @@ fn map_command(
             ops.push(GraphCommand::SetMonitorShadow(*shadowed));
             Ok(())
         }
+
+        GraphCommandPayload::SetMasterGain { gain } => {
+            // The fader law, minus the VCA the master has none of: the ceiling
+            // is `fader_max_gain()` rather than unity, because the master
+            // fader carries the same +6 dB of make-up gain a strip's does.
+            let stored = finite(*gain, "set-master-gain gain")?;
+            if stored < 0.0 {
+                return Err("set-master-gain: gain is negative".to_string());
+            }
+            let value = (stored as f32).min(fader_max_gain());
+            // No `touch`: the command names no strip, so there is no realized
+            // chain for a report to observe. No `push_automation` either, and
+            // not because the budget is being dodged — this is not an
+            // automation write at all. It carries no frame and takes no slot in
+            // any parameter's queue: the engine re-aims one smoother, which
+            // holds a target rather than a schedule. Charging the automation
+            // ledger for it would refuse batches the engine has room for.
+            ops.push(GraphCommand::SetMasterGain {
+                value,
+                smoothing: master_gain_smoothing(sample_rate),
+            });
+            Ok(())
+        }
     }
 }
 
@@ -3593,6 +3643,116 @@ mod tests {
                 }
             )));
         }
+    }
+
+    /// The master fader crosses as a target and the coefficient to approach it
+    /// by, with no frame anywhere in it. It names no strip, so it observes
+    /// none, and it charges no automation slot, because it queues no write.
+    #[test]
+    fn set_master_gain_maps_onto_a_smoother_target_that_charges_no_queue() {
+        let batch = batch(json!([
+            { "kind": "set-master-gain", "gain": 0.5 }
+        ]));
+
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+            .expect("the master fader should map without a strip");
+
+        // What the coefficient means: over one time constant — 480 frames at
+        // 48 kHz — the approach leaves `1/e` of the distance, which is the
+        // definition `setTargetAtTime(value, now, 0.01)` answers to.
+        let master_writes = mapped
+            .ops
+            .iter()
+            .filter(|op| {
+                matches!(
+                    op,
+                    GraphCommand::SetMasterGain { value, smoothing }
+                        if *value == 0.5
+                            && ((1.0 - smoothing).powi(480) - 1.0 / std::f32::consts::E).abs()
+                                < 1e-4
+                )
+            })
+            .count();
+        assert_eq!(
+            master_writes, 1,
+            "one aim at the requested level, on the Web Audio fader's own law"
+        );
+        assert_eq!(mapped.ops.len(), 1, "the command carries nothing else");
+        assert!(mapped.reports.is_empty(), "no strip was addressed");
+        assert!(
+            registry.automation_pending.is_empty(),
+            "a target the engine approaches occupies no parameter queue to charge"
+        );
+    }
+
+    /// The approach is stated per sample, so its coefficient has to be derived
+    /// from the rate the session actually runs at: one rate's coefficient at
+    /// another rate is a different time constant, and the two carriers would
+    /// stop agreeing.
+    #[test]
+    fn set_master_gain_scales_its_smoothing_with_the_sample_rate() {
+        let batch = batch(json!([
+            { "kind": "set-master-gain", "gain": 0.5 }
+        ]));
+
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 96_000.0)
+            .expect("the master fader should map at any rate");
+
+        // The same 10 ms, which is 960 frames at this rate rather than 480.
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::SetMasterGain { smoothing, .. }
+                if ((1.0 - smoothing).powi(960) - 1.0 / std::f32::consts::E).abs() < 1e-4
+        )));
+    }
+
+    /// The master fader has the same +6 dB of headroom a strip fader has, and
+    /// the same hard floor. A stored value past the ceiling clamps to it
+    /// rather than reaching the engine as raw make-up gain.
+    #[test]
+    fn set_master_gain_clamps_at_the_fader_ceiling() {
+        let batch = batch(json!([
+            { "kind": "set-master-gain", "gain": 3.0 }
+        ]));
+
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+            .expect("a gain past the ceiling clamps rather than refusing");
+
+        let ceiling = fader_max_gain();
+        assert!(mapped.ops.iter().any(
+            |op| matches!(op, GraphCommand::SetMasterGain { value, .. } if *value == ceiling)
+        ));
+    }
+
+    /// A negative amplitude is a phase inversion, never a level, so it refuses
+    /// the batch by name instead of reaching the engine as a fader position.
+    /// Zero is a level — the fader pulled all the way down — and must apply.
+    #[test]
+    fn set_master_gain_refuses_a_negative_gain_and_applies_a_zero_one() {
+        let negative = batch(json!([
+            { "kind": "set-master-gain", "gain": -0.1 }
+        ]));
+        let mut registry = GraphRegistry::default();
+        let refused = map_unbound_batch(&negative, &mut registry, &sample_pool(), 48_000.0)
+            .expect_err("a negative gain must refuse");
+        assert!(
+            refused.contains("set-master-gain"),
+            "the refusal should name the command, got {refused}"
+        );
+
+        let silent = batch(json!([
+            { "kind": "set-master-gain", "gain": 0.0 }
+        ]));
+        let mut registry = GraphRegistry::default();
+        let mapped = map_unbound_batch(&silent, &mut registry, &sample_pool(), 48_000.0)
+            .expect("a fader pulled to silence is a level, not a refusal");
+        assert!(mapped
+            .ops
+            .iter()
+            .any(|op| matches!(op, GraphCommand::SetMasterGain { value, .. } if *value == 0.0)));
     }
 
     #[test]

@@ -114,6 +114,7 @@ function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGrap
         attachedInstanceIds: new Set(),
         transport: { playing: true, positionSeconds: 0 },
         monitor: 'shadowed',
+        masterGain: 0.8,
         programme: NO_PROGRAMME,
         inputMonitoredTrackIds: new Set(),
         ...overrides,
@@ -666,7 +667,33 @@ describe('projectLiveGraphTopology', () => {
         expect(commands).toEqual([
             { kind: 'set-monitor-shadow', shadowed: true },
             { kind: 'set-transport', playing: false, positionSeconds: 3 },
+            { kind: 'set-master-gain', gain: 0.8 },
         ]);
+    });
+
+    it('carries the master level the fader is standing at', () => {
+        const commands = project({ masterGain: 0.35 });
+
+        expect(commands).toContainEqual({ kind: 'set-master-gain', gain: 0.35 });
+    });
+
+    it('states the master level before any strip it governs can sound', () => {
+        // The level every strip in this batch is heard through, so it belongs
+        // in the opening group with the monitor gate rather than after the
+        // strips. It cannot be stated ahead of the gate itself: the gate is
+        // what decides whether this engine reaches the speakers at all.
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            transport: { playing: true, positionSeconds: 0 },
+            masterGain: 0.35,
+        });
+
+        const monitorAt = commands.findIndex((command) => command.kind === 'set-monitor-shadow');
+        const masterAt = commands.findIndex((command) => command.kind === 'set-master-gain');
+        const firstStripAt = commands.findIndex((command) => command.kind === 'create-track-strip');
+        expect(monitorAt).toBe(0);
+        expect(masterAt).toBeGreaterThan(monitorAt);
+        expect(masterAt).toBeLessThan(firstStripAt);
     });
 
     it('opens the batch with the monitor mode, ahead of anything that could be audible', () => {

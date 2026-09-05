@@ -145,8 +145,6 @@ export { registerScheduledSource } from './scheduling/registerScheduledSource';
 export { getCurrentTime } from './scheduling/getCurrentTime';
 export { createBufferSource } from './scheduling/createBufferSource';
 
-export { setMasterGain } from './setMasterGain';
-
 export { setTrackGain } from './trackAudioControls/setTrackGain';
 export { setTrackPan } from './trackAudioControls/setTrackPan';
 export { scheduleTrackGain } from './trackAudioControls/scheduleTrackGain';
