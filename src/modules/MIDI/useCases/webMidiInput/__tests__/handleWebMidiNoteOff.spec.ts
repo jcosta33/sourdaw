@@ -766,7 +766,7 @@ describe('handleWebMidiNoteOff', () => {
                 })
             );
             activeNotes.set(createWebMidiNoteKey(3, 62), {
-                channel: 3,
+                channel: 5,
                 note: 62,
                 trackId: 'track-1',
                 instrumentTrackId: 'track-1',
@@ -783,7 +783,7 @@ describe('handleWebMidiNoteOff', () => {
                 deviceId: 'plug-1',
                 note: 62,
                 velocity: 0,
-                channel: 3,
+                channel: 5,
                 isNoteOn: false,
             });
         });

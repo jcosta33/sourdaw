@@ -699,5 +699,53 @@ describe('handleWebMidiNoteOn', () => {
             expect(send_native_live_midi_note).toHaveBeenCalledTimes(1);
             expect(fermenter_note_on).not.toHaveBeenCalled();
         });
+
+        it('sends the note to the carried parent instrument when a toaster child is the target', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const toaster_note_on = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'parent-1',
+                                devices: [
+                                    { id: 'toast-1', type: 'toaster' },
+                                    { id: 'plug-1', type: 'plugin', externalInstanceId: 'inst-1' },
+                                ],
+                            },
+                            { id: 'child-1', parentId: 'parent-1', devices: [] },
+                        ],
+                        selectedTrackId: 'child-1',
+                    }),
+                    isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) =>
+                        trackId === 'parent-1' && deviceId === 'plug-1',
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                })
+            );
+            target_track_id.value = 'child-1';
+            ensure_track_strip.mockReturnValue({
+                gainNode: {},
+                deviceNodes: [
+                    {
+                        type: 'toaster',
+                        deviceId: 'toast-1',
+                        toasterControls: { noteOn: toaster_note_on, noteOff: vi.fn() },
+                    },
+                ],
+            });
+
+            await fn(0, 60, 100);
+
+            expect(send_native_live_midi_note).toHaveBeenCalledWith({
+                trackId: 'parent-1',
+                deviceId: 'plug-1',
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                isNoteOn: true,
+            });
+            expect(toaster_note_on).not.toHaveBeenCalled();
+        });
     });
 });

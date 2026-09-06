@@ -1,7 +1,7 @@
 import { releaseActiveToasterNote } from './releaseActiveToasterNote';
 import { activeNotes, channelToNote } from './state';
 
-import type { GetWebMidiTrackStrip, WebMidiInstrumentStrip } from './engineStripAccess';
+import type { GetWebMidiTrackStrip, ReleaseNativeLiveNote, WebMidiInstrumentStrip } from './engineStripAccess';
 import type { ActiveNoteData } from '../../models/WebMidiTypes';
 
 type ReleaseAllActiveNotesInput = {
@@ -13,6 +13,13 @@ type ReleaseAllActiveNotesInput = {
      */
     getCurrentTime?: () => number;
     getTrackStrip: GetWebMidiTrackStrip;
+    /**
+     * Required, not optional: an optional callback lets a caller drift the way
+     * a native-carried voice is released, exactly the way the Fermenter /
+     * Grand Boule / Levain lists once drifted before this became the one
+     * release core (audit MD-6).
+     */
+    releaseNativeNote: ReleaseNativeLiveNote;
 };
 
 /** Fade applied to a raw oscillator voice before it is stopped, in seconds. */
@@ -46,6 +53,15 @@ function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput)
         findDeviceNode(strip, noteData.levainDeviceId)?.levainControls?.noteOff(noteData.note);
     }
 
+    if (noteData.nativeDeviceId) {
+        input.releaseNativeNote({
+            trackId: noteData.instrumentTrackId,
+            deviceId: noteData.nativeDeviceId,
+            note: noteData.note,
+            channel: noteData.channel,
+        });
+    }
+
     if (!noteData.osc) {
         return;
     }
@@ -69,7 +85,9 @@ function releaseOne(noteData: ActiveNoteData, input: ReleaseAllActiveNotesInput)
  * device kinds to release — two of those lists had already drifted, releasing
  * Toaster pads and raw oscillators but silently leaking every Fermenter, Grand
  * Boule and Levain voice, which then had no owner at all because the map was
- * cleared underneath them.
+ * cleared underneath them. A native-carried voice gets the same treatment: the
+ * body sounding it lives outside this process, and clearing the map with no
+ * release leaves it stuck on with no gesture left to stop it.
  */
 export function releaseAllActiveNotes(input: ReleaseAllActiveNotesInput): void {
     for (const noteData of activeNotes.values()) {

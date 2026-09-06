@@ -27,7 +27,7 @@ vi.mock('../../getActiveInput', () => ({
 
 const { resetMidiState } = await import('../resetMidiState');
 
-const reset_deps = { getCurrentTime: () => 5, getTrackStrip: get_track_strip };
+const reset_deps = { getCurrentTime: () => 5, getTrackStrip: get_track_strip, releaseNativeNote: () => {} };
 
 function makeOscWithEnv() {
     const setTargetAtTime = vi.fn();

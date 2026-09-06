@@ -3,6 +3,8 @@ import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { releaseAllActiveNotes } from '../../repositories/webMidi/releaseAllActiveNotes';
 import { sendPanicToMidiOutputs } from '../../repositories/webMidi/sendPanicToMidiOutputs';
 
+import { releaseNativeLiveNote } from './releaseNativeLiveNote';
+
 type PanicLiveNotesInput = {
     /**
      * Whether to broadcast the channel-mode panic to connected outputs.
@@ -27,6 +29,7 @@ export function panicLiveNotes({ notifyOutputs = true }: PanicLiveNotesInput = {
     releaseAllActiveNotes({
         getCurrentTime: () => audioEngine.context.currentTime,
         getTrackStrip: (trackId) => audioEngine.getTrackStrip(trackId),
+        releaseNativeNote: releaseNativeLiveNote,
     });
     if (notifyOutputs) {
         sendPanicToMidiOutputs();

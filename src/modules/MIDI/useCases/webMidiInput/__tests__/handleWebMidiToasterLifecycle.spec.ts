@@ -117,7 +117,9 @@ function makeNoteOffDependencies(): NoteOffDependencies {
     };
 }
 
-function makeNoteOnDependencies(noteOff: (channel: number, note: number, velocity?: number) => Promise<void>) {
+function makeNoteOnDependencies(
+    noteOff: (channel: number, note: number, velocity?: number) => Promise<void>
+): NoteOnDependencies {
     return {
         getTrackStoreState: () => trackState.value,
         getTransportStoreValue: () => ({ isRecording: false }),
@@ -132,7 +134,9 @@ function makeNoteOnDependencies(noteOff: (channel: number, note: number, velocit
         scheduleDrumKitNote: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         handleWebMidiNoteOff: noteOff,
-    } as unknown as NoteOnDependencies;
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiNote: () => Promise.resolve(true),
+    };
 }
 
 function installToasterStrips() {
