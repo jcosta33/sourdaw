@@ -59,9 +59,14 @@ function createDevice(overrides: Partial<Device> & { id: string }): Device {
     return { name: overrides.id, type: 'builtin-filter', bypassed: false, parameterValues: {}, ...overrides };
 }
 
-/** The `knead` built-in is the one device type `daw-engine` builds a body for. */
+/** A built-in effect `daw-engine` builds a body for. */
 function nativeDevice(id: string): Device {
     return createDevice({ id, type: 'knead' });
+}
+
+/** A built-in instrument `daw-engine` builds a body for, and registers a note store on. */
+function nativeInstrumentDevice(id: string): Device {
+    return createDevice({ id, type: 'fermenter' });
 }
 
 function pluginDevice(input: { id: string; name: string; instanceId?: string }): Device {
@@ -333,6 +338,35 @@ describe('projectStripCarriers', () => {
         );
 
         expect(carrier).toEqual({ carrier: 'native' });
+    });
+
+    // Every built-in the engine registers is a body, not only the effect it
+    // started with: a strip playing clips through an instrument insert is one
+    // the engine can build whole, and leaving it on Web Audio for a body the
+    // engine was ready to run costs the take its native timeline.
+    it('carries a playing track whose chain holds a built-in instrument', () => {
+        const carrier = carrierOf(
+            { stripTracks: [createTrack({ id: 'audio-1', devices: [nativeInstrumentDevice('d')] })] },
+            'audio-1'
+        );
+
+        expect(carrier).toEqual({ carrier: 'native' });
+    });
+
+    // The bound on that: a built-in body is not something for a clip-less strip
+    // to sound. The engine addresses a strip's notes to a plugin instance, so a
+    // MIDI strip whose only body is a built-in instrument has no note reaching
+    // it, and carrying it natively would silence the part Web Audio still
+    // voices (#3893).
+    it('leaves a clip-less MIDI track whose only body is a built-in instrument on Web Audio', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [createTrack({ id: 'audio-1', kind: 'midi', devices: [nativeInstrumentDevice('d')] })],
+            attachedInstanceIds: new Set(),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'nothing scheduled' });
     });
 
     // Rule 3, the plugin half: a plugin has a native body exactly when the

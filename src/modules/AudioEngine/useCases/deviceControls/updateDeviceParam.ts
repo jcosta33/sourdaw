@@ -1,6 +1,9 @@
 import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
+import { sendNativeDeviceParameters } from '../livePlayback/sendNativeDeviceParameters';
+
+import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
 
 /**
  * The single door every device-parameter write reaches the DSP through.
@@ -15,7 +18,18 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
  * The store-side twin is `persistDeviceParam`, which clamps with the device
  * already in hand; both read the same law so there is one definition of what a
  * declared range means.
+ *
+ * Which DSP that is depends on who is carrying the device: a built-in the
+ * native session carries takes the value over the graph command path, in the
+ * engine's own name for the parameter, and never over the web path as well —
+ * see {@link nativeBuiltinWriteTarget} for why both would be one too many.
  */
 export function updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
-    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clampDeviceParamWrite({ deviceId, paramId, value }));
+    const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
+    const body = nativeBuiltinWriteTarget(trackId, deviceId);
+    if (body) {
+        void sendNativeDeviceParameters({ trackId, deviceId, values: { [body.parameterName(paramId)]: clamped } });
+        return;
+    }
+    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
 }

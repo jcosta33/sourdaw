@@ -84,6 +84,7 @@ import {
 } from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 
+import { projectDeviceForNativeBody } from './projectDeviceForNativeBody';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
 
@@ -171,7 +172,9 @@ function createStripCommand(input: {
 }): AudioGraphCommand {
     const { track, state, programme, carriers } = input;
     // A bake replaces the chain rather than feeding it — see the header.
-    const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id) ? [] : track.devices;
+    const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id)
+        ? []
+        : track.devices.map(projectDeviceForNativeBody);
     // Live playback always honours a mute the engineer pressed; only an
     // export chooses otherwise, and only for stems.
     const shared = { name: track.name, state, devices, honorMuted: true } as const;

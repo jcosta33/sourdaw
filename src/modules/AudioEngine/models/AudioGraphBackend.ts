@@ -495,6 +495,22 @@ export type AudioGraphSetDeviceParametersCommand = Readonly<{
     values: Readonly<Record<string, number>>;
 }>;
 
+/**
+ * The most parameters one {@link AudioGraphSetDeviceParametersCommand} may
+ * carry, mirroring the native mapper's `MAX_IMMEDIATE_DEVICE_PARAMETERS`
+ * (`crates/sourdaw-native/src/commands/graph.rs`).
+ *
+ * The engine charges a record's key count against that ceiling before it parses
+ * a single name, and refuses the whole batch over a record that crosses it, so
+ * a producer that sends a patch as one record has to know where the line is.
+ * The figure is sized from this side rather than from a claimed instrument
+ * vocabulary: a Fermenter's patch is one key per field plus one per macro slot,
+ * and 128 holds a full one with headroom. This mirror is what pins that fit —
+ * the Rust doc says so, and the spec beside it renders every factory preset
+ * through the same projection the wire uses and reads the key count.
+ */
+export const MAX_IMMEDIATE_DEVICE_PARAMETERS = 128;
+
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
     playback: AudioGraphClipPlayback;

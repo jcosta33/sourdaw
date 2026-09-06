@@ -172,6 +172,24 @@ describe('projectLiveGraphTopology', () => {
         ]);
     });
 
+    // The engine resolves a built-in's parameter keys against the instrument's
+    // own vocabulary and refuses the whole batch over one it cannot name, so a
+    // chain carried in the ids a panel authors takes every other strip in the
+    // batch down with it.
+    it('carries a built-in chain in the names the engine answers to, not the ids the project stores', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    devices: [createDevice({ id: 'device-a', type: 'fermenter', parameterValues: { oscEngine: 2 } })],
+                }),
+            ],
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.devices[0]?.parameterValues).toEqual({ engine: 2 });
+    });
+
     it('carries a bus device chain, which is the whole point of a send bus', () => {
         const commands = project({
             stripTracks: [createTrack({ id: 'bus-1', kind: 'bus', devices: [createDevice({ id: 'reverb' })] })],
