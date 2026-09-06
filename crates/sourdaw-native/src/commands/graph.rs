@@ -156,10 +156,11 @@ use daw_engine::scheduler::{
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
-    ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, RampShape, RouteTarget, TimelineBus,
-    TimelineClip, TimelineRtDiagnosticsSnapshot, TimelineTrack, AUTOMATION_QUEUE_CAPACITY,
-    DEVICE_PARAM_QUEUE_CAPACITY, FERMENTER_AUTOMATION_PARAM_COUNT, MAX_BUS_DEVICES,
-    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
+    ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, FermenterParamName, RampShape,
+    RouteTarget, TimelineBus, TimelineClip, TimelineRtDiagnosticsSnapshot, TimelineTrack,
+    AUTOMATION_QUEUE_CAPACITY, DEVICE_PARAM_QUEUE_CAPACITY, FERMENTER_PARAM_NAME_CAPACITY,
+    MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS, MAX_TRACK_DEVICES,
+    MAX_TRACK_SENDS,
 };
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
@@ -1614,24 +1615,54 @@ fn builtin_device_type(device_type: &str) -> Option<BuiltinEffectType> {
     BuiltinEffectType::from_name(&device_type.to_ascii_lowercase())
 }
 
-/// Resolve a fermenter parameter key onto the automation ordinal it names.
+/// Resolve a fermenter parameter key onto the name the instrument answers to.
 ///
-/// The key *is* the ordinal, in decimal: the instrument owns that table and
-/// the engine names none of it, so there is no word here to resolve. An
-/// ordinal the instrument has no parameter for is refused control-side rather
-/// than crossing the ring, because `set_param_by_id` answers one by doing
-/// nothing at all — a parameter write that silently vanished.
-fn fermenter_ordinal(key: &str) -> Result<u32, String> {
-    let ordinal: u32 = key
-        .parse()
-        .map_err(|_| format!("parameter '{key}' is not a fermenter automation ordinal"))?;
-    if ordinal >= FERMENTER_AUTOMATION_PARAM_COUNT {
-        return Err(format!(
-            "parameter '{key}' is past the fermenter's {FERMENTER_AUTOMATION_PARAM_COUNT} \
-             automation ordinals"
-        ));
-    }
-    Ok(ordinal)
+/// The key *is* the name: a fermenter's patch is a flat record of the
+/// instrument's own snake_case names, and the engine keeps no copy of that
+/// vocabulary to check one against. So the refusal here is by shape alone — a
+/// key shaped unlike one of those names was never one of them, while a
+/// well-shaped name the instrument happens not to have is answered by the
+/// instrument doing nothing, exactly as it is under the web worklet.
+fn fermenter_parameter(key: &str, device_id: &str) -> Result<FermenterParamName, String> {
+    FermenterParamName::parse(key).ok_or_else(|| {
+        format!(
+            "device '{device_id}' carries parameter '{key}', which is not a fermenter parameter \
+             name: a name is 1 to {FERMENTER_PARAM_NAME_CAPACITY} bytes of lowercase ASCII \
+             letters, digits and underscores"
+        )
+    })
+}
+
+/// One fermenter device's whole patch, in the instrument's own vocabulary.
+///
+/// Resolved through [`fermenter_parameter`], the same rule
+/// [`builtin_parameter`] applies to this body, so the patch the instance is
+/// built with and the keys the mapper admits are one fact.
+fn fermenter_patch(device: &DevicePayload) -> Result<Vec<(FermenterParamName, f32)>, String> {
+    device
+        .parameter_values
+        .iter()
+        .map(|(key, value)| {
+            let name = fermenter_parameter(key, &device.id)?;
+            Ok((name, finite(*value, "device parameter value")? as f32))
+        })
+        .collect()
+}
+
+/// One built-in device's parameter writes as addressed commands, for a body
+/// whose patch travels over the ring.
+fn command_borne_param_writes(
+    builtin: BuiltinEffectType,
+    device: &DevicePayload,
+) -> Result<Vec<(DeviceParam, f32)>, String> {
+    device
+        .parameter_values
+        .iter()
+        .map(|(key, value)| {
+            let param = builtin_parameter(builtin, key, &device.id)?;
+            Ok((param, finite(*value, "device parameter value")? as f32))
+        })
+        .collect()
 }
 
 /// Resolve one built-in device's parameter key onto the address the engine
@@ -1639,7 +1670,7 @@ fn fermenter_ordinal(key: &str) -> Result<u32, String> {
 ///
 /// Which vocabulary applies is decided by the body, not by the name the key
 /// was written under: knead answers a closed set of names the engine owns, and
-/// the fermenter answers its own automation ordinals.
+/// the fermenter answers its own.
 fn builtin_parameter(
     builtin: BuiltinEffectType,
     key: &str,
@@ -1649,9 +1680,9 @@ fn builtin_parameter(
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
-        BuiltinEffectType::Fermenter => fermenter_ordinal(key)
-            .map(DeviceParam::FermenterOrdinal)
-            .map_err(|reason| format!("device '{device_id}': {reason}")),
+        BuiltinEffectType::Fermenter => {
+            fermenter_parameter(key, device_id).map(DeviceParam::FermenterNamed)
+        }
     }
 }
 
@@ -1761,12 +1792,26 @@ fn map_device(
         .expect("no_native_body refused every type with no built-in body");
 
     // The built-in's parameters resolve control-side, through the same single
-    // mapping the engine's addressed `SetParam` applies. A key the body's own
-    // vocabulary does not map refuses here rather than being counted as an
-    // unmapped call on the audio thread after the fact.
-    for name in device.parameter_values.keys() {
-        builtin_parameter(builtin, name, &device.id)?;
-    }
+    // mapping the engine's addressed `SetParam` applies, and before the batch
+    // charges a chain slot for the device. A key the body's own vocabulary
+    // does not map refuses here rather than being counted as an unmapped call
+    // on the audio thread after the fact.
+    //
+    // Which side of the ring a patch is applied on is a property of the body.
+    // A fermenter's patch is dozens of the instrument's own parameters per
+    // strip and the command ring is finite, so it is written into the instance
+    // on this thread; knead's handful travel as commands behind the
+    // registration.
+    let (core, param_writes) = match builtin {
+        BuiltinEffectType::Fermenter => (
+            PluginCore::fermenter_with_patch(sample_rate, &fermenter_patch(device)?),
+            Vec::new(),
+        ),
+        BuiltinEffectType::Knead => (
+            PluginCore::builtin(builtin, sample_rate),
+            command_borne_param_writes(builtin, device)?,
+        ),
+    };
 
     charge_chain_slot(registry, &device.id)?;
     let effect_id = registry.allocate_effect_id();
@@ -1781,17 +1826,11 @@ fn map_device(
     // exists but nothing could ever be scheduled at it.
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
-        PluginCore::builtin(builtin, sample_rate),
+        core,
         builtin.sounds_notes().then(MidiNoteStore::new),
     ));
-    for (name, value) in &device.parameter_values {
-        let param = builtin_parameter(builtin, name, &device.id)
-            .expect("the validation above refused every key this built-in does not map");
-        ops.push(GraphCommand::SetParam(
-            effect_id,
-            param,
-            finite(*value, "device parameter value")? as f32,
-        ));
+    for (param, value) in param_writes {
+        ops.push(GraphCommand::SetParam(effect_id, param, value));
     }
     if device.bypassed {
         ops.push(GraphCommand::SetBypass(effect_id, true));
@@ -4086,6 +4125,16 @@ mod tests {
                 write: AutomationWrite::Replace(event),
             } if event.value == 0.4
         )));
+        // Knead's handful of parameters travel as addressed commands behind
+        // the registration: the body is built without them, so the command is
+        // the only thing that carries `d-knead`'s patch to the engine.
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::SetParam(_, DeviceParam::ShiftSemitones, value) if *value == 3.0
+            )),
+            "the knead device's parameter never crossed the ring as a command"
+        );
     }
 
     /// The shadow monitor gate crosses the wire as itself: a session mode the
@@ -7108,6 +7157,96 @@ mod tests {
         );
     }
 
+    /// A `write-device-parameter` aimed at a fermenter carries the
+    /// instrument's own parameter name, and a key shaped unlike one refuses
+    /// under the same reason every unaddressable parameter refuses under.
+    ///
+    /// The stamp's address is decided by what the device is: the same key at a
+    /// knead would be refused as a name knead does not map, and here it is the
+    /// instrument's whole vocabulary that the shape check stands in for.
+    #[test]
+    fn write_device_parameter_at_a_fermenter_carries_the_instruments_own_name() {
+        let track_id = "t1".to_string();
+        let device_id = "d-ferm".to_string();
+        let mut registry = GraphRegistry::default();
+        registry.strips.insert(
+            track_id.clone(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec![device_id.clone()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            device_id.clone(),
+            DeviceEntry {
+                native_effect_id: 1,
+                strip_id: track_id.clone(),
+                builtin: Some(BuiltinEffectType::Fermenter),
+            },
+        );
+        let samples = TimelineSamplePool::default();
+
+        let write_batch = |parameter_id: &str| GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            replace_topology: false,
+            commands: vec![GraphCommandPayload::WriteDeviceParameter {
+                target: DeviceParameterTargetPayload::DeviceParameter {
+                    track_id: track_id.clone(),
+                    device_id: device_id.clone(),
+                    parameter_id: parameter_id.to_string(),
+                },
+                write: StepWritePayload::Step {
+                    value: 0.2,
+                    time: 0.0,
+                },
+            }],
+        };
+
+        let mapped = map_unbound_batch(
+            &write_batch("cutoff"),
+            &mut registry.clone(),
+            &samples,
+            48_000.0,
+        )
+        .expect("one of the instrument's own names is a fermenter parameter address");
+
+        let cutoff = FermenterParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
+        let addressed: Vec<DeviceParamTarget> = mapped
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                GraphCommand::AutomateDeviceParam { param, .. } => Some(*param),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            addressed,
+            vec![DeviceParamTarget::Builtin(DeviceParam::FermenterNamed(
+                cutoff
+            ))],
+            "the stamp must carry the instrument's own name"
+        );
+
+        let refusal = map_unbound_batch(
+            &write_batch("Cutoff"),
+            &mut registry.clone(),
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a key shaped unlike one of the instrument's names must refuse");
+        assert!(
+            refusal.contains("has no native address"),
+            "refusal must mention missing native address, got: {refusal}"
+        );
+    }
+
     // ── Scheduled MIDI ─────────────────────────────────────────────────────
 
     /// The engine plugin id the hosted device below is registered under.
@@ -8649,34 +8788,124 @@ mod tests {
         );
     }
 
-    /// A fermenter parameter key is its automation ordinal in decimal, and a
-    /// key that is not one refuses naming itself.
+    /// A fermenter on a contributing strip, handed one note at the top of the
+    /// render, built with `parameter_values` as its patch.
     ///
-    /// The instrument owns its parameter table and the engine names none of
-    /// it, so there is no word to resolve here: `cutoff` is a name the
-    /// fermenter's own vocabulary knows and this address does not, and `104`
-    /// is one past the published table. Either reaching the audio thread would
-    /// be a write the producer believes landed and the mix never heard.
+    /// The mapper's own oracle for a patch: what the patch did to the instance
+    /// is audible here, or the patch never reached it.
+    fn render_patched_fermenter(parameter_values: Value) -> Vec<f32> {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES: usize = 1_440;
+
+        render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": parameter_values } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-midi",
+                    "trackId": "t1",
+                    "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED,
+                    "notes": [ note_at(0.0, 60, 0) ],
+                }
+            ])),
+            &sample_pool(),
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a fermenter renders offline")
+    }
+
+    /// A fermenter's patch is written into the instance on the mapping thread
+    /// and no `SetParam` command carries any of it.
+    ///
+    /// A patch is dozens of the instrument's own parameters per strip and the
+    /// command ring is finite, so a patch sent as commands would spend the
+    /// ring on one device. The render is what says the patch was applied
+    /// rather than merely not sent: `cutoff` is the filter cutoff, so a patch
+    /// that reached nothing renders the samples an unpatched instrument does.
     #[test]
-    fn a_fermenter_parameter_key_maps_onto_its_automation_ordinal() {
+    fn a_fermenter_patch_is_applied_control_side_and_carries_no_set_param_op() {
         let mapped = map_unbound_batch(
             &batch(strip_with_device(
                 "d-ferm",
                 "fermenter",
-                json!({ "7": 0.5 }),
+                json!({ "cutoff": 0.2 }),
             )),
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
         )
-        .expect("a decimal ordinal is a fermenter parameter address");
+        .expect("one of the instrument's own names is a fermenter parameter address");
 
-        assert_eq!(
-            builtin_param_writes(&mapped.ops),
-            vec![(DeviceParam::FermenterOrdinal(7), 0.5)]
+        assert!(
+            builtin_param_writes(&mapped.ops).is_empty(),
+            "the fermenter's patch was sent over the command ring: {:?}",
+            builtin_param_writes(&mapped.ops)
         );
+        assert_ne!(
+            render_patched_fermenter(json!({ "cutoff": 0.2 })),
+            render_patched_fermenter(json!({})),
+            "the patch never reached the instance the mapper built"
+        );
+    }
 
-        for key in ["cutoff", "104"] {
+    /// A patch carrying the layer routing key applies it after the writes it
+    /// routes, however the key arrives in the record.
+    ///
+    /// `parameterValues` is a `HashMap`, so its order is arbitrary and the
+    /// mapper cannot choose it. `active_layer` aims every later per-layer
+    /// write at one layer, and only layer 0 sounds on a fresh instrument — so
+    /// a patch that applied it in passing would land `cutoff` where nothing
+    /// renders and read as the unpatched instrument.
+    #[test]
+    fn a_fermenter_patch_applies_the_layer_routing_key_after_the_writes_it_routes() {
+        /// Draws of the two-key patch. A `HashMap` seeds its iteration order
+        /// per instance, so a single draw would read the routing key before
+        /// `cutoff` only about half the time — and a mapper that applied the
+        /// patch in arrival order would pass half its runs.
+        const DRAWS: usize = 16;
+
+        let cutoff_alone = render_patched_fermenter(json!({ "cutoff": 0.2 }));
+
+        assert_ne!(
+            cutoff_alone,
+            render_patched_fermenter(json!({})),
+            "the patch never reached the instrument, so the agreement below proves nothing"
+        );
+        for draw in 0..DRAWS {
+            assert_eq!(
+                render_patched_fermenter(json!({ "active_layer": 1, "cutoff": 0.2 })),
+                cutoff_alone,
+                "draw {draw}: the layer routing key took the rest of the patch to a layer \
+                 nothing renders"
+            );
+        }
+    }
+
+    /// A key shaped unlike one of the instrument's own parameter names refuses
+    /// the batch, naming the device and the key.
+    ///
+    /// The instrument answers a name it does not know by doing nothing at all,
+    /// so a key that was never one of its names would otherwise be a write the
+    /// producer believes landed and the mix never heard. Shape is the whole of
+    /// the refusal the engine can make without keeping a copy of a table
+    /// `daw-dsp` is free to extend: `Cutoff` is the display spelling of a
+    /// parameter the instrument spells in lowercase, and a key past the wire's
+    /// buffer would be truncated into a different word.
+    #[test]
+    fn a_fermenter_parameter_key_shaped_unlike_a_name_refuses_naming_the_device_and_key() {
+        let too_long = "a".repeat(FERMENTER_PARAM_NAME_CAPACITY + 1);
+
+        for key in ["Cutoff", too_long.as_str()] {
             let refusal = map_unbound_batch(
                 &batch(strip_with_device(
                     "d-ferm",
@@ -8687,7 +8916,7 @@ mod tests {
                 &sample_pool(),
                 48_000.0,
             )
-            .expect_err("a key that is not a published ordinal must refuse");
+            .expect_err("a key shaped unlike one of the instrument's names must refuse");
 
             assert!(
                 refusal.contains(key) && refusal.contains("d-ferm"),

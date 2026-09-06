@@ -2570,7 +2570,8 @@ mod compensation_render_alloc_guards {
     };
     use crate::timeline::{
         timeline_rt_diagnostics_channel, ChainEntry, ClipPlacement, ClipPlayback, DeviceKind,
-        DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
+        DeviceParam, FermenterParamName, RouteTarget, SendTap, TimelineBus, TimelineClip,
+        TimelineTrack,
     };
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -3117,7 +3118,7 @@ mod compensation_render_alloc_guards {
     /// the callback without allocating or freeing on it.
     ///
     /// Everything the built-in body does is callback code: the command drain
-    /// applies the ordinal write straight into the instrument, the store's due
+    /// applies the named write straight into the instrument, the store's due
     /// entries are copied into the pending buffer, the body chunks the callback
     /// into the instance's own block length and pushes each event into the
     /// instance's event list, and the rendered pair is summed into the chain's
@@ -3134,7 +3135,11 @@ mod compensation_render_alloc_guards {
         const CALLBACKS: usize = 4;
         /// The filter cutoff, written while the instrument is already sounding
         /// so the write lands on a drain the guard wraps.
-        const CUTOFF: DeviceParam = DeviceParam::FermenterOrdinal(1);
+        const CUTOFF: DeviceParam =
+            DeviceParam::FermenterNamed(match FermenterParamName::parse("cutoff") {
+                Some(name) => name,
+                None => panic!("'cutoff' is shaped like one of the instrument's names"),
+            });
         const WRITE_AT: usize = 2;
 
         let mut harness = CompensationHarness::new();
