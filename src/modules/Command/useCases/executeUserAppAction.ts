@@ -5,6 +5,7 @@ import { AppActionConflictError } from '../errors/AppActionExecutionError';
 
 import { ACTION_LABELS } from './actionLabels';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
+import { humanizeActionType } from './humanizeActionType';
 import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 
 function describeRefusal(action: AppAction): string {
@@ -12,7 +13,7 @@ function describeRefusal(action: AppAction): string {
     if (admissionFailure) {
         return admissionFailure;
     }
-    const label = ACTION_LABELS[action.type] ?? action.type;
+    const label = ACTION_LABELS[action.type] ?? humanizeActionType(action.type);
     return `${label} was refused because the project can't be changed right now.`;
 }
 
