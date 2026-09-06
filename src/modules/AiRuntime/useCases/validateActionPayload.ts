@@ -734,6 +734,12 @@ const validators = {
         isNonEmptyString(param.clipId) &&
         isNumber(param.beats) &&
         param.beats !== 0,
+    slipClipContent: (param): param is PayloadOf<'slipClipContent'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['clipId', 'clipType', 'offset']) &&
+        isNonEmptyString(param.clipId) &&
+        (param.clipType === 'audio' || param.clipType === 'midi') &&
+        isNumber(param.offset),
     crossfadeClips: (param): param is PayloadOf<'crossfadeClips'> =>
         isObj(param) &&
         hasOnlyKeys(param, ['clipAId', 'clipBId', 'durationBeats']) &&

@@ -93,6 +93,7 @@ export const RUNTIME_ACTION_TYPES = [
     'reverseClip',
     'glueClips',
     'nudgeClip',
+    'slipClipContent',
     'crossfadeClips',
     'setClipGain',
     'setClipColor',

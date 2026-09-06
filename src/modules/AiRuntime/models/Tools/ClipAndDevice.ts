@@ -102,6 +102,16 @@ export const clipTools: readonly ToolSchema[] = [
         ['clipId', 'beats']
     ),
     tool(
+        'slipClipContent',
+        "Slide a clip's internal content by setting its content offset in beats without moving the clip.",
+        {
+            clipId: { type: 'string' },
+            clipType: { type: 'string', description: "'audio' or 'midi' — which content offset to slide" },
+            offset: { type: 'number', description: 'New content offset in beats' },
+        },
+        ['clipId', 'clipType', 'offset']
+    ),
+    tool(
         'setClipGain',
         'Set clip volume. 0.0=silence, 1.0=unity, 2.0=+6dB.',
         {

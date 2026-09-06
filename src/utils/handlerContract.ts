@@ -1141,6 +1141,7 @@ export type AppAction =
       }
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
     | {
           type: 'addDevice';
           payload: {
