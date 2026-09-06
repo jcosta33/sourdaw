@@ -457,10 +457,13 @@ pub enum GraphCommandPayload {
     /// withhold it from. A note that *does* have one travels as
     /// [`GraphCommandPayload::ScheduleMidi`] instead.
     ///
-    /// The engine releases it exactly as it releases a stored note — a stop, a
-    /// locate or a loop wrap lifts a key still held ([`GraphCommand::SendMidiNote`]) —
-    /// so a note whose note-off never arrives cannot hold an instrument down
-    /// for the rest of the session.
+    /// The engine releases it on a stop or a locate exactly as it releases a
+    /// stored note ([`GraphCommand::SendMidiNote`]), so a note whose note-off
+    /// never arrives cannot hold an instrument down for the rest of the
+    /// session. A loop wrap does not: it lifts a stored key, whose note-off
+    /// lies past the seam and will never render, and leaves a key the player is
+    /// holding down — no DAW takes a musician's hands off the keyboard where a
+    /// region starts again.
     #[serde(rename_all = "camelCase")]
     SendMidiNote {
         track_id: String,
@@ -8475,8 +8478,33 @@ mod tests {
     /// field and the value. The engine could only answer such a note as a count
     /// on the audio thread, and an unaddressable one is never tracked as
     /// sounding — so nothing would ever release the key it pressed.
+    ///
+    /// The top of every range maps first, because it is what tells a bound from
+    /// an off-by-one: a check that refused `>=` its own maximum would refuse
+    /// the loudest note on the highest key of the last channel, and no refusal
+    /// drawn from past that range would ever say so.
     #[test]
     fn send_midi_note_past_the_midi_range_is_refused_naming_field_and_value() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let mapped = map_unbound_batch(
+            &send_midi_note_batch("t1", "d1", 127, 127, 15, true),
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("the top of MIDI's own range is inside it");
+
+        let (_, event) = only_note_op(&mapped.ops);
+        assert_eq!(event.note, 127, "note 127 is a key, not an overflow");
+        assert_eq!(
+            event.velocity, 127,
+            "velocity 127 is full scale, not past it"
+        );
+        assert_eq!(
+            event.channel, 15,
+            "channel 15 is the sixteenth, not past it"
+        );
+
         for (note, velocity, expected) in [
             (
                 128,

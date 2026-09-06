@@ -569,15 +569,19 @@ export type AudioGraphScheduleMidiCommand = Readonly<{
  * so there is none for a stopped playhead to withhold it from. A note that
  * *does* have one travels as {@link AudioGraphScheduleMidiCommand} instead.
  *
- * A backend releases it exactly as it releases a stored note — a stop, a locate
- * or a loop wrap lifts a key still held — so a note whose note-off never
- * arrives cannot hold an instrument down for the rest of the session.
+ * A backend releases it on a stop or a locate exactly as it releases a stored
+ * note, so a note whose note-off never arrives cannot hold an instrument down
+ * for the rest of the session. A loop wrap does not: it lifts a stored key,
+ * whose note-off lies past the seam and will never render, and leaves a key the
+ * player is holding down — no DAW takes a musician's hands off the keyboard
+ * where a region starts again.
  */
 export type AudioGraphSendMidiNoteCommand = Readonly<{
     kind: 'send-midi-note';
     target: AudioGraphDeviceTarget;
     note: number;
     velocity: number;
+    /** `0` through `15`. */
     channel: number;
     isNoteOn: boolean;
 }>;
