@@ -22,6 +22,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: async () => true,
 }));
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
@@ -64,6 +66,8 @@ function make_dependencies(
         processRealtimeMidiInput: async () => [],
         stepRecordNoteOff: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiNote: async () => true,
         ...overrides,
     };
 }
@@ -750,5 +754,60 @@ describe('handleWebMidiNoteOff', () => {
         expect(create_midi_note.mock.calls[0]![2]).toBeCloseTo(1, 9);
 
         performance_now.mockRestore();
+    });
+
+    describe('native-carried instrument', () => {
+        it('releases a natively voiced note on the device that voiced it', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const fn = handleWebMidiNoteOff._factory(
+                make_dependencies({
+                    getTransportStoreValue: () => ({ isRecording: false }),
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                })
+            );
+            activeNotes.set(createWebMidiNoteKey(3, 62), {
+                channel: 3,
+                note: 62,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 0,
+                startBeat: 0,
+                nativeDeviceId: 'plug-1',
+            });
+
+            await fn(3, 62);
+
+            expect(send_native_live_midi_note).toHaveBeenCalledTimes(1);
+            expect(send_native_live_midi_note).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                deviceId: 'plug-1',
+                note: 62,
+                velocity: 0,
+                channel: 3,
+                isNoteOn: false,
+            });
+        });
+
+        it('sends nothing native for a note Web Audio voiced', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const fn = handleWebMidiNoteOff._factory(
+                make_dependencies({
+                    getTransportStoreValue: () => ({ isRecording: false }),
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                })
+            );
+            activeNotes.set(createWebMidiNoteKey(3, 62), {
+                channel: 3,
+                note: 62,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 0,
+                startBeat: 0,
+            });
+
+            await fn(3, 62);
+
+            expect(send_native_live_midi_note).not.toHaveBeenCalled();
+        });
     });
 });

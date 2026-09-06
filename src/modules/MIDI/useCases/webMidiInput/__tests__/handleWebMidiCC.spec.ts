@@ -28,6 +28,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: apply_note_expression,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: async () => true,
 }));
 
 const { handleWebMidiCC } = await import('../handleWebMidiCC');

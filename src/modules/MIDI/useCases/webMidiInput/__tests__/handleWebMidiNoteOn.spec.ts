@@ -33,6 +33,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: async () => true,
 }));
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
@@ -59,6 +61,8 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
         scheduleDrumKitNote: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         handleWebMidiNoteOff: async () => {},
+        isDeviceCarriedByNativeSession: () => false,
+        sendNativeLiveMidiNote: async () => true,
         ...overrides,
     };
 }
@@ -589,5 +593,111 @@ describe('handleWebMidiNoteOn', () => {
         expect(second_frame! - first_frame!).toBe(480);
 
         performance_now.mockRestore();
+    });
+
+    describe('native-carried instrument', () => {
+        it('sends a note-on to a carried hosted instrument instead of voicing it on Web Audio', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const schedule_note = vi.fn(() => null);
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                devices: [{ id: 'plug-1', type: 'plugin', externalInstanceId: 'inst-1' }],
+                            },
+                        ],
+                        selectedTrackId: 'track-1',
+                    }),
+                    isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) =>
+                        trackId === 'track-1' && deviceId === 'plug-1',
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+            await fn(0, 60, 100);
+
+            expect(send_native_live_midi_note).toHaveBeenCalledTimes(1);
+            expect(send_native_live_midi_note).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                deviceId: 'plug-1',
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                isNoteOn: true,
+            });
+            expect(schedule_note).not.toHaveBeenCalled();
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.nativeDeviceId).toBe('plug-1');
+        });
+
+        it('voices a hosted instrument on Web Audio while no native session carries it', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const schedule_note = vi.fn(() => null);
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                devices: [{ id: 'plug-1', type: 'plugin', externalInstanceId: 'inst-1' }],
+                            },
+                        ],
+                        selectedTrackId: 'track-1',
+                    }),
+                    isDeviceCarriedByNativeSession: () => false,
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                    scheduleNote: schedule_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+            await fn(0, 60, 100);
+
+            expect(send_native_live_midi_note).not.toHaveBeenCalled();
+            expect(schedule_note).toHaveBeenCalledTimes(1);
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.nativeDeviceId).toBeUndefined();
+        });
+
+        it('lets the native body take the note ahead of a built-in on the same track', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const fermenter_note_on = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                devices: [
+                                    { id: 'plug-1', type: 'plugin', externalInstanceId: 'inst-1' },
+                                    { id: 'ferm-1', type: 'fermenter' },
+                                ],
+                            },
+                        ],
+                        selectedTrackId: 'track-1',
+                    }),
+                    isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) =>
+                        trackId === 'track-1' && deviceId === 'plug-1',
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({
+                gainNode: {},
+                deviceNodes: [
+                    {
+                        type: 'fermenter',
+                        deviceId: 'ferm-1',
+                        fermenterControls: { ready: true, noteOn: fermenter_note_on, noteOff: vi.fn() },
+                    },
+                ],
+            });
+
+            await fn(0, 60, 100);
+
+            expect(send_native_live_midi_note).toHaveBeenCalledTimes(1);
+            expect(fermenter_note_on).not.toHaveBeenCalled();
+        });
     });
 });

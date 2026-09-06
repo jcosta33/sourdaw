@@ -27,6 +27,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: async () => true,
 }));
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
