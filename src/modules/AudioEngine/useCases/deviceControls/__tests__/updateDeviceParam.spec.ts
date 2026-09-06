@@ -106,6 +106,22 @@ describe('updateDeviceParam', () => {
         });
     });
 
+    it('sends the carried native body the value the law allowed, not the value the caller asked for', () => {
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        vi.mocked(clampDeviceParamWrite).mockReturnValue(1);
+
+        updateDeviceParam('t1', 'd1', 'oscEngine', 4.2);
+
+        expect(audioEngine.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'oscEngine', 1);
+        expect(sendNativeDeviceParameters).toHaveBeenCalledTimes(1);
+        expect(sendNativeDeviceParameters).toHaveBeenCalledWith({
+            trackId: 't1',
+            deviceId: 'd1',
+            values: { engine: 1 },
+        });
+    });
+
     // A built-in whose ids are already the engine's names still goes over the
     // engine when the session carries it — the routing is about the carrier,
     // not about which body happens to need a translation — and the Web Audio

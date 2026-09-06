@@ -20,10 +20,11 @@
  * and a batch refused between them leaves the instrument holding half of each
  * patch.
  *
- * Answers whether a session backend took the write. Callers decide the carrier
- * before writing, on the same carried check the automation writer uses, so
- * nothing branches on this answer; it exists so a spec can observe a refused
- * write without standing up a backend.
+ * Answers whether a session backend existed to send to, not whether the engine
+ * accepted the batch — the write is fire-and-forget once a backend is present.
+ * Callers decide the carrier before writing, on the same carried check the
+ * automation writer uses, so nothing branches on this answer; it exists so a
+ * spec can observe a refused write without standing up a backend.
  */
 
 import {
