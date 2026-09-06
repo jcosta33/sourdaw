@@ -1,15 +1,45 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 
+import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { captureUndoHistory, clearUndoHistory, restoreUndoHistory } from '#/modules/Command/useCases';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore } from '../../stores/branchStore';
+import { captureActiveBranchReference } from '../captureActiveBranchReference';
 
 import { runBranchLineageTransition } from './runBranchLineageTransition';
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
+
+function clearUndoHistoryAfterFailedTransition(): void {
+    try {
+        clearUndoHistory();
+    } catch (error) {
+        logger.error(new Error('[switchBranch] Failed to clear undo history after branch recovery', { cause: error }));
+    }
+}
+
+function restoreUndoHistoryForRecoveredBranch(
+    capturedReference: ReturnType<typeof captureActiveBranchReference>,
+    undoSnapshot: ReturnType<typeof captureUndoHistory>
+): void {
+    try {
+        const recoveredReference = captureActiveBranchReference();
+        if (capturedReference && recoveredReference && valuesEqual(capturedReference, recoveredReference)) {
+            restoreUndoHistory(undoSnapshot);
+            return;
+        }
+    } catch (error) {
+        logger.error(
+            new Error('[switchBranch] Failed to reconcile undo history after branch recovery', { cause: error })
+        );
+    }
+
+    clearUndoHistoryAfterFailedTransition();
+}
 
 /**
  * Switch to a different branch.
@@ -59,11 +89,12 @@ export async function switchBranch(branchId: string): Promise<void> {
 
     const outgoingDocId =
         activeBranch.rootDocId === DOC_PREFIX_ROOT ? `branch_${activeBranch.branchId}` : activeBranch.rootDocId;
-    // `apply()` below clears undo history; `affectedDocIds` includes the root, so
-    // a rolled-back document snapshot leaves the pre-switch undo stack matching
-    // what the user had. Restore it here (not in runBranchTransition, which is
-    // undo-agnostic) so callers with a narrower affected-doc set, such as the
-    // drum-preview branch handlers, are not affected by this compensation.
+    // `apply()` below clears undo history. Recovery may restore these snapshots or
+    // reload a different durable lineage, so retain both witnesses and reinstall
+    // outgoing undo only when recovered branch/document truth matches exactly.
+    // Keep this policy here (not in the undo-agnostic transition helper) so other
+    // callers with narrower affected-document sets are not changed.
+    const capturedReference = captureActiveBranchReference();
     const undoSnapshot = captureUndoHistory();
     try {
         await runBranchLineageTransition({
@@ -87,7 +118,7 @@ export async function switchBranch(branchId: string): Promise<void> {
             },
         });
     } catch (error) {
-        restoreUndoHistory(undoSnapshot);
+        restoreUndoHistoryForRecoveredBranch(capturedReference, undoSnapshot);
         throw error;
     }
 }

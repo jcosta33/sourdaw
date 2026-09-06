@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type captureUndoHistory } from '#/modules/Command/useCases';
 
+import { createCrdtPersistenceRootLineageConflictError } from '../../../errors/CrdtPersistenceRootLineageConflictError';
 import { switchBranch } from '../switchBranch';
 
 // Derived from the public callable's own return type rather than importing
 // Command's private UndoEntry model across the module boundary.
 type UndoSnapshot = ReturnType<typeof captureUndoHistory>;
-type UndoSnapshotEntry = UndoSnapshot['past'][number];
+type BranchStoreValue = {
+    branches: Array<{ branchId: string; rootDocId: string }>;
+    activeBranchId: string;
+};
 
 const ROOT_LIVE_DOC = { tag: 'root-live' };
 const FEATURE_SNAPSHOT = { tag: 'feature-snap' };
@@ -15,9 +19,29 @@ const TARGET_SNAPSHOT = { tag: 'target-snap' };
 
 const docs: Record<string, unknown> = {};
 
+function createUndoSnapshot(id: string): UndoSnapshot {
+    return {
+        past: [
+            {
+                id,
+                kind: 'callback',
+                label: 'Move feature clip',
+                timestamp: 1,
+                source: 'manual',
+                undo: () => {},
+                redo: () => undefined,
+            },
+        ],
+        future: [],
+        undoTree: null,
+    };
+}
+
 const mocks = vi.hoisted(() => ({
     flushAutomergeStorageWrites: vi.fn(),
     getDoc: vi.fn(),
+    getDocIds: vi.fn(),
+    getHeads: vi.fn(),
     hasDoc: vi.fn(),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
@@ -33,12 +57,11 @@ const mocks = vi.hoisted(() => ({
         ],
         activeBranchId: 'feat',
     },
-    storeSet:
-        vi.fn<(state: { branches: Array<{ branchId: string; rootDocId: string }>; activeBranchId: string }) => void>(),
+    storeSet: vi.fn<(state: BranchStoreValue) => void>(),
     // The rollback path writes with trySet: it runs after the documents have
     // been restored, where a throw would skip the projection that puts the
     // stores back in step with them. See #1557.
-    storeTrySet: vi.fn(() => true),
+    storeTrySet: vi.fn<(state: BranchStoreValue) => boolean>(() => true),
     projectCrdtToStores: vi.fn(),
     compactProject: vi.fn(() => Promise.resolve()),
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
@@ -54,6 +77,8 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) =
 vi.mock('../../../repositories/automergeRepository', () => ({
     automergeRepository: {
         getDoc: mocks.getDoc,
+        getDocIds: mocks.getDocIds,
+        getHeads: mocks.getHeads,
         hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
@@ -82,10 +107,22 @@ describe('switchBranch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
+        for (const id of Object.keys(docs)) {
+            delete docs[id];
+        }
         docs.root = ROOT_LIVE_DOC;
         docs.branch_feat = FEATURE_SNAPSHOT;
         docs.branch_other = TARGET_SNAPSHOT;
         mocks.getDoc.mockImplementation((id: string) => docs[id]);
+        mocks.getDocIds.mockImplementation(() => Object.keys(docs));
+        mocks.getHeads.mockImplementation((id: string) => {
+            const doc = docs[id];
+            if (!doc || typeof doc !== 'object') {
+                return undefined;
+            }
+            const tag = Reflect.get(doc, 'tag');
+            return typeof tag === 'string' ? [`head:${tag}`] : [];
+        });
         mocks.hasDoc.mockImplementation((id: string) => id in docs);
         mocks.insertDoc.mockImplementation((id: string, doc: unknown) => {
             docs[id] = doc;
@@ -98,7 +135,22 @@ describe('switchBranch', () => {
         });
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(true);
-        mocks.storeValue.activeBranchId = 'feat';
+        mocks.runCrdtPersistenceOperation.mockResolvedValue(undefined);
+        mocks.storeValue = {
+            branches: [
+                { branchId: 'main', rootDocId: 'root' },
+                { branchId: 'feat', rootDocId: 'branch_feat' },
+                { branchId: 'other', rootDocId: 'branch_other' },
+            ],
+            activeBranchId: 'feat',
+        };
+        mocks.storeSet.mockImplementation((state) => {
+            mocks.storeValue = state;
+        });
+        mocks.storeTrySet.mockImplementation((state) => {
+            mocks.storeValue = state;
+            return true;
+        });
     });
 
     it('writes the outgoing branch live edits back to its snapshot before swapping', async () => {
@@ -176,16 +228,7 @@ describe('switchBranch', () => {
     it('restores the undo history captured before the swap when the transition rejects', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        const preSwitchEntry: UndoSnapshotEntry = {
-            id: 'undo-1',
-            kind: 'callback',
-            label: 'Move clip',
-            timestamp: 1,
-            source: 'manual',
-            undo: () => {},
-            redo: () => undefined,
-        };
-        const preSwitchSnapshot: UndoSnapshot = { past: [preSwitchEntry], future: [], undoTree: null };
+        const preSwitchSnapshot = createUndoSnapshot('undo-1');
         mocks.captureUndoHistory.mockReturnValueOnce(preSwitchSnapshot);
 
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
@@ -195,7 +238,11 @@ describe('switchBranch', () => {
         // returned before the swap — not a structurally-equal stand-in, and not
         // a snapshot taken after clearUndoHistory() has already run.
         expect(mocks.captureUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.restoreUndoHistory).toHaveBeenCalledOnce();
         expect(mocks.restoreUndoHistory.mock.calls[0]?.[0]).toBe(preSwitchSnapshot);
+        expect(mocks.storeValue.activeBranchId).toBe('feat');
+        expect(docs.root).toEqual(ROOT_LIVE_DOC);
+        expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
 
         const captureOrder = mocks.captureUndoHistory.mock.invocationCallOrder[0];
         const clearOrder = mocks.clearUndoHistory.mock.invocationCallOrder[0];
@@ -203,6 +250,107 @@ describe('switchBranch', () => {
             throw new Error('Expected both captureUndoHistory and clearUndoHistory to have been invoked');
         }
         expect(captureOrder).toBeLessThan(clearOrder);
+    });
+
+    it('does not restore outgoing undo history when durable recovery selects another branch', async () => {
+        const persistenceFailure = createCrdtPersistenceRootLineageConflictError({
+            localRootLineage: 'feat',
+            durableRootLineage: 'other',
+        });
+        const outgoingSnapshot = createUndoSnapshot('undo-outgoing-feat');
+        const originalState = mocks.storeValue;
+        mocks.captureUndoHistory.mockReturnValueOnce(outgoingSnapshot);
+        mocks.runCrdtPersistenceOperation.mockRejectedValueOnce(persistenceFailure);
+        mocks.loadCrdtProject.mockImplementationOnce(() => {
+            docs.root = TARGET_SNAPSHOT;
+            return Promise.resolve(true);
+        });
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
+        expect(originalState.activeBranchId).toBe('feat');
+        expect(mocks.storeValue.activeBranchId).toBe('other');
+        expect(docs.root).toEqual(TARGET_SNAPSHOT);
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not restore outgoing undo history when recovered root heads changed on the same branch', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-root-change'));
+        mocks.loadCrdtProject.mockImplementationOnce(() => {
+            docs.root = { tag: 'root-recovered-change' };
+            return Promise.resolve(true);
+        });
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.storeValue.activeBranchId).toBe('feat');
+        expect(docs.root).toEqual({ tag: 'root-recovered-change' });
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not restore outgoing undo history when recovered child heads changed on the same branch', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        docs.child = { tag: 'child-before' };
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-child-change'));
+        mocks.loadCrdtProject.mockImplementationOnce(() => {
+            docs.child = { tag: 'child-after' };
+            return Promise.resolve(true);
+        });
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.storeValue.activeBranchId).toBe('feat');
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not restore outgoing undo history when recovered document membership changed on the same branch', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-membership-change'));
+        mocks.loadCrdtProject.mockImplementationOnce(() => {
+            docs.child = { tag: 'recovered-child' };
+            return Promise.resolve(true);
+        });
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.storeValue.activeBranchId).toBe('feat');
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('does not restore outgoing undo history when the recovered branch reference is unavailable', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-missing-reference'));
+        mocks.loadCrdtProject.mockImplementationOnce(() => {
+            delete docs.root;
+            return Promise.resolve(true);
+        });
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.storeValue.activeBranchId).toBe('feat');
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('preserves the transition failure and clears undo when the recovered reference cannot be inspected', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-inspection-failure'));
+        mocks.getDocIds
+            .mockImplementationOnce(() => Object.keys(docs))
+            .mockImplementationOnce(() => {
+                throw new Error('recovered reference unavailable');
+            });
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).toHaveBeenCalledTimes(2);
     });
 
     it('does not restore undo history when the switch succeeds', async () => {

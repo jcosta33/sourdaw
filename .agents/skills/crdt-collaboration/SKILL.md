@@ -101,6 +101,15 @@ When a project-scoped handle can survive a real create/load lifecycle, test ever
 project identity, complete canonical document contents, and catalog selection so a private bypass cannot overwrite the
 incoming project or advance its cursor.
 
+### Branch recovery must bind undo to recovered document truth
+
+PR #3338 commit `961b35ef` restored the outgoing undo snapshot unconditionally after a failed branch switch. Its
+fourth-round approving review explicitly noticed that durable lineage recovery could select a third branch, then dismissed
+that state as existing behavior instead of handing off the defect. A branch-recovery review must exercise both a
+durable recovery whose branch or complete document membership/heads diverge from the outgoing capture and an exact
+snapshot rollback as the positive control. Assert that the final active document reference and undo history agree;
+checking only whether a restore callback ran cannot prove that its entries belong to the recovered project truth.
+
 ### CRITICAL — Direct store write against a CRDT-backed store
 
 ❌ `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".
