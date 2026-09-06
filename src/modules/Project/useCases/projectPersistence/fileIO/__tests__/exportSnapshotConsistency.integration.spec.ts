@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type WriteFileBytesInput = Parameters<typeof writeFileBytesContract>[0];
+type WriteFileBytesInput = {
+    bytes: Uint8Array;
+    path: string;
+};
 
 const runtime = vi.hoisted(() => ({
     desktop: false,
@@ -78,8 +81,6 @@ import { installMultiDatabaseIndexedDb } from '../../saveProject/__tests__/multi
 import { applyImportedProjectData } from '../applyImportedProjectData';
 import { buildProjectData } from '../buildProjectData';
 import { exportProjectFile } from '../exportProjectFile';
-
-import type { writeFileBytes as writeFileBytesContract } from '#/utils/desktopBridge';
 
 const AUDIO_BUFFER_A = 'buffer-a';
 const AUDIO_PAYLOAD_A = {
