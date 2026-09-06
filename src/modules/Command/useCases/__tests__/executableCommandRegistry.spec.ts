@@ -213,6 +213,18 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'slipClipContent',
+        "Slip an existing clip's content by setting its content offset in beats without moving the clip's boundaries.",
+        {
+            clipId: { type: 'string' },
+            clipType: { type: 'string', enum: ['audio', 'midi'], description: 'Which content offset to slide' },
+            offset: { type: 'number', description: 'New content offset in beats' },
+        },
+        ['clipId', 'clipType', 'offset'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setClipGain',
         'Set an existing clip gain from 0.0 through 2.0.',
         {
@@ -1409,6 +1421,12 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['nudge clip', 'nudge'],
         targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
         valueRules: [{ argument: 'beats', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'slipClipContent',
+        intentPhrases: ['slip clip', 'slip clip content'],
+        targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
+        valueRules: [{ argument: 'offset', kind: 'number-if-present', requiredInPrompt: true }],
     },
     {
         actionType: 'setClipGain',
