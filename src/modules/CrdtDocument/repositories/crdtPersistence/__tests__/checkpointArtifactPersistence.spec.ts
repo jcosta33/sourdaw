@@ -26,7 +26,7 @@ class FakeTransaction {
 
     private aborted = false;
     private readonly operations: Array<() => void> = [];
-    private readonly staged = new Map<string, Map<IDBValidKey, StoredValue | typeof deletedValue>>();
+    private readonly staged = new Map<string, Map<IDBValidKey, StoredValue>>();
 
     constructor(
         private readonly stores: Map<string, Map<IDBValidKey, StoredValue>>,
@@ -101,7 +101,7 @@ class FakeObjectStore {
     constructor(
         private readonly transaction: FakeTransaction,
         private readonly committed: Map<IDBValidKey, StoredValue>,
-        private readonly staged: Map<IDBValidKey, StoredValue | typeof deletedValue>,
+        private readonly staged: Map<IDBValidKey, StoredValue>,
         private readonly mode: IDBTransactionMode,
         private readonly onRequestSuccess: () => void
     ) {}
@@ -135,7 +135,7 @@ class FakeObjectStore {
         });
     }
 
-    get(key: IDBValidKey): FakeRequest<StoredValue | undefined> {
+    get(key: IDBValidKey): FakeRequest<StoredValue> {
         return this.request(() => copy(this.currentValue(key)));
     }
 
@@ -173,7 +173,7 @@ class FakeObjectStore {
         return entries;
     }
 
-    private currentValue(key: IDBValidKey): StoredValue | undefined {
+    private currentValue(key: IDBValidKey): StoredValue {
         if (!this.staged.has(key)) {
             return this.committed.get(key);
         }
@@ -208,7 +208,7 @@ class FakeObjectStore {
 
 type FakeIndexedDbControl = {
     abortNextWriteAfterRequests: () => void;
-    inspect: (storeName: string, key: IDBValidKey) => StoredValue | undefined;
+    inspect: (storeName: string, key: IDBValidKey) => StoredValue;
     requestSuccessCount: () => number;
     seed: (storeName: string, key: IDBValidKey, value: StoredValue) => void;
 };
@@ -480,9 +480,11 @@ describe('checkpoint artifact persistence (simulated IndexedDB contract)', () =>
     it('rejects unsupported or corrupt input before publishing any row', async () => {
         const { CHECKPOINT_ARTIFACT_STORE_NAME, CHECKPOINT_CATALOG_STORE_NAME, commitCheckpointArtifact } =
             await repositories();
-        const sparseAudioBufferIds = new Array<string>(2);
+        const sparseAudioBufferIds: string[] = [];
+        sparseAudioBufferIds.length = 2;
         sparseAudioBufferIds[1] = 'buffer-a';
-        const sparseTags = new Array<string>(2);
+        const sparseTags: string[] = [];
+        sparseTags.length = 2;
         sparseTags[1] = 'manual';
 
         await expect(

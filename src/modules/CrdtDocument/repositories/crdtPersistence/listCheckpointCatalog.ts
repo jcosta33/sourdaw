@@ -49,10 +49,10 @@ export async function listCheckpointCatalog(ownerProjectId: string): Promise<Che
                 }
 
                 const artifactsById = new Map<string, unknown>();
-                artifactKeysRequest.result.forEach((key, index) => {
+                for (const [index, key] of artifactKeysRequest.result.entries()) {
                     const checkpointId = requireCheckpointIdentity(key, 'artifact checkpoint key');
                     artifactsById.set(checkpointId, artifactsRequest.result[index]);
-                });
+                }
                 const catalogIds = new Set<string>();
                 const catalog = catalogKeysRequest.result.flatMap((key, index) => {
                     const checkpointId = requireCheckpointIdentity(key, 'catalog checkpoint key');

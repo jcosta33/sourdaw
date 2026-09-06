@@ -44,7 +44,7 @@ function requireString(value: unknown, name: string, allowEmpty = true): string 
 
 function requireStringArray(value: unknown, name: string, allowEmptyItems: boolean): string[] {
     if (!Array.isArray(value)) {
-        throw new Error(`[CheckpointPersistence] ${name} must be an array`);
+        throw new TypeError(`[CheckpointPersistence] ${name} must be an array`);
     }
 
     const result: string[] = [];
