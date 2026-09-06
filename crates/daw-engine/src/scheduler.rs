@@ -336,6 +336,10 @@ pub enum GraphCommand {
     /// stamp it against, so it is delivered as soon as the plugin renders and
     /// its `frame_offset` is zero. A note that does have a position is written
     /// with [`GraphCommand::ScheduleMidiNotes`] instead.
+    ///
+    /// The channel and note are not checked against the addresses the store
+    /// refuses, because a live note is never tracked as sounding and so is
+    /// never owed a release something would have to address.
     SendMidiNote(usize, MidiNoteEvent),
     /// Write a batch of timeline-addressed notes into a plugin's note store.
     ///
@@ -943,6 +947,15 @@ struct ActiveEffect {
     /// Empty for every device that carries no store, because only delivery
     /// from one ever sets a bit.
     sounding: SoundingNotes,
+    /// Sounding notes whose scheduled note-off a clear took out of the store
+    /// during the drain now applying, awaiting settlement.
+    ///
+    /// A candidate, not a decision. A producer rewriting a bar clears it and
+    /// schedules the replacement in one drain, so the clear alone cannot tell
+    /// a release that was deleted from one that only moved — see
+    /// [`Self::settle_stripped_note_offs`], which answers that against the
+    /// store the whole drain left behind.
+    stripped: SoundingNotes,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -1543,6 +1556,7 @@ impl ActiveEffect {
             pending_midi: MidiEventBuffer::new(),
             midi_notes: None,
             sounding: SoundingNotes::default(),
+            stripped: SoundingNotes::default(),
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
@@ -1703,6 +1717,17 @@ impl ActiveEffect {
             delivered = true;
             let mut event = entry.event;
             event.frame_offset = stamp_base + (entry.at_frame - block_start) as u32;
+            // A stored release passes the probability gate whatever its
+            // producer wrote on it, exactly as the release a stop, a locate or
+            // a clear supplies does. The gate decides whether a note sounds,
+            // and it decides that on the note-on: a note-on the gate rolls
+            // away still marked the note sounding here, so the release it
+            // earns is a note-off an instrument that never heard the note-on
+            // ignores — while a release rolled away leaves a key that did go
+            // down held for good.
+            if !event.is_note_on {
+                event.probability_cutoff = crate::midi_fx::PROBABILITY_CUTOFF_RANGE;
+            }
             if !pending_midi.try_push(event) {
                 diagnostics.record_scheduler_event_buffer_overflow(1);
                 continue;
@@ -1757,60 +1782,124 @@ impl ActiveEffect {
         released
     }
 
-    /// Clear a window of this device's store, releasing every sounding note
+    /// Clear a window of this device's store, recording every sounding note
     /// whose scheduled note-off the window takes away.
     ///
-    /// Returns whether anything was queued, so the caller marks the slot as
-    /// holding block-local MIDI exactly as every other enqueue does.
+    /// Returns whether any candidate was recorded, so the caller can flag the
+    /// slot for the drain's settlement.
     ///
-    /// A clear removes frames from the arrangement, so a note-off inside the
-    /// window is a release no frame is going to render any more — the same
-    /// position a stop, a locate and a loop wrap leave a sounding note in, and
-    /// it gets the same answer: a note-off at the head of whatever renders
-    /// next. A note-on the window removes owes nothing; either it never
-    /// sounded, or it did and its own note-off is still where the producer
-    /// wrote it.
+    /// Nothing is released here. A producer rewrites a bar by clearing it and
+    /// scheduling its replacement in the same drain, so a note-off the window
+    /// takes out is as likely to be moving as to be going away, and releasing
+    /// at the clear cuts short a note the rewrite only meant to lengthen. What
+    /// the store holds once the whole drain has applied is what decides it —
+    /// see [`Self::settle_stripped_note_offs`]. A note-on the window removes
+    /// owes nothing either way; either it never sounded, or it did and its own
+    /// note-off is still where the producer wrote it.
     #[inline]
-    fn clear_midi_notes(
-        &mut self,
-        from_frame: u64,
-        to_frame: u64,
-        diagnostics: &mut ActiveMidiRtDiagnostics,
-    ) -> bool {
+    fn clear_midi_notes(&mut self, from_frame: u64, to_frame: u64) -> bool {
         let Self {
             midi_notes,
-            pending_midi,
             sounding,
+            stripped,
             ..
         } = self;
         let Some(store) = midi_notes.as_mut() else {
             return false;
         };
 
-        let mut released = false;
+        let mut recorded = false;
         store.clear_window(from_frame, to_frame, |entry| {
             let event = &entry.event;
             if event.is_note_on || !sounding.is_held(event.channel, event.note) {
                 return;
             }
-            if !pending_midi.try_push(release_note(event.channel, event.note, 0)) {
-                diagnostics.record_scheduler_event_buffer_overflow(1);
-                // The note stays held, so the next trigger owes it again.
-                return;
+            stripped.hold(event.channel, event.note);
+            recorded = true;
+        });
+        recorded
+    }
+
+    /// Answer the candidates a clear recorded, against the store the whole
+    /// drain left behind.
+    ///
+    /// A candidate the store still holds a note-off for ahead of the playhead
+    /// is released by that note-off, on the frame the rewrite put it on, so
+    /// nothing is owed here and the candidate is simply dropped. A candidate
+    /// with no such note-off is owed a release: the frames that carried it are
+    /// out of the arrangement, and the instrument would hold the key — the
+    /// same position a stop, a locate and a loop wrap leave a sounding note
+    /// in, and it gets the same answer, a note-off at the head of whatever
+    /// renders next.
+    ///
+    /// A release the full buffer refuses leaves the note both sounding and a
+    /// candidate, so it is owed again rather than lost.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    #[inline]
+    fn settle_stripped_note_offs(
+        &mut self,
+        playhead_frames: u64,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            midi_notes,
+            pending_midi,
+            sounding,
+            stripped,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_ref() else {
+            return false;
+        };
+
+        let rewritten = scheduled_note_offs_from(store, playhead_frames);
+        let mut released = false;
+        stripped.drain(|channel, note| {
+            if rewritten.is_held(channel, note) || !sounding.is_held(channel, note) {
+                return true;
             }
-            sounding.release(event.channel, event.note);
+            if !pending_midi.try_push(release_note(channel, note, 0)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                return false;
+            }
+            sounding.release(channel, note);
             released = true;
+            true
         });
         released
     }
 }
 
-/// The note-off that ends a note a store sounded.
+/// Every note the store still holds a scheduled note-off for on `from_frame`
+/// or past it.
+///
+/// One pass over the entries from that frame on, into a set the same shape as
+/// the sounding bits: sixteen channels of a hundred and twenty-eight bits,
+/// stack-local and fixed, so building one allocates nothing on the callback.
+/// The store is frame-ordered, so the entries at or past a frame are its tail.
+fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> SoundingNotes {
+    let entries = store.entries();
+    let first = entries.partition_point(|entry| entry.at_frame < from_frame);
+    let mut note_offs = SoundingNotes::default();
+    for entry in &entries[first..] {
+        if entry.event.is_note_on {
+            continue;
+        }
+        note_offs.hold(entry.event.channel, entry.event.note);
+    }
+    note_offs
+}
+
+/// The note-off that ends a note a store sounded, supplied by the engine
+/// rather than read from the store.
 ///
 /// Velocity zero is the release a MIDI source sends for a key let go without
 /// pressure. The probability cutoff passes: the gate decides whether a note
 /// sounds, and a release owed for a note that already did must never be rolled
-/// away, or the instrument holds that key for good.
+/// away, or the instrument holds that key for good. Delivery hands a stored
+/// note-off over on those same terms, for that same reason.
 fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
     MidiNoteEvent {
         note,
@@ -1836,6 +1925,10 @@ pub struct AudioScheduler {
     parameter_work: SlotWorkSet,
     /// Slots that may need detached-MIDI cleanup without walking the table.
     pending_midi_work: SlotWorkSet,
+    /// Slots holding note-off candidates a clear recorded during the drain
+    /// now applying, emptied by [`Self::settle_stripped_note_offs`] once that
+    /// drain finishes.
+    stripped_note_work: SlotWorkSet,
     /// The explicit, deterministic order of master insert processing.
     master_work: MasterWorkList,
     /// Effect ids the render callback hands captured device audio to.
@@ -1969,6 +2062,7 @@ impl AudioScheduler {
             effect_index: IdSlotIndex::reserved(EFFECT_TABLE_CAPACITY),
             parameter_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            stripped_note_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             pdc_dirty: false,
@@ -2151,6 +2245,11 @@ impl AudioScheduler {
     #[inline]
     pub fn update_graph(&mut self) {
         self.drain_commands();
+        // After the drain rather than inside it, and before anything renders:
+        // a clear and the batch that rewrites what it took out arrive
+        // together, so only the store the whole drain leaves behind can tell a
+        // release that was deleted from one that merely moved.
+        self.settle_stripped_note_offs();
         // After the drain rather than inside it: a batch that adds a bus, its
         // devices and every send into it passes through states no mix should
         // ever be aligned against, and re-aiming per command would also make a
@@ -2940,6 +3039,7 @@ impl AudioScheduler {
         let old_tail = self.effects.len() - 1;
         self.parameter_work.remove(slot);
         self.pending_midi_work.remove(slot);
+        self.stripped_note_work.remove(slot);
         self.master_work.remove(slot);
         let removed = self.effects.swap_remove(slot);
         // The swap moved the table's tail into `slot` unless the removed
@@ -2949,6 +3049,7 @@ impl AudioScheduler {
             self.effect_index.set_slot(moved.id, slot);
             self.parameter_work.move_slot(old_tail, slot);
             self.pending_midi_work.move_slot(old_tail, slot);
+            self.stripped_note_work.move_slot(old_tail, slot);
             self.master_work.move_slot(old_tail, slot);
         }
         Some(removed)
@@ -3098,13 +3199,14 @@ impl AudioScheduler {
         self.midi_rt_diagnostics.record_late_midi_notes(late as u64);
     }
 
-    /// Take a window out of one device's store, releasing every note it is
+    /// Take a window out of one device's store, recording every note it is
     /// sounding whose scheduled note-off stood inside that window.
     ///
-    /// The clear takes those frames out of the arrangement, so nothing is ever
-    /// going to render that note-off and the instrument would hold the key —
-    /// the same reason a stop, a locate and a loop wrap release. A device with
-    /// no store has nothing to clear, which is every device but an instrument.
+    /// The release those notes may be owed is decided after the drain, by
+    /// [`Self::settle_stripped_note_offs`], because the same drain may carry
+    /// the batch that writes their note-offs back somewhere else. A device
+    /// with no store has nothing to clear, which is every device but an
+    /// instrument.
     fn clear_midi_notes(&mut self, plugin_id: usize, from_frame: u64, to_frame: u64) {
         let Some(slot) = self.effect_index.lookup(plugin_id) else {
             return;
@@ -3112,9 +3214,27 @@ impl AudioScheduler {
         if slot >= self.effects.len() {
             return;
         }
-        if self.effects[slot].clear_midi_notes(from_frame, to_frame, &mut self.midi_rt_diagnostics)
-        {
-            self.pending_midi_work.insert(slot);
+        if self.effects[slot].clear_midi_notes(from_frame, to_frame) {
+            self.stripped_note_work.insert(slot);
+        }
+    }
+
+    /// Answer every note-off candidate this drain's clears recorded.
+    ///
+    /// Runs once per flagged device, after the whole drain and before anything
+    /// renders. A clear on its own cannot tell a deleted release from a moved
+    /// one — a producer rewriting a bar clears it and schedules the
+    /// replacement in a single drain — so the store as the drain left it is
+    /// what decides, and the work set keeps the cost to the devices a clear
+    /// actually touched.
+    fn settle_stripped_note_offs(&mut self) {
+        while let Some(slot) = self.stripped_note_work.slots.last().copied() {
+            self.stripped_note_work.remove(slot);
+            if self.effects[slot]
+                .settle_stripped_note_offs(self.playhead_frames, &mut self.midi_rt_diagnostics)
+            {
+                self.pending_midi_work.insert(slot);
+            }
         }
     }
 
@@ -6761,6 +6881,24 @@ mod timeline_tests {
                 self.command_tx.push(command).is_ok(),
                 "the command ring should have room"
             );
+            self.scheduler.update_graph();
+            self
+        }
+
+        /// Push several commands and apply them in one drain, which is how a
+        /// producer's rewrite of a bar reaches the callback: the clear and the
+        /// batch replacing what it took out are one publication, never two the
+        /// graph could act on separately.
+        fn send_in_one_drain(
+            &mut self,
+            commands: impl IntoIterator<Item = GraphCommand>,
+        ) -> &mut Self {
+            for command in commands {
+                assert!(
+                    self.command_tx.push(command).is_ok(),
+                    "the command ring should have room"
+                );
+            }
             self.scheduler.update_graph();
             self
         }
@@ -11672,6 +11810,134 @@ mod timeline_tests {
             vec![(100, 60, true), (BLOCK as u64, 60, false)],
             "the release lands at the head of the block after the clear, and the frame the \
              note-off was written for renders nothing"
+        );
+    }
+
+    /// A stored note-off reaches the instrument whatever probability its
+    /// producer wrote on it.
+    ///
+    /// The gate decides whether a note sounds, and it decides that on the
+    /// note-on. A note-on the gate rolls away has already marked the note
+    /// sounding here, so the release it earns is a note-off an instrument that
+    /// never heard the note-on ignores — harmless. A release the gate rolls
+    /// away instead leaves a key that did go down held for good, which is why
+    /// delivery hands a stored note-off over on the same terms
+    /// `release_note` states for the ones a stop, a locate or a clear supplies.
+    #[test]
+    fn a_stored_note_off_reaches_the_instrument_whatever_its_probability_cutoff() {
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 1_000;
+        const BLOCK: usize = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let mut phrase = [timed_note(NOTE_ON, 60), timed_note(NOTE_OFF, 60)];
+        phrase[1].event.is_note_on = false;
+        // The one cutoff the gate always rolls away.
+        phrase[1].event.probability_cutoff = 0;
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: 7,
+            notes: phrase.into(),
+        });
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+            "the release reaches the instrument on the frame its producer wrote it for"
+        );
+    }
+
+    /// Lengthening a sounding note is a clear and a fresh batch in one drain,
+    /// and it moves the note's release rather than deleting it.
+    ///
+    /// The clear takes the note-off out of the store while the note is down,
+    /// which is exactly the shape of a deleted release; only the store the
+    /// whole drain leaves behind tells the two apart. Releasing at the clear
+    /// would cut the note short at the head of the next block — the one thing
+    /// a producer asking for a longer note cannot be handed.
+    #[test]
+    fn lengthening_a_sounding_note_in_one_drain_moves_its_release() {
+        const BLOCK: usize = 128;
+        const REST: usize = 512;
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 300;
+        const MOVED_OFF: u64 = 500;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: NOTE_OFF,
+                to_frame: NOTE_OFF + 1,
+            },
+            schedule_phrase(7, &[(MOVED_OFF, 60, false)]),
+        ]);
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (MOVED_OFF, 60, false)],
+            "no release lands at the head of the block after the clear, and the note ends on \
+             the frame the rewrite moved its note-off to"
+        );
+    }
+
+    /// Shortening a sounding note behind the playhead releases it now.
+    ///
+    /// The rewrite puts the note-off on a frame the playhead has already
+    /// passed, so it is stored and counted late like any other note behind the
+    /// playhead and no frame ahead is going to render it. The note is down, so
+    /// it is owed a release at the head of whatever renders next — the same
+    /// answer a deleted note-off gets, reached by asking where the store's
+    /// remaining note-off stands rather than whether one exists.
+    #[test]
+    fn shortening_a_sounding_note_behind_the_playhead_releases_it_now() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 10;
+        const NOTE_OFF: u64 = 300;
+        const MOVED_OFF: u64 = 50;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: NOTE_OFF,
+                to_frame: NOTE_OFF + 1,
+            },
+            schedule_phrase(7, &[(MOVED_OFF, 60, false)]),
+        ]);
+        harness.render(BLOCK);
+
+        assert_eq!(
+            midi_diagnostics(&harness).late_midi_notes,
+            1,
+            "the moved note-off is behind the playhead, so it is stored and counted late"
+        );
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (BLOCK as u64, 60, false)],
+            "a release the rewrite left behind the playhead is owed at the head of what \
+             renders next"
         );
     }
 

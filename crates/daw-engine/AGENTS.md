@@ -34,11 +34,19 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   them leaves the frame a sounding note's note-off was written for behind — the playhead stands
   still, moves away from it, turns back before reaching it, or the clear takes that frame out of the
   arrangement altogether — so nothing is going to render that note-off, and the instrument would
-  hold the key until something unrelated happened to release it. Only a note-off the clear removes
-  owes a release: a note-on it removes either never sounded, or sounded and still has the note-off
-  its producer wrote. The release is a note-off at the head of whatever renders next, on the seam
-  for a loop wrap. A note played live is not released: it has no timeline position and no scheduled
-  note-off, so a key the player is holding stays held exactly as it does on hardware.
+  hold the key until something unrelated happened to release it. The release is a note-off at the
+  head of whatever renders next, on the seam for a loop wrap. A note played live is not released: it
+  has no timeline position and no scheduled note-off, so a key the player is holding stays held
+  exactly as it does on hardware.
+- **A clear releases once the drain has settled, and only against what the store then holds**: a
+  producer rewrites a bar by clearing it and scheduling the replacement in one drain, so a note-off
+  a clear strips is as often a release being moved as one being deleted, and a release taken at the
+  clear cuts short a note the rewrite only meant to lengthen. A clear therefore records the sounding
+  notes whose note-off it removed and answers them once the whole drain has applied: a note the
+  settled store holds a note-off for on the playhead or past it is released by that note-off, and
+  one with none is owed the release at the head of whatever renders next. A note-on a clear removes
+  owes nothing either way; either it never sounded, or it did and its own note-off is still where
+  the producer wrote it.
 - **A release the event buffer refuses leaves its note held**: the key is down whether or not the
   note-off found room, so the note stays in the sounding set and the next stop, locate, wrap or
   clear owes it again. Dropping the record along with the event turns one refused message into a

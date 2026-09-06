@@ -2397,24 +2397,25 @@ mod tests {
     }
 
     /// A block rendered in segments must publish the peak of the whole block,
-    /// not merely its last segment.
+    /// not the peak of any one segment.
     ///
     /// `CrumbsEngine::process_block` measures and publishes only the slice it
     /// was just handed. Splitting a block at each MIDI event's offset calls it
     /// once per segment, so the raw per-segment publish leaves the atomics
-    /// holding only the tail's own peak — silently under-reporting any block
-    /// whose loudest audio came before its last event, exactly the shape a
-    /// note sounding loudly through most of the block and released near its
-    /// end produces.
+    /// holding only the tail's own peak. Two events put the block's loudest
+    /// audio in a middle segment, which no single segment's own peak can stand
+    /// in for: the meter reads under whether the publish keeps the first
+    /// segment or the last.
     #[test]
     fn a_segmented_crumbs_block_publishes_the_peak_of_the_whole_block() {
         const FRAMES: usize = 512;
+        const NOTE_ON_OFFSET: usize = 100;
         const NOTE_OFF_OFFSET: usize = 400;
 
         let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
-        // Sounding from the very start of the block, as though triggered in a
-        // previous callback: the command drains before any segment renders.
-        queue_a_sounding_note(&mut tx);
+        // Loaded but not pressed, so the first segment is silent and the note
+        // sounds from the offset the note-on names.
+        queue_a_loaded_sample(&mut tx);
 
         let mut left = vec![0.0f32; FRAMES];
         let mut right = vec![0.0f32; FRAMES];
@@ -2422,31 +2423,33 @@ mod tests {
             &mut left,
             &mut right,
             FRAMES,
-            &[engine_note(60, 100, 0, false, NOTE_OFF_OFFSET as u32)],
+            &[
+                engine_note(60, 100, 0, true, NOTE_ON_OFFSET as u32),
+                engine_note(60, 100, 0, false, NOTE_OFF_OFFSET as u32),
+            ],
             &TransportState::default(),
         );
 
-        let block_peak = left
-            .iter()
-            .fold(0.0f32, |peak, &sample| peak.max(sample.abs()));
-        let tail_peak = left[NOTE_OFF_OFFSET..]
-            .iter()
-            .fold(0.0f32, |peak, &sample| peak.max(sample.abs()));
+        let peak_of = |slice: &[f32]| slice.iter().fold(0.0f32, |peak, &s| peak.max(s.abs()));
+        let block_peak = peak_of(&left);
+        let head_peak = peak_of(&left[..NOTE_ON_OFFSET]);
+        let middle_peak = peak_of(&left[NOTE_ON_OFFSET..NOTE_OFF_OFFSET]);
+        let tail_peak = peak_of(&left[NOTE_OFF_OFFSET..]);
 
-        assert!(
-            block_peak > 0.0,
-            "the note must actually sound, or this test proves nothing"
+        assert_eq!(
+            middle_peak, block_peak,
+            "the loudest audio must sit in the middle segment, or this test proves nothing"
         );
         assert!(
-            tail_peak < block_peak,
-            "the note-off must actually quiet the tail relative to the rest of \
-             the block, or this test proves nothing"
+            head_peak < block_peak && tail_peak < block_peak,
+            "neither the first segment nor the last may reach the block's peak, or this \
+             test proves nothing"
         );
         assert_eq!(
             slot.engine.read_peak_left(),
             block_peak,
-            "a segmented block must publish the peak of the whole block, not \
-             merely its last segment"
+            "a segmented block must publish the peak of the whole block, not the peak of \
+             any one segment"
         );
     }
 

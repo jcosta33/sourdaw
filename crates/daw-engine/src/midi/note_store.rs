@@ -48,9 +48,6 @@ pub struct MidiNoteStore {
     /// audio thread, so a scratch buffer taken per call would be exactly the
     /// allocation the reserve exists to avoid.
     scratch: Vec<TimedMidiNote>,
-    /// Entries the last merge wrote. A linear merge writes each entry of both
-    /// runs once, so this reads back as the cost that merge paid.
-    last_merge_writes: usize,
 }
 
 impl MidiNoteStore {
@@ -61,7 +58,6 @@ impl MidiNoteStore {
         Box::new(Self {
             entries: Vec::with_capacity(MIDI_NOTE_STORE_CAPACITY),
             scratch: Vec::with_capacity(MIDI_NOTE_STORE_CAPACITY),
-            last_merge_writes: 0,
         })
     }
 
@@ -75,11 +71,6 @@ impl MidiNoteStore {
 
     pub fn entries(&self) -> &[TimedMidiNote] {
         &self.entries
-    }
-
-    /// Entries the last accepted batch's merge wrote.
-    pub fn last_merge_writes(&self) -> usize {
-        self.last_merge_writes
     }
 
     /// Merge a frame-ordered batch into the store, or refuse it whole.
@@ -112,7 +103,6 @@ impl MidiNoteStore {
         }
 
         merge_frame_ordered_runs(&mut self.scratch, &self.entries, notes);
-        self.last_merge_writes = self.scratch.len();
         std::mem::swap(&mut self.entries, &mut self.scratch);
         // Emptied rather than dropped: the buffer that just held the store
         // keeps its reserve and becomes the scratch the next merge writes into.
@@ -157,10 +147,11 @@ fn is_frame_ordered(notes: &[TimedMidiNote]) -> bool {
 /// Merge two frame-ordered runs into `out`, keeping an entry the store already
 /// held ahead of one arriving on the same frame.
 ///
-/// Linear rather than an insertion merge by rotation. A rotation moves every
-/// entry it steps over, so a batch landing ahead of a full store rewrites that
-/// store once per arriving entry — quadratic work inside the deadline. Writing
-/// both runs out once is one pass over each.
+/// Linear rather than an insertion merge by rotation. Each entry of both runs
+/// is written into `out` exactly once, so a merge costs the two run lengths and
+/// nothing more. A rotation moves every entry it steps over instead, so a batch
+/// landing ahead of a full store rewrites that store once per arriving entry —
+/// quadratic work inside the deadline.
 ///
 /// `out` is the store's own scratch: reserved at [`MIDI_NOTE_STORE_CAPACITY`],
 /// emptied by the caller, and only ever asked to hold a total the caller has
@@ -345,12 +336,12 @@ mod tests {
         assert_eq!(held, vec![(10, 60), (10, 61), (25, 62), (40, 63)]);
     }
 
-    /// A batch landing ahead of everything stored writes each entry of both
-    /// runs once. An insertion merge by rotation moves every entry it steps
-    /// over instead, so this same pair costs one rewrite of the store per
-    /// arriving entry — work the audio thread does not have.
+    /// A batch landing entirely ahead of the store lands whole and in frame
+    /// order. Two long runs sharing no frame read the merge's direction back
+    /// directly: emitting the stored run first would leave every arriving
+    /// frame behind every stored one.
     #[test]
-    fn a_batch_ahead_of_the_whole_store_merges_in_linear_writes() {
+    fn a_batch_ahead_of_the_whole_store_lands_in_frame_order() {
         const RUN: u64 = 1_024;
 
         let mut store = MidiNoteStore::new();
@@ -366,11 +357,6 @@ mod tests {
             "the store stays in frame order across the merge"
         );
         assert_eq!(store.len(), 2 * RUN as usize);
-        assert_eq!(
-            store.last_merge_writes(),
-            2 * RUN as usize,
-            "each entry of both runs is written exactly once"
-        );
     }
 
     /// A batch whose frames fall between the stored ones interleaves the two
@@ -391,7 +377,6 @@ mod tests {
             held,
             vec![(10, 60), (20, 61), (30, 62), (30, 63), (40, 65), (50, 64)]
         );
-        assert_eq!(store.last_merge_writes(), 6);
     }
 
     /// A note MIDI has no address for refuses its whole batch. Nothing could
