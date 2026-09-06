@@ -1,0 +1,16 @@
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_1228e573df1f42 129-131,136,138,539,548,562,635,702,749,772,789,792
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_1228e573df1f42 588-634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "660ac6a4d5854803b4dc92c066a582700725aeb9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
