@@ -12,7 +12,7 @@ import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getDrumPreviewBranchesPromptScope } from './getDrumPreviewBranchesPromptScope';
 import { getDrumRenderComparisonPromptScope } from './getDrumRenderComparisonPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
-import { getExplicitlyProtectedClips } from './getExplicitlyProtectedClips';
+import { getExplicitClipProtection } from './getExplicitlyProtectedClips';
 import { getMidiOverlapTransformPromptScope } from './getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getSharedVocalFxBusesPromptScope } from './getSharedVocalFxBusesPromptScope';
@@ -120,12 +120,13 @@ export function getApplicationProtectedObjects(input: {
         workflowCapabilityId === 'syncopated-arpeggio' ? getSyncopatedArpeggioPromptScope(context) : null;
     const syncopatedArpeggioProtections =
         syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
+    const explicitClipProtection = getExplicitClipProtection(prompt, context);
     const protections = [
         ...(actions.some((action) => action.type === 'importStemSet')
             ? context.tracks.map(({ id, name }) => ({ id, name }))
             : []),
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
-        ...getExplicitlyProtectedClips(prompt, context),
+        ...explicitClipProtection.clips,
         ...protectedParameters,
         ...planProtections,
         ...drumRoutingProtections,

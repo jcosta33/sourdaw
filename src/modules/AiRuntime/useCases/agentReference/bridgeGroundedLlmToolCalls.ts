@@ -2024,9 +2024,21 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
-function getBareClipRenameTargetPrompt(actionScope: ActionPromptScope, targetPrompt: string): string {
+function getBareClipRenameValue(actionScope: ActionPromptScope): string | null {
     const sourceScope = actionScope.text.trim();
-    return /^rename\s+(?:the\s+)?clip\s+to\s+\S[\s\S]*$/iu.test(sourceScope) ? 'selected clip' : targetPrompt;
+    const bareRename = /^rename\s+(?:the\s+)?clip\s+(\S[\s\S]*)$/iu.exec(sourceScope);
+    if (!bareRename) {
+        return null;
+    }
+    const valueCarrier = bareRename[1]!.trim();
+    if (/^to$/iu.test(valueCarrier)) {
+        return null;
+    }
+    return /^to\s+(\S[\s\S]*)$/iu.exec(valueCarrier)?.[1]?.trim() ?? valueCarrier;
+}
+
+function getBareClipRenameTargetPrompt(actionScope: ActionPromptScope, targetPrompt: string): string {
+    return getBareClipRenameValue(actionScope) === null ? targetPrompt : 'selected clip';
 }
 
 function collectPromptClearSolosRestrictionClauses(
@@ -3561,6 +3573,7 @@ function validateGroundedValue(
 }
 
 function validateGroundedValues(
+    actionName: string,
     groundingRules: GroundingRules,
     groundedArguments: Record<string, unknown>,
     actionScope: ActionPromptScope,
@@ -3568,7 +3581,17 @@ function validateGroundedValues(
 ): string | null {
     for (const valueRule of groundingRules.valueRules) {
         const assertedValue = groundedArguments[valueRule.argument];
-        const valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+        let valueRejection: string | null;
+        const bareRenameValue =
+            actionName === 'renameClip' && valueRule.argument === 'name' ? getBareClipRenameValue(actionScope) : null;
+        if (bareRenameValue === null) {
+            valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+        } else {
+            const matchesBareRenameValue =
+                typeof assertedValue === 'string' &&
+                normalizePromptText(assertedValue) === normalizePromptText(bareRenameValue);
+            valueRejection = matchesBareRenameValue ? null : getValueMismatchReason(valueRule.argument);
+        }
         if (valueRejection) {
             return valueRejection;
         }
@@ -4313,7 +4336,7 @@ function groundToolCall({
     }
     const valueRejection = admitsPlanCreatedObject
         ? null
-        : validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
+        : validateGroundedValues(call.name, groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
     }

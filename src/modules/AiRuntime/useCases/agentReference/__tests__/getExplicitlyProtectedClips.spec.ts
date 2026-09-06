@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../../models/ProjectContext';
-import { getExplicitlyProtectedClips } from '../getExplicitlyProtectedClips';
+import { getExplicitClipProtection } from '../getExplicitlyProtectedClips';
 
 function createTrack(id: string, name: string, clips: ProjectContextTrack['clips']): ProjectContextTrack {
     return {
@@ -38,6 +38,9 @@ const bassVerse = createClip('clip-bass-verse', 'Bass Verse', true);
 const apostrophe = createClip('clip-drummer-cut', "Drummer's Cut");
 const literalSelectedClips = createClip('clip-literal-selected', 'Selected Clips');
 const literalSelectedClip = createClip('clip-literal-selected-singular', 'Selected Clip');
+const lead = createClip('clip-lead', 'Lead');
+const rockAndRoll = createClip('clip-rock-and-roll', 'Rock and Roll');
+const literalComma = createClip('clip-literal-comma', 'Verse, Alternate');
 const vocalVerse = createClip('clip-vocal-verse', 'Verse');
 const guitarVerse = createClip('clip-guitar-verse', 'Verse');
 const context: ProjectContext = {
@@ -55,7 +58,15 @@ const context: ProjectContext = {
     metronomeVolume: 0.5,
     masterGain: 0.8,
     tracks: [
-        createTrack('track-bass', 'Bass', [bassVerse, apostrophe, literalSelectedClips, literalSelectedClip]),
+        createTrack('track-bass', 'Bass', [
+            bassVerse,
+            apostrophe,
+            literalSelectedClips,
+            literalSelectedClip,
+            lead,
+            rockAndRoll,
+            literalComma,
+        ]),
         createTrack('track-vocals', 'Vocals', [vocalVerse]),
         createTrack('track-guitar', 'Guitar', [guitarVerse]),
     ],
@@ -65,6 +76,10 @@ const context: ProjectContext = {
     activeView: 'arrange',
     playheadPosition: 0,
 };
+
+function getProtectedClips(prompt: string, projectContext = context) {
+    return getExplicitClipProtection(prompt, projectContext).clips;
+}
 
 describe('getExplicitlyProtectedClips', () => {
     it.each([
@@ -76,27 +91,27 @@ describe('getExplicitlyProtectedClips', () => {
         ['preserving clip-bass-verse unchanged', bassVerse],
         ["keep Drummer's Cut unchanged", apostrophe],
     ])('resolves an exact protected clip from %s', (prompt, clip) => {
-        expect(getExplicitlyProtectedClips(prompt, context)).toContainEqual({
+        expect(getProtectedClips(prompt, context)).toContainEqual({
             id: clip.id,
             name: clip.name,
         });
     });
 
     it('keeps every ambiguous duplicate-name candidate protected', () => {
-        expect(getExplicitlyProtectedClips('leave Verse unchanged', context)).toEqual([
+        expect(getProtectedClips('leave Verse unchanged', context)).toEqual([
             { id: vocalVerse.id, name: vocalVerse.name },
             { id: guitarVerse.id, name: guitarVerse.name },
         ]);
     });
 
     it('honors an owner qualification for duplicate clip names', () => {
-        expect(getExplicitlyProtectedClips('keep Verse on Vocals unchanged', context)).toEqual([
+        expect(getProtectedClips('keep Verse on Vocals unchanged', context)).toEqual([
             { id: vocalVerse.id, name: vocalVerse.name },
         ]);
     });
 
     it('ignores preservation words inside a quoted rename value', () => {
-        expect(getExplicitlyProtectedClips('rename clip to "leave Bass Verse unchanged"', context)).toEqual([]);
+        expect(getProtectedClips('rename clip to "leave Bass Verse unchanged"', context)).toEqual([]);
     });
 
     it('protects every selected clip named by an unquoted plural selection reference', () => {
@@ -105,21 +120,70 @@ describe('getExplicitlyProtectedClips', () => {
             selectedClipIds: [bassVerse.id, apostrophe.id],
         };
 
-        expect(getExplicitlyProtectedClips('leave selected clips unchanged', multiSelectionContext)).toEqual([
+        expect(getProtectedClips('leave selected clips unchanged', multiSelectionContext)).toEqual([
             { id: bassVerse.id, name: bassVerse.name },
             { id: apostrophe.id, name: apostrophe.name },
         ]);
-        expect(getExplicitlyProtectedClips('leave "selected clips" unchanged', multiSelectionContext)).toEqual([
+        expect(getProtectedClips('leave "selected clips" unchanged', multiSelectionContext)).toEqual([
             { id: literalSelectedClips.id, name: literalSelectedClips.name },
         ]);
     });
 
     it('distinguishes an unquoted selected clip from a quoted literal name', () => {
-        expect(getExplicitlyProtectedClips('leave selected clip unchanged', context)).toEqual([
+        expect(getProtectedClips('leave selected clip unchanged', context)).toEqual([
             { id: bassVerse.id, name: bassVerse.name },
         ]);
-        expect(getExplicitlyProtectedClips('leave "Selected Clip" unchanged', context)).toEqual([
+        expect(getProtectedClips('leave "Selected Clip" unchanged', context)).toEqual([
             { id: literalSelectedClip.id, name: literalSelectedClip.name },
         ]);
+    });
+
+    it.each([
+        'leave selected clips and Lead unchanged',
+        'leave Lead and selected clips unchanged',
+        'leave selected clips, and Lead unchanged',
+    ])('unions selected and named protected references for %s', (prompt) => {
+        const multiSelectionContext = {
+            ...context,
+            selectedClipIds: [bassVerse.id, apostrophe.id],
+        };
+
+        expect(getProtectedClips(prompt, multiSelectionContext)).toEqual(
+            expect.arrayContaining([
+                { id: bassVerse.id, name: bassVerse.name },
+                { id: apostrophe.id, name: apostrophe.name },
+                { id: lead.id, name: lead.name },
+            ])
+        );
+    });
+
+    it('resolves each qualified protected reference without sharing owner qualifiers', () => {
+        expect(getProtectedClips('leave Verse on Vocals and Verse on Guitar unchanged', context)).toEqual([
+            { id: vocalVerse.id, name: vocalVerse.name },
+            { id: guitarVerse.id, name: guitarVerse.name },
+        ]);
+    });
+
+    it('keeps full literal names and quoted delimiters protected', () => {
+        expect(getProtectedClips('leave Rock and Roll unchanged', context)).toContainEqual({
+            id: rockAndRoll.id,
+            name: rockAndRoll.name,
+        });
+        expect(getProtectedClips('leave "Verse, Alternate" and "Rock and Roll" unchanged', context)).toEqual(
+            expect.arrayContaining([
+                { id: rockAndRoll.id, name: rockAndRoll.name },
+                { id: literalComma.id, name: literalComma.name },
+            ])
+        );
+    });
+
+    it.each([
+        'rename Lead to Opening; leave unchanged',
+        'rename Lead to Opening; leave Bass Verse and unchanged',
+        'rename Lead to Opening; leave and Bass Verse unchanged',
+        'rename Lead to Opening; leave Bass Verse, , Lead unchanged',
+        'rename Lead to Opening; leave "Bass Verse unchanged',
+    ])('marks malformed protection syntax incomplete for %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context).complete).toBe(false);
     });
 });

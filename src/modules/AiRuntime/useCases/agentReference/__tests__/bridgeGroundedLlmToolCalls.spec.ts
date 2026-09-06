@@ -6137,6 +6137,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
             actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
             rejections: [],
         });
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+                'rename clip Bridge Solo',
+                createClipContext()
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            rejections: [],
+        });
     });
 
     it('does not ground a bare clip rename without exactly one selected clip', () => {
@@ -6217,6 +6228,41 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.actions).toEqual([]);
     });
 
+    it('keeps a curly-apostrophe quoted rename source literal', () => {
+        const context = createNamedClipSourceContext();
+        const track = context.tracks[0]!;
+        const literalClip = {
+            ...track.clips[0]!,
+            id: 'clip-curly-selected',
+            name: 'Drummer’s Selected Clip',
+            startBeat: 24,
+            endBeat: 32,
+        };
+        const literalContext = {
+            ...context,
+            tracks: [{ ...track, clipCount: track.clipCount + 1, clips: [...track.clips, literalClip] }],
+        };
+        const prompt = 'rename ‘Drummer’s Selected Clip’ to Bridge Solo';
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: literalClip.id, name: 'Bridge Solo' } }],
+                prompt,
+                literalContext
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: literalClip.id, name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+                prompt,
+                literalContext
+            ).actions
+        ).toEqual([]);
+    });
+
     it('rejects renaming a clip the whole request explicitly protects', () => {
         const result = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
@@ -6226,6 +6272,26 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('rejects combined and malformed clip protections before rename admission', () => {
+        const context = createNamedClipSourceContext();
+        const selectedContext = { ...context, selectedClipIds: ['clip-intro'] };
+        const combined = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } }],
+            'rename Intro to Opening; leave selected clips and Lead unchanged',
+            selectedContext
+        );
+        const malformed = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } }],
+            'rename Intro to Opening; leave "Lead unchanged',
+            selectedContext
+        );
+
+        expect(combined.actions).toEqual([]);
+        expect(combined.rejections[0]?.reason).toContain('protected');
+        expect(malformed.actions).toEqual([]);
+        expect(malformed.rejections[0]?.reason).toContain('incomplete or malformed');
     });
 
     it('rejects renaming a quoted literal protected clip when another clip is selected', () => {

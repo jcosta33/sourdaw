@@ -62,20 +62,24 @@ describe('getApplicationProtectedObjects', () => {
             endBeat: 8,
             noteCount: 0,
         };
+        const lead = { ...bassVerse, id: 'clip-lead', name: 'Lead', startBeat: 8, endBeat: 16 };
         const clipContext: ProjectContext = {
             ...context,
+            selectedClipId: bassVerse.id,
+            selectedClipIds: [bassVerse.id],
             tracks: context.tracks.map((track) =>
-                track.id === 'track-bass-di' ? { ...track, clipCount: 1, clips: [bassVerse] } : track
+                track.id === 'track-bass-di' ? { ...track, clipCount: 2, clips: [bassVerse, lead] } : track
             ),
         };
 
-        expect(
-            getApplicationProtectedObjects({
-                actions: [],
-                context: clipContext,
-                prompt: 'rename Lead to Bridge Solo; leave Bass Verse unchanged',
-            })
-        ).toContainEqual({ id: 'clip-bass-verse', name: 'Bass Verse' });
+        const protections = getApplicationProtectedObjects({
+            actions: [],
+            context: clipContext,
+            prompt: 'rename Other to Bridge Solo; leave selected clips and Lead unchanged',
+        });
+
+        expect(protections).toContainEqual({ id: 'clip-bass-verse', name: 'Bass Verse' });
+        expect(protections).toContainEqual({ id: 'clip-lead', name: 'Lead' });
     });
 
     it('protects matching frozen tracks for an anchor-less bulk device prompt', () => {

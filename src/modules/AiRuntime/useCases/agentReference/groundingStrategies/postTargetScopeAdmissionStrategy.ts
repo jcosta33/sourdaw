@@ -1,7 +1,7 @@
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
-import { getExplicitlyProtectedClips } from '../getExplicitlyProtectedClips';
+import { getExplicitClipProtection } from '../getExplicitlyProtectedClips';
 import { resolveAgentReference } from '../resolveAgentReference';
 
 import { collectClearSolosRestrictionClauses } from './collectClearSolosRestrictionClauses';
@@ -321,10 +321,15 @@ export const postTargetScopeAdmissionStrategyDefinitions = [
     },
     {
         name: 'renameClip',
-        transform: ({ context, groundedArguments, prompt }) =>
-            getExplicitlyProtectedClips(prompt, context).some((clip) => clip.id === groundedArguments.clipId)
+        transform: ({ context, groundedArguments, prompt }) => {
+            const protection = getExplicitClipProtection(prompt, context);
+            if (!protection.complete) {
+                return 'Provider clip protection clause is incomplete or malformed';
+            }
+            return protection.clips.some((clip) => clip.id === groundedArguments.clipId)
                 ? 'Provider clip rename target is explicitly protected'
-                : null,
+                : null;
+        },
     },
     {
         name: 'clearSolos',

@@ -169,9 +169,9 @@ describe('promptParser parsing', () => {
                     gain: 1,
                     pan: 0,
                     automationMode: 'read',
-                    clipCount: 0,
+                    clipCount: 1,
                     deviceCount: 0,
-                    clips: [],
+                    clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 }],
                     devices: [],
                 },
             ],
@@ -294,6 +294,12 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('rename clip to to', prefixContext)).toEqual([
                 { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
             ]);
+            expect(tryParameterizedPath('rename clip Opening', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Opening' } },
+            ]);
+            expect(tryParameterizedPath('rename the clip "Bridge Solo"', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Bridge Solo' } },
+            ]);
             expect(tryParameterizedPath('mute the', prefixContext)).toEqual([]);
             expect(tryParameterizedPath('solo the', prefixContext)).toEqual([]);
             expect(tryParameterizedPath('add eq to the', prefixContext)).toEqual([]);
@@ -305,6 +311,41 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('delete "Track"', prefixContext)).toEqual([
                 { type: 'removeTrack', payload: { trackId: 'named-track' } },
             ]);
+        });
+
+        it('requires one existing clip across the complete selection union for deterministic rename', () => {
+            const expected = [{ type: 'renameClip', payload: { clipId: 'c1', name: 'Opening' } }];
+
+            expect(
+                tryParameterizedPath('rename clip Opening', {
+                    ...context,
+                    selectedClipId: null,
+                    selectedClipIds: ['c1'],
+                })
+            ).toEqual(expected);
+            expect(
+                tryParameterizedPath('rename clip to Opening', {
+                    ...context,
+                    selectedClipId: 'c1',
+                    selectedClipIds: [],
+                })
+            ).toEqual(expected);
+            expect(
+                tryParameterizedPath('rename clip Opening', {
+                    ...context,
+                    selectedClipId: 'c1',
+                    selectedClipIds: ['c1'],
+                })
+            ).toEqual(expected);
+
+            for (const selection of [
+                { selectedClipId: null, selectedClipIds: [] },
+                { selectedClipId: 'c1', selectedClipIds: ['c1', 'missing-clip'] },
+                { selectedClipId: 'missing-clip', selectedClipIds: [] },
+            ]) {
+                expect(tryParameterizedPath('rename clip Opening', { ...context, ...selection })).toEqual([]);
+                expect(tryParameterizedPath('rename clip to "Bridge Solo"', { ...context, ...selection })).toEqual([]);
+            }
         });
 
         it('rejects unquoted sentence continuations while preserving literal punctuation', () => {

@@ -117,6 +117,31 @@ function createReservedSelectorCollisionContext(): ProjectContext {
     };
 }
 
+function createMultiClipSelectionContext(): ProjectContext {
+    const context = createContext();
+    const track = context.tracks[0]!;
+    return {
+        ...context,
+        selectedClipIds: ['clip-bass', 'clip-lead'],
+        tracks: [
+            {
+                ...track,
+                clipCount: 2,
+                clips: [
+                    ...track.clips,
+                    {
+                        ...track.clips[0]!,
+                        id: 'clip-lead',
+                        name: 'Lead',
+                        startBeat: 8,
+                        endBeat: 16,
+                    },
+                ],
+            },
+        ],
+    };
+}
+
 function providerClarification() {
     return {
         status: 'complete' as const,
@@ -267,6 +292,38 @@ describe('whole-request prompt interpretation routing', () => {
             name: 'Bridge And Solo',
         });
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+    });
+
+    it('uses the complete clip selection union for deterministic rename routing', async () => {
+        const arrayOnly = createContext();
+        arrayOnly.selectedClipId = null;
+        const unique = await parsePromptToActions('rename clip Opening', arrayOnly);
+
+        expect(unique.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Opening' } }]);
+        expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+    });
+
+    it.each(['rename clip Opening', 'rename clip to "Bridge Solo"'])(
+        'sends ambiguous bare rename %s whole to clarification',
+        async (prompt) => {
+            const result = await parsePromptToActions(prompt, createMultiClipSelectionContext());
+
+            expect(result.actions).toEqual([]);
+            expect(result.planningOutcome.kind).toBe('clarify');
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        }
+    );
+
+    it('does not make a valid selection unique by dropping a stale union member', async () => {
+        const context = createContext();
+        context.selectedClipIds = ['clip-bass', 'missing-clip'];
+
+        const result = await parsePromptToActions('rename clip Opening', context);
+
+        expect(result.actions).toEqual([]);
+        expect(result.planningOutcome.kind).toBe('clarify');
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
     });
 
     it('preserves quoted clause-looking values through every real interpreter', async () => {

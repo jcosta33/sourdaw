@@ -1,10 +1,11 @@
 import { type ProjectContext } from '../../models/ProjectContext';
+import { maskQuotedTextContents } from '../../transformers/promptParser/promptQuotedText';
+import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import {
     isAgentReferenceCapabilityCandidate,
     type AgentReferenceCapability,
 } from './isAgentReferenceCapabilityCandidate';
-import { maskQuotedTextContents } from './maskQuotedTextContents';
 
 type ResolveAgentReferenceInput = {
     prompt: string;
@@ -423,11 +424,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     if (hasTrackSelection) {
         selectedReferenceId = input.context.selectedTrackId;
     } else if (hasClipSelection) {
-        const selectedClipIds = new Set(input.context.selectedClipIds);
-        if (input.context.selectedClipId !== null) {
-            selectedClipIds.add(input.context.selectedClipId);
-        }
-        selectedReferenceId = selectedClipIds.size === 1 ? [...selectedClipIds][0]! : null;
+        const selectedClipIds = getSelectedClipReferenceIds(input.context);
+        selectedReferenceId = selectedClipIds.length === 1 ? selectedClipIds[0]! : null;
     }
 
     let candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));

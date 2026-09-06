@@ -836,11 +836,18 @@ describe('resolveAgentReference', () => {
             startBeat: 32,
             endBeat: 40,
         };
+        const curlyApostropheClip = {
+            ...track.clips[0]!,
+            id: 'clip-curly-selected',
+            name: 'Drummer’s Selected Clip',
+            startBeat: 40,
+            endBeat: 48,
+        };
         project.tracks = [
             {
                 ...track,
-                clipCount: track.clipCount + 2,
-                clips: [...track.clips, literalSelectedClip, apostropheClip],
+                clipCount: track.clipCount + 3,
+                clips: [...track.clips, literalSelectedClip, apostropheClip, curlyApostropheClip],
             },
             ...project.tracks.slice(1),
         ];
@@ -859,6 +866,17 @@ describe('resolveAgentReference', () => {
             status: 'resolved',
             id: apostropheClip.id,
             evidence: 'exact-name',
+        });
+        expect(resolveClip('rename ‘Drummer’s Selected Clip’ to Bridge Solo', curlyApostropheClip.id, project)).toEqual(
+            {
+                status: 'resolved',
+                id: curlyApostropheClip.id,
+                evidence: 'exact-name',
+            }
+        );
+        expect(resolveClip('rename ‘Drummer’s Selected Clip’ to Bridge Solo', 'clip-intro', project)).toMatchObject({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
         });
     });
 

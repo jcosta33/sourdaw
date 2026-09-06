@@ -141,6 +141,18 @@ describe('post-target scope admission strategies', () => {
                 prompt,
             })
         ).toBe('Provider clip rename target is explicitly protected');
+
+        expect(
+            groundPostTargetScopeAdmission({
+                actionName: 'renameClip',
+                actionScope: { matchedIntentPhrase: 'rename clip', text: 'rename clip to Bridge Solo' },
+                bulkMutedEmptyTrackDeletionTargetIds: null,
+                context: clipContext,
+                groundedArguments: { clipId: protectedClip.id, name: 'Bridge Solo' },
+                plannedActionNames: ['renameClip'],
+                prompt: 'rename clip to Bridge Solo; leave "Bass Verse unchanged',
+            })
+        ).toBe('Provider clip protection clause is incomplete or malformed');
     });
 
     it('rejects a clear-solos restriction that lives outside the split clause', () => {

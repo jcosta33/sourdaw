@@ -10,6 +10,7 @@ import { type RuntimeAction } from '../../models/RuntimeAction';
 import { getAvailablePresets } from '../../services/fuzzySearch';
 
 import { MUSICAL_GENRE_PATTERN } from './musicalGenreVocabulary';
+import { getUniqueSelectedClipReferenceId } from './selectedClipReference';
 
 // ── Complexity detection ────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
 
 export function tryParameterizedPath(text: string, context: ProjectContext): RuntimeAction[] {
     const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
-    const selectedClipId = context.selectedClipId;
+    const selectedClipId = getUniqueSelectedClipReferenceId(context);
 
     const bulkTrackActions = tryBulkTrackCommand(text, context);
     if (bulkTrackActions !== null) {
