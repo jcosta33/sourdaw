@@ -558,6 +558,116 @@ describe('high-level intent compilation', () => {
         {
             label: 'direct',
             proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]),
+        },
+    ])('grounds the complete known connector-bearing source through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip Road to Nowhere to Ending';
+        const context = withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere');
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-known-connector-source');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-short', name: 'Nowhere to Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road', 'Nowhere to Ending')]),
+        },
+    ])(
+        'rejects a truncated source when connector-bearing names overlap for a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Road to Nowhere to Ending';
+            const context = withLiteralClipName(
+                withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere'),
+                'clip-road-short',
+                'Road'
+            );
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(prompt, context, undefined, 'revision-overlap-connector-source');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]),
+        },
+    ])('keeps a quoted connector-bearing source opaque through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip "Road to Nowhere" to Ending';
+        const context = withLiteralClipName(
+            withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-quoted-connector-source');
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Intro-to-Outro' } },
+            ]),
+        },
+        { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Bass Verse', 'Intro-to-Outro')]) },
+    ])('keeps a hyphenated bare destination opaque through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip Intro-to-Outro; leave Lead unchanged';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-hyphenated-name');
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Intro-to-Outro' } },
+        ]);
+    });
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
                 { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Lead to Bridge Solo' } },
             ]),
         },
@@ -587,23 +697,38 @@ describe('high-level intent compilation', () => {
         }
     );
 
-    it('does not use selection when the explicit clip-carrier source is unknown', async () => {
-        const prompt = 'rename clip Missing to Bridge Solo';
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce(renameSearchTurn)
-            .mockResolvedValueOnce(renameDiscoverTurn)
-            .mockResolvedValueOnce(
-                proposeCommandsTurn([
-                    { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Missing to Bridge Solo' } },
-                ])
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Missing to Bridge Solo' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Missing to Bridge Solo')]),
+        },
+    ])(
+        'does not use selection when the explicit clip-carrier source is unknown for a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Missing to Bridge Solo';
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(
+                prompt,
+                selectedClipProject,
+                undefined,
+                'revision-unknown-source'
             );
 
-        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-unknown-source');
-
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
-        expect(result.actions).toEqual([]);
-        expect(result.rejectionReason).toContain('not grounded');
-    });
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('not grounded');
+        }
+    );
 
     it.each([
         {

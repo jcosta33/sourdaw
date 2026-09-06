@@ -2078,53 +2078,102 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
-type ClipRenameCarrier =
+type ValidClipRenameCarrier =
     { kind: 'bare-selected-source'; value: string } | { kind: 'explicit-source'; sourcePrompt: string; value: string };
 
-function getClipRenameCarrier(actionScope: ActionPromptScope): ClipRenameCarrier | null {
+type ClipRenameCarrier = ValidClipRenameCarrier | { kind: 'invalid' };
+
+function getWhitespaceDelimitedConnectorIndexes(maskedText: string, connector: string): number[] {
+    const indexes: number[] = [];
+    for (const match of maskedText.matchAll(new RegExp(connector, 'giu'))) {
+        const start = match.index;
+        const end = start + match[0].length;
+        if (
+            start > 0 &&
+            end < maskedText.length &&
+            /\s/u.test(maskedText[start - 1]!) &&
+            /\s/u.test(maskedText[end]!)
+        ) {
+            indexes.push(start);
+        }
+    }
+    return indexes;
+}
+
+function getGroundedEditableClipIds(prompt: string, context: ProjectContext): string[] {
+    const groundedIds = new Set<string>();
+    for (const clip of context.tracks.flatMap((track) => track.clips)) {
+        const result = resolveAgentReference({
+            prompt,
+            assertedId: clip.id,
+            capability: 'editable-clip',
+            context,
+        });
+        if (result.status === 'resolved') {
+            groundedIds.add(result.id);
+        } else if (result.reason === 'ambiguous-target') {
+            for (const candidateId of result.candidateIds ?? []) {
+                groundedIds.add(candidateId);
+            }
+        }
+    }
+    return [...groundedIds];
+}
+
+function getClipRenameCarrier(actionScope: ActionPromptScope, context: ProjectContext): ClipRenameCarrier | null {
     const sourceScope = actionScope.text.trim();
     const quoteScan = scanPromptQuotedText(sourceScope);
     const prefix = /^rename\s+(?:the\s+)?clip(?=\s|$)\s*/iu.exec(quoteScan.maskedText);
-    if (!quoteScan.complete || !prefix) {
+    if (!prefix) {
         return null;
+    }
+    if (!quoteScan.complete) {
+        return { kind: 'invalid' };
     }
 
     const carrierText = sourceScope.slice(prefix[0].length).trim();
     const maskedCarrier = quoteScan.maskedText.slice(prefix[0].length).trim();
     if (carrierText.length === 0) {
-        return null;
+        return { kind: 'invalid' };
     }
 
     const leadingConnector = /^to(?:\s+|$)/iu.exec(maskedCarrier);
     if (leadingConnector) {
         const value = carrierText.slice(leadingConnector[0].length).trim();
-        return value.length > 0 ? { kind: 'bare-selected-source', value } : null;
+        return value.length > 0 ? { kind: 'bare-selected-source', value } : { kind: 'invalid' };
     }
 
-    const internalConnector = /\bto\b/iu.exec(maskedCarrier);
-    if (!internalConnector) {
+    const connectorIndexes = getWhitespaceDelimitedConnectorIndexes(maskedCarrier, 'to');
+    if (connectorIndexes.length === 0) {
         return { kind: 'bare-selected-source', value: carrierText };
     }
 
-    const explicitSource = carrierText.slice(0, internalConnector.index).trim();
-    const value = carrierText.slice(internalConnector.index + internalConnector[0].length).trim();
-    if (explicitSource.length === 0 || value.length === 0) {
-        return null;
+    const interpretations = connectorIndexes.flatMap((connectorIndex) => {
+        const explicitSource = carrierText.slice(0, connectorIndex).trim();
+        const value = carrierText.slice(connectorIndex + 'to'.length).trim();
+        if (explicitSource.length === 0 || value.length === 0) {
+            return [];
+        }
+        const sourcePrompt = `${sourceScope.slice(0, prefix[0].length)}${explicitSource}`.trim();
+        return getGroundedEditableClipIds(sourcePrompt, context).map((clipId) => ({ clipId, sourcePrompt, value }));
+    });
+    if (interpretations.length !== 1) {
+        return { kind: 'invalid' };
     }
-    const sourceEnd = prefix[0].length + internalConnector.index;
+
+    const interpretation = interpretations[0]!;
     return {
         kind: 'explicit-source',
-        sourcePrompt: sourceScope.slice(0, sourceEnd).trim(),
-        value,
+        sourcePrompt: interpretation.sourcePrompt,
+        value: interpretation.value,
     };
 }
 
-function getBareClipRenameTargetPrompt(actionScope: ActionPromptScope, targetPrompt: string): string {
-    const carrier = getClipRenameCarrier(actionScope);
+function getClipRenameTargetPrompt(carrier: ValidClipRenameCarrier | null, targetPrompt: string): string {
     if (carrier?.kind === 'bare-selected-source') {
         return 'selected clip';
     }
-    return carrier?.sourcePrompt ?? targetPrompt;
+    return carrier?.kind === 'explicit-source' ? carrier.sourcePrompt : targetPrompt;
 }
 
 function collectPromptClearSolosRestrictionClauses(
@@ -3663,13 +3712,13 @@ function validateGroundedValues(
     groundingRules: GroundingRules,
     groundedArguments: Record<string, unknown>,
     actionScope: ActionPromptScope,
-    context: ProjectContext
+    context: ProjectContext,
+    clipRenameCarrier: ValidClipRenameCarrier | null
 ): string | null {
     for (const valueRule of groundingRules.valueRules) {
         const assertedValue = groundedArguments[valueRule.argument];
         let valueRejection: string | null;
-        const renameCarrier =
-            actionName === 'renameClip' && valueRule.argument === 'name' ? getClipRenameCarrier(actionScope) : null;
+        const renameCarrier = actionName === 'renameClip' && valueRule.argument === 'name' ? clipRenameCarrier : null;
         if (renameCarrier === null) {
             valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         } else {
@@ -4041,6 +4090,10 @@ function groundToolCall({
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
+    const clipRenameCarrier = call.name === 'renameClip' ? getClipRenameCarrier(actionScope, context) : null;
+    if (clipRenameCarrier?.kind === 'invalid') {
+        return rejection(index, call.name, 'Provider clip rename source is not grounded or ambiguous');
+    }
     if (
         call.name === 'moveClip' &&
         !hasGroundedMoveBeatAssertions({
@@ -4105,7 +4158,7 @@ function groundToolCall({
         }
         let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
         if (call.name === 'renameClip' && targetRule.argument === 'clipId') {
-            targetPrompt = getBareClipRenameTargetPrompt(actionScope, targetPrompt);
+            targetPrompt = getClipRenameTargetPrompt(clipRenameCarrier, targetPrompt);
         } else if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
             targetPrompt = prompt;
         } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
@@ -4422,7 +4475,7 @@ function groundToolCall({
     }
     const valueRejection = admitsPlanCreatedObject
         ? null
-        : validateGroundedValues(call.name, groundingRules, groundedArguments, actionScope, context);
+        : validateGroundedValues(call.name, groundingRules, groundedArguments, actionScope, context, clipRenameCarrier);
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
     }

@@ -962,6 +962,25 @@ function createNamedClipSourceContext(): ProjectContext {
     };
 }
 
+function withNamedClip(context: ProjectContext, id: string, name: string): ProjectContext {
+    const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
+    const clip = {
+        ...sourceTrack.clips[0]!,
+        id,
+        name,
+        startBeat: sourceTrack.clips.length * 8,
+        endBeat: sourceTrack.clips.length * 8 + 8,
+    };
+    return {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === sourceTrack.id
+                ? { ...track, clipCount: sourceTrack.clipCount + 1, clips: [...sourceTrack.clips, clip] }
+                : track
+        ),
+    };
+}
+
 function createLiteralSelectedClipContext(): ProjectContext {
     const context = createNamedClipSourceContext();
     const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
@@ -6273,6 +6292,82 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 rejections: [],
             });
         }
+    });
+
+    it('resolves a whitespace-delimited rename connector after the complete known source', () => {
+        const context = withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere');
+        const prompt = 'rename clip Road to Nowhere to Ending';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } }], prompt, context)
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Nowhere to Ending' } }],
+                prompt,
+                context
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('rejects competing rename source interpretations before provider target selection', () => {
+        const context = withNamedClip(
+            withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        const prompt = 'rename clip Road to Nowhere to Ending';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } }], prompt, context)
+                .actions
+        ).toEqual([]);
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-road-short', name: 'Nowhere to Ending' } }],
+                prompt,
+                context
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('keeps a quoted connector-bearing source opaque when a shorter name exists', () => {
+        const context = withNamedClip(
+            withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        const prompt = 'rename clip "Road to Nowhere" to Ending';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } }], prompt, context)
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
+    it('keeps hyphenated optional-to destinations opaque and rejects unresolved explicit sources', () => {
+        const context = createNamedClipSourceContext();
+        const hyphenated = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Intro-to-Outro' } }],
+            'rename clip Intro-to-Outro; leave Lead unchanged',
+            context
+        );
+        const unresolved = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Missing to Ending' } }],
+            'rename clip Missing to Ending',
+            context
+        );
+
+        expect(hyphenated).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Intro-to-Outro' } }],
+            rejections: [],
+        });
+        expect(unresolved.actions).toEqual([]);
     });
 
     it('keeps an explicitly quoted clip name as the source', () => {
