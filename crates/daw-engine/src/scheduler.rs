@@ -1102,14 +1102,14 @@ impl FermenterBody {
     /// Apply a whole patch, on the control thread, before this body crosses
     /// the command ring.
     ///
-    /// The [`LAYER_ROUTING_KEYS`] are applied before the writes they route: a
-    /// patch is an unordered record, so applied anywhere else they would send
-    /// an arbitrary half of it to a layer the author never aimed it at. They
-    /// go first rather than last because the selection outlives the patch —
-    /// the instance keeps it, and every later live `SetParam` is routed by it,
-    /// so a patch written to one layer while the instance selects another
-    /// would put patch-time and live-time writes on different layers with the
-    /// producer believing both landed together.
+    /// [`LAYER_ROUTING_KEY`] is applied before the writes it routes: a patch
+    /// is an unordered record, so applied anywhere else it could send an
+    /// arbitrary later write to a layer the author never aimed it at. It
+    /// goes first rather than last because the selection outlives the patch
+    /// — the instance keeps it, and every later live `SetParam` is routed by
+    /// it, so a patch written to one layer while the instance selects
+    /// another would put patch-time and live-time writes on different
+    /// layers with the producer believing both landed together.
     fn load_patch(&mut self, patch: &[(FermenterParamName, f32)]) {
         for (name, value) in layer_routing_first(patch) {
             self.set_param(name.as_str(), value);
@@ -1117,31 +1117,32 @@ impl FermenterBody {
     }
 }
 
-/// The patch keys that aim every per-layer parameter write, in the order they
-/// have to be applied in: the count admits the layer, and the selection then
-/// names it — reversed, a selection past the count is clamped to a layer the
-/// patch never meant.
+/// The patch key that aims every per-layer parameter write: `active_layer`
+/// selects the layer, so a patch applies it before the writes it routes and
+/// every later live write then addresses the same layer.
+///
+/// The instrument bounds the selection by its own layer capacity, not by
+/// `num_layers` — the two never read each other — so a selection past the
+/// count is a patch defect that the render leaves inaudible, not something
+/// this ordering can repair.
 ///
 /// Named here because [`FermenterBody::load_patch`] is what has to order a
-/// patch around them; the instrument's own `set_param` is the only other place
-/// the words mean anything.
-const LAYER_ROUTING_KEYS: [&str; 2] = ["num_layers", "active_layer"];
+/// patch around it; the instrument's own `set_param` is the only other place
+/// the word means anything.
+const LAYER_ROUTING_KEY: &str = "active_layer";
 
-/// `patch` with every layer-routing entry it carries brought to the front, in
-/// [`LAYER_ROUTING_KEYS`] order; everything else follows in patch order.
+/// `patch` with its layer-routing entry (if any) brought to the front;
+/// everything else follows in patch order.
 fn layer_routing_first(
     patch: &[(FermenterParamName, f32)],
 ) -> impl Iterator<Item = (FermenterParamName, f32)> + '_ {
-    let routing = LAYER_ROUTING_KEYS
-        .into_iter()
-        .flat_map(move |key| patch.iter().filter(move |(name, _)| name.as_str() == key));
-    let routed = patch.iter().filter(|(name, _)| !routes_later_writes(name));
-    routing.chain(routed).copied()
-}
-
-/// Whether `name` is one of the keys that aims the writes around it.
-fn routes_later_writes(name: &FermenterParamName) -> bool {
-    LAYER_ROUTING_KEYS.contains(&name.as_str())
+    let routing = patch
+        .iter()
+        .filter(|(name, _)| name.as_str() == LAYER_ROUTING_KEY);
+    let rest = patch
+        .iter()
+        .filter(|(name, _)| name.as_str() != LAYER_ROUTING_KEY);
+    routing.chain(rest).copied()
 }
 
 /// The Fermenter member channel a note's `i16` channel names, or `None` for a
@@ -13145,9 +13146,9 @@ mod timeline_tests {
         ];
 
         let carried_by_the_patch = render_fermenter_patch(&[
+            (cutoff, PATCHED_CUTOFF),
             (num_layers, RENDERED_LAYERS),
             (active_layer, SELECTED_LAYER),
-            (cutoff, PATCHED_CUTOFF),
         ]);
         let written_live = render_fermenter_patch_then_write(
             &selection,

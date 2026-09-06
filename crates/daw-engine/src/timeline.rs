@@ -3416,10 +3416,11 @@ mod tests {
     fn fermenter_param_name_keeps_device_param_within_its_stated_size() {
         let size = std::mem::size_of::<DeviceParam>();
 
-        assert!(
-            size <= 40,
-            "a device parameter address grew to {size} bytes, which multiplies through the \
-             device parameter queue of every effect the scheduler preallocates"
+        assert_eq!(
+            size, 34,
+            "a device parameter address is {size} bytes, not the 34 documented on \
+             `FermenterParamName` — move that figure, the `DeviceParamEvent` and per-queue \
+             byte counts, and the per-scheduler total with it"
         );
     }
 
