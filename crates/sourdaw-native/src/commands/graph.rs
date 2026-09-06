@@ -152,7 +152,8 @@ use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANG
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::{
-    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, TIMELINE_CHAIN_SLOT_BUDGET,
+    layer_routing_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
+    TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -336,6 +337,33 @@ pub enum GraphCommandPayload {
     WriteDeviceParameter {
         target: DeviceParameterTargetPayload,
         write: StepWritePayload,
+    },
+    /// Land every named value on a built-in body at the next audio callback,
+    /// replacing the value the body currently holds and leaving whatever the
+    /// device's stamp queue is holding untouched.
+    ///
+    /// The immediate counterpart of [`GraphCommandPayload::WriteDeviceParameter`],
+    /// and a whole record rather than one write, because what reaches here is a
+    /// patch: a fermenter's is about a hundred keys, and a morph or a macro drag
+    /// reloads the whole record at animation-frame rate. Stamped writes cannot
+    /// carry that — a device's queue holds `DEVICE_PARAM_QUEUE_CAPACITY` pending
+    /// stamps in total, so one patch overruns it several times over — while
+    /// [`GraphCommand::SetParam`] is applied on the next drain and parks nothing.
+    ///
+    /// A native built-in only. An externally hosted plugin's parameters are the
+    /// plugin's own, addressed over the plugin host's control path, so one aimed
+    /// at a borrowed instance is refused rather than mapped through a built-in
+    /// vocabulary that cannot address it.
+    #[serde(rename_all = "camelCase")]
+    SetDeviceParameters {
+        track_id: String,
+        device_id: String,
+        /// Keyed by the built-in's own native parameter names — for a
+        /// fermenter, the instrument's snake_case vocabulary rather than the
+        /// camelCase descriptor ids a project panel authors. A key with no
+        /// native address refuses the whole batch, naming the device and the
+        /// key, exactly as a stamped write does.
+        values: HashMap<String, f64>,
     },
     /// Write timeline-addressed notes into the note store a device holds.
     ///
@@ -1675,6 +1703,50 @@ fn builtin_parameter(
     }
 }
 
+/// The instrument-vocabulary spelling of a resolved address, for the one
+/// comparison the layer-routing law makes.
+///
+/// An address the engine names itself belongs to no instrument's vocabulary,
+/// and [`FermenterParamName::parse`] admits no empty name, so the empty string
+/// can never be read as a routing key.
+fn addressed_parameter_name(param: &DeviceParam) -> &str {
+    match param {
+        DeviceParam::FermenterNamed(name) => name.as_str(),
+        _ => "",
+    }
+}
+
+/// One device's immediate parameter record, resolved onto engine addresses and
+/// ordered as the body has to apply them.
+///
+/// The record arrives unordered — a `HashMap` off the wire — and two things
+/// have to hold of what leaves here. A fermenter's layer-routing entry selects
+/// the layer every write behind it lands on, so it is emitted first; that law
+/// belongs to `FermenterBody::load_patch`, and this reuses the engine's own
+/// [`layer_routing_first`] rather than restating it. Everything else follows in
+/// name order, so one record maps onto one command sequence whichever order the
+/// map happens to draw.
+fn immediate_device_parameters(
+    builtin: BuiltinEffectType,
+    values: &HashMap<String, f64>,
+    device_id: &str,
+) -> Result<Vec<(DeviceParam, f32)>, String> {
+    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+
+    let resolved = keys
+        .into_iter()
+        .map(|key| {
+            let param = builtin_parameter(builtin, key, device_id)
+                .map_err(|reason| format!("set-device-parameters: {reason}"))?;
+            let value = finite(values[key], &format!("set-device-parameters value '{key}'"))?;
+            Ok((param, value as f32))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(layer_routing_first(&resolved, addressed_parameter_name).collect())
+}
+
 /// One instance the engine already owns, as a device may bind to it: the
 /// effect-table id the load reserved, and how it splices into a strip chain.
 ///
@@ -2612,6 +2684,40 @@ fn map_command(
                 value,
                 at_frame,
             });
+            Ok(())
+        }
+
+        GraphCommandPayload::SetDeviceParameters {
+            track_id,
+            device_id,
+            values,
+        } => {
+            let device = registry
+                .devices
+                .get(device_id)
+                .ok_or_else(|| format!("set-device-parameters: unknown device '{device_id}'"))?;
+            if device.strip_id != *track_id {
+                return Err(format!(
+                    "set-device-parameters: device '{device_id}' is not on strip '{track_id}'"
+                ));
+            }
+            let Some(builtin) = device.builtin else {
+                return Err(format!(
+                    "set-device-parameters: device '{device_id}' is an externally hosted plugin, \
+                     whose parameters take the plugin host's own control path"
+                ));
+            };
+            let effect_id = device.native_effect_id;
+            // No queue charge, unlike the stamped write above: these land on
+            // the next drain rather than waiting in the device's
+            // `DeviceParamQueue`, so there is no pending window for the ledger
+            // to hold open and nothing for the progress echo to release. The
+            // command ring is the only capacity they spend, and
+            // `EngineHandle::send_graph_batch_with_headroom` sizes it to the
+            // batch it is handed rather than bounding the batch by it.
+            for (param, value) in immediate_device_parameters(builtin, values, device_id)? {
+                ops.push(GraphCommand::SetParam(effect_id, param, value));
+            }
             Ok(())
         }
 
@@ -4078,6 +4184,8 @@ mod tests {
               "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d-knead",
                           "parameterId": "retune_speed_ms" },
               "write": { "shape": "step", "value": 20, "time": 1.5 } },
+            { "kind": "set-device-parameters", "trackId": "t1", "deviceId": "d-knead",
+              "values": { "formant_preserve": 1 } },
             { "kind": "schedule-clip",
               "playback": {
                   "trackId": "t1",
@@ -4152,6 +4260,15 @@ mod tests {
                 GraphCommand::SetParam(_, DeviceParam::ShiftSemitones, value) if *value == 3.0
             )),
             "the knead device's parameter never crossed the ring as a command"
+        );
+        // The immediate write is the same primitive under a different command:
+        // no stamp, no frame, applied on the next drain.
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::SetParam(_, DeviceParam::FormantPreserve, value) if *value == 1.0
+            )),
+            "the immediate parameter batch never crossed the ring as a command"
         );
     }
 
@@ -7262,6 +7379,255 @@ mod tests {
         assert!(
             refusal.contains("has no native address"),
             "refusal must mention missing native address, got: {refusal}"
+        );
+    }
+
+    // ── Immediate device parameters ────────────────────────────
+
+    /// The effect id every built-in device below is registered under.
+    const IMMEDIATE_PARAM_EFFECT_ID: usize = 7;
+
+    /// A registry holding one contributing track strip carrying one built-in.
+    fn registry_with_builtin_device(
+        track_id: &str,
+        device_id: &str,
+        builtin: BuiltinEffectType,
+    ) -> GraphRegistry {
+        let mut registry = GraphRegistry::default();
+        registry.strips.insert(
+            track_id.to_string(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec![device_id.to_string()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            device_id.to_string(),
+            DeviceEntry {
+                native_effect_id: IMMEDIATE_PARAM_EFFECT_ID,
+                strip_id: track_id.to_string(),
+                builtin: Some(builtin),
+            },
+        );
+        registry
+    }
+
+    /// One `set-device-parameters` batch, deserialized from the wire spelling
+    /// so each call draws a fresh `HashMap` for `values`.
+    fn set_device_parameters_batch(
+        track_id: &str,
+        device_id: &str,
+        values: Value,
+    ) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "set-device-parameters", "trackId": track_id, "deviceId": device_id,
+              "values": values }
+        ]))
+    }
+
+    /// Every immediate device-parameter write a mapping emitted, in order.
+    fn immediate_writes(ops: &[GraphCommand]) -> Vec<(usize, DeviceParam, f32)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::SetParam(effect_id, param, value) => {
+                    Some((*effect_id, *param, *value))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn fermenter_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = FermenterParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::FermenterNamed(name),
+            value,
+        )
+    }
+
+    fn map_immediate(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+    ) -> Result<MappedBatch, String> {
+        map_unbound_batch(batch, registry, &sample_pool(), 48_000.0)
+    }
+
+    /// A patch load crosses as immediate writes: one `SetParam` per entry,
+    /// applied on the next callback drain, and nothing parked in the device's
+    /// stamp queue.
+    ///
+    /// The queue is why this command exists at all. It holds
+    /// `DEVICE_PARAM_QUEUE_CAPACITY` pending stamps for the whole device, and a
+    /// fermenter patch is an order of magnitude more keys than that, reloaded
+    /// on every frame of a morph — so a patch expressed as stamped writes
+    /// refuses itself.
+    #[test]
+    fn set_device_parameters_at_a_fermenter_emits_one_immediate_set_param_per_entry() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let mapped = map_immediate(
+            &set_device_parameters_batch(
+                "t1",
+                "d-ferm",
+                json!({ "cutoff": 0.3, "resonance": 0.6 }),
+            ),
+            &mut registry,
+        )
+        .expect("a fermenter answers to its own names");
+
+        assert_eq!(
+            immediate_writes(&mapped.ops),
+            vec![
+                fermenter_write("cutoff", 0.3),
+                fermenter_write("resonance", 0.6),
+            ],
+            "every entry must reach the engine as an immediate write at this device"
+        );
+        assert!(
+            !mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::AutomateDeviceParam { .. })),
+            "an immediate write must not be stamped into the device's parameter queue"
+        );
+    }
+
+    /// `active_layer` selects the layer every write behind it lands on, so a
+    /// batch carrying it emits it first whatever order the wire record draws,
+    /// and the rest follow in one fixed order.
+    ///
+    /// The second record is what separates the two laws. Every name the
+    /// instrument actually has sorts after `active_layer`, so on the first
+    /// record name order alone would put the selection in front by accident; a
+    /// well-shaped name that sorts before it — which the wire admits, and which
+    /// the instrument answers by doing nothing — is only led by the selection if
+    /// the routing law is applied.
+    #[test]
+    fn set_device_parameters_routes_a_fermenter_batch_through_active_layer_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let records = [
+            (
+                json!({ "cutoff": 0.3, "active_layer": 1, "num_layers": 2 }),
+                vec![
+                    fermenter_write("active_layer", 1.0),
+                    fermenter_write("cutoff", 0.3),
+                    fermenter_write("num_layers", 2.0),
+                ],
+            ),
+            (
+                json!({ "absent_from_the_vocabulary": 0.1, "active_layer": 1, "cutoff": 0.3 }),
+                vec![
+                    fermenter_write("active_layer", 1.0),
+                    fermenter_write("absent_from_the_vocabulary", 0.1),
+                    fermenter_write("cutoff", 0.3),
+                ],
+            ),
+        ];
+
+        for (record, expected) in records {
+            for draw in 0..DRAWS {
+                let mut registry =
+                    registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+                let mapped = map_immediate(
+                    &set_device_parameters_batch("t1", "d-ferm", record.clone()),
+                    &mut registry,
+                )
+                .expect("a fermenter answers to its own names");
+
+                assert_eq!(
+                    immediate_writes(&mapped.ops),
+                    expected,
+                    "draw {draw}: the layer selection must lead, and the rest must follow in one \
+                     fixed order"
+                );
+            }
+        }
+    }
+
+    /// An externally hosted plugin's parameters are the plugin's own, resolved
+    /// by the plugin over the plugin host's control path. Mapping one through a
+    /// built-in vocabulary would address a parameter that vocabulary cannot
+    /// name, so the batch is refused by device.
+    #[test]
+    fn set_device_parameters_at_a_hosted_plugin_is_refused() {
+        let mut registry = registry_with_hosted_device("t1", "d-plugin");
+
+        let refusal = map_immediate(
+            &set_device_parameters_batch("t1", "d-plugin", json!({ "cutoff": 0.3 })),
+            &mut registry,
+        )
+        .expect_err("a hosted plugin takes its parameters on the plugin host's path");
+
+        assert!(
+            refusal.contains("d-plugin") && refusal.contains("plugin host"),
+            "the refusal must name the device and the path its parameters take, got: {refusal}"
+        );
+    }
+
+    /// A key with no native address refuses the whole batch, naming the device
+    /// and the key: a project panel authors a fermenter's camelCase descriptor
+    /// ids, and a mapper that skipped what it could not resolve would report a
+    /// patch applied while the values the producer sent went nowhere.
+    #[test]
+    fn set_device_parameters_naming_no_parameter_of_the_device_refuses_naming_device_and_key() {
+        let unmappable = [
+            (BuiltinEffectType::Fermenter, "filterCutoff"),
+            (BuiltinEffectType::Knead, "shiftSemitones"),
+        ];
+
+        for (builtin, key) in unmappable {
+            let mut registry = registry_with_builtin_device("t1", "d-1", builtin);
+            let refusal = map_immediate(
+                &set_device_parameters_batch("t1", "d-1", json!({ key: 0.5 })),
+                &mut registry,
+            )
+            .expect_err("a key with no native address must refuse the batch");
+
+            assert!(
+                refusal.contains("d-1") && refusal.contains(key),
+                "the refusal must name the device and the key, got: {refusal}"
+            );
+        }
+    }
+
+    /// The same two address refusals every device-addressed command makes: a
+    /// device the registry does not hold, and one held on a different strip
+    /// than the batch claims.
+    #[test]
+    fn set_device_parameters_at_a_device_on_another_strip_is_refused() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let unknown = map_immediate(
+            &set_device_parameters_batch("t1", "d-missing", json!({ "cutoff": 0.3 })),
+            &mut registry.clone(),
+        )
+        .expect_err("a device the registry does not hold must refuse the batch");
+        assert!(
+            unknown.contains("unknown device 'd-missing'"),
+            "the refusal must name the device it could not resolve, got: {unknown}"
+        );
+
+        let wrong_strip = map_immediate(
+            &set_device_parameters_batch("t2", "d-ferm", json!({ "cutoff": 0.3 })),
+            &mut registry,
+        )
+        .expect_err("a device held on another strip must refuse the batch");
+        assert!(
+            wrong_strip.contains("is not on strip 't2'"),
+            "the refusal must name the strip the batch claimed, got: {wrong_strip}"
         );
     }
 

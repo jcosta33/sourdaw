@@ -1111,7 +1111,7 @@ impl FermenterBody {
     /// another would put patch-time and live-time writes on different
     /// layers with the producer believing both landed together.
     fn load_patch(&mut self, patch: &[(FermenterParamName, f32)]) {
-        for (name, value) in layer_routing_first(patch) {
+        for (name, value) in layer_routing_first(patch, FermenterParamName::as_str) {
             self.set_param(name.as_str(), value);
         }
     }
@@ -1126,22 +1126,31 @@ impl FermenterBody {
 /// count is a patch defect that the render leaves inaudible, not something
 /// this ordering can repair.
 ///
-/// Named here because [`FermenterBody::load_patch`] is what has to order a
-/// patch around it; the instrument's own `set_param` is the only other place
-/// the word means anything.
+/// Named here because [`layer_routing_first`] is what orders a patch around
+/// it; the instrument's own `set_param` is the only other place the word means
+/// anything.
 const LAYER_ROUTING_KEY: &str = "active_layer";
 
 /// `patch` with its layer-routing entry (if any) brought to the front;
 /// everything else follows in patch order.
-fn layer_routing_first(
-    patch: &[(FermenterParamName, f32)],
-) -> impl Iterator<Item = (FermenterParamName, f32)> + '_ {
+///
+/// Public and generic over how an entry spells its name, because the law is
+/// the ordering rather than the shape of one caller's patch. A second caller
+/// sends the same instrument the same writes from an unordered record — the
+/// graph-command mapper's immediate parameter batch — and a copy of this
+/// reordering there would be a second place for the law to drift from
+/// [`FermenterBody::load_patch`]. `name` is a function pointer so both filters
+/// below can hold it.
+pub fn layer_routing_first<T: Copy>(
+    patch: &[(T, f32)],
+    name: fn(&T) -> &str,
+) -> impl Iterator<Item = (T, f32)> + '_ {
     let routing = patch
         .iter()
-        .filter(|(name, _)| name.as_str() == LAYER_ROUTING_KEY);
+        .filter(move |(entry, _)| name(entry) == LAYER_ROUTING_KEY);
     let rest = patch
         .iter()
-        .filter(|(name, _)| name.as_str() != LAYER_ROUTING_KEY);
+        .filter(move |(entry, _)| name(entry) != LAYER_ROUTING_KEY);
     routing.chain(rest).copied()
 }
 
