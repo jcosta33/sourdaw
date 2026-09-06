@@ -1,0 +1,75 @@
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  s_9b530f08172a54::t_0497b9bfb115e1 94-104
+  s_9b530f08172a54::t_0fb47319a0072e 1-93,105-113
+src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts
+  s_9b530f08172a54::t_03bd38df3ba9ee 29
+  s_9b530f08172a54::t_f50fe8f2faaf8e 1-18,21-28,30-33
+  s_9b530f08172a54::t_ac93f7b27cd80f 19-20
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_9b530f08172a54::t_885d2ceb23024b 55-59,64
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_6d6f33b4bac4a3 316-457,468-471,474,476-488
+  s_9b530f08172a54::t_ae31f8da699dcf 458-467,472-473,475
+  s_9b530f08172a54::t_c0019ec8d69d51 153-154
+src/modules/AudioEngine/useCases/deviceControls/nativeBuiltinWriteTarget.ts
+  s_9b530f08172a54::t_9ceea777dff54a 24,27
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_bae2e26f83c088 617-682
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_9b530f08172a54::t_d17c6361c78cc1 79
+  s_9b530f08172a54::t_78d9d498caeaf9 115-117
+  s_9b530f08172a54::t_b21d86706f33cf 177
+  s_9b530f08172a54::t_a2e6ae39eb5e0f 256
+  s_9b530f08172a54::t_c75aee37b4440c 44-51
+  s_9b530f08172a54::t_4f804c1a5baff2 264-271,274
+  s_9b530f08172a54::t_b99040b56b2ed2 166-176,178
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_553564422a14cf 62
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_9b530f08172a54::t_f7b61a572c2f15 71-76,81-92,106-112,114-119,121-132,134-136,138-139,141,144-155,161-166,168-172,186-188,190-211,213
+  s_9b530f08172a54::t_45317f632050c0 246,249
+  s_9b530f08172a54::t_a545e4f8be4f43 133,137
+  s_9b530f08172a54::t_b5be6065460c28 25-28,30-52
+  s_9b530f08172a54::t_2085764538632a 189
+  s_9b530f08172a54::t_27076181b2b126 157
+  s_9b530f08172a54::t_0d2d8e2ea683de 266-269,271,273-275
+  s_9b530f08172a54::t_7671d670c4c8af 156,158-160,167,212,214
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_9b530f08172a54::t_983adb32a1171a 793-796,806
+  s_9b530f08172a54::t_3569765cb073bb 7
+  s_9b530f08172a54::t_471e6360eeea39 734-739
+  s_9b530f08172a54::t_7de82668502a85 771-776
+  s_9b530f08172a54::t_1e76622b57cf2e 714-733,740-770,777-783,787,790-792,797-801,808-818,820-824,827,829-831
+  s_9b530f08172a54::t_d7722373dc0777 79
+  s_9b530f08172a54::t_25eae2e9139b6b 819,825-826,828
+  s_9b530f08172a54::t_d1cde022369a28 784-786,788-789,804
+  s_9b530f08172a54::t_a3c161f1363665 802-803,805,807
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_f691ab9db5fabe 234
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_b55c16cf581b79 52
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_9b530f08172a54::t_500035f48a0378 473-495,502,504-507,509-510
+  s_9b530f08172a54::t_c27c7f853fe032 508
+  s_9b530f08172a54::t_4cc70af7d73017 12
+  s_9b530f08172a54::t_1c780e15f60a11 26
+  s_9b530f08172a54::t_0181eb46abba46 516-517
+src/modules/AudioEngine/useCases/deviceControls/deviceTypeOnStrip.ts
+  s_9b530f08172a54::t_66c69f69c16555 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "adff6cd8708f3577704284962b65748bd9fdc4e5",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
