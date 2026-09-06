@@ -48,7 +48,10 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   renders next. A note-off standing past a later note-on is the release of that later note, so it
   covers nothing and reading it as cover would hold the deleted note down until the arrangement
   pressed the key again. A note-on a clear removes owes nothing either way; either it never sounded,
-  or it did and its own note-off is still where the producer wrote it.
+  or it did and its own note-off is still where the producer wrote it. The sounding set holds one
+  bit per (channel, note), so the model admits at most one sounding note per key at a time, and the
+  first-entry-decides rule above is sound by that construction alone; a producer that overlaps two
+  notes on one key is answered with one release for both.
 - **A release the event buffer refuses leaves its note held**: the key is down whether or not the
   note-off found room, so the note stays in the sounding set and the next stop, locate, wrap or
   clear owes it again. Dropping the record along with the event turns one refused message into a

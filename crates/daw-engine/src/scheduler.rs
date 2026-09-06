@@ -11358,7 +11358,7 @@ mod timeline_tests {
             .iter()
             .find(|effect| effect.id == plugin_id)
             .and_then(|effect| effect.midi_notes.as_ref())
-            .map_or(0, |store| store.len())
+            .map_or(0, |store| store.entries().len())
     }
 
     /// A playing track carrying a [`FrameRecordingInstrument`], spliced the
@@ -11994,6 +11994,63 @@ mod timeline_tests {
             vec![(NOTE_ON, 60, true), (MOVED_OFF, 60, false)],
             "no release lands at the head of the block after the clear, and the note ends on \
              the frame the rewrite moved its note-off to"
+        );
+    }
+
+    /// One drain makes a clear and its replacement visible to the callback
+    /// together, but visible together is not the same as succeeding
+    /// together: the clear cannot fail, and the schedule that follows it
+    /// still can. The clear leaves the window empty regardless of what
+    /// happens to the schedule that follows it, so the sounding note it
+    /// stripped a note-off from is released at the head of whatever renders
+    /// next, exactly as an unreplaced clear would release it.
+    #[test]
+    fn a_refused_replacement_in_one_batch_leaves_the_clear_applied() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 300;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+
+        let over_capacity: Vec<u64> = (0..crate::midi::note_store::MIDI_NOTE_STORE_CAPACITY as u64
+            + 1)
+            .map(|offset| 1_000 + offset)
+            .collect();
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: 0,
+                to_frame: u64::MAX,
+            },
+            schedule_notes(7, &over_capacity),
+        ]);
+
+        assert_eq!(
+            stored_note_count(&harness, 7),
+            0,
+            "the clear applied even though the replacement that followed it was refused"
+        );
+        assert_eq!(
+            midi_diagnostics(&harness).midi_note_batches_refused,
+            1,
+            "the over-capacity replacement is counted a refusal, not silently dropped"
+        );
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (BLOCK as u64, 60, false)],
+            "the clear's release lands once at the head of the next block, and none of the \
+             refused batch's note-ons ever sounds"
         );
     }
 

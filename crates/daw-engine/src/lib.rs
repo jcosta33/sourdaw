@@ -762,14 +762,22 @@ impl EngineHandle {
     /// sort allocates its scratch half — so it belongs on this side of the
     /// ring, and the store refuses a batch that arrives unordered.
     ///
-    /// A rewrite is a [`Self::clear_midi_notes`] and this call together, and
-    /// the pair is atomic against the callback only through
-    /// [`Self::send_graph_batch`]. The clear releases nothing itself: it
-    /// records the sounding notes whose note-off it took away and answers them
-    /// against the store the drain leaves behind. Pushed one at a time the two
-    /// can land in different drains, and the clear then settles against a
-    /// store the replacement has not reached yet — releasing a note the
-    /// rewrite only meant to move.
+    /// A rewrite is a [`Self::clear_midi_notes`] and this call together. One
+    /// [`Self::send_graph_batch`] makes the pair visible to the callback
+    /// together, which is what keeps the clear from settling against a store
+    /// the replacement has not reached yet: pushed one at a time the two can
+    /// land in different drains, and the clear then settles too early —
+    /// releasing a note the rewrite only meant to move.
+    ///
+    /// Visible together is not the same as succeeding together. The clear
+    /// cannot fail, but this call still can — refused by the store on the
+    /// same terms as any other batch: over capacity, unordered, or naming a
+    /// note the store cannot address — and counted in
+    /// [`ActiveMidiRtDiagnosticsSnapshot::midi_note_batches_refused`]. A
+    /// refusal leaves the clear applied and the window empty regardless: the
+    /// sounding note it stripped a note-off from is released at the head of
+    /// whatever renders next, exactly as an unreplaced clear would release
+    /// it.
     pub fn schedule_midi_notes(
         &mut self,
         plugin_id: usize,
@@ -788,8 +796,9 @@ impl EngineHandle {
     /// the note-off keeps the note sounding, and one that deletes it releases
     /// the note at the head of whatever renders next. That settlement reads
     /// the store the drain ends with, so a clear and its replacement batch
-    /// hold together only when they travel in one
-    /// [`Self::send_graph_batch`].
+    /// arrive together only when they travel in one
+    /// [`Self::send_graph_batch`] — see [`Self::schedule_midi_notes`] for what
+    /// a refused replacement leaves behind.
     pub fn clear_midi_notes(
         &mut self,
         plugin_id: usize,

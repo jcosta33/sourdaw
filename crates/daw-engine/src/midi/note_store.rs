@@ -61,14 +61,6 @@ impl MidiNoteStore {
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     pub fn entries(&self) -> &[TimedMidiNote] {
         &self.entries
     }
@@ -205,6 +197,10 @@ const NOTES_PER_CHANNEL: u8 = 128;
 /// ever reaches the sounding one: a note played live has no timeline position
 /// and no scheduled release, so a key the player is holding stays held across
 /// a stop exactly as it does on hardware.
+///
+/// One bit per (channel, note) means the sounding set admits at most one
+/// sounding note per key at a time; a store that overlaps two notes on one
+/// key is holding one bit for both, so one release answers both.
 #[derive(Clone, Copy, Default)]
 pub struct NoteAddressSet {
     held: [u128; MIDI_CHANNELS],
@@ -301,10 +297,10 @@ mod tests {
 
         assert!(store.try_extend(&full[..MIDI_NOTE_STORE_CAPACITY - 1]));
         assert!(!store.try_extend(&full[..2]));
-        assert_eq!(store.len(), MIDI_NOTE_STORE_CAPACITY - 1);
+        assert_eq!(store.entries().len(), MIDI_NOTE_STORE_CAPACITY - 1);
 
         assert!(store.try_extend(&full[..1]));
-        assert_eq!(store.len(), MIDI_NOTE_STORE_CAPACITY);
+        assert_eq!(store.entries().len(), MIDI_NOTE_STORE_CAPACITY);
     }
 
     /// A batch out of frame order is refused whole. Ordering it here would
@@ -359,7 +355,7 @@ mod tests {
             frames.windows(2).all(|pair| pair[0] <= pair[1]),
             "the store stays in frame order across the merge"
         );
-        assert_eq!(store.len(), 2 * RUN as usize);
+        assert_eq!(store.entries().len(), 2 * RUN as usize);
     }
 
     /// A batch whose frames fall between the stored ones interleaves the two

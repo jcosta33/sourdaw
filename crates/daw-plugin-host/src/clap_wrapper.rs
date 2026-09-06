@@ -2294,11 +2294,6 @@ fn empty_transport_event() -> clap_event_transport {
     transport
 }
 
-/// Refill a preallocated transport event from the host timeline.
-///
-/// Writes every field in place — no allocation, safe to call from the audio
-/// thread. Beat and second positions are CLAP fixed point, and the flags say
-/// which fields carry meaning so a plugin does not read a zero as a real value.
 /// Refill the block's note scratch from the host's events.
 ///
 /// Each event's `frame_offset` becomes the CLAP header's `time`, which is what
@@ -2330,6 +2325,11 @@ fn fill_note_scratch(scratch: &mut Vec<clap_event_note>, midi_events: &[HostMidi
     }
 }
 
+/// Refill a preallocated transport event from the host timeline.
+///
+/// Writes every field in place — no allocation, safe to call from the audio
+/// thread. Beat and second positions are CLAP fixed point, and the flags say
+/// which fields carry meaning so a plugin does not read a zero as a real value.
 fn fill_transport_event(target: &mut clap_event_transport, source: HostTransport) {
     let mut flags = CLAP_TRANSPORT_HAS_TEMPO
         | CLAP_TRANSPORT_HAS_TIME_SIGNATURE
