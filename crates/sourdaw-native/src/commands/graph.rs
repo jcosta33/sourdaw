@@ -1388,15 +1388,16 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 /// it. Every engine-owned device is registered through
 /// `EngineHandle::add_hosted_plugin`, which attaches a note store
 /// unconditionally — a hosted reverb or a CLAP note effect gets one
-/// exactly as an instrument does. The drain reaches every hosted plugin:
-/// a reverb ignores the notes and a note effect reads them, but its note
-/// output has no route in this host, so what it makes of them is the
-/// plugin's own answer and not a refusal here. A built-in is an
-/// `AddDetachedEffect` and never gets one, and the crumbs capture slot is
-/// not in `registry.devices` at all. So `engine_owned == false` is
-/// exactly "holds no note store" today, and scheduling at one spends a
-/// whole batch the store side can answer only as a count on the audio
-/// thread.
+/// exactly as an instrument does. The drain reaches every hosted slot, and
+/// the wrapper decides from there: CLAP hands every plugin the events, so a
+/// reverb ignores them and a note effect reads them while its note output
+/// has no route in this host; VST3 withholds them from a plugin with no
+/// event input bus (`stage_midi`). Neither is a refusal the mapping makes.
+/// A built-in is an `AddDetachedEffect` and never gets one, and the crumbs
+/// capture slot is not in `registry.devices` at all. So
+/// `engine_owned == false` is exactly "holds no note store" today, and
+/// scheduling at one spends a whole batch the store side can answer only as
+/// a count on the audio thread.
 ///
 /// A built-in with a store (#3124) parts those two facts the moment it
 /// exists, flipping this test through an explicit note-sink flag on
