@@ -501,9 +501,13 @@ describe('readLiveAutomationWrites — carried built-in devices', () => {
     });
 
     // Presence on the device is not enough either: the device can hold a key
-    // the body still cannot resolve into a name the engine parses
-    // (`DeviceParam::from_name`) or expands (`builtin_parameter`), and that
-    // name would refuse the whole `write-device-parameter` batch it travels in.
+    // the body still cannot resolve. For Knead that key would fail
+    // `DeviceParam::from_name` and refuse the whole `write-device-parameter`
+    // batch it travels in; for the Fermenter fixture used here, `bogus` is
+    // shape-valid (`fermenter_parameter` in
+    // `crates/sourdaw-native/src/commands/graph.rs` only checks shape), so the
+    // wire accepts it and this body silently drops it instead — neither is a
+    // write the lane meant.
     it('refuses a parameter the body does not resolve even when the device holds it', () => {
         const FERMENTER_WITH_BOGUS: Device = {
             ...FERMENTER_DEVICE,
