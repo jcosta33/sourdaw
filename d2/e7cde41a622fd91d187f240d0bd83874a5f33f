@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_87ab0a2f60ccf8::t_184852b53e2253 20,68,93-95,97,169-170
+  s_87ab0a2f60ccf8::t_c44151aa6af316 163,165,227-228,271,287-288,303,314-315,318,334
+  s_87ab0a2f60ccf8::t_4cdc580c175172 1-19,21-67,69-71,73-75,77,79-92,96,98-162,164,166-168,171-226,229-270,272-286,289-302,304-313,316-317,319-333,335-336
+  s_87ab0a2f60ccf8::t_65631ac786301f 72,76,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d2e7cde41a622fd91d187f240d0bd83874a5f33f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
