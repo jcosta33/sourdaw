@@ -1,0 +1,31 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_9b530f08172a54::t_5eb969c8117d92 395-421,423-442
+  s_9b530f08172a54::t_35eb8e43f06cab 51-52,70-81,83
+  s_9b530f08172a54::t_02f874867ff797 181
+  s_9b530f08172a54::t_01fbbadbecc56e 422
+src/modules/AudioEngine/useCases/livePlayback/mirrorDeviceChainDelta.ts
+  s_9b530f08172a54::t_b873d4518ce473 245-250
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_9b530f08172a54::t_6c05f58e17036b 135-157,159-170
+  s_9b530f08172a54::t_cb71cde9c91b7a 248
+  s_9b530f08172a54::t_46f5df4c3ff112 27-38
+  s_9b530f08172a54::t_6b7f52bfe00e21 55,70
+  s_9b530f08172a54::t_d3b880a1c78ce7 158
+  s_9b530f08172a54::t_34063c9d0942a0 171-173,178-183,247,249,257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "74a8c2c1af76465fb1cef258e8691a187912ffef",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
