@@ -48,6 +48,11 @@ describe('AutomergeRepository checkpoint media inspection', () => {
 
         expect(observedRequests).toHaveLength(1);
         expect(observedRequests[0]?.rootBytes).toBe(checkpointBytes);
+        const worker = ControlledWorker.instances[0];
+        if (!worker) {
+            throw new Error('Expected checkpoint inspection worker');
+        }
+        expect(worker.postMessageTransferArguments).toEqual([undefined]);
         expect(checkpointBytes).toEqual(checkpointCopy);
         expect(checkpointBytes.byteLength).toBe(checkpointCopy.byteLength);
         expect(automergeRepository.getDoc('root')).toBe(liveDocument);

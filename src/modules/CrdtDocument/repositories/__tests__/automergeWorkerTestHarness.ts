@@ -138,6 +138,7 @@ export class ControlledWorker {
     static onPostMessage: ((worker: ControlledWorker, request: WorkerRequest) => void) | null = null;
 
     readonly posted: WorkerRequest[] = [];
+    readonly postMessageTransferArguments: Array<StructuredSerializeOptions | Transferable[] | undefined> = [];
     terminated = false;
 
     private failed = false;
@@ -169,12 +170,13 @@ export class ControlledWorker {
         this.listeners.get(type)?.delete(listener);
     }
 
-    postMessage(value: unknown): void {
+    postMessage(value: unknown, transferOrOptions?: StructuredSerializeOptions | Transferable[]): void {
         if (this.failed) {
             throw new Error('postMessage called on a failed worker');
         }
         const request = parseWorkerRequest(value);
         this.posted.push(request);
+        this.postMessageTransferArguments.push(transferOrOptions);
         ControlledWorker.onPostMessage?.(this, request);
     }
 

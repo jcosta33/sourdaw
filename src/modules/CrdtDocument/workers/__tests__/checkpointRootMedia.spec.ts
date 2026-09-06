@@ -1,4 +1,4 @@
-import { change, free, getHeads, init, load, save } from '@automerge/automerge';
+import { Counter, change, free, getHeads, init, load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type AnyDoc = Record<string, unknown>;
@@ -137,10 +137,29 @@ describe('checkpoint root media worker inspection', () => {
         ['clip list', { arrangements: { arrangements: [{ tracks: { tracks: [{ clips: 'not-an-array' }] } }] } }],
         ['alternative list', { tracks: { tracks: [{ alternatives: 'not-an-array' }] } }],
         ['freeze state', { tracks: { tracks: [{ freezeState: 'not-an-object' }] } }],
+        ['freeze state audio reference', { tracks: { tracks: [{ freezeState: { frozenBufferId: 42 } }] } }],
+        ['track frozen audio reference', { tracks: { tracks: [{ frozenBufferId: 42 }] } }],
         ['audio reference', { tracks: { tracks: [{ clips: [{ audioBufferId: 42 }] }] } }],
     ])('rejects a malformed present %s', (_label, malformedRoot) => {
         const response = dispatch({
             id: 11,
+            type: 'inspectCheckpointRootMedia',
+            rootBytes: saveRoot(malformedRoot),
+        });
+
+        expect(response.type).toBe('error');
+    });
+
+    it.each([
+        ['timestamp root tracks section', { tracks: new Date(0) }],
+        ['bytes root tracks section', { tracks: new Uint8Array([1]) }],
+        ['counter root tracks section', { tracks: new Counter(1) }],
+        ['timestamp track entry', { tracks: { tracks: [new Date(0)] } }],
+        ['bytes arrangement entry', { arrangements: { arrangements: [new Uint8Array([1])] } }],
+        ['counter clip entry', { tracks: { tracks: [{ clips: [new Counter(1)] }] } }],
+    ])('rejects serialized non-map %s at shared record boundaries', (_label, malformedRoot) => {
+        const response = dispatch({
+            id: 15,
             type: 'inspectCheckpointRootMedia',
             rootBytes: saveRoot(malformedRoot),
         });

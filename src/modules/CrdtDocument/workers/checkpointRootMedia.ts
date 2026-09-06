@@ -3,7 +3,12 @@ import { type Doc, free, load } from '@automerge/automerge';
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        Object.getPrototypeOf(value) === Object.prototype
+    );
 }
 
 function isUnknownArray(value: unknown): value is unknown[] {
