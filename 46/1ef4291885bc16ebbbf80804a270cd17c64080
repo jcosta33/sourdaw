@@ -1,0 +1,34 @@
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_9b530f08172a54::t_3eb258d99b7b02 214
+  s_9b530f08172a54::t_a0e94a352c03cb 221,230
+  s_9b530f08172a54::t_269e0c94cc8ce9 75-78
+src/modules/AudioEngine/useCases/livePlayback/mirrorDeviceChainDelta.ts
+  s_9b530f08172a54::t_3e5e0ce72a1b6a 114
+  s_9b530f08172a54::t_639e95e221ce1d 139
+  s_9b530f08172a54::t_99b630c064bd97 46-50
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_50afea62847c74 81-87
+  s_9b530f08172a54::t_7f240884cdb80b 37-39
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineWithNativeEngine.spec.ts
+  s_9b530f08172a54::t_853cd5f2b41f67 211-273
+  s_9b530f08172a54::t_84712fa72bfb4e 8
+src/modules/AudioEngine/useCases/livePlayback/__tests__/mirrorDeviceChainDelta.spec.ts
+  s_9b530f08172a54::t_429398d643c027 164-189,261
+  s_9b530f08172a54::t_a8d0e9d5385500 262-284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "461ef4291885bc16ebbbf80804a270cd17c64080",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
