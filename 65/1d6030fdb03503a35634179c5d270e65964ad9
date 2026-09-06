@@ -1,0 +1,19 @@
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_7f4fd22bea43b5::t_efc57dae383796 89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "651d6030fdb03503a35634179c5d270e65964ad9",
+  "prompts": {},
+  "sessions": {
+    "s_7f4fd22bea43b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a074fb-b444-7fa2-ba5e-ca5d99e84bc2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
