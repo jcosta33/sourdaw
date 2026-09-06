@@ -1,0 +1,27 @@
+src/modules/CrdtDocument/workers/checkpointRootMedia.ts
+  s_87ab0a2f60ccf8::t_8640f8a7821141 6-11
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.checkpointMedia.spec.ts
+  s_87ab0a2f60ccf8::t_67ae849f7a62f6 51-55
+src/modules/CrdtDocument/workers/__tests__/checkpointRootMedia.spec.ts
+  s_87ab0a2f60ccf8::t_67ae849f7a62f6 1,140-141,153-162
+  s_87ab0a2f60ccf8::t_1fa48f7f20d55e 163-165
+  s_87ab0a2f60ccf8::t_9e76d3e4b22936 166-169
+src/modules/CrdtDocument/repositories/__tests__/automergeWorkerTestHarness.ts
+  s_87ab0a2f60ccf8::t_67ae849f7a62f6 141,173,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "132926cf0fdd83743f6599ad0f16b13766d5d3de",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
