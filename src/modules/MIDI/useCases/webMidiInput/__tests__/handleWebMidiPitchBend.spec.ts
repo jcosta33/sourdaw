@@ -23,6 +23,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: async () => true,
 }));
 
 /**

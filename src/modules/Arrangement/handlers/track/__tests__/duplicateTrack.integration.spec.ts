@@ -64,6 +64,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';

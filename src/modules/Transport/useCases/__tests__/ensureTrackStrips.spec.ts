@@ -119,6 +119,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: vi.fn(),
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 // Mock Routing use cases

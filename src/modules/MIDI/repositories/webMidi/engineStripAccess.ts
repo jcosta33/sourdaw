@@ -20,3 +20,7 @@ export type WebMidiInstrumentStrip = {
 };
 
 export type GetWebMidiTrackStrip = (trackId: string) => WebMidiInstrumentStrip | undefined;
+
+/** Release one voice a native live session is holding; the engine addresses it by strip and device. */
+export type NativeLiveNoteRelease = Readonly<{ trackId: string; deviceId: string; note: number; channel: number }>;
+export type ReleaseNativeLiveNote = (release: NativeLiveNoteRelease) => void;

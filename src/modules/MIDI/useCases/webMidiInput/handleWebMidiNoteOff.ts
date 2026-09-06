@@ -124,6 +124,17 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        if (noteData.nativeDeviceId) {
+            void deps.sendNativeLiveMidiNote({
+                trackId: instrumentTrackId,
+                deviceId: noteData.nativeDeviceId,
+                note,
+                velocity: 0,
+                channel: noteData.channel,
+                isNoteOn: false,
+            });
+        }
+
         if (noteData.fermenterDeviceId) {
             const strip = audioEngine.getTrackStrip(instrumentTrackId);
             // By instance id alone: a note-off has to release the very node its

@@ -96,6 +96,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxParam: vi.fn(),
     updateNativeLiveGraphSessionTransportMaps: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 // switchArrangement imports stopPlayback; loadSnapshot imports restoreTimelineMapSnapshot.

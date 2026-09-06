@@ -158,6 +158,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setSend: vi.fn(),
     unwireSidechainRoute: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 // discardPreparedStemImportResources and createStemImportConfirmationResourceLease import getAssetTransfer.
 vi.mock('#/modules/Collaboration/useCases', () => ({

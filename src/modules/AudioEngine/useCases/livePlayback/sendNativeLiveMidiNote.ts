@@ -16,8 +16,10 @@
  * note that raced a start would otherwise be dropped before the start it was
  * meant to follow had published its handle.
  *
- * Answers whether the note was sent, because the caller that also voices notes
- * on Web Audio has to know which carrier took this one.
+ * Answers whether a session backend took the note. Every caller today fires
+ * and forgets: the carrier is decided before the send, on the same carried
+ * check the automation writer uses, so nothing branches on this answer. It
+ * exists so a spec can observe a refused send without standing up a backend.
  */
 
 import { type AudioGraphSendMidiNoteCommand } from '../../models/AudioGraphBackend';

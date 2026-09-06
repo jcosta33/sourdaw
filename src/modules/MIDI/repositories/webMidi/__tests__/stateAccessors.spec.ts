@@ -54,7 +54,7 @@ describe('webMidi state accessors', () => {
         });
         channelToNote.set(1, key);
 
-        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined });
+        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);
@@ -69,7 +69,7 @@ describe('webMidi state accessors', () => {
         midiLearn.active = true;
         midiLearn.callback = learnCallback;
 
-        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined });
+        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined, releaseNativeNote: () => {} });
 
         expect(midiLearn.active).toBe(true);
         expect(midiLearn.callback).toEqual(expect.any(Function));
