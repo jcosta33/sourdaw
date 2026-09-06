@@ -69,9 +69,31 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     discardDecodedAudioFile: discardDecodedAudioFileMock,
 }));
 
-const transition = vi.hoisted(() => ({ current: true }));
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
 vi.mock('#/modules/Project/useCases', () => ({
-    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
 vi.mock('../../../useCases/clipboard/pasteClip', () => ({
@@ -115,7 +137,8 @@ describe('TimelineEmptyMenu', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        transition.current = true;
+        projectEpoch.reset();
+        storeValues.track = { tracks: [] };
         vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
     });
 
@@ -395,18 +418,35 @@ describe('TimelineEmptyMenu', () => {
         });
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="same-track" beat={0} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Import Audio…'));
-        transition.current = false;
+        projectEpoch.advance();
+        const successorTracks = [{ id: 'same-track', kind: 'audio' }];
+        storeValues.track = { tracks: successorTracks };
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         Object.defineProperty(captured!, 'files', {
             value: [new File([], 'stale.wav', { type: 'audio/wav' })],
             configurable: true,
         });
 
         await captured!.onchange?.(new Event('change'));
-        createSpy.mockRestore();
 
         expect(decodeAudioFileMock).not.toHaveBeenCalled();
         expect(addClip).not.toHaveBeenCalled();
-        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
+        expect(storeValues.track.tracks).toBe(successorTracks);
+
+        decodeAudioFileMock.mockResolvedValueOnce({ id: 'audio-successor', buffer: { duration: 1 } });
+        fireEvent.click(screen.getByText('Import Audio…'));
+        const successorFile = new File([], 'successor.wav', { type: 'audio/wav' });
+        Object.defineProperty(captured!, 'files', { value: [successorFile], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+        expect(decodeAudioFileMock).toHaveBeenCalledWith(successorFile);
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'same-track', audioBufferId: 'audio-successor' })
+        );
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
     });
 
     it('discards a decode that finishes after the project changes', async () => {
@@ -433,7 +473,11 @@ describe('TimelineEmptyMenu', () => {
             configurable: true,
         });
         const changePromise = captured!.onchange?.(new Event('change')) as Promise<void>;
-        transition.current = false;
+        projectEpoch.advance();
+        const successorTracks = [{ id: 'same-track', kind: 'audio' }];
+        storeValues.track = { tracks: successorTracks };
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         resolveDecode({ id: 'audio-stale', buffer: { duration: 1 } });
         await changePromise;
         createSpy.mockRestore();
@@ -441,6 +485,7 @@ describe('TimelineEmptyMenu', () => {
         expect(discardDecodedAudioFileMock).toHaveBeenCalledWith('audio-stale');
         expect(addTrack).not.toHaveBeenCalled();
         expect(addClip).not.toHaveBeenCalled();
+        expect(storeValues.track.tracks).toBe(successorTracks);
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
@@ -531,16 +576,31 @@ describe('TimelineEmptyMenu', () => {
         });
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Import MIDI…'));
-        transition.current = false;
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+        const successorTracks = [{ id: 'successor-midi', kind: 'midi' }];
+        storeValues.track = { tracks: successorTracks };
         Object.defineProperty(captured!, 'files', {
             value: [new File([], 'stale.mid', { type: 'audio/midi' })],
             configurable: true,
         });
 
         await captured!.onchange?.(new Event('change'));
-        createSpy.mockRestore();
 
         expect(importMidiFileMock).not.toHaveBeenCalled();
+        expect(storeValues.track.tracks).toBe(successorTracks);
+
+        fireEvent.click(screen.getByText('Import MIDI…'));
+        const successorFile = new File([], 'successor.mid', { type: 'audio/midi' });
+        Object.defineProperty(captured!, 'files', { value: [successorFile], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        const successorOptions = importMidiFileMock.mock.calls[0]?.[1];
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+        expect(importMidiFileMock).toHaveBeenCalledWith(successorFile, { shouldContinue: expect.any(Function) });
+        expect(successorOptions?.shouldContinue()).toBe(true);
     });
 
     it('notifies on a failed audio decode and adds nothing', async () => {

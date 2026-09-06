@@ -202,9 +202,31 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     discardDecodedAudioFile: vi.fn(),
 }));
 
-const transition = vi.hoisted(() => ({ current: true }));
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
 vi.mock('#/modules/Project/useCases', () => ({
-    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -287,7 +309,7 @@ const readFirstScrollbarCall = (): { scrollX: number; maxScrollX: number } => {
 describe('ArrangeView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        transition.current = true;
+        projectEpoch.reset();
         vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
         Object.defineProperty(window, 'innerWidth', {
             configurable: true,
@@ -445,7 +467,9 @@ describe('ArrangeView', () => {
         await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(2));
 
         resolveFirst({ id: 'audio-first', buffer: { duration: 1 } as AudioBuffer });
-        transition.current = false;
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         resolveSecond({ id: 'audio-second', buffer: { duration: 1 } as AudioBuffer });
 
         await waitFor(() => {
@@ -455,6 +479,21 @@ describe('ArrangeView', () => {
         expect(addTrack).not.toHaveBeenCalled();
         expect(addClip).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
+
+        vi.mocked(decodeAudioFile).mockResolvedValueOnce({
+            id: 'audio-successor',
+            buffer: { duration: 1 } as AudioBuffer,
+        });
+        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-successor' } as ReturnType<typeof addTrack>);
+        const successor = new File(['successor'], 'successor.wav', { type: 'audio/wav' });
+        dropFiles([successor]);
+
+        await waitFor(() => {
+            expect(addClip).toHaveBeenCalledWith(
+                expect.objectContaining({ trackId: 'track-successor', audioBufferId: 'audio-successor' })
+            );
+        });
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
     });
 
     it('preserves an earlier committed decode when a later MIDI import supersedes the drop', async () => {
@@ -463,7 +502,7 @@ describe('ArrangeView', () => {
             .mockResolvedValueOnce({ id: 'audio-pending', buffer: { duration: 1 } as AudioBuffer });
         vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-committed' } as ReturnType<typeof addTrack>);
         vi.mocked(importMidiFile).mockImplementationOnce(async () => {
-            transition.current = false;
+            projectEpoch.advance();
             return 'superseded';
         });
         render(<ArrangeView />);
@@ -480,6 +519,8 @@ describe('ArrangeView', () => {
         expect(discardDecodedAudioFile).not.toHaveBeenCalledWith('audio-committed');
         expect(addTrack).toHaveBeenCalledTimes(1);
         expect(notifyUser).not.toHaveBeenCalled();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
     });
 
     it('computes the horizontal scrollbar width without blowing the call stack on a very large clip count', () => {

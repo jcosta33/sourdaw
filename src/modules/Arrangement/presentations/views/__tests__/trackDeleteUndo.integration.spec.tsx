@@ -126,6 +126,9 @@ vi.mock('#/modules/Knead/useCases', async () => {
         restoreClipPitchAnalysis: actual.restoreClipPitchAnalysis,
     };
 });
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
@@ -134,6 +137,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getCachedAudioBuffer: vi.fn(),

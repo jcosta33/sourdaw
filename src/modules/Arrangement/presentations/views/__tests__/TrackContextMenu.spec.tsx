@@ -87,9 +87,31 @@ vi.mock('../../../useCases/importMidiFile', () => ({
     importMidiFile: vi.fn(),
 }));
 
-const transition = vi.hoisted(() => ({ current: true }));
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
 vi.mock('#/modules/Project/useCases', () => ({
-    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
@@ -120,7 +142,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('TrackContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        transition.current = true;
+        projectEpoch.reset();
     });
 
     it('should render without crashing', () => {
@@ -456,7 +478,7 @@ describe('TrackContextMenu', () => {
         });
     });
 
-    it('does not decode a selected audio file after the initiating project changes', () => {
+    it('keeps a stale picker out of the successor track while a new picker remains current', async () => {
         renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
@@ -464,7 +486,9 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Import Audio...'));
-        transition.current = false;
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         const audioInput = Array.from(document.querySelectorAll('input[type=file]')).find(
             (input) => (input as HTMLInputElement).accept === 'audio/*'
         ) as HTMLInputElement;
@@ -476,7 +500,19 @@ describe('TrackContextMenu', () => {
         fireEvent.change(audioInput);
 
         expect(importAudioClipToTrack).not.toHaveBeenCalled();
-        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
+
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import Audio...'));
+        const successorFile = new File(['data'], 'successor.wav', { type: 'audio/wav' });
+        Object.defineProperty(audioInput, 'files', { value: [successorFile], configurable: true });
+        fireEvent.change(audioInput);
+
+        await vi.waitFor(() => {
+            expect(importAudioClipToTrack).toHaveBeenCalledWith('track1', successorFile, {
+                shouldContinue: expect.any(Function),
+            });
+        });
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
     });
 
     it('applies a color from the color picker', () => {

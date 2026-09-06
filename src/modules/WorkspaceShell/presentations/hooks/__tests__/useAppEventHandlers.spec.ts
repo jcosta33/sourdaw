@@ -12,11 +12,27 @@ import { useAppEventHandlers } from '../useAppEventHandlers';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({ importMidiFile: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({ undo: vi.fn(), redo: vi.fn(), executeUserAppAction: vi.fn() }));
-const transition = vi.hoisted(() => ({ current: true }));
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(makeAuthority),
+        currentAuthority: makeAuthority,
+        reset: () => {
+            epoch = 0;
+        },
+    };
+});
 vi.mock('#/modules/Project/useCases', () => ({
     saveProject: vi.fn(),
     newProject: vi.fn(),
-    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 
@@ -53,7 +69,7 @@ describe('useAppEventHandlers', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
-        transition.current = true;
+        projectEpoch.reset();
         bus = createFakeEventBus();
         setWorkspaceEventBus(bus);
         onOpenExport = vi.fn<() => void>();
@@ -110,9 +126,16 @@ describe('useAppEventHandlers', () => {
 
         expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file, { shouldContinue: expect.any(Function) });
         const options = vi.mocked(importMidiFile).mock.calls[0]?.[1];
-        transition.current = false;
+        projectEpoch.advance();
         expect(options?.shouldContinue()).toBe(false);
-        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+
+        const successorFile = new File(['midi-b'], 'successor.mid');
+        bus.fire('midi.import', { file: successorFile });
+        const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
+        expect(vi.mocked(importMidiFile).mock.calls.map(([imported]) => imported)).toEqual([file, successorFile]);
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
     });
 
     it('does not import when midi.import carries no file', () => {

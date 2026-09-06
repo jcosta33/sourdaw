@@ -189,10 +189,32 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
     denoiseAudio: vi.fn(),
 }));
 
-const transition = vi.hoisted(() => ({ current: true }));
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
-    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => transition.current })),
+    captureProjectTransitionAuthority: projectEpoch.capture,
     verifyAudioBufferReferences: vi.fn(),
 }));
 
@@ -257,7 +279,7 @@ describe('WaveformEditor', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        transition.current = true;
+        projectEpoch.reset();
     });
 
     afterEach(() => {
@@ -821,14 +843,27 @@ describe('WaveformEditor', () => {
         });
         await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(1));
 
-        transition.current = false;
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
         resolveDecode({ id: 'audio-stale', buffer: {} as AudioBuffer });
 
         await waitFor(() => expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-stale'));
         expect(replaceClipAudioBuffer).not.toHaveBeenCalled();
         expect(verifyAudioBufferReferences).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
-        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(1);
+
+        vi.mocked(decodeAudioFile).mockResolvedValueOnce({ id: 'audio-successor', buffer: {} as AudioBuffer });
+        vi.mocked(replaceClipAudioBuffer).mockReturnValueOnce(true);
+        fireEvent.drop(dropZone, {
+            dataTransfer: { files: [new File(['data'], 'successor.wav', { type: 'audio/wav' })] },
+        });
+
+        await waitFor(() => {
+            expect(replaceClipAudioBuffer).toHaveBeenCalledWith('clip-1', 'audio-successor');
+        });
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
     });
 
     it('should notify the user when decoding a dropped file fails', async () => {

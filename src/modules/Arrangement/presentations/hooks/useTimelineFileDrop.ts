@@ -32,6 +32,7 @@ type UseTimelineFileDropResult = {
 type AiRenderPayload = { name: string; bufferId: string; durationSeconds: number };
 type SamplePayload = { name: string; id: string; path: string; libraryRootId: string; durationSeconds?: number };
 type PluginPayload = { name: string; id: string };
+type AudioTargetIntent = { kind: 'existing'; trackId: string } | { kind: 'create' };
 
 function asRecord(raw: string): Record<string, unknown> {
     const parsed: unknown = JSON.parse(raw);
@@ -93,6 +94,12 @@ function parsePlugin(raw: string): PluginPayload {
     };
 }
 
+function captureAudioTargetIntent(trackHit: string | null): AudioTargetIntent {
+    const trackId = trackHit ?? trackStore.value?.selectedTrackId;
+    const track = trackId ? trackStore.value?.tracks.find((candidate) => candidate.id === trackId) : null;
+    return trackId && track?.kind === 'audio' ? { kind: 'existing', trackId } : { kind: 'create' };
+}
+
 export const useTimelineFileDrop = ({
     getCanvasCoords,
     getBeatFromX,
@@ -108,6 +115,21 @@ export const useTimelineFileDrop = ({
         const { x, y } = getCanvasCoords(event);
         const trackHit = hitTestTrack(y);
         const beat = Math.max(0, Math.floor(getBeatFromX(x)));
+        const audioTargetIntent = captureAudioTargetIntent(trackHit);
+        let createdAudioTargetId: string | undefined;
+        const resolveAudioTarget = (name: string): string | null => {
+            const targetId = audioTargetIntent.kind === 'existing' ? audioTargetIntent.trackId : createdAudioTargetId;
+            if (targetId) {
+                const target = trackStore.value?.tracks.find((candidate) => candidate.id === targetId);
+                return target?.kind === 'audio' ? targetId : null;
+            }
+            const newTrack = addTrack({ name, kind: 'audio' });
+            if (!newTrack) {
+                return null;
+            }
+            createdAudioTargetId = newTrack.id;
+            return newTrack.id;
+        };
 
         // AI-rendered audio clips already have their AudioBuffer cached — just create
         // a clip pointing at the bufferId. No file decoding needed.
@@ -204,9 +226,20 @@ export const useTimelineFileDrop = ({
                                     discardPreparedSampleResources();
                                     return;
                                 }
-                                const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
-                                assetHash = stagedAsset?.hash;
-                                assetLeaseId = stagedAsset?.leaseId;
+                                try {
+                                    const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
+                                    assetHash = stagedAsset?.hash;
+                                    assetLeaseId = stagedAsset?.leaseId;
+                                } catch {
+                                    discardPreparedSampleResources();
+                                    if (authority.isCurrent()) {
+                                        notifyUser(
+                                            `Failed to import "${sample.name}" — asset registration failed`,
+                                            'error'
+                                        );
+                                    }
+                                    return;
+                                }
                             } catch {
                                 if (!authority.isCurrent()) {
                                     discardPreparedSampleResources();
@@ -235,17 +268,10 @@ export const useTimelineFileDrop = ({
                     return;
                 }
 
-                let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                const sampleTargetTrack = targetTrackId
-                    ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
-                    : null;
-                if (!targetTrackId || !sampleTargetTrack || sampleTargetTrack.kind !== 'audio') {
-                    const newTrack = addTrack({ name: sample.name, kind: 'audio' });
-                    if (!newTrack) {
-                        discardPreparedSampleResources();
-                        return;
-                    }
-                    targetTrackId = newTrack.id;
+                const targetTrackId = resolveAudioTarget(sample.name);
+                if (!targetTrackId) {
+                    discardPreparedSampleResources();
+                    return;
                 }
 
                 const clip = addClip({
@@ -356,20 +382,13 @@ export const useTimelineFileDrop = ({
                         return;
                     }
 
-                    let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                    const targetTrack = targetTrackId
-                        ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
-                        : null;
-                    if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
-                        const newTrack = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-                        if (!newTrack) {
-                            if (stagedAsset) {
-                                assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
-                            }
-                            discardDecodedAudioFile(bufferId);
-                            return;
+                    const targetTrackId = resolveAudioTarget(file.name.replace(/\.[^.]+$/, ''));
+                    if (!targetTrackId) {
+                        if (stagedAsset) {
+                            assetTransfer?.releaseStagedAsset(stagedAsset.leaseId);
                         }
-                        targetTrackId = newTrack.id;
+                        discardDecodedAudioFile(bufferId);
+                        return;
                     }
 
                     const clip = addClip({

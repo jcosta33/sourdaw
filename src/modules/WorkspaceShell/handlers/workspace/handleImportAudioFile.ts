@@ -16,7 +16,9 @@ export const handleImportAudioFile = createHandler<'importAudioFile'>({
                 return null;
             })
             .catch(() => {
-                notifyUser('Failed to open file dialog', 'error');
+                if (authority.isCurrent()) {
+                    notifyUser('Failed to open file dialog', 'error');
+                }
                 return null;
             });
     },
