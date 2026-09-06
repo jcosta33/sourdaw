@@ -153,11 +153,13 @@ describe('whole-request prompt interpretation routing', () => {
         ['volume 1%', 'setTrackGain'],
         ['set volume to 1', 'setTrackGain'],
         ['set pan to -25', 'setTrackPan'],
+        ['add filter', 'addDevice'],
         ['add compressor to Bass track', 'addDevice'],
         ['add eq and compressor to selected track', 'addDevice'],
         ['create 2 midi tracks named "Bass, DI", "Keys and Pads"', 'addTrack'],
         ['create 2 tracks named Bass, "Keys. Mute Bass"', 'addTrack'],
         ['create 3 tracks named Bass, Keys and "mute Drums"', 'addTrack'],
+        ['create 2 tracks named Bass and "Play"', 'addTrack'],
         ['rename clip to Bridge Solo', 'renameClip'],
         ['rename clip to "Bridge And Solo"', 'renameClip'],
         ['rename clip to "Verse. Mute Bass"', 'renameClip'],
@@ -182,7 +184,7 @@ describe('whole-request prompt interpretation routing', () => {
     it('validates and compiles a deterministic proposal without mutating project context', async () => {
         const context = createContext();
         const snapshot = structuredClone(context);
-        const prompt = 'create 2 audio tracks named Lead Vocals, Backing Vocals';
+        const prompt = 'create 2 audio tracks named "Lead Vocals", "Backing Vocals"';
 
         const result = await parsePromptToActions(prompt, context, undefined, 'revision-routing');
 
@@ -325,6 +327,45 @@ describe('whole-request prompt interpretation routing', () => {
         }
     );
 
+    it.each([
+        ['mute', 'muteTrack', 'selected track', 'Selected', 'track-selected-name'],
+        ['mute', 'muteTrack', 'this track', 'This', 'track-this-name'],
+        ['mute', 'muteTrack', 'tagged track', 'Tagged', 'track-tagged-name'],
+        ['solo', 'soloTrack', 'selected track', 'Selected', 'track-selected-name'],
+        ['solo', 'soloTrack', 'this track', 'This', 'track-this-name'],
+        ['solo', 'soloTrack', 'tagged track', 'Tagged', 'track-tagged-name'],
+        ['delete', 'removeTrack', 'selected track', 'Selected', 'track-selected-name'],
+        ['delete', 'removeTrack', 'this track', 'This', 'track-this-name'],
+        ['delete', 'removeTrack', 'tagged track', 'Tagged', 'track-tagged-name'],
+    ])(
+        'reserves %s %s before a colliding display name',
+        async (verb, actionType, selector, displayName, namedTrackId) => {
+            const context = createReservedSelectorCollisionContext();
+
+            const selected = await parsePromptToActions(`${verb} ${selector}`, context);
+            const quoted = await parsePromptToActions(`${verb} "${displayName}"`, context);
+
+            expect(selected.actions).toMatchObject([{ type: actionType, payload: { trackId: 'track-bass' } }]);
+            expect(quoted.actions).toMatchObject([{ type: actionType, payload: { trackId: namedTrackId } }]);
+            expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['mute', 'solo', 'delete'])(
+        'clarifies %s selected track when the selection does not resolve',
+        async (verb) => {
+            const context = { ...createReservedSelectorCollisionContext(), selectedTrackId: null };
+            const prompt = `${verb} selected track`;
+
+            const result = await parsePromptToActions(prompt, context);
+
+            expect(result.actions).toEqual([]);
+            expect(result.planningOutcome?.kind).toBe('clarify');
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        }
+    );
+
     it.each(['selected track', 'this track', 'tagged track', 'track'])(
         'clarifies the reserved selector %s when no track is selected',
         async (selector) => {
@@ -404,6 +445,9 @@ describe('whole-request prompt interpretation routing', () => {
         ['make it warm without adding devices', createContext],
         ['add a bluesy sounding piano and melody', createContext],
         ['create 2 tracks named Bass, Keys then mute Bass', createContext],
+        ['create 2 tracks named Bass and brighten guitar', createContext],
+        ['create 2 tracks named Bass and play', createContext],
+        ['create 2 audio tracks named Lead Vocals, Backing Vocals', createContext],
         ['rename clip to', createContext],
         ['RENAME THE CLIP TO   ', createContext],
         ['rename clip to Verse. Mute Bass', createContext],

@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { commandTrackDefaultsPort, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext } from '../../models/ProjectContext';
@@ -11,6 +14,7 @@ import {
 } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { buildLlmActionSystemPrompt } from '../../transformers/llmActionBridge';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -98,6 +102,28 @@ const discoverTempoTurn = {
     ],
 };
 
+const namedTracksSearchTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'search-tracks',
+            name: 'agent.command-index.search',
+            arguments: { intent: 'create two named audio tracks' },
+        },
+    ],
+};
+
+const namedTracksDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-tracks',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['addTrack'] },
+        },
+    ],
+};
+
 const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
     toolCalls: [
@@ -137,9 +163,80 @@ const bluesItems = [
     },
 ];
 
+const namedTrackItems = [
+    {
+        id: 'make-lead-vocals',
+        name: 'addTrack',
+        arguments: { name: 'Lead Vocals', kind: 'audio', binding: 'lead-vocals' },
+    },
+    {
+        id: 'make-backing-vocals',
+        name: 'addTrack',
+        arguments: { name: 'Backing Vocals', kind: 'audio', binding: 'backing-vocals' },
+    },
+];
+
 describe('high-level intent compilation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        commandTrackDefaultsPort.setTrackColorProvider(null);
+        vi.restoreAllMocks();
+    });
+
+    it('semantically preserves unquoted multiword track names through canonical command compilation', async () => {
+        const prompt = 'create 2 audio tracks named Lead Vocals, Backing Vocals';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(namedTracksSearchTurn)
+            .mockResolvedValueOnce(namedTracksDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn(namedTrackItems));
+
+        const result = await parsePromptToActions(prompt, emptyProject, undefined, 'revision-named-tracks');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.planningOutcome).toEqual({ kind: 'proposal' });
+        expect(result.actions).toMatchObject([
+            { type: 'addTrack', payload: { name: 'Lead Vocals', kind: 'audio' } },
+            { type: 'addTrack', payload: { name: 'Backing Vocals', kind: 'audio' } },
+        ]);
+
+        commandTrackDefaultsPort.setTrackColorProvider(() => 'oklch(0.40 0.08 250)');
+        registerHandlerMap(getArrangementHandlers());
+        const compiled = compilePlannedActionCommandBatch({
+            actions: result.actions,
+            actionLabels: result.actions.map((action) => action.type),
+            autoCommit: false,
+            context: emptyProject,
+            group: { groupId: 'named-tracks', groupLabel: 'Named tracks' },
+            intent: prompt,
+            projectRevision: 'revision-named-tracks',
+            runId: 'run-named-tracks',
+        });
+        const parsed = compiled.commandEnvelopes.map((serialized) => parseVersionedCommandEnvelope(serialized));
+
+        expect(parsed).toEqual([
+            expect.objectContaining({
+                status: 'valid',
+                envelope: expect.objectContaining({
+                    operation: 'addTrack',
+                    normalizedProjectRevision: 'revision-named-tracks',
+                    arguments: expect.objectContaining({ name: 'Lead Vocals', kind: 'audio' }),
+                }),
+            }),
+            expect.objectContaining({
+                status: 'valid',
+                envelope: expect.objectContaining({
+                    operation: 'addTrack',
+                    normalizedProjectRevision: 'revision-named-tracks',
+                    arguments: expect.objectContaining({ name: 'Backing Vocals', kind: 'audio' }),
+                }),
+            }),
+        ]);
     });
 
     it('compiles a track, clip and notes request on an empty project into one batch of canonical commands', async () => {

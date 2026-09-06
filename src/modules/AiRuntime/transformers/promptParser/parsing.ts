@@ -64,10 +64,6 @@ export function isComplexPrompt(normalized: string): boolean {
 // ── Preset matching ─────────────────────────────────────────────────────
 
 export function tryPresetMatch(normalized: string, context: PresetContext): RuntimeAction[] {
-    if (isComplexPrompt(normalized)) {
-        return [];
-    }
-
     const command = normalizeCommandText(normalized);
     const matches = PRESET_ACTIONS.filter((preset) =>
         [preset.label, ...(preset.commandAliases ?? [])].some(
@@ -286,37 +282,24 @@ export function tryCompoundFastPath(text: string, context: ProjectContext): Runt
 
 export const MAX_DETERMINISTIC_TRACK_CREATIONS = 32;
 
-const DEVICE_TYPES: Readonly<Record<string, string>> = {
-    eq: 'EQ',
-    compressor: 'Compressor',
-    reverb: 'Reverb',
-    delay: 'Delay',
-    gain: 'Gain',
-    chorus: 'Chorus',
-    flanger: 'Flanger',
-    phaser: 'Phaser',
-    distortion: 'Distortion',
-    limiter: 'Limiter',
-    gate: 'Gate',
-};
+const DEVICE_TYPES: ReadonlyMap<string, string> = new Map([
+    ['eq', 'EQ'],
+    ['compressor', 'Compressor'],
+    ['reverb', 'Reverb'],
+    ['delay', 'Delay'],
+    ['gain', 'Gain'],
+    ['chorus', 'Chorus'],
+    ['flanger', 'Flanger'],
+    ['phaser', 'Phaser'],
+    ['distortion', 'Distortion'],
+    ['limiter', 'Limiter'],
+    ['gate', 'Gate'],
+]);
 
 const CLAUSE_CONNECTOR_PATTERN = /(?:[,;]|\b(?:and|or|then|also|plus|without|except|but|while|before|after)\b)/iu;
-const TRACK_NAME_TRAILING_CLAUSE_PATTERN = /\b(?:or|then|also|plus|without|except|but|while|before|after)\b/iu;
-const UNQUOTED_TRACK_NAME_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{N}\s'’._/-]*[\p{L}\p{N}])?$/u;
+const UNQUOTED_TRACK_NAME_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{N}'’._/-]*[\p{L}\p{N}])?$/u;
 const SENTENCE_CONTINUATION_PATTERN = /(?:[.!?]|:)\s+\S/u;
-const GRAMMAR_COMMAND_HEADS = new Set([
-    'tempo',
-    'volume',
-    'gain',
-    'pan',
-    'rename',
-    'humanize',
-    'stretch',
-    'set',
-    'join',
-    'create',
-    'make',
-]);
+const SELECTED_TRACK_REFERENCES = new Set(['selected track', 'this track', 'tagged track']);
 
 function normalizeCommandText(value: string): string {
     return value.trim().toLocaleLowerCase().replaceAll(/\s+/gu, ' ');
@@ -419,9 +402,8 @@ function parseTrackNameList(value: string): string[] | null {
         }
         if (
             /"/u.test(part) ||
-            TRACK_NAME_TRAILING_CLAUSE_PATTERN.test(part) ||
             SENTENCE_CONTINUATION_PATTERN.test(part) ||
-            beginsExecutableCommand(part) ||
+            isExactRegisteredCommand(part) ||
             !UNQUOTED_TRACK_NAME_PATTERN.test(part)
         ) {
             return null;
@@ -431,17 +413,11 @@ function parseTrackNameList(value: string): string[] | null {
     return names;
 }
 
-function beginsExecutableCommand(value: string): boolean {
-    const head = normalizeCommandText(value).split(' ')[0];
-    if (head === undefined || head.length === 0) {
-        return false;
-    }
-    if (GRAMMAR_COMMAND_HEADS.has(head)) {
-        return true;
-    }
+function isExactRegisteredCommand(value: string): boolean {
+    const command = normalizeCommandText(value);
     return PRESET_ACTIONS.some((preset) =>
         [preset.label, ...(preset.commandAliases ?? [])].some(
-            (candidate) => normalizeCommandText(candidate).split(' ')[0] === head
+            (candidate) => normalizeCommandText(candidate) === command
         )
     );
 }
@@ -469,33 +445,35 @@ function parseDeviceList(value: string): string[] | null {
         return null;
     }
     const tokens = value.split(/\s*,\s*(?:and\s+)?|\s+and\s+/iu).map((token) => token.trim().toLocaleLowerCase());
-    if (tokens.length < 2 || tokens.some((token) => token.length === 0 || DEVICE_TYPES[token] === undefined)) {
+    if (tokens.length < 2 || tokens.some((token) => token.length === 0)) {
         return null;
     }
-    return tokens.map((token) => DEVICE_TYPES[token]!);
+    const deviceTypes: string[] = [];
+    for (const token of tokens) {
+        const deviceType = DEVICE_TYPES.get(token);
+        if (deviceType === undefined) {
+            return null;
+        }
+        deviceTypes.push(deviceType);
+    }
+    return deviceTypes;
 }
-
-type DeviceTarget = { kind: 'selected' } | { kind: 'reference'; value: string };
 
 function parseDeviceTypes(value: string): string[] | null {
     const normalized = normalizeCommandText(value);
-    const singleDeviceType = DEVICE_TYPES[normalized];
+    const singleDeviceType = DEVICE_TYPES.get(normalized);
     return singleDeviceType === undefined ? parseDeviceList(value) : [singleDeviceType];
 }
 
-function parseDeviceTarget(value: string): DeviceTarget | null {
+function parseDeviceTarget(value: string): string | null {
     const target = consumeOptionalLeadingWord(value, 'the');
     if (target === null) {
         return null;
     }
-    if (
-        !target.startsWith('"') &&
-        !target.startsWith("'") &&
-        /^(?:(?:selected|this|tagged)\s+)?track$/iu.test(target)
-    ) {
-        return { kind: 'selected' };
+    if (!target.startsWith('"') && !target.startsWith("'") && /^track$/iu.test(target)) {
+        return 'selected track';
     }
-    return { kind: 'reference', value: target };
+    return target;
 }
 
 function tryDeviceCommand(text: string, context: ProjectContext): RuntimeAction[] | null {
@@ -506,14 +484,11 @@ function tryDeviceCommand(text: string, context: ProjectContext): RuntimeAction[
         return null;
     }
 
-    const target = targetedMatch === null ? { kind: 'selected' as const } : parseDeviceTarget(targetedMatch[2]!);
-    if (target === null) {
+    const reference = targetedMatch === null ? 'selected track' : parseDeviceTarget(targetedMatch[2]!);
+    if (reference === null) {
         return null;
     }
-    const track =
-        target.kind === 'selected'
-            ? context.tracks.find((candidate) => candidate.id === context.selectedTrackId)
-            : resolveTrackReference(context, target.value);
+    const track = resolveTrackReference(context, reference);
     if (track === undefined) {
         return null;
     }
@@ -532,6 +507,10 @@ export function resolveTrackReference(
     const parsedReference = isQuoted ? parseQuotedValue(trimmedReference) : parseOpaqueValue(trimmedReference);
     if (parsedReference === null) {
         return undefined;
+    }
+
+    if (!isQuoted && SELECTED_TRACK_REFERENCES.has(normalizeCommandText(parsedReference))) {
+        return context.tracks.find((track) => track.id === context.selectedTrackId);
     }
 
     const literalIdMatches = context.tracks.filter((track) => track.id === parsedReference);

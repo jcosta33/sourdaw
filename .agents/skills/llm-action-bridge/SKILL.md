@@ -71,7 +71,7 @@ When a multi-action prompt is segmented, retain each action's exclusions, qualif
 
 ### 10. Prove complete deterministic admission
 
-Deterministic execution requires a grammar that consumes the whole request and resolves every target uniquely. Fuzzy search rank, partial text, context availability, or the first matching registry entry are discovery evidence only; they never authorize an action.
+Deterministic execution requires a grammar that consumes the whole request and resolves every target uniquely. Test a complete exact command across the registry before applying open-ended complexity heuristics. Resolve reserved context references before unquoted display names, and treat unquoted multiword values as semantic input unless a bounded grammar proves that the whole value is literal. Fuzzy search rank, partial text, context availability, or the first matching registry entry are discovery evidence only; they never authorize an action.
 
 **Why:** once a partial proposal reaches validation, approval, and receipts, the omitted intent cannot be reconstructed and an ambiguity can look like a deliberate edit.
 

@@ -491,6 +491,8 @@ describe('promptParser parsing', () => {
             expect(tryCompoundFastPath('create 2 tracks named Bass, Keys then mute Drums', context)).toBeNull();
             expect(tryCompoundFastPath('create 2 tracks named Bass, Keys. Mute Bass', context)).toBeNull();
             expect(tryCompoundFastPath('create 3 tracks named Bass, Keys and mute Drums', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass and brighten guitar', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass and play', context)).toBeNull();
             expect(tryCompoundFastPath('create 2 tracks named Bass, "Keys. Mute Bass"', context)).toEqual([
                 { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
                 { type: 'addTrack', payload: { name: 'Keys. Mute Bass', kind: 'audio' } },
@@ -499,6 +501,10 @@ describe('promptParser parsing', () => {
                 { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
                 { type: 'addTrack', payload: { name: 'Keys', kind: 'audio' } },
                 { type: 'addTrack', payload: { name: 'mute Drums', kind: 'audio' } },
+            ]);
+            expect(tryCompoundFastPath('create 2 tracks named Bass and "Play"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Play', kind: 'audio' } },
             ]);
         });
 
@@ -525,15 +531,17 @@ describe('promptParser parsing', () => {
             ]);
         });
 
-        it('preserves casing of track names specified in compound multi-track creation', () => {
-            const actions = tryCompoundFastPath('create 2 audio tracks named Lead Vocals, Backing Vocals', context);
+        it('requires quotes for ambiguous multiword names and preserves explicitly quoted casing', () => {
+            expect(tryCompoundFastPath('create 2 audio tracks named Lead Vocals, Backing Vocals', context)).toBeNull();
+
+            const actions = tryCompoundFastPath('create 2 audio tracks named "Lead Vocals", "Backing Vocals"', context);
             expect(actions).toEqual([
                 { type: 'addTrack', payload: { name: 'Lead Vocals', kind: 'audio' } },
                 { type: 'addTrack', payload: { name: 'Backing Vocals', kind: 'audio' } },
             ]);
 
             const upperActions = tryCompoundFastPath(
-                'CREATE 2 AUDIO TRACKS NAMED Lead Vocals, Backing Vocals',
+                'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
                 context
             );
             expect(upperActions).toEqual([
@@ -569,6 +577,10 @@ describe('promptParser parsing', () => {
             expect(tryCompoundFastPath('add eqcompressor', context)).toBeNull();
             expect(tryCompoundFastPath('add eq compressor', context)).toBeNull();
             expect(tryCompoundFastPath('add eq, mystery and delay', context)).toBeNull();
+            expect(tryCompoundFastPath('add constructor and eq', context)).toBeNull();
+            expect(tryCompoundFastPath('add __proto__ and eq', context)).toBeNull();
+            expect(tryParameterizedPath('add constructor to t1', context)).toEqual([]);
+            expect(tryParameterizedPath('add __proto__ to t1', context)).toEqual([]);
         });
 
         it('leaves creative and partially matched sound-design requests for whole-request planning', () => {
