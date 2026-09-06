@@ -93,6 +93,12 @@ function seedBuffer(
     controls.committedMeta.set(id, storedMetadata(values, freezeProjectId));
 }
 
+function sparseBufferIds(): string[] {
+    const bufferIds: string[] = [];
+    bufferIds.length = 1;
+    return bufferIds;
+}
+
 async function waitForHeldWrite(controls: FakeAudioIndexedDbControls): Promise<void> {
     for (let attempt = 0; attempt < 100; attempt++) {
         if (controls.pendingWriteSettlementCount() > 0) {
@@ -190,7 +196,7 @@ describe('checkpoint audio retention', () => {
             acquire({
                 checkpointId: 'sparse-checkpoint',
                 projectOwnerId: PROJECT_OWNER_ID,
-                bufferIds: new Array<string>(1),
+                bufferIds: sparseBufferIds(),
             })
         ).rejects.toThrow(/non-empty buffer IDs/i);
         expect(controls.committedCheckpointRetentions.size).toBe(0);
@@ -365,7 +371,7 @@ describe('checkpoint audio retention', () => {
             schemaVersion: 1,
             checkpointId: 'sparse',
             projectOwnerId: PROJECT_OWNER_ID,
-            bufferIds: new Array<string>(1),
+            bufferIds: sparseBufferIds(),
             ownershipToken: 'token',
         });
         const { collectBySize } = await importApi();
