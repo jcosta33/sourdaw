@@ -1,0 +1,72 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/resetMidiState.spec.ts
+  s_9b530f08172a54::t_1934bee2dc7b75 6-7,12-16,20,28-44
+  s_9b530f08172a54::t_0bf4b9651d1671 45
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_9b530f08172a54::t_efa07c894ab2c2 120-122,137
+  s_9b530f08172a54::t_7b03c19fea1692 138-139
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_9b530f08172a54::t_ea243bc79fd9cf 702-749
+src/modules/MIDI/useCases/webMidiInput/panicLiveNotes.ts
+  s_9b530f08172a54::t_c664cea116030e 6-7
+  s_9b530f08172a54::t_146462d394f6a8 32
+src/modules/MIDI/useCases/webMidiInput/__tests__/panicLiveNotes.spec.ts
+  s_9b530f08172a54::t_5c6ea44ca19cfe 29,47-64
+  s_9b530f08172a54::t_c01567e6801fb6 6,19
+  s_9b530f08172a54::t_8a15893322aadf 65-66
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveNativeNoteSink.spec.ts
+  s_9b530f08172a54::t_4febcb9ecfbdc6 1-39
+  s_9b530f08172a54::t_dcead2052273fc 40-42
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/destroyWebMidi.spec.ts
+  s_9b530f08172a54::t_d42a5ac788f8d6 115
+  s_9b530f08172a54::t_552a723e8d21c4 176
+  s_9b530f08172a54::t_417587105042f1 91
+  s_9b530f08172a54::t_7de99069d6c051 138
+  s_9b530f08172a54::t_e62bb0f1870f9d 165
+  s_9b530f08172a54::t_8f290c536a4b65 156
+  s_9b530f08172a54::t_cfa66c91deaae8 103
+src/modules/MIDI/repositories/webMidi/lifecycle/resetMidiState.ts
+  s_9b530f08172a54::t_2801f26ee4abe4 6
+  s_9b530f08172a54::t_183fb1403ccaac 17-21
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/resetMidiState.spec.ts
+  s_9b530f08172a54::t_b9e1381153e130 30
+src/modules/MIDI/repositories/webMidi/__tests__/releaseAllActiveNotes.spec.ts
+  s_9b530f08172a54::t_74a108e5556d75 101-123,221-222,243
+  s_9b530f08172a54::t_711a844ab358dd 160
+  s_9b530f08172a54::t_8b64337cd8fbb2 45,62,79,96,139,180,199
+  s_9b530f08172a54::t_3a5b8e03c72b12 218-220
+  s_9b530f08172a54::t_7d36563f411a65 223-224,244-249
+src/modules/MIDI/repositories/webMidi/releaseAllActiveNotes.ts
+  s_9b530f08172a54::t_8d83e187a8c349 4,16-22
+  s_9b530f08172a54::t_e42bb1194c4fbd 56-64
+  s_9b530f08172a54::t_23ab65a53a3699 88-90
+src/modules/MIDI/useCases/webMidiInput/releaseNativeLiveNote.ts
+  s_9b530f08172a54::t_ba7dff96eabc0d 1-10
+src/modules/MIDI/repositories/webMidi/lifecycle/destroyWebMidi.ts
+  s_9b530f08172a54::t_8a0acc273603aa 17
+  s_9b530f08172a54::t_e3406a287861e6 29-32
+  s_9b530f08172a54::t_966a9372f86a07 48
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_9b530f08172a54::t_51aa903b14e112 769,786
+src/modules/MIDI/useCases/webMidiInput/resetMidiState.ts
+  s_9b530f08172a54::t_4059a843ea39e7 5-6,11
+src/modules/MIDI/repositories/webMidi/__tests__/stateAccessors.spec.ts
+  s_9b530f08172a54::t_9e1146b41fc128 57,72
+src/modules/MIDI/repositories/webMidi/engineStripAccess.ts
+  s_9b530f08172a54::t_bc2343dbfc4af8 23-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "37ac9a645e6fa5324dc961a4c2e51f15e9a2a0fa",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
