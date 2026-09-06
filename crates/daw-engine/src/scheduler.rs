@@ -2049,6 +2049,17 @@ impl ActiveEffect {
     /// does. The store itself is only read: what a pass delivers stays
     /// scheduled, which is what makes a note inside a loop region sound on
     /// every pass over it.
+    ///
+    /// Nothing is queued or tracked while the device [`Self::receives_no_block`]:
+    /// a stored note falling due against a bypassed or detached device is
+    /// neither pushed into `pending_midi` nor held or released in `sounding`,
+    /// the same discard law [`Self::enqueue_midi`] states for a live note and
+    /// [`Self::release_sounding_notes`] states for a release. A note-on that
+    /// falls due here is simply dropped rather than banked — this device will
+    /// never be handed the buffer it would have landed in — so a bit already
+    /// held for an earlier delivery stays held, and its note-off stays owed to
+    /// [`AudioScheduler::release_notes_owed_on_resume`] rather than being spent
+    /// on a device that will never read it.
     #[inline]
     fn enqueue_due_midi_notes(
         &mut self,
@@ -2057,6 +2068,9 @@ impl ActiveEffect {
         span_offset: usize,
         diagnostics: &mut ActiveMidiRtDiagnostics,
     ) -> bool {
+        if self.receives_no_block() {
+            return false;
+        }
         let Self {
             midi_notes,
             pending_midi,
@@ -12497,6 +12511,57 @@ mod timeline_tests {
                 (LOOP_END + NOTE_ON, 60, true),
             ],
             "the release lands on the seam, before the second pass presses the note again"
+        );
+    }
+
+    /// A stored note's release is owed exactly as a live note's is while its
+    /// device [`ActiveEffect::receives_no_block`]: a bypassed device is handed
+    /// no buffer, so a note-off falling due against it cannot be spent there
+    /// without lifting a key on nobody. `enqueue_due_midi_notes` gates on the
+    /// same check `enqueue_midi` and `release_sounding_notes` already state,
+    /// so the note-off is neither delivered nor cleared from `sounding` — the
+    /// bit stays held, and the release stays owed to
+    /// [`AudioScheduler::release_notes_owed_on_resume`], which pays it at the
+    /// head of the first block the device runs again.
+    #[test]
+    fn a_bypassed_device_keeps_the_stored_note_release_it_owes_until_it_runs_again() {
+        const BLOCK: u64 = 64;
+        // Inside the second block, so the block that renders it is the one
+        // bypass is already in effect for.
+        const NOTE_OFF: u64 = BLOCK + 6;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true), (NOTE_OFF, 60, false)]));
+
+        // The note-on lands while the device still runs.
+        harness.render(BLOCK as usize);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the note-on is delivered while the device runs"
+        );
+
+        // Bypassed before the block that would have delivered the note-off.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.render(BLOCK as usize);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true)],
+            "the note-off falling due while bypassed is dropped at the door, not delivered"
+        );
+
+        // Un-bypassing pays the release still owed, at the head of the first
+        // block the device is handed again.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK as usize);
+        assert_eq!(
+            received_notes(&received),
+            vec![(0, 60, true), (BLOCK, 60, false)],
+            "the owed release lands at the head of the first block the device runs again, exactly \
+             once — the bypassed block was never processed, so the recording instrument's own \
+             frame counter never advanced past it"
         );
     }
 
