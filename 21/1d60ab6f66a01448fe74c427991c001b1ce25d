@@ -1,0 +1,19 @@
+release/dependency-license-proofs.json
+  s_c02436379d5acf::t_d5e20036f63b19 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "211d60ab6f66a01448fe74c427991c001b1ce25d",
+  "prompts": {},
+  "sessions": {
+    "s_c02436379d5acf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a077d9-9c23-7f33-bfb0-fc77842b7660",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
