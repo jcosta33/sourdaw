@@ -1,0 +1,53 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_87ab0a2f60ccf8::t_33e2b9b518caa9 840,868-876,905,909,933-1024,1039-1041,1193-1196,1223-1226
+src/modules/Arrangement/useCases/clipEditing/__tests__/slipClipContent.spec.ts
+  s_9b530f08172a54::t_160f51512ea43c 49-56
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_9b530f08172a54::t_faa03a2ad2764c 1502-1511,1553,1557,1560,1564,1570,1582,1586,1603,1609,1612,1630,1637,1648,1684,1693-1694,1710,1721,1756,1761,1804,1809,1895,1918-1919,1942,1961,1969,1978,1989-1991,2005-2007,2038,2044,2053,2064,2072,2083-2084,2098-2099,2124-2125,2183,2192,2249,2267,2273,2321,2329,2338,2347-2348,2353-2358,2393,2400,2416,2424,2484-2485,2603,2609,2659,2674,2679,2697-2698,2718,2732-2733,2742,2744,2756-2757,2765-2766,2806-2807,2881-2882,2960-2961,3077,3084,3087,3096,3098,3179-3180,3207-3208,3230,3244,3253,3275,3289,3296,3303-3305,3346-3349,3371,3376,3388,3395,3400,3402,3408,3413,3415-3416,3435,3442,3450-3451,3457,3460,3504-3505,3514-3515,3578,3584-3585,3596-3597,3619-3620,3646,3654,3661,3666-3667,3683,3688-3689,3701,3711,3718,3724,3729,3738-3739,3760,3765-3766,3803-3804,3824,3838-3839,3847-3848,3889,3937,3944,3950-3951,3958,3972,3987,4001,4006-4009,4038,4044,4058,4064,4109,4111,4126,4135-4136,4138,4151-4152,4155,4162,4167,4194,4199,4294,4301,4329,4337,4343,4351-4352,4392,4403,4411,4417,4424,4429,4437-4438,4649,4665,4682,4689-4690,4693,4724,4737-4740,4750-4751,4796,4810,4815,4817,4865,4870,4888,4893,4917,4922,5009-5022,5029-5059,5062-5067,5071,5073-5090,5093,5095-5105,5107-5108,5116-5148,5154-5155,5158-5162,5164-5165,5167,5169-5179,5183-5185,5187-5193,5195-5197,5199-5211,5213,5215-5217,5222,5225-5228,5232-5237,5242,5244-5245,5247-5248,5251-5263,5267-5271,5273-5275,5279-5280,5282-5283
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  s_7f4fd22bea43b5::t_7420592082e72b 1-84
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_7f4fd22bea43b5::t_4df03eba541c1c 38,67
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_7f4fd22bea43b5::t_1c17c81fbf15f0 1-40
+src/modules/Arrangement/useCases/clipEditing/slipClipContent.ts
+  s_87ab0a2f60ccf8::t_33c60b9eaa17f4 6,8-9
+src/modules/Command/useCases/actionLabels.ts
+  s_87ab0a2f60ccf8::t_ee3a60d64ec05c 53
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_7f4fd22bea43b5::t_ae41c1717607a4 532-548,2610,2712
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_1d0488611e923f 1144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a959da685e7eb16f2e9e2f2c0ab6f4d30881f5c8",
+  "prompts": {},
+  "sessions": {
+    "s_7f4fd22bea43b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a074fb-b444-7fa2-ba5e-ca5d99e84bc2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
