@@ -620,6 +620,7 @@ function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly 
         inputMonitoredTrackIds: new Set(),
         programme: projectLiveGraphProgramme({
             stripTracks,
+            attachedInstanceIds: new Set(),
             sampleRate: SAMPLE_RATE,
             defaultTempo: TEMPO,
             changes: [],

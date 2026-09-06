@@ -42,37 +42,13 @@ import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRa
 
 import { checkCancel } from './checkCancel';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
+import { getSourceOccurrenceOffset } from './getSourceOccurrenceOffset';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
 import { resolveTrackClipsWithComping, type ResolvedClip } from './resolveTrackClipsWithComping';
 import { scheduleOfflineClipSource } from './scheduleOfflineClipSource';
 import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
-
-type GetSourceOccurrenceOffsetInput = {
-    sourceStartBeat: number;
-    segmentStartBeat: number;
-    loopLength: number;
-    loopEnabled: boolean;
-};
-
-function getSourceOccurrenceOffset({
-    sourceStartBeat,
-    segmentStartBeat,
-    loopLength,
-    loopEnabled,
-}: GetSourceOccurrenceOffsetInput): number {
-    if (!loopEnabled || loopLength <= 0) {
-        return 0;
-    }
-
-    const beatsFromSourceStart = segmentStartBeat - sourceStartBeat;
-    if (beatsFromSourceStart <= 0) {
-        return 0;
-    }
-
-    return Math.floor(beatsFromSourceStart / loopLength);
-}
 
 /**
  * Schedule a single track's clips into the given OfflineAudioContext.

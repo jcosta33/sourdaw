@@ -26,6 +26,7 @@ import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 import { readNativeChain } from './readNativeChain';
 import { recordNativeChains } from './recordNativeChains';
 import { requestNativeLiveAutomationWriterRearm } from './requestNativeLiveAutomationWriterRearm';
+import { requestNativeLiveMidiWriterRearm } from './requestNativeLiveMidiWriterRearm';
 
 export type NativeLiveGraphSessionSpliceInput = Readonly<{
     /** The external plugin instance the engine has taken. */
@@ -114,6 +115,11 @@ export function nativeLiveGraphSessionSplice(
         // value at the position, which is what converges a plugin that attached
         // mid-roll.
         requestNativeLiveAutomationWriterRearm({ provenAfterBatch: result.admittedBatch ?? null });
+        // The note pass owes the same re-read, and for the same reason: the
+        // instance this splice put in the chain is the sink a MIDI strip's
+        // notes are addressed to, and the pass in flight was projected before
+        // the chain held it.
+        requestNativeLiveMidiWriterRearm();
         return { outcome: 'spliced' };
     });
 }

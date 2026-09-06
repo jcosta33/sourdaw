@@ -44,6 +44,7 @@ import { setEngineTransportMaps } from '../../repositories/engineTransport/setEn
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
+import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 
 export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
     /**
@@ -99,6 +100,14 @@ export function updateNativeLiveGraphSessionTransportMaps(
             // has drained.
             rearmNativeLiveAutomationWriterInPlace({
                 provenAfterBatch: maps.applied.admittedBatch,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
+            });
+            // The note pass turns on the region too, and in the opposite
+            // direction from either side of the change: a pass that was looping
+            // holds the whole region and is never pumped, while one that is not
+            // holds a window and is. So a region arriving or leaving decides
+            // which of those a pass is, and only a re-read can change it.
+            await rearmNativeLiveMidiWriterInPlace({
                 positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
             });
         }

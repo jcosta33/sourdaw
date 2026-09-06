@@ -23,6 +23,7 @@
 import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
+import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
@@ -51,6 +52,11 @@ export function stopNativeLiveGraphSession(
         // `hold_automation`, which freezes every mixer parameter where it
         // stands rather than letting a ramp keep gliding past the stop.
         disarmNativeLiveAutomationWriter();
+        // And the note pass with it. Nothing is sent to empty the stores: the
+        // engine releases every sounding note on the stop itself
+        // (`release_sounding_notes`), and the next play's arm clears each store
+        // whole before it fills it.
+        disarmNativeLiveMidiWriter();
         const backend = nativeLiveGraphSession.backend;
         if (!backend) {
             return { outcome: 'declined', reason: 'no live native graph session' };

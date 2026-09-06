@@ -45,6 +45,7 @@ import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeL
 import { notifyDeferredChainChange } from './notifyDeferredChainChange';
 import { readNativeChain } from './readNativeChain';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
+import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 import { recordNativeChains } from './recordNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
@@ -229,6 +230,13 @@ export function mirrorDeviceChainDelta(input: MirrorDeviceChainDeltaInput): Prom
             // engine stands is what puts it back in step.
             rearmNativeLiveAutomationWriterInPlace({
                 provenAfterBatch: result.admittedBatch ?? null,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
+            });
+            // And the note pass with it, because the same batch decides which
+            // instrument a MIDI strip's notes are addressed to: an instrument
+            // arriving in a chain gives a strip its first native sink, and one
+            // leaving takes the sink the pass is still naming.
+            await rearmNativeLiveMidiWriterInPlace({
                 positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
             });
         }

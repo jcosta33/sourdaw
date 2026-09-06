@@ -106,9 +106,11 @@ import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeN
 import { masterGainState } from '../engineAccess/masterGainState';
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { armNativeLiveMidiWriter } from './armNativeLiveMidiWriter';
 import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
+import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
@@ -300,6 +302,48 @@ function notifySilentHostedPlugins(input: {
     }
     nativeLiveGraphSession.lastSilentPluginNotice = message;
     notifyUser(message, 'warning');
+}
+
+/**
+ * What this session plays, read against the topology it is building.
+ *
+ * The attach state travels with it because the programme cannot be projected
+ * without it: whether a MIDI strip stays Web Audio's turns on whether the
+ * engine already holds the instrument its notes address.
+ */
+function sessionProgramme(topology: ReturnType<typeof readSessionTopology>, sampleRate: number): LiveGraphProgramme {
+    return readLiveGraphProgramme({
+        stripTracks: topology.stripTracks,
+        attachedInstanceIds: topology.attachedInstanceIds,
+        sampleRate,
+    });
+}
+
+/**
+ * Record which strips this batch carries, and say which plugins that silences.
+ *
+ * The two travel together because they are one reading of the carrier law: the
+ * claim is what gates a carried strip's Web Audio twin out of the mix, and the
+ * notice is what tells a musician why the plugin on a strip that stayed behind
+ * produces nothing.
+ */
+function claimCarriersOf(input: {
+    commands: readonly AudioGraphCommand[];
+    stripTracks: readonly Track[];
+    attachedInstanceIds: ReadonlySet<string>;
+    programme: LiveGraphProgramme;
+    inputMonitoredTrackIds: ReadonlySet<string>;
+}): void {
+    claimCarriedStrips(carriedStripIds(input.commands));
+    notifySilentHostedPlugins({
+        stripTracks: input.stripTracks,
+        carriers: projectStripCarriers({
+            stripTracks: input.stripTracks,
+            attachedInstanceIds: input.attachedInstanceIds,
+            programme: input.programme,
+            inputMonitoredTrackIds: input.inputMonitoredTrackIds,
+        }),
+    });
 }
 
 /**
@@ -579,9 +623,29 @@ async function rollSessionTransport(input: {
     // engine can say which this one is.
     nativeLiveGraphSession.loopRegion = input.transportMaps.loopRegion;
     nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
+    // Before the roll, and awaited — the opposite order to the automation
+    // writer's, for a reason that belongs to the note store rather than to
+    // preference. `apply_due_midi_notes` delivers nothing while the transport
+    // is stopped, and an entry whose frame the playhead has already passed is
+    // counted late and never delivered: notes that arrive after the engine
+    // starts advancing are simply lost from the head of the take. The region
+    // this pass is written into is known here all the same, because the maps
+    // above already installed it and the engine has already answered whether it
+    // will wrap.
+    await armNativeLiveMidiWriter({
+        stripTracks: input.stripTracks,
+        sampleRate: input.sampleRate,
+        programmeEndSeconds: input.programmeEndSeconds,
+        positionSeconds: input.positionSeconds,
+    });
     const rolled = await rollNativeTransport(input.backend, input.positionSeconds);
     nativeLiveGraphSession.rolling = rolled.rolling;
     if (!rolled.rolling) {
+        // The notes went out ahead of a roll that never happened. A parked
+        // engine delivers none of them, and the next play arms afresh; leaving
+        // the pass standing would let the playhead feed pump a window for a
+        // transport that is not moving.
+        disarmNativeLiveMidiWriter();
         return rolled.reason;
     }
     // After the roll, never before it: the region the pass is written into is
@@ -632,7 +696,7 @@ export function startNativeLiveGraphSession(
         // (`advance_playhead` returns on `!is_playing`), so nothing can be
         // rendered ahead of the region that governs it.
         const monitor = input.monitor ?? DEFAULT_MONITOR;
-        const programme = readLiveGraphProgramme({ stripTracks: topology.stripTracks, sampleRate: input.sampleRate });
+        const programme = sessionProgramme(topology, input.sampleRate);
         // Here, because this is where the programme is applied.
         logProgrammeExclusions(programme);
         // Material before the batch that names it, always: the native side
@@ -713,15 +777,12 @@ export function startNativeLiveGraphSession(
             // can move a strip from web to native, and the optimistic claim above
             // was made before the engine held it.
             if (audible) {
-                claimCarriedStrips(carriedStripIds(rebound.commands));
-                notifySilentHostedPlugins({
+                claimCarriersOf({
+                    commands: rebound.commands,
                     stripTracks: topology.stripTracks,
-                    carriers: projectStripCarriers({
-                        stripTracks: topology.stripTracks,
-                        attachedInstanceIds: reboundInstanceIds,
-                        programme,
-                        inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
-                    }),
+                    attachedInstanceIds: reboundInstanceIds,
+                    programme,
+                    inputMonitoredTrackIds: topology.inputMonitoredTrackIds,
                 });
             }
             // The previous session's handle is closed only once its replacement is
@@ -749,7 +810,7 @@ export function startNativeLiveGraphSession(
             // Whatever the previous session left armed addresses a topology this
             // batch has just replaced, and a region this session may not share.
             disarmNativeLiveAutomationWriter();
-
+            disarmNativeLiveMidiWriter();
             const parkedReason = await rollSessionTransport({
                 backend,
                 stripTracks: topology.stripTracks,

@@ -146,24 +146,17 @@ function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
  * - No attached plugin on the chain: `'nothing scheduled'` — nothing native is
  *   scheduled and no attached plugin gives the strip a native body, so Web
  *   Audio keeps whatever the strip plays and no plugin notice is owed.
- * - A MIDI-kind track: `'MIDI plays on Web Audio'` — no native MIDI route
- *   exists (`AudioGraphCommand` carries no MIDI), so `scheduleMidiNotes` and
- *   `handleWebMidiNoteOn` voice the track on Web Audio regardless of what the
- *   programme found; the clause goes the day a native MIDI route lands. Kind
- *   is read rather than the live-input target, because the target follows
- *   selection while carriers are decided once, when the topology is built.
  * - The strip is in `programme.webVoicedStripIds`: `'its clips play on Web
  *   Audio'` — Web Audio is already voicing this strip's clips, so carrying it
- *   natively would silence them with no notice given.
+ *   natively would silence them with no notice given. A MIDI strip whose
+ *   instrument the engine holds is absent from that set, because the engine
+ *   voices its notes through `schedule-midi` (#3892).
  * - Otherwise `null`: the attached plugin is uncontested, so it carries the
  *   strip natively with no clip under the playhead at all.
  */
 function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): string | null {
     if (!hostsAttachedPlugin(track, context)) {
         return 'nothing scheduled';
-    }
-    if (track.kind === 'midi') {
-        return 'MIDI plays on Web Audio';
     }
     return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
 }
@@ -238,8 +231,8 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * strip with no native playback falls to
  * {@link webReasonWithoutNativePlayback}, whose guards state the one
  * exception — an attached plugin gives a strip something to sound only when
- * nothing on the Web Audio path still voices that strip, whether that is a
- * MIDI track's kind or the programme's own `webVoicedStripIds`.
+ * nothing on the Web Audio path still voices that strip, which the programme's
+ * own `webVoicedStripIds` is the record of.
  */
 function firstFailure(
     track: Track,
