@@ -1,5 +1,7 @@
 import { type ProjectVersion, type VersionBranch, type VersionControlState } from '../../../models/ProjectVersion';
 
+export const TEST_OWNER_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+
 export function makeVersion(overrides: Partial<ProjectVersion> = {}): ProjectVersion {
     return {
         id: 'ver-1',
@@ -7,7 +9,7 @@ export function makeVersion(overrides: Partial<ProjectVersion> = {}): ProjectVer
         createdAt: '2024-01-01T00:00:00.000Z',
         parentId: null,
         description: '',
-        snapshot: { data: '', size: 0 },
+        snapshot: { ownerProjectId: TEST_OWNER_PROJECT_ID, data: '', size: 0 },
         tags: [],
         ...overrides,
     };

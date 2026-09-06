@@ -6,14 +6,14 @@ import { restoreVersion } from '../../useCases/versionControl/restoreVersion';
 export const handleRestoreProjectVersion = createHandler<'restoreProjectVersion'>({
     // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations
     execute: async (alpha) => {
-        // restoreVersion returns false when the version is missing or has no
-        // restorable payload (e.g. a version reloaded from localStorage, whose
-        // snapshot was persisted empty). Surface that to the user instead of
-        // silently no-op'ing.
+        // Missing, non-restorable, and foreign-owned versions all refuse
+        // without mutating the active project or its version selection.
         const restored = restoreVersion(alpha.payload.versionId);
         if (!restored) {
-            notifyUser('This version has no restorable snapshot', 'error');
+            notifyUser('This version cannot be restored in the active project', 'error');
+            return { status: 'no-write' as const };
         }
+        return { status: 'written' as const };
     },
     // Not undoable: restoreSnapshot overwrites the stores with no captured
     // pre-state and describe() returns no inverseAction, so an undo entry could

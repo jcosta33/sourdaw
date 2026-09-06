@@ -7,6 +7,8 @@
  */
 
 export type ProjectSnapshot = {
+    /** Canonical project identity that owned this snapshot at capture time. */
+    ownerProjectId: string;
     /** Serialized project state (tracks, clips, transport, markers, etc.) */
     data: string;
     /** Byte size of the snapshot */

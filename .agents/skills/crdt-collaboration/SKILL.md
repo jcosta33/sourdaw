@@ -93,6 +93,14 @@ For project-integrity review, apply peer edits after the original operation and 
 
 ## Anti-patterns
 
+### Checkpoint isolation escape
+
+Commit `3d0ca035df506e27e9cd868e71c17b411911ba47` introduced the singleton checkpoint catalog and both
+ownerless restoration routes without an associated pull request; later extraction in PR 376 only preserved the defect.
+When a project-scoped handle can survive a real create/load lifecycle, test every restoration route against the active
+project identity, complete canonical document contents, and catalog selection so a private bypass cannot overwrite the
+incoming project or advance its cursor.
+
 ### CRITICAL — Direct store write against a CRDT-backed store
 
 ❌ `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".

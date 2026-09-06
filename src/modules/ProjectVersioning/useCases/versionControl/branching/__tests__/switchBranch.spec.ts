@@ -7,7 +7,7 @@ import { switchBranch } from '../switchBranch';
 const mocks = vi.hoisted(() => ({
     storeValue: { value: null as VersionControlState | null },
     storeSet: vi.fn<(value: VersionControlState) => void>(),
-    restoreSnapshot: vi.fn<(snapshot: ProjectSnapshot) => void>(),
+    restoreSnapshot: vi.fn<(snapshot: ProjectSnapshot) => boolean>(),
 }));
 
 vi.mock('../../../../stores/versionControlStore', () => ({
@@ -25,7 +25,15 @@ vi.mock('../../snapshotHelpers/restoreSnapshot', () => ({
 
 function makeState(): VersionControlState {
     return makeVersionControlState({
-        versions: [makeVersion({ snapshot: { data: JSON.stringify({ tracks: [] }), size: 10 } })],
+        versions: [
+            makeVersion({
+                snapshot: {
+                    ownerProjectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+                    data: JSON.stringify({ tracks: [] }),
+                    size: 10,
+                },
+            }),
+        ],
         branches: [
             { id: 'branch-a', name: 'a', headVersionId: 'ver-1', createdAt: '2024-01-01T00:00:00.000Z' },
             { id: 'branch-b', name: 'b', headVersionId: '', createdAt: '2024-01-01T00:00:00.000Z' },
@@ -38,21 +46,44 @@ describe('switchBranch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.storeValue.value = null;
+        mocks.restoreSnapshot.mockReturnValue(true);
     });
 
-    it('does nothing without store state or an unknown branch; else restores the snapshot and always switches', () => {
-        switchBranch('branch-a');
+    it('restores a referenced branch head before switching selection', () => {
         mocks.storeValue.value = makeState();
-        switchBranch('branch-missing');
-        expect(mocks.storeSet).not.toHaveBeenCalled();
-        expect(mocks.restoreSnapshot).not.toHaveBeenCalled();
-        switchBranch('branch-a');
-        expect(mocks.restoreSnapshot).toHaveBeenCalledWith({ data: JSON.stringify({ tracks: [] }), size: 10 });
+
+        expect(switchBranch('branch-a')).toBe(true);
+        expect(mocks.restoreSnapshot).toHaveBeenCalledWith({
+            ownerProjectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            data: JSON.stringify({ tracks: [] }),
+            size: 10,
+        });
         expect(mocks.storeSet).toHaveBeenCalledWith(
             expect.objectContaining({ currentBranchId: 'branch-a', currentVersionId: 'ver-1' })
         );
-        mocks.restoreSnapshot.mockClear();
-        switchBranch('branch-b');
+    });
+
+    it('keeps selection unchanged when state, branch, head, or restore admission is unavailable', () => {
+        expect(switchBranch('branch-a')).toBe(false);
+        mocks.storeValue.value = makeState();
+
+        expect(switchBranch('branch-missing')).toBe(false);
+        mocks.storeValue.value = {
+            ...makeState(),
+            versions: [],
+        };
+        expect(switchBranch('branch-a')).toBe(false);
+        mocks.storeValue.value = makeState();
+        mocks.restoreSnapshot.mockReturnValue(false);
+        expect(switchBranch('branch-a')).toBe(false);
+
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+    });
+
+    it('switches an empty branch without attempting a restore', () => {
+        mocks.storeValue.value = makeState();
+
+        expect(switchBranch('branch-b')).toBe(true);
         expect(mocks.restoreSnapshot).not.toHaveBeenCalled();
         expect(mocks.storeSet).toHaveBeenCalledWith(
             expect.objectContaining({ currentBranchId: 'branch-b', currentVersionId: null })
