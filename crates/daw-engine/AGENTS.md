@@ -30,13 +30,19 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   drains once per callback over the whole buffer and its stamps run from the callback's. Notes
   scheduled for one frame reach the instrument in the order their producers stored them, which is
   the only order a producer can express for a pair that sounds on one sample.
-- **A stop, a locate, and a loop wrap release every note the store has sounded**: each of them
-  leaves the frame a sounding note's note-off was written for behind — the playhead stands still,
-  moves away from it, or turns back before reaching it — so nothing is going to render that
-  note-off, and the instrument would hold the key until something unrelated happened to release it.
-  The release is a note-off at the head of whatever renders next, on the seam for a loop wrap. A
-  note played live is not released: it has no timeline position and no scheduled note-off, so a key
-  the player is holding stays held exactly as it does on hardware.
+- **A stop, a locate, a loop wrap, and a clear release every note the store has sounded**: each of
+  them leaves the frame a sounding note's note-off was written for behind — the playhead stands
+  still, moves away from it, turns back before reaching it, or the clear takes that frame out of the
+  arrangement altogether — so nothing is going to render that note-off, and the instrument would
+  hold the key until something unrelated happened to release it. Only a note-off the clear removes
+  owes a release: a note-on it removes either never sounded, or sounded and still has the note-off
+  its producer wrote. The release is a note-off at the head of whatever renders next, on the seam
+  for a loop wrap. A note played live is not released: it has no timeline position and no scheduled
+  note-off, so a key the player is holding stays held exactly as it does on hardware.
+- **A release the event buffer refuses leaves its note held**: the key is down whether or not the
+  note-off found room, so the note stays in the sounding set and the next stop, locate, wrap or
+  clear owes it again. Dropping the record along with the event turns one refused message into a
+  key nothing can ever lift, which is worse than releasing late.
 
 ## Plugin Delay Compensation
 

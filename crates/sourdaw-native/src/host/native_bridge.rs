@@ -2345,6 +2345,55 @@ mod tests {
         .unwrap();
     }
 
+    /// A sample the slot can sound, with no note pressed: the engine holds it
+    /// and answers a later note-on with a voice.
+    fn queue_a_loaded_sample(tx: &mut rtrb::Producer<CrumbsCommand>) {
+        use daw_dsp::crumbs::sample::SampleData;
+
+        tx.push(CrumbsCommand::AddSample {
+            id: 1,
+            data: Arc::new(SampleData::from_mono(vec![0.1; 4800], 48_000)),
+        })
+        .unwrap();
+        tx.push(CrumbsCommand::SetActiveSample(1)).unwrap();
+    }
+
+    /// A note the engine stamps for a frame inside the block sounds from that
+    /// frame, not from the block's head.
+    ///
+    /// The slot is the built-in sampler's whole render path, so a block whose
+    /// events are all dispatched before the render puts every note up to a
+    /// buffer early — audible timing the engine's own delivery took care to
+    /// get right, thrown away at the last hop.
+    #[test]
+    fn a_crumbs_note_scheduled_inside_the_block_sounds_from_its_offset() {
+        const FRAMES: usize = 512;
+        const ONSET: usize = 300;
+
+        let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
+        queue_a_loaded_sample(&mut tx);
+
+        let mut left = vec![0.0f32; FRAMES];
+        let mut right = vec![0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[engine_note(60, 100, 0, true, ONSET as u32)],
+            &TransportState::default(),
+        );
+
+        assert!(
+            left[..ONSET].iter().all(|&sample| sample == 0.0)
+                && right[..ONSET].iter().all(|&sample| sample == 0.0),
+            "nothing sounds before the frame the note was written for"
+        );
+        assert!(
+            left[ONSET..].iter().any(|&sample| sample != 0.0),
+            "the note sounds from its own frame, or this test proves nothing"
+        );
+    }
+
     /// The slot is one member of the native master chain, and
     /// `CrumbsEngine::process_block` sums into the buffers it is handed. It
     /// must never zero them: on the master chain they carry what every member
@@ -2685,24 +2734,33 @@ impl CrumbsPluginSlot {
             self.engine.handle_command(cmd);
         }
 
-        // Forward MIDI events to the engine
+        // Render up to each event's own frame before dispatching it, so a note
+        // sounds on the sample it was written for rather than at the head of
+        // the block that carried it. Dispatching the whole list first puts
+        // every note up to a buffer early, which is a timing no DAW invents.
+        // The engine stamps its events non-decreasing, so the cursor only ever
+        // moves forward.
+        let mut cursor = 0;
         for event in midi_events {
-            if event.is_note_on {
-                self.engine.handle_command(CrumbsCommand::NoteOn {
-                    note: event.note,
-                    velocity: event.velocity,
-                });
-            } else {
-                self.engine
-                    .handle_command(CrumbsCommand::NoteOff { note: event.note });
+            let offset = (event.frame_offset as usize).min(num_samples);
+            if offset > cursor {
+                self.render_segment(left, right, cursor, offset);
+                cursor = offset;
             }
+            self.dispatch_note(event);
         }
 
+        // The tail runs unconditionally, empty or not: `process_block` is what
+        // publishes this slot's metering, and a block that happened to end on
+        // an event still owes that publication.
+        //
         // The slice is the block the scheduler asked for, because
         // `process_block` measures its own work from the slice length rather
         // than from a frame count.
-        self.engine
-            .process_block(&mut left[..num_samples], &mut right[..num_samples]);
+        self.engine.process_block(
+            &mut left[cursor..num_samples],
+            &mut right[cursor..num_samples],
+        );
 
         // Forward any committed take to the command side over the SPSC ring.
         // The engine did only pointer moves; the clone + pool insertion
@@ -2715,6 +2773,26 @@ impl CrumbsPluginSlot {
                 sample_rate: self.engine.sample_rate() as u32,
             });
         }
+    }
+
+    /// Render `from..to` of the block through the engine, which sums into
+    /// whatever the buffers already carry.
+    fn render_segment(&mut self, left: &mut [f32], right: &mut [f32], from: usize, to: usize) {
+        self.engine
+            .process_block(&mut left[from..to], &mut right[from..to]);
+    }
+
+    /// Hand one engine event to the sampler as the command it names.
+    fn dispatch_note(&mut self, event: &MidiNoteEvent) {
+        if event.is_note_on {
+            self.engine.handle_command(CrumbsCommand::NoteOn {
+                note: event.note,
+                velocity: event.velocity,
+            });
+            return;
+        }
+        self.engine
+            .handle_command(CrumbsCommand::NoteOff { note: event.note });
     }
 }
 

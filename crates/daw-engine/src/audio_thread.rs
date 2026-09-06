@@ -3010,6 +3010,11 @@ mod compensation_render_alloc_guards {
     /// every one a place a `Vec` that grew, a set that hashed, or a batch
     /// dropped on the audio thread instead of retired would allocate.
     ///
+    /// Two batches, whose frames interleave, so the second one runs the store's
+    /// merge rather than an append: the merge writes both runs into the store's
+    /// scratch, and a scratch taken per call is the allocation the reserve
+    /// exists to avoid.
+    ///
     /// The guard alone proves only that nothing allocated, not that any of it
     /// ran. Reading the recorded frames back is what makes this a guard over
     /// the delivery path: the notes straddle the callback boundary, so only a
@@ -3022,6 +3027,10 @@ mod compensation_render_alloc_guards {
         /// One note per scheduled frame, so the release owes one note-off per
         /// entry rather than one for a key pressed four times.
         const NOTES: [u8; 4] = [60, 61, 62, 63];
+        /// A second batch, landing between the first's frames rather than
+        /// after them.
+        const INTERLEAVED: [u64; 2] = [5, 130];
+        const INTERLEAVED_NOTES: [u8; 2] = [64, 65];
 
         let mut harness = CompensationHarness::new();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
@@ -3057,6 +3066,14 @@ mod compensation_render_alloc_guards {
                 .map(|(frame, note)| timed_note(*frame, note))
                 .collect(),
         });
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: EFFECT_ID,
+            notes: INTERLEAVED
+                .iter()
+                .zip(INTERLEAVED_NOTES)
+                .map(|(frame, note)| timed_note(*frame, note))
+                .collect(),
+        });
 
         // Sized outside the guard, the way its siblings size theirs: the
         // callback is what is under test, not the buffer it is handed.
@@ -3077,13 +3094,22 @@ mod compensation_render_alloc_guards {
         });
 
         let stop_frame = (CALLBACKS * CALLBACK_FRAMES) as u64;
-        let mut expected = SCHEDULED.to_vec();
-        expected.extend(std::iter::repeat_n(stop_frame, NOTES.len()));
+        let mut expected: Vec<u64> = SCHEDULED
+            .iter()
+            .chain(INTERLEAVED.iter())
+            .copied()
+            .collect();
+        expected.sort_unstable();
+        expected.extend(std::iter::repeat_n(
+            stop_frame,
+            NOTES.len() + INTERLEAVED_NOTES.len(),
+        ));
         assert_eq!(
             received.frames(),
             expected,
-            "every scheduled note reached the instrument on its own frame over two callbacks, \
-             and the stop released each of them at the head of the third"
+            "every scheduled note of both batches reached the instrument on its own frame over \
+             two callbacks, in one frame-ordered run, and the stop released each of them at the \
+             head of the third"
         );
     }
 }

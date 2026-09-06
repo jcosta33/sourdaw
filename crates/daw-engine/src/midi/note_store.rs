@@ -43,15 +43,25 @@ pub struct MidiNoteStore {
     /// route that adds entries refuses past the reserve, so no write from the
     /// audio thread can reallocate it.
     entries: Vec<TimedMidiNote>,
+    /// Where a merge writes its result before the two buffers swap roles.
+    /// Reserved with `entries` and for the same reason: the merge runs on the
+    /// audio thread, so a scratch buffer taken per call would be exactly the
+    /// allocation the reserve exists to avoid.
+    scratch: Vec<TimedMidiNote>,
+    /// Entries the last merge wrote. A linear merge writes each entry of both
+    /// runs once, so this reads back as the cost that merge paid.
+    last_merge_writes: usize,
 }
 
 impl MidiNoteStore {
-    /// Build an empty store, with its memory. Control thread only: this is the
-    /// one allocation the store ever makes (ADR 0020), which is why it ships
-    /// boxed on the command that registers the instrument it belongs to.
+    /// Build an empty store, with its memory. Control thread only: these are
+    /// the only allocations the store ever makes (ADR 0020), which is why it
+    /// ships boxed on the command that registers the instrument it belongs to.
     pub fn new() -> Box<Self> {
         Box::new(Self {
             entries: Vec::with_capacity(MIDI_NOTE_STORE_CAPACITY),
+            scratch: Vec::with_capacity(MIDI_NOTE_STORE_CAPACITY),
+            last_merge_writes: 0,
         })
     }
 
@@ -67,6 +77,11 @@ impl MidiNoteStore {
         &self.entries
     }
 
+    /// Entries the last accepted batch's merge wrote.
+    pub fn last_merge_writes(&self) -> usize {
+        self.last_merge_writes
+    }
+
     /// Merge a frame-ordered batch into the store, or refuse it whole.
     ///
     /// All-or-nothing because a partly stored batch is a phrase with notes
@@ -80,6 +95,11 @@ impl MidiNoteStore {
     /// cannot take: the caller is counted a refusal instead of the instrument
     /// receiving events out of time. [`crate::EngineHandle::schedule_midi_notes`]
     /// puts every batch in order control-side, which is where a sort belongs.
+    ///
+    /// A batch naming a note MIDI itself has no address for is refused the
+    /// same way, for a reason of the store's own: such a note cannot be
+    /// tracked as sounding, so no stop, locate, wrap or clear could ever
+    /// release it, and an instrument handed it would hold that key for good.
     pub fn try_extend(&mut self, notes: &[TimedMidiNote]) -> bool {
         if notes.len() > MIDI_NOTE_STORE_CAPACITY - self.entries.len() {
             return false;
@@ -87,10 +107,16 @@ impl MidiNoteStore {
         if !is_frame_ordered(notes) {
             return false;
         }
+        if !is_addressable(notes) {
+            return false;
+        }
 
-        let merge_from = self.entries.len();
-        self.entries.extend_from_slice(notes);
-        merge_frame_ordered_runs(&mut self.entries, merge_from);
+        merge_frame_ordered_runs(&mut self.scratch, &self.entries, notes);
+        self.last_merge_writes = self.scratch.len();
+        std::mem::swap(&mut self.entries, &mut self.scratch);
+        // Emptied rather than dropped: the buffer that just held the store
+        // keeps its reserve and becomes the scratch the next merge writes into.
+        self.scratch.clear();
         true
     }
 
@@ -99,9 +125,25 @@ impl MidiNoteStore {
     ///
     /// Half-open so a producer can rewrite one bar by clearing exactly its
     /// span: the note starting the next bar is outside the window it borders.
-    pub fn clear_window(&mut self, from_frame: u64, to_frame: u64) {
-        self.entries
-            .retain(|entry| entry.at_frame < from_frame || entry.at_frame >= to_frame);
+    ///
+    /// Every entry the window takes out is handed to `removed` on its way,
+    /// because one of them may be the note-off a sounding note is waiting for
+    /// and nothing outside the store can see that from the window alone.
+    /// Reported rather than collected: this runs on the audio thread, where a
+    /// list of the removals would be an allocation.
+    pub fn clear_window(
+        &mut self,
+        from_frame: u64,
+        to_frame: u64,
+        mut removed: impl FnMut(&TimedMidiNote),
+    ) {
+        self.entries.retain(|entry| {
+            if entry.at_frame < from_frame || entry.at_frame >= to_frame {
+                return true;
+            }
+            removed(entry);
+            false
+        });
     }
 }
 
@@ -112,28 +154,45 @@ fn is_frame_ordered(notes: &[TimedMidiNote]) -> bool {
         .all(|pair| pair[0].at_frame <= pair[1].at_frame)
 }
 
-/// Merge the frame-ordered run at `merge_from..` into the frame-ordered run
-/// ahead of it, in place and keeping insertion order among equal frames.
+/// Merge two frame-ordered runs into `out`, keeping an entry the store already
+/// held ahead of one arriving on the same frame.
 ///
-/// An insertion merge by rotation rather than a sort: the standard sorts
-/// either allocate a scratch half (`sort_by_key`) or reorder equal keys
-/// (`sort_unstable_by_key`). This runs on the audio thread, where the first is
-/// forbidden (ADR 0020) and the second would silently swap two notes a
-/// producer wrote for the same sample.
-fn merge_frame_ordered_runs(entries: &mut [TimedMidiNote], merge_from: usize) {
-    let mut head = 0;
-    let mut tail = merge_from;
-    while head < tail && tail < entries.len() {
-        // An equal frame advances the head, which is what keeps the entry
+/// Linear rather than an insertion merge by rotation. A rotation moves every
+/// entry it steps over, so a batch landing ahead of a full store rewrites that
+/// store once per arriving entry — quadratic work inside the deadline. Writing
+/// both runs out once is one pass over each.
+///
+/// `out` is the store's own scratch: reserved at [`MIDI_NOTE_STORE_CAPACITY`],
+/// emptied by the caller, and only ever asked to hold a total the caller has
+/// already admitted against the free capacity. So nothing here reallocates,
+/// which is what lets a merge run on the audio thread at all (ADR 0020).
+fn merge_frame_ordered_runs(
+    out: &mut Vec<TimedMidiNote>,
+    stored: &[TimedMidiNote],
+    arriving: &[TimedMidiNote],
+) {
+    let mut stored_index = 0;
+    let mut arriving_index = 0;
+    while stored_index < stored.len() && arriving_index < arriving.len() {
+        // An equal frame takes the stored entry, which is what keeps the entry
         // stored earlier ahead of the one arriving now.
-        if entries[head].at_frame <= entries[tail].at_frame {
-            head += 1;
+        if stored[stored_index].at_frame <= arriving[arriving_index].at_frame {
+            out.push(stored[stored_index]);
+            stored_index += 1;
             continue;
         }
-        entries[head..=tail].rotate_right(1);
-        head += 1;
-        tail += 1;
+        out.push(arriving[arriving_index]);
+        arriving_index += 1;
     }
+    out.extend_from_slice(&stored[stored_index..]);
+    out.extend_from_slice(&arriving[arriving_index..]);
+}
+
+/// Whether every entry names a note [`SoundingNotes`] can address.
+fn is_addressable(notes: &[TimedMidiNote]) -> bool {
+    notes
+        .iter()
+        .all(|entry| SoundingNotes::address(entry.event.channel, entry.event.note).is_some())
 }
 
 /// MIDI channels a note can sound on.
@@ -174,14 +233,31 @@ impl SoundingNotes {
         self.held[index] &= !mask;
     }
 
-    /// Hand every held note to `emit`, lowest channel and note first, and
-    /// leave the set empty.
-    pub fn drain(&mut self, mut emit: impl FnMut(i16, u8)) {
+    /// Whether this note is held.
+    pub fn is_held(&self, channel: i16, note: u8) -> bool {
+        let Some((index, mask)) = Self::address(channel, note) else {
+            return false;
+        };
+        self.held[index] & mask != 0
+    }
+
+    /// Hand every held note to `emit`, lowest channel and note first, and drop
+    /// the ones it accepted.
+    ///
+    /// A note `emit` refuses stays held. The key is still down, so the release
+    /// it is owed has to survive the attempt that could not deliver it and be
+    /// retried at the next stop, locate, wrap or clear — dropping the bit
+    /// would leave an instrument holding a note nothing could ever lift.
+    pub fn drain(&mut self, mut emit: impl FnMut(i16, u8) -> bool) {
         for (index, held) in self.held.iter_mut().enumerate() {
-            while *held != 0 {
-                let note = held.trailing_zeros() as u8;
-                *held &= *held - 1;
-                emit(index as i16, note);
+            let mut pending = *held;
+            while pending != 0 {
+                let note = pending.trailing_zeros() as u8;
+                let mask = 1u128 << note;
+                pending &= !mask;
+                if emit(index as i16, note) {
+                    *held &= !mask;
+                }
             }
         }
     }
@@ -269,12 +345,81 @@ mod tests {
         assert_eq!(held, vec![(10, 60), (10, 61), (25, 62), (40, 63)]);
     }
 
+    /// A batch landing ahead of everything stored writes each entry of both
+    /// runs once. An insertion merge by rotation moves every entry it steps
+    /// over instead, so this same pair costs one rewrite of the store per
+    /// arriving entry — work the audio thread does not have.
+    #[test]
+    fn a_batch_ahead_of_the_whole_store_merges_in_linear_writes() {
+        const RUN: u64 = 1_024;
+
+        let mut store = MidiNoteStore::new();
+        let stored: Vec<TimedMidiNote> = (0..RUN).map(|frame| note_at(2_000 + frame, 60)).collect();
+        let arriving: Vec<TimedMidiNote> = (0..RUN).map(|frame| note_at(frame, 61)).collect();
+
+        assert!(store.try_extend(&stored));
+        assert!(store.try_extend(&arriving));
+
+        let frames: Vec<u64> = store.entries().iter().map(|entry| entry.at_frame).collect();
+        assert!(
+            frames.windows(2).all(|pair| pair[0] <= pair[1]),
+            "the store stays in frame order across the merge"
+        );
+        assert_eq!(store.len(), 2 * RUN as usize);
+        assert_eq!(
+            store.last_merge_writes(),
+            2 * RUN as usize,
+            "each entry of both runs is written exactly once"
+        );
+    }
+
+    /// A batch whose frames fall between the stored ones interleaves the two
+    /// runs, and a pair sharing a frame keeps the entry stored earlier ahead
+    /// of the one arriving now.
+    #[test]
+    fn a_batch_landing_inside_the_store_keeps_both_runs_ordered() {
+        let mut store = MidiNoteStore::new();
+        assert!(store.try_extend(&[note_at(10, 60), note_at(30, 62), note_at(50, 64)]));
+        assert!(store.try_extend(&[note_at(20, 61), note_at(30, 63), note_at(40, 65)]));
+
+        let held: Vec<(u64, u8)> = store
+            .entries()
+            .iter()
+            .map(|entry| (entry.at_frame, entry.event.note))
+            .collect();
+        assert_eq!(
+            held,
+            vec![(10, 60), (20, 61), (30, 62), (30, 63), (40, 65), (50, 64)]
+        );
+        assert_eq!(store.last_merge_writes(), 6);
+    }
+
+    /// A note MIDI has no address for refuses its whole batch. Nothing could
+    /// track it as sounding, so no stop, locate, wrap or clear could release
+    /// it, and the instrument would hold that key for good.
+    #[test]
+    fn a_batch_with_an_unaddressable_note_is_refused_whole() {
+        let mut store = MidiNoteStore::new();
+        assert!(store.try_extend(&[note_at(10, 60)]));
+
+        let mut off_channel = [note_at(20, 61), note_at(30, 62), note_at(40, 63)];
+        off_channel[1].event.channel = 20;
+        assert!(!store.try_extend(&off_channel));
+
+        let mut off_note = [note_at(20, 61), note_at(30, 62), note_at(40, 63)];
+        off_note[1].event.note = 128;
+        assert!(!store.try_extend(&off_note));
+
+        let held: Vec<u64> = store.entries().iter().map(|entry| entry.at_frame).collect();
+        assert_eq!(held, vec![10], "neither batch left anything behind");
+    }
+
     #[test]
     fn clearing_a_window_keeps_the_entry_on_its_far_edge() {
         let mut store = MidiNoteStore::new();
         assert!(store.try_extend(&[note_at(10, 60), note_at(20, 61), note_at(30, 62)]));
 
-        store.clear_window(20, 30);
+        store.clear_window(20, 30, |_| {});
 
         let held: Vec<u64> = store.entries().iter().map(|entry| entry.at_frame).collect();
         assert_eq!(held, vec![10, 30]);

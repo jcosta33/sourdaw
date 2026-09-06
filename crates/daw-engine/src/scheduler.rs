@@ -1729,6 +1729,11 @@ impl ActiveEffect {
     /// for the frames that are never going to be rendered — a stop, a locate,
     /// or a loop wrap past a scheduled note-off — after which the instrument
     /// would hold that key until something else happened to release it.
+    ///
+    /// A note-off the full buffer refuses leaves its note held, so the next
+    /// trigger owes it again. Counting the overflow and forgetting the note
+    /// would turn one dropped event into a key held for the rest of the
+    /// session, which is the one outcome worse than releasing it late.
     #[inline]
     fn release_sounding_notes(
         &mut self,
@@ -1742,10 +1747,59 @@ impl ActiveEffect {
         } = self;
         let mut released = false;
         sounding.drain(|channel, note| {
-            released = true;
             if !pending_midi.try_push(release_note(channel, note, frame_offset)) {
                 diagnostics.record_scheduler_event_buffer_overflow(1);
+                return false;
             }
+            released = true;
+            true
+        });
+        released
+    }
+
+    /// Clear a window of this device's store, releasing every sounding note
+    /// whose scheduled note-off the window takes away.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    ///
+    /// A clear removes frames from the arrangement, so a note-off inside the
+    /// window is a release no frame is going to render any more — the same
+    /// position a stop, a locate and a loop wrap leave a sounding note in, and
+    /// it gets the same answer: a note-off at the head of whatever renders
+    /// next. A note-on the window removes owes nothing; either it never
+    /// sounded, or it did and its own note-off is still where the producer
+    /// wrote it.
+    #[inline]
+    fn clear_midi_notes(
+        &mut self,
+        from_frame: u64,
+        to_frame: u64,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            midi_notes,
+            pending_midi,
+            sounding,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_mut() else {
+            return false;
+        };
+
+        let mut released = false;
+        store.clear_window(from_frame, to_frame, |entry| {
+            let event = &entry.event;
+            if event.is_note_on || !sounding.is_held(event.channel, event.note) {
+                return;
+            }
+            if !pending_midi.try_push(release_note(event.channel, event.note, 0)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                // The note stays held, so the next trigger owes it again.
+                return;
+            }
+            sounding.release(event.channel, event.note);
+            released = true;
         });
         released
     }
@@ -2333,12 +2387,7 @@ impl AudioScheduler {
                     from_frame,
                     to_frame,
                 } => {
-                    if let Some(store) = self
-                        .effect_mut(plugin_id)
-                        .and_then(|effect| effect.midi_notes.as_mut())
-                    {
-                        store.clear_window(from_frame, to_frame);
-                    }
+                    self.clear_midi_notes(plugin_id, from_frame, to_frame);
                     None
                 }
                 GraphCommand::SetTransport(state) => {
@@ -3047,6 +3096,26 @@ impl AudioScheduler {
         let playhead = self.playhead_frames;
         let late = notes.iter().filter(|note| note.at_frame < playhead).count();
         self.midi_rt_diagnostics.record_late_midi_notes(late as u64);
+    }
+
+    /// Take a window out of one device's store, releasing every note it is
+    /// sounding whose scheduled note-off stood inside that window.
+    ///
+    /// The clear takes those frames out of the arrangement, so nothing is ever
+    /// going to render that note-off and the instrument would hold the key —
+    /// the same reason a stop, a locate and a loop wrap release. A device with
+    /// no store has nothing to clear, which is every device but an instrument.
+    fn clear_midi_notes(&mut self, plugin_id: usize, from_frame: u64, to_frame: u64) {
+        let Some(slot) = self.effect_index.lookup(plugin_id) else {
+            return;
+        };
+        if slot >= self.effects.len() {
+            return;
+        }
+        if self.effects[slot].clear_midi_notes(from_frame, to_frame, &mut self.midi_rt_diagnostics)
+        {
+            self.pending_midi_work.insert(slot);
+        }
     }
 
     /// Deliver every scheduled note the span reaches, stamped at its sample.
@@ -11429,15 +11498,27 @@ mod timeline_tests {
     /// A locate while playing releases every note the store has sounded. The
     /// playhead leaves the frames those notes' note-offs were written for
     /// behind, so nothing is going to render them.
+    ///
+    /// A note scheduled past the locate target sounds on its own frame in the
+    /// same block. Without it the release alone would read the same whether
+    /// the locate resumed playback or silenced the instrument for good.
     #[test]
     fn a_locate_while_playing_releases_every_note_the_store_has_sounded() {
         const BLOCK: usize = 64;
         const LOCATE_TO: u64 = 4_096;
+        const AFTER_LOCATE: u64 = 10;
 
         let mut harness = Harness::new(32);
         let received = track_with_recording_instrument(&mut harness, 1, 7);
         harness.playing();
-        harness.send(schedule_phrase(7, &[(10, 60, true), (700, 60, false)]));
+        harness.send(schedule_phrase(
+            7,
+            &[
+                (10, 60, true),
+                (700, 60, false),
+                (LOCATE_TO + AFTER_LOCATE, 62, true),
+            ],
+        ));
 
         harness.render(BLOCK);
         harness.send(GraphCommand::SeekFrames(LOCATE_TO));
@@ -11445,9 +11526,13 @@ mod timeline_tests {
 
         assert_eq!(
             received_notes(&received),
-            vec![(10, 60, true), (BLOCK as u64, 60, false)],
+            vec![
+                (10, 60, true),
+                (BLOCK as u64, 60, false),
+                (BLOCK as u64 + AFTER_LOCATE, 62, true),
+            ],
             "the note sounding when the playhead moved is released at the head of what plays \
-             from the new position"
+             from the new position, and the new position goes on playing"
         );
     }
 
@@ -11482,6 +11567,143 @@ mod timeline_tests {
                 (LOOP_END + NOTE_ON, 60, true),
             ],
             "the release lands on the seam, before the second pass presses the note again"
+        );
+    }
+
+    /// A release the pending buffer has no room for leaves its note held, and
+    /// the next trigger owes it again.
+    ///
+    /// The key is down either way. Counting the overflow and dropping the bit
+    /// that records the note turns one refused event into a key nothing can
+    /// ever lift, because every later trigger walks a set that no longer knows
+    /// the note is sounding.
+    #[test]
+    fn a_release_the_pending_buffer_refuses_is_retried_on_the_next_trigger() {
+        const LOOP_END: u64 = 512;
+        const LEAD_IN: usize = 64;
+        const CALLBACK: usize = 640;
+        const NOTE_ON: u64 = 5;
+        /// One scheduled note-on per frame below the seam, which is what fills
+        /// the master insert's pending buffer to its capacity before the wrap
+        /// asks for a release. They all press the note already sounding, so the
+        /// sounding set still holds exactly one note when the wrap arrives.
+        const FILL_FROM: u64 = LOOP_END - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY as u64;
+
+        let mut harness = Harness::new(32);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            instrument,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        let phrase: Vec<(u64, u8, bool)> = std::iter::once((NOTE_ON, 60, true))
+            .chain((FILL_FROM..LOOP_END).map(|frame| (frame, 60, true)))
+            .collect();
+        harness.send(schedule_phrase(7, &phrase));
+
+        harness.render(LEAD_IN);
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true)],
+            "the note is sounding when the callback under test begins"
+        );
+        let overflows_before = midi_diagnostics(&harness).scheduler_event_buffer_overflows;
+
+        // One callback holding the rest of the pass, the seam, and the start of
+        // the next pass — so the wrap's release is asked for against a buffer
+        // the span before it has already filled.
+        harness.render(CALLBACK);
+
+        assert_eq!(
+            midi_diagnostics(&harness).scheduler_event_buffer_overflows - overflows_before,
+            2,
+            "the full buffer refused two events: the wrap's release, and the note-on the pass \
+             after the seam renders again"
+        );
+        assert!(
+            received_notes(&received)
+                .iter()
+                .all(|(_, _, is_note_on)| *is_note_on),
+            "no note-off reached the instrument in the callback that refused the release"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(LEAD_IN);
+
+        assert_eq!(
+            received_notes(&received).last().copied(),
+            Some(((LEAD_IN + CALLBACK) as u64, 60, false)),
+            "the stop still knows the note is sounding and releases it at the head of what \
+             renders next"
+        );
+    }
+
+    /// Clearing the note-off of a sounding note releases it at the head of
+    /// whatever renders next. The clear takes that frame out of the
+    /// arrangement, so nothing is ever going to render the note-off, and the
+    /// instrument would hold the key until something unrelated lifted it.
+    #[test]
+    fn clearing_the_note_off_of_a_sounding_note_releases_it_at_the_next_block_head() {
+        const BLOCK: usize = 128;
+        const REST: usize = 384;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(100, 60, true), (300, 60, false)]));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 200,
+            to_frame: 400,
+        });
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(100, 60, true), (BLOCK as u64, 60, false)],
+            "the release lands at the head of the block after the clear, and the frame the \
+             note-off was written for renders nothing"
+        );
+    }
+
+    /// A clear beside a sounding note leaves it sounding. The note-off the
+    /// producer wrote is still in the store, so the note ends where it was
+    /// written to end rather than at the clear.
+    #[test]
+    fn clearing_a_window_beside_a_sounding_note_leaves_it_sounding() {
+        const BLOCK: usize = 128;
+        const REST: usize = 384;
+        const NOTE_OFF: u64 = 300;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(100, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 400,
+            to_frame: 600,
+        });
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(100, 60, true), (NOTE_OFF, 60, false)],
+            "the stored note-off still fires on its own frame, and the clear released nothing"
         );
     }
 
