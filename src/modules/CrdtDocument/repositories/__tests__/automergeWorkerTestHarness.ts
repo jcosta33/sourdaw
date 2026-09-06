@@ -31,13 +31,21 @@ export type CompactShadowRequest = {
     expectedHeads: HeadsEntry[];
 };
 
-export type WorkerRequest = LoadBundleRequest | MergeBundleRequest | CompactShadowRequest;
+export type InspectCheckpointRootMediaRequest = {
+    id: number;
+    type: 'inspectCheckpointRootMedia';
+    rootBytes: Uint8Array;
+};
+
+export type WorkerRequest =
+    LoadBundleRequest | MergeBundleRequest | CompactShadowRequest | InspectCheckpointRootMediaRequest;
 
 export type WorkerResponse =
     | { id: number; type: 'loaded'; compacted: BundleEntry[]; rootId: string }
     | { id: number; type: 'merged'; compacted: BundleEntry[]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: BundleEntry[] }
-    | { id: number; type: 'compactStale'; reason: string };
+    | { id: number; type: 'compactStale'; reason: string }
+    | { id: number; type: 'checkpointRootMediaInspected'; audioBufferIds: string[] };
 
 export type FatalWorkerEvent = 'error' | 'messageerror';
 
@@ -118,6 +126,9 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
             removedDocIds: value.removedDocIds.map(String),
             expectedHeads: value.expectedHeads,
         };
+    }
+    if (value.type === 'inspectCheckpointRootMedia' && 'rootBytes' in value && value.rootBytes instanceof Uint8Array) {
+        return { id: value.id, type: value.type, rootBytes: value.rootBytes };
     }
     throw new TypeError('Expected a supported worker request');
 }
