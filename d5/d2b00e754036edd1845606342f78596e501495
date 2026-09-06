@@ -1,0 +1,51 @@
+src/modules/AudioEngine/useCases/livePlayback/readLiveMidiProgramme.ts
+  s_9b530f08172a54::t_8aae52387e8c17 38-39
+  s_9b530f08172a54::t_df302a920713c0 72
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveNativeNoteSink.spec.ts
+  s_9b530f08172a54::t_17eaf659646650 40-50
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_9b530f08172a54::t_369fb1296251e8 76-83
+  s_9b530f08172a54::t_5c8b84aec656f1 156
+  s_9b530f08172a54::t_36b15b481aeb3b 170
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_9b530f08172a54::t_2c28187b586868 146
+  s_9b530f08172a54::t_10144cd5e640ee 415-449
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveMidiWriterState.ts
+  s_9b530f08172a54::t_b0e53a67b777a4 84-92
+src/modules/AudioEngine/useCases/livePlayback/nativeMidiNoteSink.ts
+  s_9b530f08172a54::t_bda286f839242e 15-24
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_9b530f08172a54::t_243d203c6064cd 89-93
+  s_9b530f08172a54::t_dc6db84ed19e1b 316-324
+  s_9b530f08172a54::t_b332c395c5ad04 290
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_9b530f08172a54::t_7ca64ad37e4bb8 140
+src/modules/MIDI/useCases/webMidiInput/resolveNativeNoteSink.ts
+  s_9b530f08172a54::t_c0781e3a225999 6-9
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_8bac6ab257ff9f 1549-1601
+  s_9b530f08172a54::t_dec68408d8e107 154-159,161-165,167-169,172-174,176
+  s_9b530f08172a54::t_0c4bcc0ab3eee2 1602-1603
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_dde6b23dc12b1d 605-606
+  s_9b530f08172a54::t_595cf332aeed16 653-655
+  s_9b530f08172a54::t_a43b38a666a528 798-803,811
+src/modules/AudioEngine/useCases/livePlayback/rearmNativeLiveMidiWriterInPlace.ts
+  s_9b530f08172a54::t_fed42deda7e136 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d5d2b00e754036edd1845606342f78596e501495",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
