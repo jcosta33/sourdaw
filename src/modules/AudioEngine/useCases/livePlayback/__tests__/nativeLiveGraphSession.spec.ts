@@ -151,17 +151,29 @@ vi.mock('../readLiveMidiProgramme', () => ({
      * The note producer's own laws — placement, overlap, the chance roll — are
      * proven where they live (`projectLiveMidiProgramme.spec.ts`), and standing
      * a tempo projector and a note store up here would prove them twice. What
-     * this file owns is which attach state the session hands the writer, so the
-     * double answers one note per strip whose chain names an instance in *that*
-     * set, exactly as `nativeMidiNoteSink` picks the sink.
+     * this file owns is which attach state and which carried set the session
+     * hands the writer, so the double answers one note per strip whose chain
+     * names an attached instance or a built-in that sounds notes — fermenter
+     * stands in for that, exactly as `nativeMidiNoteSink` picks the sink — and
+     * only for a strip named in `carriedStripIds`, exactly as the carriage gate
+     * in `projectLiveMidiProgramme` applies after the sink is found.
      */
-    readLiveMidiProgramme: (input: { stripTracks: readonly Track[]; attachedInstanceIds: ReadonlySet<string> }) => ({
+    readLiveMidiProgramme: (input: {
+        stripTracks: readonly Track[];
+        attachedInstanceIds: ReadonlySet<string>;
+        carriedStripIds: ReadonlySet<string>;
+    }) => ({
         targets: input.stripTracks.flatMap((track) => {
+            if (track.kind !== 'midi' || !input.carriedStripIds.has(track.id)) {
+                return [];
+            }
             const sink = track.devices.find(
                 (device) =>
-                    device.externalInstanceId !== undefined && input.attachedInstanceIds.has(device.externalInstanceId)
+                    (device.externalInstanceId !== undefined &&
+                        input.attachedInstanceIds.has(device.externalInstanceId)) ||
+                    device.type === 'fermenter'
             );
-            if (track.kind !== 'midi' || !sink) {
+            if (!sink) {
                 return [];
             }
             return [
@@ -1533,6 +1545,61 @@ describe('startNativeLiveGraphSession', () => {
         expect(appliedBatches()[0]?.commands.filter((command) => command.kind === 'create-track-strip')).toHaveLength(
             2
         );
+    });
+
+    // A built-in instrument alone gives the carrier law nothing to object to:
+    // it has a native body, and the engine sounds its notes through
+    // `schedule-midi` rather than through the audio programme. The batch
+    // carries the strip, so the writer is allowed to address it.
+    it('sends schedule-midi to a MIDI strip the batch carries with a built-in instrument alone', async () => {
+        offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'midi-1',
+                    kind: 'midi',
+                    devices: [
+                        { id: 'ferm-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                    ],
+                    clips: [midiClip('clip-1', 'midi-1')],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'ferm-1' }]);
+    });
+
+    // A second device with no native body fails the carrier law's own chain
+    // check, whatever instrument sits ahead of it, so the batch leaves this
+    // strip on Web Audio — and a strip the batch does not carry gets no notes
+    // at all, or Web Audio and the engine would both voice its instrument.
+    it('sends no schedule-midi to a MIDI strip the carrier law leaves on Web Audio', async () => {
+        offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'midi-1',
+                    kind: 'midi',
+                    devices: [
+                        { id: 'ferm-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                        { id: 'filt-1', name: 'Filter', type: 'builtin-filter', bypassed: false, parameterValues: {} },
+                    ],
+                    clips: [midiClip('clip-1', 'midi-1')],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(scheduledMidiTargets()).toEqual([]);
     });
 });
 

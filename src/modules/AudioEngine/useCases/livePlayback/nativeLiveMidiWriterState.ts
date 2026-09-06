@@ -81,6 +81,15 @@ export type LiveMidiWriterPass = {
      * while each strip's *contents* are re-read at every re-arm.
      */
     stripTracks: readonly Track[];
+    /**
+     * The strips the topology batch built with `contributesAudio: true`.
+     *
+     * Held on the pass for the same reason `stripTracks` is: a re-arm reuses
+     * the set the standing topology installed rather than the session's own
+     * claimed set, which a shadowed monitor or a parked roll leaves empty
+     * while the engine still builds every contributing strip.
+     */
+    carriedStripIds: ReadonlySet<string>;
     sampleRate: number;
     /**
      * The seed every `schedule-midi` in this pass states.

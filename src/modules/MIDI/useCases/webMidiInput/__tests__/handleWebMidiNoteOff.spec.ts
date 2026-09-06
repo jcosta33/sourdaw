@@ -24,6 +24,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiNote: async () => true,
+    soundsNativeNotes: () => false,
 }));
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
@@ -68,6 +69,7 @@ function make_dependencies(
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         isDeviceCarriedByNativeSession: () => false,
         sendNativeLiveMidiNote: async () => true,
+        soundsNativeNotes: () => false,
         ...overrides,
     };
 }

@@ -140,6 +140,7 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: (_trackId: string, _deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ paramId, value });
     },

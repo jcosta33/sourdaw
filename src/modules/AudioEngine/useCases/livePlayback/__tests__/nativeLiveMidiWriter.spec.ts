@@ -137,6 +137,7 @@ async function arm(positionSeconds: number): Promise<void> {
     await armNativeLiveMidiWriter({
         stripTracks: [],
         attachedInstanceIds: new Set(),
+        carriedStripIds: new Set([TARGET.trackId]),
         sampleRate: SAMPLE_RATE,
         positionSeconds,
     });

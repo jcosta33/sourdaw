@@ -111,6 +111,8 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
+// Published because the MIDI module's live note sink needs the same answer the session's own sink reads.
+export { soundsNativeNotes } from './livePlayback/soundsNativeNotes';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
 export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
