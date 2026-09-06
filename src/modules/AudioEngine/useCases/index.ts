@@ -114,6 +114,7 @@ export { recordNativeChainReleases } from './livePlayback/recordNativeChainRelea
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
+export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
 export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
 export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
 export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/updateNativeLiveGraphSessionTransportMaps';

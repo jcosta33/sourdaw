@@ -363,9 +363,15 @@ pub enum GraphCommand {
     /// its `frame_offset` is zero. A note that does have a position is written
     /// with [`GraphCommand::ScheduleMidiNotes`] instead.
     ///
-    /// The channel and note are not checked against the addresses the store
-    /// refuses, because a live note is never tracked as sounding and so is
-    /// never owed a release something would have to address.
+    /// The note joins the device's sounding set exactly as a stored one does,
+    /// so a stop or a locate releases the key a player is holding rather than
+    /// leaving it down for the rest of the session.
+    ///
+    /// The channel and note are still not checked against the addresses that
+    /// set refuses. An unaddressable one is sounded and simply not tracked,
+    /// which is the law `ActiveEffect::push_event` states: such a note-on
+    /// reaches the base member channel, and only a note-off naming that
+    /// channel lifts it.
     SendMidiNote(usize, MidiNoteEvent),
     /// Write a batch of timeline-addressed notes into a plugin's note store.
     ///
@@ -1246,11 +1252,13 @@ struct ActiveEffect {
     /// block: delivery reads from it and leaves it alone, so a loop pass
     /// sounds the same note again and a locate away from it sounds nothing.
     midi_notes: Option<Box<MidiNoteStore>>,
-    /// Which of the store's notes this device is currently holding down.
+    /// Which notes this device is currently holding down.
     ///
-    /// Written by delivery and emptied by [`Self::release_sounding_notes`].
-    /// Empty for every device that carries no store, because only delivery
-    /// from one ever sets a bit.
+    /// Written by both deliveries — the stored notes a rendered span reaches,
+    /// and the live ones [`GraphCommand::SendMidiNote`] hands over — and
+    /// emptied by [`Self::release_sounding_notes`]. A device carrying no store
+    /// can hold a bit too, because the live path addresses any registered
+    /// device rather than only the ones a store was registered for.
     sounding: NoteAddressSet,
     /// Sounding notes whose scheduled note-off a clear took out of the store
     /// during the drain now applying, awaiting settlement.
@@ -1961,11 +1969,32 @@ impl ActiveEffect {
         self.bypassed || self.runs_nowhere()
     }
 
+    /// Queue one live note at the head of whatever this device renders next.
+    ///
+    /// The note is tracked as sounding exactly as a stored one is, so the
+    /// release a stop, a locate or a loop wrap owes it is the release they owe
+    /// the timeline's own notes. A live note carries no scheduled note-off, so
+    /// those triggers are the only thing besides the player's own release that
+    /// ever lifts the key.
+    ///
+    /// Only a note the device will actually be handed is tracked. An effect
+    /// that receives no block has this buffer discarded before anything reads
+    /// it, so holding that note would owe a release for a key which never went
+    /// down.
     #[inline]
     fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
         // Drop the newest event when the fixed block-local buffer is full.
         if !self.pending_midi.try_push(event) {
             diagnostics.record_scheduler_event_buffer_overflow(1);
+            return;
+        }
+        if self.receives_no_block() {
+            return;
+        }
+        if event.is_note_on {
+            self.sounding.hold(event.channel, event.note);
+        } else {
+            self.sounding.release(event.channel, event.note);
         }
     }
 
@@ -2049,8 +2078,9 @@ impl ActiveEffect {
         delivered
     }
 
-    /// Queue a note-off for every note this device's store has sounded and not
-    /// released, at `frame_offset` inside whatever renders next.
+    /// Queue a note-off for every note this device has sounded and not
+    /// released, stored and live alike, at `frame_offset` inside whatever
+    /// renders next.
     ///
     /// Returns whether anything was queued, so the caller marks the slot as
     /// holding block-local MIDI exactly as every other enqueue does.
@@ -2058,7 +2088,9 @@ impl ActiveEffect {
     /// The store's own note-offs stay where the producer wrote them. This is
     /// for the frames that are never going to be rendered — a stop, a locate,
     /// or a loop wrap past a scheduled note-off — after which the instrument
-    /// would hold that key until something else happened to release it.
+    /// would hold that key until something else happened to release it. A live
+    /// note has no written note-off at all, so this is the only thing besides
+    /// the player's own release that ever lifts one.
     ///
     /// A note-off the full buffer refuses leaves its note held, so the next
     /// trigger owes it again. Counting the overflow and forgetting the note
@@ -3588,12 +3620,13 @@ impl AudioScheduler {
         }
     }
 
-    /// Release every note the note stores have sounded, at the head of
-    /// whatever renders next.
+    /// Release every note the graph is sounding — the stores' own and the
+    /// live ones alike — at the head of whatever renders next.
     ///
-    /// A stop, a locate and a loop wrap all leave the frame a sounding note's
+    /// A stop, a locate and a loop wrap all leave the frame a stored note's
     /// note-off was written for behind: nothing is going to render it, so the
-    /// instrument would hold that key. Every trigger runs on the audio thread
+    /// instrument would hold that key. A live note never had such a frame, so
+    /// the same triggers are what lift a key the player is still holding. Every trigger runs on the audio thread
     /// and ahead of the next delivery, so the release reaches the instrument
     /// before anything the new position schedules.
     ///
@@ -6803,6 +6836,10 @@ mod timeline_tests {
     /// on, which note it named, and whether it pressed or released.
     type RecordedNote = (u64, u8, bool);
 
+    /// The same note with the channel it was addressed to, which is what a
+    /// release has to name to lift the key its note-on pressed.
+    type AddressedNote = (u64, u8, i16, bool);
+
     /// An instrument that records every note it receives: the frames it has
     /// already been asked to render, plus the event's own offset inside the
     /// block it arrived in, with the note and its direction.
@@ -6815,11 +6852,11 @@ mod timeline_tests {
     /// has on one.
     struct FrameRecordingInstrument {
         processed: u64,
-        received: Arc<Mutex<Vec<RecordedNote>>>,
+        received: Arc<Mutex<Vec<AddressedNote>>>,
     }
 
     impl FrameRecordingInstrument {
-        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<RecordedNote>>>) {
+        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<AddressedNote>>>) {
             let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
             let instrument = Box::new(Self {
                 processed: 0,
@@ -6847,6 +6884,7 @@ mod timeline_tests {
                 received.push((
                     self.processed + u64::from(event.frame_offset),
                     event.note,
+                    event.channel,
                     event.is_note_on,
                 ));
             }
@@ -8959,9 +8997,11 @@ mod timeline_tests {
         );
 
         // A note sent while it is enabled still reaches it, so the silence
-        // above is the discard and not a device nothing addresses.
-        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        // above is the discard and not a device nothing addresses. The locate
+        // that rewinds the clip goes first: it releases a live note, so a note
+        // sent ahead of it would be counted twice — once pressed, once lifted.
         harness.send(GraphCommand::SeekFrames(0));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
         harness.render(4);
         assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
     }
@@ -9000,9 +9040,11 @@ mod timeline_tests {
         );
 
         // A note sent while it is enabled still reaches it, so the silence
-        // above is the discard and not a device nothing addresses.
-        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        // above is the discard and not a device nothing addresses. The locate
+        // that rewinds the clip goes first: it releases a live note, so a note
+        // sent ahead of it would be counted twice — once pressed, once lifted.
         harness.send(GraphCommand::SeekFrames(0));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
         harness.render(4);
         assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
     }
@@ -11641,11 +11683,22 @@ mod timeline_tests {
         }
     }
 
-    fn received_notes(received: &Arc<Mutex<Vec<RecordedNote>>>) -> Vec<RecordedNote> {
+    /// What an instrument received, without the channel each note was
+    /// addressed to — the reading nearly every assertion here wants.
+    fn received_notes(received: &Arc<Mutex<Vec<AddressedNote>>>) -> Vec<RecordedNote> {
+        received_addressed_notes(received)
+            .into_iter()
+            .map(|(frame, note, _, is_note_on)| (frame, note, is_note_on))
+            .collect()
+    }
+
+    /// The same log with the channel kept, for the assertions that turn on the
+    /// address a release names.
+    fn received_addressed_notes(received: &Arc<Mutex<Vec<AddressedNote>>>) -> Vec<AddressedNote> {
         received.lock().expect("the received note log").clone()
     }
 
-    fn received_frames(received: &Arc<Mutex<Vec<RecordedNote>>>) -> Vec<u64> {
+    fn received_frames(received: &Arc<Mutex<Vec<AddressedNote>>>) -> Vec<u64> {
         received_notes(received)
             .iter()
             .map(|(frame, _, _)| *frame)
@@ -11677,7 +11730,7 @@ mod timeline_tests {
         harness: &mut Harness,
         track_id: usize,
         effect_id: usize,
-    ) -> Arc<Mutex<Vec<RecordedNote>>> {
+    ) -> Arc<Mutex<Vec<AddressedNote>>> {
         const CLIP_FRAMES: usize = 8_192;
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
@@ -11995,6 +12048,116 @@ mod timeline_tests {
             ],
             "the note sounding when the playhead moved is released at the head of what plays \
              from the new position, and the new position goes on playing"
+        );
+    }
+
+    /// The channel the live notes below sound on. Not the default, so a
+    /// release that lost the address its note-on was held under is visible
+    /// rather than landing on channel zero by luck.
+    const LIVE_CHANNEL: i16 = 5;
+
+    /// One note as a keyboard hands it over: no timeline position, and a
+    /// channel of its own.
+    fn live_note_on(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            channel: LIVE_CHANNEL,
+            ..note_on(note)
+        }
+    }
+
+    /// The player letting that key go.
+    fn live_note_off(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            is_note_on: false,
+            ..live_note_on(note)
+        }
+    }
+
+    /// Stopping the transport releases a note played live, exactly as it
+    /// releases a stored one. A key struck on a keyboard carries no scheduled
+    /// note-off behind it, so nothing else would ever lift it: the instrument
+    /// would hold that key for the rest of the session.
+    #[test]
+    fn a_live_note_on_is_released_when_the_transport_stops() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true)],
+            "the live note sounds at the head of the next block and nothing releases it yet"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![
+                (0, 60, LIVE_CHANNEL, true),
+                (BLOCK as u64, 60, LIVE_CHANNEL, false),
+            ],
+            "the stop releases the live note on the channel it sounded on, at the head of what \
+             renders next"
+        );
+    }
+
+    /// A live note the player already released leaves the stop nothing to do.
+    /// The note-off lifted the key where the player lifted it, and a second one
+    /// is a message the instrument never asked for.
+    #[test]
+    fn a_live_note_off_leaves_nothing_for_the_stop_to_release() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.send(GraphCommand::SendMidiNote(7, live_note_off(60)));
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![(0, 60, LIVE_CHANNEL, true), (0, 60, LIVE_CHANNEL, false),],
+            "the player's own release is the only note-off the instrument receives"
+        );
+    }
+
+    /// A locate while playing releases a live note on the same terms a stop
+    /// does. The playhead leaves the frames the player was sounding over, and
+    /// nothing behind it will ever lift the key.
+    #[test]
+    fn a_locate_while_playing_releases_a_live_note() {
+        const BLOCK: usize = 64;
+        const LOCATE_TO: u64 = 4_096;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.render(BLOCK);
+
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            vec![
+                (0, 60, LIVE_CHANNEL, true),
+                (BLOCK as u64, 60, LIVE_CHANNEL, false),
+            ],
+            "the locate releases the live note at the head of what plays from the new position"
         );
     }
 

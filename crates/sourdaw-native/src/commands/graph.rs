@@ -285,15 +285,18 @@ const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
     MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
 
-/// MIDI channels a scheduled note can sound on.
+/// MIDI channels a note can sound on.
 ///
-/// Mirrors the note store's own address space, which is where the ceiling comes
-/// from: the store keeps one bit per note per channel for the notes it has
+/// Mirrors the engine's own address space, which is where the ceiling comes
+/// from: it keeps one bit per note per channel for the notes a device has
 /// sounded, so a note past either bound is one nothing could ever release.
 const MIDI_CHANNELS: u8 = 16;
 
 /// Notes one MIDI channel can carry, for the reason above.
 const NOTES_PER_CHANNEL: u8 = 128;
+
+/// The hardest a MIDI note can be struck.
+const MAX_MIDI_VELOCITY: u8 = 127;
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -444,6 +447,28 @@ pub enum GraphCommandPayload {
         /// browser and another way through this wire.
         probability_seed: u32,
         notes: Vec<MidiNotePayload>,
+    },
+    /// Play one note now at a device that sinks notes.
+    ///
+    /// The note is handed to the device at the head of the first block the
+    /// engine renders after this batch is applied, and it sounds whether or
+    /// not the transport is playing: a key struck on a keyboard names no
+    /// timeline position, so there is no position for a stopped playhead to
+    /// withhold it from. A note that *does* have one travels as
+    /// [`GraphCommandPayload::ScheduleMidi`] instead.
+    ///
+    /// The engine releases it exactly as it releases a stored note — a stop, a
+    /// locate or a loop wrap lifts a key still held ([`GraphCommand::SendMidiNote`]) —
+    /// so a note whose note-off never arrives cannot hold an instrument down
+    /// for the rest of the session.
+    #[serde(rename_all = "camelCase")]
+    SendMidiNote {
+        track_id: String,
+        device_id: String,
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
     },
     /// Drop a device's scheduled notes in the half-open seconds window
     /// `fromTime..toTime`; an absent or null `toTime` means the end of the
@@ -1581,30 +1606,35 @@ fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String>
     Ok(probability_percent_to_cutoff(probability * 100.0))
 }
 
-/// Map one wire note onto the event the store holds.
+/// Refuse a note address the engine's sounding set cannot hold, naming the
+/// field, the value and the command that carried it.
 ///
-/// The addresses are checked here rather than left to the store, which refuses
-/// the whole batch on the audio thread and can only report that as a count. A
-/// note the store cannot address could never be tracked as sounding, so nothing
-/// would ever release it — which is why the store refuses it and why this
-/// refuses it by name first.
+/// Checked here rather than left to the engine, which answers on the audio
+/// thread and can only report a refusal as a count. A note the set cannot
+/// address is never tracked as sounding, so nothing would ever release it —
+/// which is the same reason a stored note and a live one both come through
+/// here.
+fn check_note_address(note: u8, channel: i16, command: &str) -> Result<(), String> {
+    if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
+        return Err(format!(
+            "{command}: channel {channel} has no address in the note store"
+        ));
+    }
+    if note >= NOTES_PER_CHANNEL {
+        return Err(format!(
+            "{command}: note {note} has no address in the note store"
+        ));
+    }
+    Ok(())
+}
+
+/// Map one wire note onto the event the store holds.
 fn map_midi_note(
     note: &MidiNotePayload,
     probability_seed: u32,
     sample_rate: f32,
 ) -> Result<TimedMidiNote, String> {
-    if note.channel >= MIDI_CHANNELS {
-        return Err(format!(
-            "schedule-midi: channel {} has no address in the note store",
-            note.channel
-        ));
-    }
-    if note.note >= NOTES_PER_CHANNEL {
-        return Err(format!(
-            "schedule-midi: note {} has no address in the note store",
-            note.note
-        ));
-    }
+    check_note_address(note.note, i16::from(note.channel), "schedule-midi")?;
     Ok(TimedMidiNote {
         at_frame: seconds_to_frames(note.time, sample_rate, "schedule-midi time")?,
         event: MidiNoteEvent {
@@ -2844,6 +2874,47 @@ fn map_command(
                 plugin_id,
                 notes: mapped.into_boxed_slice(),
             });
+            Ok(())
+        }
+
+        GraphCommandPayload::SendMidiNote {
+            track_id,
+            device_id,
+            note,
+            velocity,
+            channel,
+            is_note_on,
+        } => {
+            let plugin_id = midi_device_plugin_id(registry, track_id, device_id, "send-midi-note")?;
+            if *velocity > MAX_MIDI_VELOCITY {
+                return Err(format!(
+                    "send-midi-note: velocity {velocity} is outside 0..={MAX_MIDI_VELOCITY}"
+                ));
+            }
+            check_note_address(*note, *channel, "send-midi-note")?;
+            // No budget charge: budgets bound the parameter stamps a queue
+            // holds, and a live note waits in no queue. Its only capacity is
+            // the block-local MIDI buffer the engine drains every callback,
+            // whose overflow the engine counts itself.
+            ops.push(GraphCommand::SendMidiNote(
+                plugin_id,
+                MidiNoteEvent {
+                    note: *note,
+                    velocity: *velocity,
+                    channel: *channel,
+                    is_note_on: *is_note_on,
+                    // The head of the next block: a live note names no frame to
+                    // be stamped against.
+                    frame_offset: 0,
+                    // A live note always plays. Chance is arrangement material,
+                    // and belongs to the notes a producer wrote.
+                    probability_cutoff: PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ));
             Ok(())
         }
 
@@ -4238,7 +4309,9 @@ mod tests {
                 "state": { "gain": 0.8, "pan": -25, "muted": true, "soloGated": true, "vcaMultiplier": 0.5 },
                 "devices": [
                     { "id": "d-knead", "name": "Knead", "type": "knead", "bypassed": false,
-                      "parameterValues": { "shift_semitones": 3.0 } }
+                      "parameterValues": { "shift_semitones": 3.0 } },
+                    { "id": "d-ferm", "name": "Fermenter", "type": "fermenter", "bypassed": false,
+                      "parameterValues": {} }
                 ],
                 "honorMuted": true,
                 "contributesAudio": true
@@ -4290,7 +4363,10 @@ mod tests {
                       "microFadeSeconds": 0.005
                   }
               } },
+            { "kind": "send-midi-note", "trackId": "t1", "deviceId": "d-ferm",
+              "note": 60, "velocity": 100, "channel": 0, "isNoteOn": true },
             { "kind": "remove-device", "trackId": "t1", "deviceId": "d-knead" },
+            { "kind": "remove-device", "trackId": "t1", "deviceId": "d-ferm" },
             { "kind": "remove-send", "trackId": "t1", "busId": "b1" },
             { "kind": "set-transport", "playing": true, "positionSeconds": 4.0 }
         ]));
@@ -4358,6 +4434,15 @@ mod tests {
                 GraphCommand::SetParam(_, DeviceParam::FormantPreserve, value) if *value == 1.0
             )),
             "the immediate parameter batch never crossed the ring as a command"
+        );
+        // A live note is its own op, addressed at the device that sinks notes.
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::SendMidiNote(_, event)
+                    if event.note == 60 && event.is_note_on && event.frame_offset == 0
+            )),
+            "the live note never crossed the ring as a command"
         );
     }
 
@@ -8239,6 +8324,183 @@ mod tests {
             refusal.contains("schedule-midi: device 'd1' is not on strip 't2'"),
             "refusal must name the strip the device is not on: {refusal}"
         );
+    }
+
+    // ── Live MIDI ──────────────────────────────────────────────────────────
+
+    /// One `send-midi-note` batch, spelled the way a producer spells one.
+    fn send_midi_note_batch(
+        track_id: &str,
+        device_id: &str,
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
+    ) -> GraphBatchPayload {
+        midi_batch(json!([{
+            "kind": "send-midi-note",
+            "trackId": track_id,
+            "deviceId": device_id,
+            "note": note,
+            "velocity": velocity,
+            "channel": channel,
+            "isNoteOn": is_note_on,
+        }]))
+    }
+
+    /// The one op a `send-midi-note` batch maps to, or a panic naming what it
+    /// mapped to instead.
+    fn only_note_op(ops: &[GraphCommand]) -> (usize, MidiNoteEvent) {
+        assert_eq!(ops.len(), 1, "a live note is one op and nothing else");
+        match &ops[0] {
+            GraphCommand::SendMidiNote(plugin_id, event) => (*plugin_id, *event),
+            _ => panic!("a live note must map onto SendMidiNote"),
+        }
+    }
+
+    /// A live note reaches the engine as an immediate note op at the device's
+    /// own plugin id, carrying the values the live path has always written:
+    /// the always-plays cutoff, no arrangement identity, and no frame offset,
+    /// because a key struck on a keyboard names no timeline position.
+    #[test]
+    fn send_midi_note_at_a_hosted_instrument_emits_one_immediate_note_op() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let batch = send_midi_note_batch("t1", "d1", 60, 100, 5, true);
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("a live note at a registered hosted device maps");
+
+        let (plugin_id, event) = only_note_op(&mapped.ops);
+        assert_eq!(plugin_id, MIDI_DEVICE_EFFECT_ID);
+        assert_eq!(event.note, 60);
+        assert_eq!(event.velocity, 100);
+        assert_eq!(event.channel, 5);
+        assert!(event.is_note_on);
+        assert_eq!(event.frame_offset, 0);
+        assert_eq!(event.probability_cutoff, PROBABILITY_CUTOFF_RANGE);
+        assert_eq!(event.project_probability_seed, 0);
+        assert_eq!(event.clip_id_hash, 0);
+        assert_eq!(event.event_id_hash, 0);
+        assert_eq!(event.absolute_occurrence_index, 0);
+    }
+
+    /// A built-in that sounds notes takes a live note on the same terms: the
+    /// fermenter is registered holding a note store, which is what the mapping
+    /// reads, and it is the one built-in a musician can play from a keyboard.
+    #[test]
+    fn send_midi_note_at_a_fermenter_emits_one_immediate_note_op() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+        let batch = send_midi_note_batch("t1", "d-ferm", 48, 0, 0, false);
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("a live note at a built-in instrument maps");
+
+        let (plugin_id, event) = only_note_op(&mapped.ops);
+        assert_eq!(plugin_id, IMMEDIATE_PARAM_EFFECT_ID);
+        assert_eq!(event.note, 48);
+        assert_eq!(event.velocity, 0);
+        assert_eq!(event.channel, 0);
+        assert!(!event.is_note_on, "the release travels as itself");
+        assert_eq!(event.frame_offset, 0);
+        assert_eq!(event.probability_cutoff, PROBABILITY_CUTOFF_RANGE);
+    }
+
+    /// A built-in effect sounds no notes and is registered with no store, so a
+    /// live note aimed at one names a device that could never voice it.
+    #[test]
+    fn send_midi_note_at_a_knead_is_refused_holding_no_note_store() {
+        let mut registry = registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+        let batch = send_midi_note_batch("t1", "d-knead", 60, 100, 0, true);
+
+        let refusal = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect_err("a built-in effect has no note store to sound a note through");
+
+        assert!(
+            refusal.contains("send-midi-note: device 'd-knead' holds no note store"),
+            "refusal must name the device holding no note store: {refusal}"
+        );
+    }
+
+    /// A live note names the strip its device is on, and a producer that lost
+    /// track of which strip that is is told rather than played on the wrong one.
+    #[test]
+    fn send_midi_note_at_a_device_on_another_strip_is_refused() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        registry.strips.insert(
+            "t2".to_string(),
+            StripEntry {
+                native_id: 2,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: Vec::new(),
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        let batch = send_midi_note_batch("t2", "d1", 60, 100, 0, true);
+
+        let refusal = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect_err("a device held on another strip is refused");
+
+        assert!(
+            refusal.contains("send-midi-note: device 'd1' is not on strip 't2'"),
+            "refusal must name the strip the device is not on: {refusal}"
+        );
+    }
+
+    /// A live note past MIDI's own range is refused control-side, naming the
+    /// field and the value. The engine could only answer such a note as a count
+    /// on the audio thread, and an unaddressable one is never tracked as
+    /// sounding — so nothing would ever release the key it pressed.
+    #[test]
+    fn send_midi_note_past_the_midi_range_is_refused_naming_field_and_value() {
+        for (note, velocity, expected) in [
+            (
+                128,
+                100,
+                "send-midi-note: note 128 has no address in the note store",
+            ),
+            (60, 128, "send-midi-note: velocity 128 is outside 0..=127"),
+        ] {
+            let mut registry = registry_with_hosted_device("t1", "d1");
+            let batch = send_midi_note_batch("t1", "d1", note, velocity, 0, true);
+
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut registry,
+                &TimelineSamplePool::default(),
+                48_000.0,
+            )
+            .expect_err("a note past MIDI's range is refused");
+
+            assert!(
+                refusal.contains(expected),
+                "refusal must name the field and the value: {refusal}"
+            );
+        }
     }
 
     #[test]

@@ -561,6 +561,28 @@ export type AudioGraphScheduleMidiCommand = Readonly<{
 }>;
 
 /**
+ * Play one note now on a device that sinks notes.
+ *
+ * The note is handed to the device at the head of the first block the backend
+ * renders after this batch is applied, and it sounds whether or not the
+ * transport is playing: a key struck on a keyboard names no timeline position,
+ * so there is none for a stopped playhead to withhold it from. A note that
+ * *does* have one travels as {@link AudioGraphScheduleMidiCommand} instead.
+ *
+ * A backend releases it exactly as it releases a stored note — a stop, a locate
+ * or a loop wrap lifts a key still held — so a note whose note-off never
+ * arrives cannot hold an instrument down for the rest of the session.
+ */
+export type AudioGraphSendMidiNoteCommand = Readonly<{
+    kind: 'send-midi-note';
+    target: AudioGraphDeviceTarget;
+    note: number;
+    velocity: number;
+    channel: number;
+    isNoteOn: boolean;
+}>;
+
+/**
  * Drop the device's scheduled notes between `fromTime` and `toTime`.
  *
  * Half-open, so a producer rewriting one bar clears exactly its span and the
@@ -668,6 +690,7 @@ export type AudioGraphCommand =
     | AudioGraphSetDeviceParametersCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
+    | AudioGraphSendMidiNoteCommand
     | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
     | AudioGraphSetMonitorShadowCommand
