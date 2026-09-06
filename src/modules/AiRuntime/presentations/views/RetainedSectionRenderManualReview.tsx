@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Download, Play, Square } from 'lucide-react';
 
-import { Row, Stack } from '#/components/layout';
+import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import {
     cacheAudioBuffer,
@@ -232,7 +232,7 @@ export const RetainedSectionRenderManualReview = ({
             <p className="mt-1 text-muted-foreground">
                 Receipt {review.binding.receiptIdentity}; {review.binding.commands.length} render command(s).
             </p>
-            <Stack as="ul" gap={2} className="mt-2" aria-label="Receipt-bound retained render jobs">
+            <ul className="mt-2 space-y-2" aria-label="Receipt-bound retained render jobs">
                 {review.jobs.map((job) => {
                     const jobKey = getJobKey(job);
                     return (
@@ -283,7 +283,7 @@ export const RetainedSectionRenderManualReview = ({
                         </li>
                     );
                 })}
-            </Stack>
+            </ul>
             {hasUnavailableEvidence ? (
                 <Button
                     size="xs"

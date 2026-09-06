@@ -229,10 +229,10 @@ export const TransportBar = (): ReactElement => {
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent align="start" aria-label="Project controls">
-                                    <Stack gap={2}>
+                                    <div className="space-y-2">
                                         <ArrangementSelector />
                                         <MissingMediaPanel />
-                                    </Stack>
+                                    </div>
                                 </PopoverContent>
                             </Popover>
                         ) : null}
@@ -346,10 +346,10 @@ export const TransportBar = (): ReactElement => {
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent ref={moreSurfaceRef} align="end" aria-label="More transport controls">
-                                <Stack gap={2}>
+                                <div className="space-y-2">
                                     <TempoEditor />
                                     <PunchRecordingControls compact />
-                                    <Row gap={1} className="border-t border-border-soft pt-2">
+                                    <div className="flex items-center gap-1 border-t border-border-soft pt-2">
                                         <AutoScrollToggle />
                                         <ToolSelector
                                             rippleEditing={rippleEditing}
@@ -358,8 +358,8 @@ export const TransportBar = (): ReactElement => {
                                         />
                                         <SoloModeSelector soloMode={soloMode} compact />
                                         <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
-                                    </Row>
-                                </Stack>
+                                    </div>
+                                </div>
                             </PopoverContent>
                         </Popover>
                     </div>

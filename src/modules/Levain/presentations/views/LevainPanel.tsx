@@ -7,7 +7,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { Grid, Row, Stack } from '#/components/layout';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 
@@ -243,7 +243,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         />
                     </SectionCard>
 
-                    <Grid cols={1} gap={3} className="@[540px]:grid-cols-2">
+                    <div className="grid grid-cols-1 @[540px]:grid-cols-2 gap-3">
                         <SectionCard
                             title="Lift"
                             detail="Transition timing and portamento stay tactile instead of technical."
@@ -267,7 +267,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 }
                             />
                         </SectionCard>
-                    </Grid>
+                    </div>
 
                     <SectionCard title="Stage" detail="Mic balance should feel spatial, not like raw mixer math.">
                         <MicBlendSlider

@@ -491,21 +491,8 @@ export function scanUiRestatements(root: string): UiRestatementRow[] {
     return rows;
 }
 
-function compareByRowId(left: UiRestatementRow, right: UiRestatementRow): number {
-    if (left.id === right.id) {
-        return 0;
-    }
-    return left.id < right.id ? -1 : 1;
-}
-
 export function canonicalizeCensus(rows: UiRestatementRow[]): string {
-    // Rows serialize in ascending code-unit order of their id, the row's stable
-    // identity (hash of file, fingerprint, and occurrence). compareByRowId must
-    // stay a plain code-unit comparison, never localeCompare: the ledger is
-    // compared byte-for-byte across platforms, and localeCompare delegates to
-    // ICU collation, which differs between hosts and would make the canonical
-    // bytes platform-bound.
-    const ordered = [...rows].sort(compareByRowId);
+    const ordered = [...rows].sort((left, right) => left.id.localeCompare(right.id));
     return `${JSON.stringify(ordered, [...ROW_KEYS], 2)}\n`;
 }
 
