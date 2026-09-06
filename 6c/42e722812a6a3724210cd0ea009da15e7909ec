@@ -1,0 +1,54 @@
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_87ab0a2f60ccf8::t_970a6b42627f10 482-496
+  s_87ab0a2f60ccf8::t_b67f7ed6922d36 205-227,229,312,470-472,505
+  s_87ab0a2f60ccf8::t_912b11facbcedf 522-523
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_87ab0a2f60ccf8::t_1f13848d373dee 192-214,217,282,846-848
+  s_87ab0a2f60ccf8::t_970a6b42627f10 855-866
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_290ba9d3c20fd0 129-131,140
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_87ab0a2f60ccf8::t_290ba9d3c20fd0 43
+src/modules/WorkspaceShell/handlers/workspace/__tests__/workspaceProjectHandlers.spec.ts
+  s_87ab0a2f60ccf8::t_52bebf5814ab5d 23-45,52,67,127-129,135-140,187-189,195-200
+  s_87ab0a2f60ccf8::t_fd37eaa0af3304 153-171,211-227,229
+  s_87ab0a2f60ccf8::t_057a767f662558 228
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_87ab0a2f60ccf8::t_290ba9d3c20fd0 24
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_87ab0a2f60ccf8::t_9fd5e5d6a60fdb 35,97-102,118-132,229-242,271-274,385-388,390-391
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_87ab0a2f60ccf8::t_a714f37d8484da 382-508,513-557,592-593
+  s_87ab0a2f60ccf8::t_5bf78922a470a5 837-905,1013-1014,1055-1056
+  s_87ab0a2f60ccf8::t_7cfb05b48c73af 24-46,87,122,1012,1031
+  s_87ab0a2f60ccf8::t_970a6b42627f10 509-512,558-591
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_87ab0a2f60ccf8::t_6f655be43250a3 90-112,114,145,481,489-491,503-515
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppEventHandlers.spec.ts
+  s_87ab0a2f60ccf8::t_0d5a6534ef326a 15-31,35,72,129,131-138
+src/modules/WorkspaceShell/handlers/workspace/handleImportMidiFile.ts
+  s_87ab0a2f60ccf8::t_9fd5e5d6a60fdb 19-21
+src/modules/WorkspaceShell/handlers/workspace/handleImportAudioFile.ts
+  s_87ab0a2f60ccf8::t_8d715f5563d2ca 19-21
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenu.spec.tsx
+  s_87ab0a2f60ccf8::t_01628f8174eb66 442,598
+  s_87ab0a2f60ccf8::t_01ebf969f3094d 72-94,96,140,421,424-425,476,479-480,579-581
+  s_87ab0a2f60ccf8::t_970a6b42627f10 436-441,443-449,593-597,599-603
+  s_87ab0a2f60ccf8::t_290ba9d3c20fd0 141,422-423,435,477-478,488,582-583,592
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6c42e722812a6a3724210cd0ea009da15e7909ec",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
