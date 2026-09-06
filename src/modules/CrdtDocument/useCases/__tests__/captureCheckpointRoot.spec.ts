@@ -9,7 +9,6 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppAction, productionBriefAdmissionPort } from '#/modules/Command/useCases';
 
-import { automergeRepository } from '../../repositories/automergeRepository';
 import {
     ControlledWorker,
     createRootBundle,
@@ -17,6 +16,7 @@ import {
     respondToLoad,
     type CompactShadowRequest,
 } from '../../repositories/__tests__/automergeWorkerTestHarness';
+import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureCheckpointRoot } from '../captureCheckpointRoot';
 import { captureProjectRevision } from '../captureProjectRevision';
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
