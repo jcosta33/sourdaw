@@ -1,0 +1,23 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/checkpointArtifactPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_25605b7e6c2163 29,104,138,176,211,483-484,486-487
+src/modules/CrdtDocument/repositories/crdtPersistence/checkpointArtifactModel.ts
+  s_87ab0a2f60ccf8::t_25605b7e6c2163 47
+src/modules/CrdtDocument/repositories/crdtPersistence/listCheckpointCatalog.ts
+  s_87ab0a2f60ccf8::t_25605b7e6c2163 52,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5f33571e55af6095e2f6d1870878ac0e830d4e1b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
