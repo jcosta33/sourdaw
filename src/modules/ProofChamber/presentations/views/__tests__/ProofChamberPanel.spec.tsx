@@ -518,4 +518,28 @@ describe('ProofChamberPanel', () => {
         expect(faceplate?.className).toContain('min-h-[440px]');
         expect(faceplate?.className).not.toContain('overflow-hidden');
     });
+
+    it('prevents section cards from collapsing when faceplate is compressed', () => {
+        const { container } = render(<ProofChamberPanel deviceId="test-device" />);
+        const cards = container.querySelectorAll('.proof-chamber-window.shrink-0');
+        expect(cards.length).toBeGreaterThanOrEqual(10);
+        for (const title of [
+            'Space tray',
+            'Flavor',
+            'IR tray',
+            'Quick read',
+            'Switches',
+            'Core',
+            'Tone',
+            'Motion',
+            'Character',
+            'Engine',
+        ]) {
+            const heading = screen.getByText(title);
+            const section = heading.closest('section');
+            expect(section).not.toBeNull();
+            expect(section?.className).toContain('shrink-0');
+            expect(section?.className).toContain('proof-chamber-window');
+        }
+    });
 });
