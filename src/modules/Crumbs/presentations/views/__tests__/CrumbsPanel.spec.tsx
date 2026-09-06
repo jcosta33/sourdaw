@@ -341,4 +341,18 @@ describe('CrumbsPanel', () => {
         expect(grid).not.toBeNull();
         expect(grid?.className).toContain('min-h-[440px]');
     });
+
+    it('prevents section cards from collapsing when faceplate is compressed', () => {
+        setMode(DEVICE, 'drum');
+        const { container } = render(<CrumbsPanel deviceId={DEVICE} />);
+        const cards = container.querySelectorAll('.crumbs-window.shrink-0');
+        expect(cards.length).toBeGreaterThanOrEqual(5);
+        for (const title of ['Sample', 'Pad bay', 'Status', 'Waveform', 'Controls']) {
+            const heading = screen.getByText(title);
+            const section = heading.closest('section');
+            expect(section).not.toBeNull();
+            expect(section?.className).toContain('shrink-0');
+            expect(section?.className).toContain('crumbs-window');
+        }
+    });
 });
