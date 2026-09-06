@@ -6350,6 +6350,50 @@ describe('bridgeGroundedLlmToolCalls', () => {
         });
     });
 
+    it.each([
+        {
+            prompt: 'rename clip selected midi clip to Ending',
+            context: createNamedClipSourceContext(),
+            selectedId: 'clip-intro',
+            selectedType: 'audio',
+        },
+        {
+            prompt: 'rename clip selected audio clip to Ending',
+            context: withSelectedMidiClip(createNamedClipSourceContext()),
+            selectedId: 'clip-selected-midi',
+            selectedType: 'midi',
+        },
+    ])('rejects $prompt with a selected $selectedType clip', ({ prompt, context, selectedId, selectedType }) => {
+        const selectedClip = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selectedId);
+        expect(context.selectedClipId).toBe(selectedId);
+        expect(context.selectedClipIds).toEqual([selectedId]);
+        expect(selectedClip?.type).toBe(selectedType);
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: selectedId, name: 'Ending' } }], prompt, context).actions
+        ).toEqual([]);
+    });
+
+    it('renames an audio clip whose quoted exact name is a media-selection phrase', () => {
+        const context = withNamedClip(createNamedClipSourceContext(), 'clip-literal-midi', 'selected midi clip');
+        const literalClip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((clip) => clip.id === 'clip-literal-midi');
+        expect(literalClip?.type).toBe('audio');
+        expect(context.selectedClipIds).toEqual(['clip-intro']);
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-literal-midi', name: 'Ending' } }],
+                'rename clip "selected midi clip" to Ending',
+                context
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-literal-midi', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
     it('rejects a significant quoted suffix after a selected source', () => {
         const context = createNamedClipSourceContext();
 

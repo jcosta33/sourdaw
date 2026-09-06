@@ -283,6 +283,42 @@ describe('resolveAgentReference', () => {
         expect(resolveCompleteClip(reference, assertedId, context)).toEqual(expected);
     });
 
+    it.each([
+        { reference: 'selected midi clip', selectedId: 'clip-intro', selectedType: 'audio' },
+        { reference: 'selected audio clip', selectedId: 'clip-midi', selectedType: 'midi' },
+    ])('rejects $reference when the selected clip is $selectedType', ({ reference, selectedId, selectedType }) => {
+        const context = {
+            ...createClipProjectState(),
+            selectedClipId: selectedId,
+            selectedClipIds: [selectedId],
+        };
+        const selectedClip = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selectedId);
+        expect(selectedClip?.type).toBe(selectedType);
+
+        expect(resolveCompleteClip(reference, selectedId, context).status).toBe('rejected');
+    });
+
+    it('treats a quoted media-selection phrase as an exact clip name', () => {
+        const project = createClipProjectState();
+        const vocals = project.tracks[0]!;
+        const literalClip = { ...vocals.clips[0]!, id: 'clip-literal-midi', name: 'selected midi clip' };
+        const context = {
+            ...project,
+            tracks: [
+                { ...vocals, clipCount: vocals.clipCount + 1, clips: [...vocals.clips, literalClip] },
+                ...project.tracks.slice(1),
+            ],
+        };
+        expect(literalClip.type).toBe('audio');
+        expect(context.selectedClipIds).toEqual(['clip-intro']);
+
+        expect(resolveCompleteClip('"selected midi clip"', literalClip.id, context)).toEqual({
+            status: 'resolved',
+            id: literalClip.id,
+            evidence: 'exact-name',
+        });
+    });
+
     it('grounds devices from canonical descriptors instead of mutable display names', () => {
         const project = createProjectState();
         const bass = project.tracks.find((track) => track.id === 'track-bass');

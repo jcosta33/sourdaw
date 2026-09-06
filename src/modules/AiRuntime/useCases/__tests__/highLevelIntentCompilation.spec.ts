@@ -1012,6 +1012,102 @@ describe('high-level intent compilation', () => {
     });
 
     it.each([
+        {
+            label: 'direct MIDI wording with selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected midi clip to Ending',
+            selectedId: 'clip-bass',
+            selectedType: 'audio',
+            proposal: proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Ending' } }]),
+        },
+        {
+            label: 'compiler MIDI wording with selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected midi clip to Ending',
+            selectedId: 'clip-bass',
+            selectedType: 'audio',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Ending')]),
+        },
+        {
+            label: 'direct audio wording with selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected audio clip to Ending',
+            selectedId: 'clip-selected-midi',
+            selectedType: 'midi',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-selected-midi', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler audio wording with selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected audio clip to Ending',
+            selectedId: 'clip-selected-midi',
+            selectedType: 'midi',
+            proposal: proposeTurn([renameClipListItem('MIDI Take', 'Ending')]),
+        },
+    ])(
+        'rejects mismatched media selection through $label',
+        async ({ context, prompt, selectedId, selectedType, proposal }) => {
+            const selectedClip = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selectedId);
+            expect(context.selectedClipId).toBe(selectedId);
+            expect(context.selectedClipIds).toEqual([selectedId]);
+            expect(selectedClip?.type).toBe(selectedType);
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(
+                prompt,
+                context,
+                undefined,
+                'revision-mismatched-media-selection'
+            );
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-literal-midi', name: 'Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('selected midi clip', 'Ending')]),
+        },
+    ])('preserves a quoted media-selection phrase as an exact name through $label', async ({ proposal }) => {
+        const context = withLiteralClipName(selectedClipProject, 'clip-literal-midi', 'selected midi clip');
+        const literalClip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((clip) => clip.id === 'clip-literal-midi');
+        expect(literalClip?.type).toBe('audio');
+        expect(context.selectedClipIds).toEqual(['clip-bass']);
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            'rename clip "selected midi clip" to Ending',
+            context,
+            undefined,
+            'revision-literal-media-selection-name'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-literal-midi', name: 'Ending' } },
+        ]);
+    });
+
+    it.each([
         { label: 'direct', proposal: proposeCommandsTurn(renameClipItems) },
         { label: 'compiler-backed', proposal: proposeTurn([renameClipListItem('Bass Verse')]) },
     ])('rejects an ambiguous bare source on the $label optional-to route', async ({ proposal }) => {
