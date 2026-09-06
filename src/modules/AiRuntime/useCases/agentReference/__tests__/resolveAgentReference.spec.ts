@@ -240,6 +240,12 @@ describe('resolveAgentReference', () => {
             expected: { status: 'resolved', id: 'clip-midi', evidence: 'selection' },
         },
         {
+            reference: 'selected midi clip',
+            assertedId: 'clip-empty-midi',
+            selectedId: 'clip-empty-midi',
+            expected: { status: 'resolved', id: 'clip-empty-midi', evidence: 'selection' },
+        },
+        {
             reference: 'selected audio clip',
             assertedId: 'clip-intro',
             selectedId: 'clip-intro',

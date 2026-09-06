@@ -25,8 +25,15 @@ function fullyAccountsForClipReference(referenceText: string, clipId: string, co
         return true;
     }
 
-    if (/^(?:the )?(?:selected|current|this)(?: (?:audio|midi))? clip$/u.test(normalizedReference)) {
-        return getSelectedClipReferenceIds(context).includes(clipId);
+    const selectedClipReference = /^(?:the )?(?:selected|current|this)(?: (audio|midi))? clip$/u.exec(
+        normalizedReference
+    );
+    if (selectedClipReference) {
+        const mediaQualifier = selectedClipReference[1];
+        return (
+            (mediaQualifier === undefined || mediaQualifier === clip.type) &&
+            getSelectedClipReferenceIds(context).includes(clipId)
+        );
     }
 
     const ownerReferences = [owningTrack.id, owningTrack.name].map(normalizeAgentReferenceText);
