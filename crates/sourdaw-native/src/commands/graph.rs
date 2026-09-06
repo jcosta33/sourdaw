@@ -243,8 +243,25 @@ const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_
 /// plus a full `write-parameter` and `write-device-parameter` queue fill per
 /// mixer and device target — so it can refuse a hostile batch without ever
 /// meeting an honest one.
+///
+/// This law assumes about one op per command, and every command holds to
+/// that except one: [`GraphCommandPayload::SetDeviceParameters`] expands one
+/// command into up to [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] `SetParam` ops, its
+/// own named ceiling charged before that command's keys are ever parsed. The
+/// op count that actually sizes the two rings is therefore bounded by
+/// `MAX_BATCH_COMMANDS * MAX_IMMEDIATE_DEVICE_PARAMETERS`, not by
+/// `MAX_BATCH_COMMANDS` alone.
 const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
     * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
+
+/// The most parameters one `set-device-parameters` record may carry.
+///
+/// The largest honest record is one full Fermenter patch: the descriptor's
+/// 105 parameter ids plus its 8 macro slots (`macro0`..`macro7`), 113 keys
+/// in all. This ceiling rounds that up to 128 for headroom, and is charged
+/// against the record's length before any key is resolved, so a hostile
+/// record is refused without ever parsing a single name.
+const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 
 /// MIDI channels a scheduled note can sound on.
 ///
@@ -354,6 +371,9 @@ pub enum GraphCommandPayload {
     /// plugin's own, addressed over the plugin host's control path, so one aimed
     /// at a borrowed instance is refused rather than mapped through a built-in
     /// vocabulary that cannot address it.
+    ///
+    /// `values` is charged against [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] before
+    /// any key is resolved, because each entry becomes one `SetParam` op.
     #[serde(rename_all = "camelCase")]
     SetDeviceParameters {
         track_id: String,
@@ -2707,6 +2727,13 @@ fn map_command(
                      whose parameters take the plugin host's own control path"
                 ));
             };
+            if values.len() > MAX_IMMEDIATE_DEVICE_PARAMETERS {
+                return Err(format!(
+                    "set-device-parameters: record carries {} parameters, past the ceiling of \
+                     {MAX_IMMEDIATE_DEVICE_PARAMETERS}",
+                    values.len()
+                ));
+            }
             let effect_id = device.native_effect_id;
             // No queue charge, unlike the stamped write above: these land on
             // the next drain rather than waiting in the device's
@@ -2714,7 +2741,8 @@ fn map_command(
             // to hold open and nothing for the progress echo to release. The
             // command ring is the only capacity they spend, and
             // `EngineHandle::send_graph_batch_with_headroom` sizes it to the
-            // batch it is handed rather than bounding the batch by it.
+            // batch it is handed, one `SetParam` op per entry up to the
+            // ceiling charged above.
             for (param, value) in immediate_device_parameters(builtin, values, device_id)? {
                 ops.push(GraphCommand::SetParam(effect_id, param, value));
             }
@@ -7628,6 +7656,69 @@ mod tests {
         assert!(
             wrong_strip.contains("is not on strip 't2'"),
             "the refusal must name the strip the batch claimed, got: {wrong_strip}"
+        );
+    }
+
+    /// A record of exactly `MAX_IMMEDIATE_DEVICE_PARAMETERS` distinct
+    /// well-shaped keys is the largest honest patch, and it must map to
+    /// exactly that many immediate writes rather than being refused early.
+    #[test]
+    fn set_device_parameters_at_the_ceiling_is_accepted() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let values: serde_json::Map<String, Value> = (0..MAX_IMMEDIATE_DEVICE_PARAMETERS)
+            .map(|index| (format!("param_{index:03}"), json!(index as f64 / 1000.0)))
+            .collect();
+
+        let mapped = map_immediate(
+            &set_device_parameters_batch("t1", "d-ferm", Value::Object(values)),
+            &mut registry,
+        )
+        .expect("a record at the ceiling must be accepted");
+
+        assert_eq!(
+            immediate_writes(&mapped.ops).len(),
+            MAX_IMMEDIATE_DEVICE_PARAMETERS,
+            "a record at the ceiling must map to exactly that many immediate writes"
+        );
+    }
+
+    /// One key past the ceiling refuses the whole record before any key is
+    /// resolved. One of the keys is shaped unlike a fermenter parameter name
+    /// and would sort before the well-shaped keys, so it would be the first
+    /// key `immediate_device_parameters` resolved and would fail with the
+    /// name refusal instead — proving the ceiling is charged first, the
+    /// refusal here must be the ceiling's own message naming the count and
+    /// the ceiling, not that name refusal.
+    #[test]
+    fn set_device_parameters_past_the_ceiling_is_refused_naming_count_and_ceiling() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let mut values: serde_json::Map<String, Value> = (0..MAX_IMMEDIATE_DEVICE_PARAMETERS)
+            .map(|index| (format!("param_{index:03}"), json!(index as f64 / 1000.0)))
+            .collect();
+        values.insert("filterCutoff".to_string(), json!(0.5));
+        assert_eq!(values.len(), MAX_IMMEDIATE_DEVICE_PARAMETERS + 1);
+
+        let refusal = map_immediate(
+            &set_device_parameters_batch("t1", "d-ferm", Value::Object(values)),
+            &mut registry,
+        )
+        .expect_err("a record past the ceiling must be refused");
+
+        assert!(
+            refusal.contains(&format!(
+                "record carries {} parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS}",
+                MAX_IMMEDIATE_DEVICE_PARAMETERS + 1
+            )),
+            "refusal must name the count and the ceiling, got: {refusal}"
+        );
+        assert!(
+            !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
+            "the ceiling must be charged before any key is resolved, got: {refusal}"
         );
     }
 
