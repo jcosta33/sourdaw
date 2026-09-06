@@ -950,11 +950,30 @@ impl FermenterBody {
     /// Summed rather than written because an instrument is a generator: what
     /// it produces joins whatever already stands at its place in the chain.
     ///
-    /// The block is split into runs of [`FERMENTER_BLOCK_FRAMES`], each one a
-    /// whole `process` call with its own events rebased onto the run's first
-    /// frame. A single call for a longer block would render one run's worth
-    /// and leave the remainder of the callback silent, and every event stamped
-    /// past that run would sound at the wrong time or not at all.
+    /// The block is split into runs of at most [`FERMENTER_BLOCK_FRAMES`],
+    /// each one a whole `process` call with its own events rebased onto the
+    /// run's first frame. A single call for a longer block would render one
+    /// run's worth and leave the remainder of the callback silent, and every
+    /// event stamped past that run would sound at the wrong time or not at
+    /// all.
+    ///
+    /// A run shorter than a full [`FERMENTER_BLOCK_FRAMES`] is still a whole
+    /// block to the instrument, which advances its per-block smoothers —
+    /// cutoff, resonance, LFO rate, the effect smoothers — one exponential
+    /// step per call, at a coefficient that assumes a full run. So a callback
+    /// the run size does not divide, and a loop seam splitting one callback at
+    /// a frame that is not a multiple of the run, each cost one extra step: a
+    /// smoothed parameter settles slightly faster across a seam, or on a
+    /// device buffer that is not a multiple of 128, than it does under the
+    /// worklet's fixed quantum. Note timing is unaffected — every scheduled
+    /// note lands on the sample it was stamped for either way — and parity
+    /// with the worklet is exact for a callback of whole runs with no seam in
+    /// it.
+    ///
+    /// Holding a short run's frames back to fill the next call would buy that
+    /// parity at a price a DAW does not pay: those frames would render ahead
+    /// of the events belonging to them, which moves a note off the sample it
+    /// was written for to save a parameter a few milliseconds of settling.
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
     /// already owns, and the events are pushed into its fixed block list.
@@ -980,8 +999,9 @@ impl FermenterBody {
                     break;
                 }
                 // Non-decreasing by the block's own contract; saturating so a
-                // producer that broke it delivers early rather than panicking
-                // on the callback.
+                // producer that broke it lands its event on the first frame of
+                // the run that reaches it — late by up to one run — rather
+                // than panicking on the callback.
                 self.push_event(event, at.saturating_sub(rendered) as u32, diagnostics);
                 next_event += 1;
             }
@@ -993,16 +1013,21 @@ impl FermenterBody {
     /// Render one run into the instrument's own buffers and sum them out.
     fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len();
-        let rendered_left = self.instance.process(frames as u32);
+        // The right pointer is taken before the render, not after: it comes
+        // from a shared borrow of the instrument, and asking for it once the
+        // left pointer is in hand would reborrow the instrument between
+        // deriving that pointer and reading through it. Order alone keeps
+        // every borrow ahead of every read.
         let rendered_right = self.instance.get_right_ptr();
+        let rendered_left = self.instance.process(frames as u32);
         // SAFETY: both pointers name the instrument's own channel buffers,
         // which `FermenterInstance::new` sizes at FERMENTER_BLOCK_FRAMES and
-        // no method resizes; `frames` is bounded by that in `process` above,
-        // so each slice is inside the allocation it names. The two buffers are
-        // separate heap allocations reached through the raw pointer inside a
-        // `Vec`, so reading the left one after taking a shared borrow of the
-        // instrument to ask for the right one aliases nothing. Nothing mutates
-        // the instrument between the pointers and this copy.
+        // no method resizes, so the render cannot move the buffer the right
+        // pointer already names; `frames` is bounded by that size in `process`
+        // above, so each slice is inside the allocation it names. The two
+        // buffers are separate heap allocations, so the pair of slices aliases
+        // nothing. Nothing mutates the instrument between the render and this
+        // copy.
         let (rendered_left, rendered_right) = unsafe {
             (
                 std::slice::from_raw_parts(rendered_left, frames),
@@ -1046,6 +1071,11 @@ impl FermenterBody {
                 .push_note_off_on_channel(event.note, channel, offset),
             (false, None) => self.instance.push_note_off(event.note, offset),
         };
+        // Unreachable as the two capacities stand: a block carries at most
+        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
+        // takes twice that per run, emptying on every `process`. The count is
+        // kept as a guard against either capacity moving, not because a
+        // refusal can happen today.
         if !queued {
             diagnostics.record_scheduler_event_buffer_overflow(1);
         }
@@ -3873,10 +3903,14 @@ impl AudioScheduler {
                     engine.process_block(left, right);
                 }
                 PluginCore::Fermenter(body) => {
+                    // `frames`, not `num_samples`: the body indexes the pair by
+                    // the count it is handed, so the caller's raw ask — which
+                    // this function has already clamped to the buffers — would
+                    // slice past them.
                     body.process(
                         left,
                         right,
-                        num_samples,
+                        frames,
                         effect.pending_midi.as_slice(),
                         &mut self.midi_rt_diagnostics,
                     );
@@ -12705,6 +12739,164 @@ mod timeline_tests {
         assert_eq!(
             hosted_right, worklet_right,
             "the hosted body's right channel is not the signal the worklet renders"
+        );
+    }
+
+    /// A master-chain Fermenter renders no further than the pair it was
+    /// handed, whatever frame count the caller asks for.
+    ///
+    /// `process_block` is public, and its frame count is the caller's ask
+    /// while the buffers are the truth — which is why it clamps the two
+    /// together at its head. The body indexes the pair by the count it is
+    /// given, so an ask past the buffers slices past them and panics on the
+    /// callback unless that clamped count is what reaches it.
+    #[test]
+    fn a_master_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
+        /// Shorter than the ask and not a whole number of runs, so the second
+        /// run is the one that would reach past the buffer.
+        const BUFFER: usize = 192;
+        const OVER_ASK: usize = 512;
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddEffect(
+            7,
+            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
+            Some(MidiNoteStore::new()),
+        ));
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let mut left = vec![0.0_f32; BUFFER];
+        let mut right = vec![0.0_f32; BUFFER];
+        harness
+            .scheduler
+            .process_block(&mut left, &mut right, OVER_ASK);
+
+        assert!(
+            left.iter().any(|sample| *sample != 0.0),
+            "the instrument never sounded, so the over-ask reached nothing to bound"
+        );
+        assert!(
+            left[FERMENTER_BLOCK_FRAMES..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the render stopped at the first run: the ask was clamped to one run rather \
+             than to the buffer"
+        );
+    }
+
+    /// A partial run costs the instrument one extra step of its per-block
+    /// smoothers, and costs the note nothing.
+    ///
+    /// The body hands the instrument whole blocks of at most
+    /// [`FERMENTER_BLOCK_FRAMES`], and the instrument advances cutoff,
+    /// resonance, LFO rate and its effect smoothers one exponential step per
+    /// call whatever the run length. A 512-frame callback cut at frame 300 —
+    /// what a loop seam does to one — therefore runs 128, 128, 44, 128, 84
+    /// where the worklet's fixed quantum runs four 128s, and that fifth step
+    /// is what this reads.
+    ///
+    /// The split is driven straight at the body rather than through a loop
+    /// region on the harness because a region also re-fires the programme at
+    /// the seam: the divergence below would then be a re-triggered note rather
+    /// than the smoother, and the spec would pass with the contract broken.
+    ///
+    /// Ordinal 1 is the filter cutoff, set far from its default so the
+    /// smoother is still travelling across the whole render. Frames ahead of
+    /// the seam sit under the same step in both renders; only frames past it
+    /// may differ.
+    #[test]
+    fn a_partial_fermenter_run_advances_the_block_smoothers_one_extra_step() {
+        const CALLBACK: usize = 512;
+        const SEAM: usize = 300;
+        const NOTE_ON: u32 = 40;
+        const CUTOFF_ORDINAL: u32 = 1;
+        const CUTOFF_HZ: f32 = 400.0;
+        /// The measured ceiling on the per-frame difference ahead of the seam.
+        /// Every frame before it renders under the same block-parameter step
+        /// in both, and the per-sample state either side of a run boundary is
+        /// the same state, so the widest difference measured there is 0.0
+        /// exactly: the bound is an equality with a name, not a tolerance this
+        /// render needs.
+        const AHEAD_OF_SEAM: f32 = 0.0;
+
+        let mut body = FermenterBody::new(FERMENTER_RATE);
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
+        body.set_param(CUTOFF_ORDINAL, CUTOFF_HZ);
+        let mut event = note_on(60);
+        event.frame_offset = NOTE_ON;
+
+        let mut hosted_left = vec![0.0_f32; CALLBACK];
+        let mut hosted_right = vec![0.0_f32; CALLBACK];
+        let (head_left, tail_left) = hosted_left.split_at_mut(SEAM);
+        let (head_right, tail_right) = hosted_right.split_at_mut(SEAM);
+        body.process(head_left, head_right, SEAM, &[event], &mut diagnostics);
+        body.process(
+            tail_left,
+            tail_right,
+            CALLBACK - SEAM,
+            &[],
+            &mut diagnostics,
+        );
+
+        let mut instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        instance.set_param_by_id(CUTOFF_ORDINAL, CUTOFF_HZ);
+        let mut worklet_left = Vec::with_capacity(CALLBACK);
+        for block in 0..CALLBACK / FERMENTER_BLOCK_FRAMES {
+            if block == 0 {
+                assert!(
+                    instance.push_note_on(60, 100, 0, NOTE_ON),
+                    "the reference instance refused the note"
+                );
+            }
+            let rendered = instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
+            // frames into the instance's own left buffer, which is exactly
+            // that long and is never resized.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+            }
+        }
+
+        let first_sounding = |samples: &[f32]| samples.iter().position(|sample| *sample != 0.0);
+        assert_eq!(
+            first_sounding(&worklet_left),
+            Some(NOTE_ON as usize),
+            "the reference never sounded on the frame the note was stamped for, so the \
+             comparison below proves nothing"
+        );
+        assert_eq!(
+            first_sounding(&hosted_left),
+            first_sounding(&worklet_left),
+            "the split runs moved the note off the frame it was stamped for"
+        );
+
+        let widest_difference = |range: std::ops::Range<usize>| {
+            range
+                .map(|frame| (hosted_left[frame] - worklet_left[frame]).abs())
+                .fold(0.0_f32, f32::max)
+        };
+        let ahead_of_seam = widest_difference(0..SEAM);
+        let past_seam = widest_difference(SEAM..CALLBACK);
+
+        assert!(
+            ahead_of_seam <= AHEAD_OF_SEAM,
+            "the runs ahead of the seam diverged by {ahead_of_seam}: every frame before it \
+             renders under the same block-parameter step in both, so a note or a run \
+             boundary moved"
+        );
+        assert!(
+            worklet_left[SEAM..].iter().any(|sample| *sample != 0.0),
+            "the reference is silent past the seam, so the divergence below would read \
+             equality it never earned"
+        );
+        assert!(
+            past_seam > 0.0,
+            "the renders agree past the seam: the partial run cost no extra smoother \
+             step, so this spec no longer observes the contract it names"
         );
     }
 
