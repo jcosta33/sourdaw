@@ -1,0 +1,32 @@
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_9b530f08172a54::t_1d2707ef53911f 55
+  s_9b530f08172a54::t_612db689c7c24c 106-107,109,113-131,138,141,143,310
+  s_9b530f08172a54::t_f23e395126e277 132-134
+  s_9b530f08172a54::t_7b97d13e87d8c1 135-137,140
+  s_9b530f08172a54::t_ca2422c70b5a17 139,142,144-146,177,184-187,193-196,238,243-244,311
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_8c7ab24022620b 488-560
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_3c631ac102f6ac 25-33,36
+  s_9b530f08172a54::t_95a4d9d967fa1b 49,64-74
+  s_9b530f08172a54::t_9a9e2299a6c5b3 37-40,50,75-78,86,95
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_cd243891ba0c31 103-113
+  s_9b530f08172a54::t_835ffe5f372d90 127-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a64e5b2015341726cc1b58db8f451e8c47771855",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
