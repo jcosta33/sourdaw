@@ -13,9 +13,9 @@
 use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
-    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginHostRequestNotifier,
-    ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, LatencyChangeNotifier,
+    PluginHostRequestNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -329,19 +329,24 @@ fn empty_event() -> Event {
     unsafe { std::mem::zeroed() }
 }
 
-fn note_event(note: u8, velocity: u8, channel: i16, is_on: bool) -> Event {
+/// Build the VST3 event for one host note.
+///
+/// `sampleOffset` carries the event's `frame_offset`, which is what sounds a
+/// note on the sample it was written on rather than at the head of whichever
+/// block carried it.
+fn note_event(source: HostMidiEvent) -> Event {
     let mut event = empty_event();
     event.busIndex = 0;
-    event.sampleOffset = 0;
+    event.sampleOffset = source.frame_offset as i32;
     event.ppqPosition = 0.0;
     event.flags = 0;
-    let normalised_velocity = f32::from(velocity) / 127.0;
-    if is_on {
+    let normalised_velocity = f32::from(source.velocity) / 127.0;
+    if source.is_note_on {
         event.r#type = EventTypes_::kNoteOnEvent as u16;
         event.__field0 = Event__type0 {
             noteOn: NoteOnEvent {
-                channel,
-                pitch: i16::from(note),
+                channel: source.channel,
+                pitch: i16::from(source.note),
                 tuning: 0.0,
                 velocity: normalised_velocity,
                 length: 0,
@@ -353,8 +358,8 @@ fn note_event(note: u8, velocity: u8, channel: i16, is_on: bool) -> Event {
     event.r#type = EventTypes_::kNoteOffEvent as u16;
     event.__field0 = Event__type0 {
         noteOff: NoteOffEvent {
-            channel,
-            pitch: i16::from(note),
+            channel: source.channel,
+            pitch: i16::from(source.note),
             velocity: normalised_velocity,
             noteId: -1,
             tuning: 0.0,
@@ -1443,7 +1448,7 @@ impl Vst3Wrapper {
         }
     }
 
-    fn stage_midi(&self, midi_events: &[(u8, u8, i16, bool)]) {
+    fn stage_midi(&self, midi_events: &[HostMidiEvent]) {
         self.event_list.reset();
         if !self.accepts_midi {
             // A plugin with no event input bus must not be handed events. This
@@ -1451,9 +1456,8 @@ impl Vst3Wrapper {
             // accepts MIDI" answer the engine's slot gives for CLAP.
             return;
         }
-        for (note, velocity, channel, is_on) in midi_events {
-            self.event_list
-                .push(note_event(*note, *velocity, *channel, *is_on));
+        for event in midi_events {
+            self.event_list.push(note_event(*event));
         }
     }
 
@@ -1898,7 +1902,7 @@ impl HostedPluginRuntime for Vst3Wrapper {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        midi_events: &[(u8, u8, i16, bool)],
+        midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     ) {
         self.stage_parameter_updates(parameter_updates);

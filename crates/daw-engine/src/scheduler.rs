@@ -7,6 +7,7 @@ use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
+use crate::midi::note_store::{MidiNoteStore, NoteAddressSet, TimedMidiNote};
 use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
@@ -303,7 +304,15 @@ pub enum GraphCommand {
     },
 
     // External plugins (CLAP/VST3/AU)
-    AddPlugin(usize, Box<dyn NativePlugin>),
+    /// Register a plugin instance on the master insert chain, with the note
+    /// store it plays from.
+    ///
+    /// The store is `Some` for an instrument and `None` for everything else.
+    /// A device with no store refuses [`GraphCommand::ScheduleMidiNotes`] and
+    /// counts the refusal, which is the honest answer for a body that has
+    /// nothing to sound a note with; building one on the audio thread instead
+    /// is the allocation ADR 0020 forbids.
+    AddPlugin(usize, Box<dyn NativePlugin>, Option<Box<MidiNoteStore>>),
     /// Register a hosted plugin instance, homed detached rather than on the
     /// master insert chain.
     ///
@@ -311,13 +320,44 @@ pub enum GraphCommand {
     /// master chain it would render the whole mix through that instance the
     /// moment a user took it off a strip; homed detached, releasing it from a
     /// chain returns it to a placement that runs nowhere.
-    AddHostedPlugin(usize, Box<dyn NativePlugin>),
+    ///
+    /// Its note store travels with it, unconditionally: a hosted instance is
+    /// the route every external instrument arrives on, and one registered
+    /// without a store could never be scheduled against.
+    AddHostedPlugin(usize, Box<dyn NativePlugin>, Box<MidiNoteStore>),
     /// Retire a registered plugin, handing the instance off the callback
     /// thread.
     RemovePlugin(usize),
 
     // MIDI events (routed to a specific plugin by ID)
+    /// Play one note at the head of the next block this plugin is handed.
+    ///
+    /// The live path: a note struck on a keyboard has no timeline position to
+    /// stamp it against, so it is delivered as soon as the plugin renders and
+    /// its `frame_offset` is zero. A note that does have a position is written
+    /// with [`GraphCommand::ScheduleMidiNotes`] instead.
+    ///
+    /// The channel and note are not checked against the addresses the store
+    /// refuses, because a live note is never tracked as sounding and so is
+    /// never owed a release something would have to address.
     SendMidiNote(usize, MidiNoteEvent),
+    /// Write a batch of timeline-addressed notes into a plugin's note store.
+    ///
+    /// The batch is built control-side and lands whole or not at all: a plugin
+    /// with no store, or a batch past the store's free capacity, is refused
+    /// and counted rather than stored in part. The box leaves over the
+    /// retirement channel, because the audio thread may not free one.
+    ScheduleMidiNotes {
+        plugin_id: usize,
+        notes: Box<[TimedMidiNote]>,
+    },
+    /// Drop every stored note in the half-open frame window
+    /// `from_frame..to_frame`. `0..u64::MAX` clears the plugin's store.
+    ClearMidiNotes {
+        plugin_id: usize,
+        from_frame: u64,
+        to_frame: u64,
+    },
 
     // MIDI FX
     /// Add a user MIDI FX, already built control-side
@@ -685,6 +725,8 @@ impl GraphCommand {
             | Self::SetBypass(..)
             | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
+            | Self::ScheduleMidiNotes { .. }
+            | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
             | Self::RemoveMidiFx(..)
             | Self::SetMidiFxParam(..)
@@ -773,6 +815,8 @@ impl GraphCommand {
             | Self::SetParam(..)
             | Self::SetBypass(..)
             | Self::SendMidiNote(..)
+            | Self::ScheduleMidiNotes { .. }
+            | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
             | Self::RemoveMidiFx(..)
             | Self::SetMidiFxParam(..)
@@ -886,6 +930,32 @@ struct ActiveEffect {
     midi_fx: MidiFxChain,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
+    /// The timeline-addressed notes this instrument plays from, or `None` for
+    /// a device that is not one.
+    ///
+    /// Built control-side and carried in by the command that registered the
+    /// device ([`GraphCommand::AddHostedPlugin`],
+    /// [`GraphCommand::AddPlugin`]), because the audio thread may neither
+    /// allocate one nor free one (ADR 0020). Unlike `pending_midi`, which is
+    /// this block's delivery and is emptied by it, the store outlives every
+    /// block: delivery reads from it and leaves it alone, so a loop pass
+    /// sounds the same note again and a locate away from it sounds nothing.
+    midi_notes: Option<Box<MidiNoteStore>>,
+    /// Which of the store's notes this device is currently holding down.
+    ///
+    /// Written by delivery and emptied by [`Self::release_sounding_notes`].
+    /// Empty for every device that carries no store, because only delivery
+    /// from one ever sets a bit.
+    sounding: NoteAddressSet,
+    /// Sounding notes whose scheduled note-off a clear took out of the store
+    /// during the drain now applying, awaiting settlement.
+    ///
+    /// A candidate, not a decision. A producer rewriting a bar clears it and
+    /// schedules the replacement in one drain, so the clear alone cannot tell
+    /// a release that was deleted from one that only moved — see
+    /// [`Self::settle_stripped_note_offs`], which answers that against the
+    /// store the whole drain left behind.
+    stripped: NoteAddressSet,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -1319,6 +1389,10 @@ pub struct RetiredGraphObjects {
     /// The tempo and meter maps a newer pair replaced. They own segment
     /// vectors, so they leave on the same contract as everything else here.
     transport_maps: Option<Box<TransportMaps>>,
+    /// A scheduled-note batch whose entries have been copied into their
+    /// store. The box is heap the control thread built, so freeing it here
+    /// would be a free on the callback.
+    midi_notes: Option<Box<[TimedMidiNote]>>,
     remaining_effects: Vec<ActiveEffect>,
     remaining_timeline: Option<TimelineGraph>,
     queued_commands: Vec<GraphCommand>,
@@ -1332,6 +1406,7 @@ impl RetiredGraphObjects {
             midi_fx,
             timeline_object: None,
             transport_maps: None,
+            midi_notes: None,
             remaining_effects: Vec::new(),
             remaining_timeline: None,
             queued_commands: Vec::new(),
@@ -1359,6 +1434,12 @@ impl RetiredGraphObjects {
         retired
     }
 
+    fn midi_notes(notes: Box<[TimedMidiNote]>) -> Self {
+        let mut retired = Self::removed(None, None);
+        retired.midi_notes = Some(notes);
+        retired
+    }
+
     /// The old command consumer a channel swap replaced. Its producer was
     /// dropped control-side when the swap was published, so the reclaimer's
     /// drain-until-abandoned loop terminates promptly.
@@ -1382,6 +1463,7 @@ impl RetiredGraphObjects {
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
             transport_maps: pending.transport_maps.take(),
+            midi_notes: pending.midi_notes.take(),
             remaining_effects,
             remaining_timeline: Some(remaining_timeline),
             queued_commands,
@@ -1472,10 +1554,24 @@ impl ActiveEffect {
             probability_evaluator: ProbabilityEvaluator,
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
+            midi_notes: None,
+            sounding: NoteAddressSet::default(),
+            stripped: NoteAddressSet::default(),
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
         }
+    }
+
+    /// Install the note store the registering command shipped.
+    ///
+    /// Taken as a step of its own so every refusal path can build the effect
+    /// holding the store and hand the whole of it to the retirement channel:
+    /// a store dropped where the registration was refused would be a free on
+    /// the callback.
+    fn holding_midi_notes(mut self, store: Option<Box<MidiNoteStore>>) -> Self {
+        self.midi_notes = store;
+        self
     }
 
     /// Take a newly declared latency and the line the control thread built
@@ -1567,6 +1663,270 @@ impl ActiveEffect {
             diagnostics.record_scheduler_event_buffer_overflow(1);
         }
     }
+
+    /// Queue every stored note the span `block_start..block_start + frames`
+    /// renders, each stamped at the sample that carries its timeline frame.
+    ///
+    /// `span_offset` is where the span begins inside the callback's buffers.
+    /// A chain device is handed that span on its own, so its stamps are
+    /// measured from the span's first frame; a master insert drains once per
+    /// callback over the whole buffer, so its stamps are measured from the
+    /// callback's. Stamping a master insert from the span would put every
+    /// delivery after a loop seam a seam's worth early.
+    ///
+    /// Returns whether the span reached any of them, so the caller can mark
+    /// the slot as holding block-local MIDI exactly as the immediate path
+    /// does. The store itself is only read: what a pass delivers stays
+    /// scheduled, which is what makes a note inside a loop region sound on
+    /// every pass over it.
+    #[inline]
+    fn enqueue_due_midi_notes(
+        &mut self,
+        block_start: u64,
+        frames: usize,
+        span_offset: usize,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            midi_notes,
+            pending_midi,
+            sounding,
+            placement,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_ref() else {
+            return false;
+        };
+
+        let stamp_base = match *placement {
+            EffectPlacement::MasterChain => span_offset as u32,
+            _ => 0,
+        };
+        let span_end = block_start.saturating_add(frames as u64);
+        let entries = store.entries();
+        // The store is frame-ordered, so the span's own run is a slice of it:
+        // where the frames reach `block_start`, up to where they leave the
+        // span. Delivering in that order is what keeps the pending buffer
+        // non-decreasing in time, which is what a plugin is owed.
+        let first_due = entries.partition_point(|entry| entry.at_frame < block_start);
+        let mut delivered = false;
+        for entry in &entries[first_due..] {
+            if entry.at_frame >= span_end {
+                break;
+            }
+            delivered = true;
+            let mut event = entry.event;
+            event.frame_offset = stamp_base + (entry.at_frame - block_start) as u32;
+            // A stored release passes the probability gate whatever its
+            // producer wrote on it, exactly as the release a stop, a locate or
+            // a clear supplies does. The gate decides whether a note sounds,
+            // and it decides that on the note-on: a note-on the gate rolls
+            // away still marked the note sounding here, so the release it
+            // earns is a note-off an instrument that never heard the note-on
+            // ignores — while a release rolled away leaves a key that did go
+            // down held for good.
+            if !event.is_note_on {
+                event.probability_cutoff = crate::midi_fx::PROBABILITY_CUTOFF_RANGE;
+            }
+            if !pending_midi.try_push(event) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                continue;
+            }
+            // Only what reached the buffer is tracked: a note-on the overflow
+            // dropped never sounds, so a release owed for it would be a
+            // note-off the instrument never asked for.
+            if event.is_note_on {
+                sounding.hold(event.channel, event.note);
+            } else {
+                sounding.release(event.channel, event.note);
+            }
+        }
+        delivered
+    }
+
+    /// Queue a note-off for every note this device's store has sounded and not
+    /// released, at `frame_offset` inside whatever renders next.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    ///
+    /// The store's own note-offs stay where the producer wrote them. This is
+    /// for the frames that are never going to be rendered — a stop, a locate,
+    /// or a loop wrap past a scheduled note-off — after which the instrument
+    /// would hold that key until something else happened to release it.
+    ///
+    /// A note-off the full buffer refuses leaves its note held, so the next
+    /// trigger owes it again. Counting the overflow and forgetting the note
+    /// would turn one dropped event into a key held for the rest of the
+    /// session, which is the one outcome worse than releasing it late.
+    #[inline]
+    fn release_sounding_notes(
+        &mut self,
+        frame_offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            sounding,
+            pending_midi,
+            ..
+        } = self;
+        let mut released = false;
+        sounding.drain(|channel, note| {
+            if !pending_midi.try_push(release_note(channel, note, frame_offset)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                return false;
+            }
+            released = true;
+            true
+        });
+        released
+    }
+
+    /// Clear a window of this device's store, recording every sounding note
+    /// whose scheduled note-off the window takes away.
+    ///
+    /// Returns whether any candidate was recorded, so the caller can flag the
+    /// slot for the drain's settlement.
+    ///
+    /// Nothing is released here. A producer rewrites a bar by clearing it and
+    /// scheduling its replacement in the same drain, so a note-off the window
+    /// takes out is as likely to be moving as to be going away, and releasing
+    /// at the clear cuts short a note the rewrite only meant to lengthen. What
+    /// the store holds once the whole drain has applied is what decides it —
+    /// see [`Self::settle_stripped_note_offs`]. A note-on the window removes
+    /// owes nothing either way; either it never sounded, or it did and its own
+    /// note-off is still where the producer wrote it.
+    #[inline]
+    fn clear_midi_notes(&mut self, from_frame: u64, to_frame: u64) -> bool {
+        let Self {
+            midi_notes,
+            sounding,
+            stripped,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_mut() else {
+            return false;
+        };
+
+        let mut recorded = false;
+        store.clear_window(from_frame, to_frame, |entry| {
+            let event = &entry.event;
+            if event.is_note_on || !sounding.is_held(event.channel, event.note) {
+                return;
+            }
+            stripped.hold(event.channel, event.note);
+            recorded = true;
+        });
+        recorded
+    }
+
+    /// Answer the candidates a clear recorded, against the store the whole
+    /// drain left behind.
+    ///
+    /// A candidate the store still holds a note-off for ahead of the playhead,
+    /// before any note-on of the same key, is released by that note-off on the
+    /// frame the rewrite put it on, so nothing is owed here and the candidate
+    /// is simply dropped. A note-off past a later note-on belongs to that
+    /// later note and covers nothing. A candidate with no such note-off is
+    /// owed a release: the frames that carried it are out of the arrangement,
+    /// and the instrument would hold the key — the same position a stop, a
+    /// locate and a loop wrap leave a sounding note in, and it gets the same
+    /// answer, a note-off at the head of whatever renders next.
+    ///
+    /// A release the full buffer refuses leaves the note both sounding and a
+    /// candidate, so it is owed again rather than lost.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    #[inline]
+    fn settle_stripped_note_offs(
+        &mut self,
+        playhead_frames: u64,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            midi_notes,
+            pending_midi,
+            sounding,
+            stripped,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_ref() else {
+            return false;
+        };
+
+        let rewritten = scheduled_note_offs_from(store, playhead_frames);
+        let mut released = false;
+        stripped.drain(|channel, note| {
+            if rewritten.is_held(channel, note) || !sounding.is_held(channel, note) {
+                return true;
+            }
+            if !pending_midi.try_push(release_note(channel, note, 0)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+                return false;
+            }
+            sounding.release(channel, note);
+            released = true;
+            true
+        });
+        released
+    }
+}
+
+/// Every note a note-off the store still holds would release, were the
+/// playhead to run on from `from_frame`.
+///
+/// The first entry a note has from that frame on is the one that decides it: a
+/// note-off covers the note, and a note-on does not. A note-on standing
+/// between the playhead and the next note-off of that key means the note-off
+/// belongs to the later note the store presses there, not to the one sounding
+/// now — so the sounding note is owed its release, and the later pair is left
+/// whole to sound as its producer wrote it.
+///
+/// One pass over the entries from that frame on, into two sets the same shape
+/// as the sounding bits: sixteen channels of a hundred and twenty-eight bits,
+/// stack-local and fixed, so building them allocates nothing on the callback.
+/// The store is frame-ordered, so the entries at or past a frame are its tail
+/// in the order the playhead would meet them.
+fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> NoteAddressSet {
+    let entries = store.entries();
+    let first = entries.partition_point(|entry| entry.at_frame < from_frame);
+    let mut decided = NoteAddressSet::default();
+    let mut covered = NoteAddressSet::default();
+    for entry in &entries[first..] {
+        let event = &entry.event;
+        if decided.is_held(event.channel, event.note) {
+            continue;
+        }
+        decided.hold(event.channel, event.note);
+        if !event.is_note_on {
+            covered.hold(event.channel, event.note);
+        }
+    }
+    covered
+}
+
+/// The note-off that ends a note a store sounded, supplied by the engine
+/// rather than read from the store.
+///
+/// Velocity zero is the release a MIDI source sends for a key let go without
+/// pressure. The probability cutoff passes: the gate decides whether a note
+/// sounds, and a release owed for a note that already did must never be rolled
+/// away, or the instrument holds that key for good. Delivery hands a stored
+/// note-off over on those same terms, for that same reason.
+fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
+    MidiNoteEvent {
+        note,
+        velocity: 0,
+        channel,
+        is_note_on: false,
+        frame_offset,
+        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+        project_probability_seed: 0,
+        clip_id_hash: 0,
+        event_id_hash: 0,
+        absolute_occurrence_index: 0,
+    }
 }
 
 pub struct AudioScheduler {
@@ -1579,6 +1939,10 @@ pub struct AudioScheduler {
     parameter_work: SlotWorkSet,
     /// Slots that may need detached-MIDI cleanup without walking the table.
     pending_midi_work: SlotWorkSet,
+    /// Slots holding note-off candidates a clear recorded during the drain
+    /// now applying, emptied by [`Self::settle_stripped_note_offs`] once that
+    /// drain finishes.
+    stripped_note_work: SlotWorkSet,
     /// The explicit, deterministic order of master insert processing.
     master_work: MasterWorkList,
     /// Effect ids the render callback hands captured device audio to.
@@ -1712,6 +2076,7 @@ impl AudioScheduler {
             effect_index: IdSlotIndex::reserved(EFFECT_TABLE_CAPACITY),
             parameter_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             pending_midi_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
+            stripped_note_work: SlotWorkSet::reserved(EFFECT_TABLE_CAPACITY),
             master_work: MasterWorkList::reserved(EFFECT_TABLE_CAPACITY),
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             pdc_dirty: false,
@@ -1894,6 +2259,11 @@ impl AudioScheduler {
     #[inline]
     pub fn update_graph(&mut self) {
         self.drain_commands();
+        // After the drain rather than inside it, and before anything renders:
+        // a clear and the batch that rewrites what it took out arrive
+        // together, so only the store the whole drain leaves behind can tell a
+        // release that was deleted from one that merely moved.
+        self.settle_stripped_note_offs();
         // After the drain rather than inside it: a batch that adds a bus, its
         // devices and every send into it passes through states no mix should
         // ever be aligned against, and re-aiming per command would also make a
@@ -2043,21 +2413,17 @@ impl AudioScheduler {
                         })
                     }
                 },
-                GraphCommand::AddPlugin(id, plugin) => {
+                GraphCommand::AddPlugin(id, plugin, store) => {
+                    let effect =
+                        ActiveEffect::new(id, PluginCore::Native(plugin)).holding_midi_notes(store);
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else {
-                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_effect(effect);
                         None
                     }
                 }
@@ -2065,21 +2431,17 @@ impl AudioScheduler {
                 // belongs to the load that created it, not to the master
                 // insert chain: homed there it would render the whole mix
                 // through the instance the moment a user took it off a strip.
-                GraphCommand::AddHostedPlugin(id, plugin) => {
+                GraphCommand::AddHostedPlugin(id, plugin, store) => {
+                    let effect = ActiveEffect::detached(id, PluginCore::Native(plugin))
+                        .holding_midi_notes(Some(store));
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        Some(RetiredGraphObjects::effect(ActiveEffect::detached(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::effect(ActiveEffect::detached(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else {
-                        self.push_effect(ActiveEffect::detached(id, PluginCore::Native(plugin)));
+                        self.push_effect(effect);
                         None
                     }
                 }
@@ -2126,6 +2488,21 @@ impl AudioScheduler {
                     }
                     None
                 }
+                GraphCommand::ScheduleMidiNotes { plugin_id, notes } => {
+                    self.schedule_midi_notes(plugin_id, &notes);
+                    // The batch was copied into the store; the box itself is a
+                    // control-side allocation and leaves the way every other
+                    // one does.
+                    Some(RetiredGraphObjects::midi_notes(notes))
+                }
+                GraphCommand::ClearMidiNotes {
+                    plugin_id,
+                    from_frame,
+                    to_frame,
+                } => {
+                    self.clear_midi_notes(plugin_id, from_frame, to_frame);
+                    None
+                }
                 GraphCommand::SetTransport(state) => {
                     // Stopping holds every mixer parameter where it stands and
                     // drops what it had queued. A ramp is stamped in timeline
@@ -2134,6 +2511,10 @@ impl AudioScheduler {
                     // playback ends.
                     if self.transport.is_playing && !state.is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
+                        // A stopped playhead never reaches the frame a
+                        // sounding note's note-off was written for, so the
+                        // note is released here or it is held for good.
+                        self.release_sounding_notes(0);
                     }
                     self.transport = state;
                     None
@@ -2152,6 +2533,7 @@ impl AudioScheduler {
                     // (seconds, beats) pair.
                     if self.transport.is_playing && !is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
+                        self.release_sounding_notes(0);
                     }
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
@@ -2370,6 +2752,14 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SeekFrames(frame) => {
+                    // The locate takes the playhead off the frames a sounding
+                    // note's note-off was written for. Nothing will render
+                    // them, so the note is released at the head of what plays
+                    // from the new position. A stopped transport sounded
+                    // nothing to release.
+                    if self.transport.is_playing {
+                        self.release_sounding_notes(0);
+                    }
                     self.timeline.seek(frame);
                     self.playhead_frames = frame;
                     None
@@ -2663,6 +3053,7 @@ impl AudioScheduler {
         let old_tail = self.effects.len() - 1;
         self.parameter_work.remove(slot);
         self.pending_midi_work.remove(slot);
+        self.stripped_note_work.remove(slot);
         self.master_work.remove(slot);
         let removed = self.effects.swap_remove(slot);
         // The swap moved the table's tail into `slot` unless the removed
@@ -2672,6 +3063,7 @@ impl AudioScheduler {
             self.effect_index.set_slot(moved.id, slot);
             self.parameter_work.move_slot(old_tail, slot);
             self.pending_midi_work.move_slot(old_tail, slot);
+            self.stripped_note_work.move_slot(old_tail, slot);
             self.master_work.move_slot(old_tail, slot);
         }
         Some(removed)
@@ -2792,6 +3184,130 @@ impl AudioScheduler {
                 self.pending_midi_work.remove(slot);
             } else {
                 index += 1;
+            }
+        }
+    }
+
+    /// Copy a scheduled batch into the store of the device it names.
+    ///
+    /// Whole or nothing: a device with no store, and a batch past the store's
+    /// free capacity, are both refused and counted. A note behind the playhead
+    /// is stored and counted late rather than fired — firing it here would put
+    /// a note-on at a position nobody wrote it at, and the frame it names is
+    /// still ahead of a later locate or loop pass.
+    fn schedule_midi_notes(&mut self, plugin_id: usize, notes: &[TimedMidiNote]) {
+        let stored = self
+            .effect_index
+            .lookup(plugin_id)
+            .and_then(|slot| self.effects.get_mut(slot))
+            .and_then(|effect| effect.midi_notes.as_mut())
+            .is_some_and(|store| store.try_extend(notes));
+
+        if !stored {
+            self.midi_rt_diagnostics.record_midi_note_batch_refusal(1);
+            return;
+        }
+
+        let playhead = self.playhead_frames;
+        let late = notes.iter().filter(|note| note.at_frame < playhead).count();
+        self.midi_rt_diagnostics.record_late_midi_notes(late as u64);
+    }
+
+    /// Take a window out of one device's store, recording every note it is
+    /// sounding whose scheduled note-off stood inside that window.
+    ///
+    /// The release those notes may be owed is decided after the drain, by
+    /// [`Self::settle_stripped_note_offs`], because the same drain may carry
+    /// the batch that writes their note-offs back somewhere else. A device
+    /// with no store has nothing to clear, which is every device but an
+    /// instrument.
+    fn clear_midi_notes(&mut self, plugin_id: usize, from_frame: u64, to_frame: u64) {
+        let Some(slot) = self.effect_index.lookup(plugin_id) else {
+            return;
+        };
+        if slot >= self.effects.len() {
+            return;
+        }
+        if self.effects[slot].clear_midi_notes(from_frame, to_frame) {
+            self.stripped_note_work.insert(slot);
+        }
+    }
+
+    /// Answer every note-off candidate this drain's clears recorded.
+    ///
+    /// Runs once per flagged device, after the whole drain and before anything
+    /// renders. A clear on its own cannot tell a deleted release from a moved
+    /// one — a producer rewriting a bar clears it and schedules the
+    /// replacement in a single drain — so the store as the drain left it is
+    /// what decides, and the work set keeps the cost to the devices a clear
+    /// actually touched.
+    fn settle_stripped_note_offs(&mut self) {
+        while let Some(slot) = self.stripped_note_work.slots.last().copied() {
+            self.stripped_note_work.remove(slot);
+            if self.effects[slot]
+                .settle_stripped_note_offs(self.playhead_frames, &mut self.midi_rt_diagnostics)
+            {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    /// Deliver every scheduled note the span reaches, stamped at its sample.
+    ///
+    /// Sited beside [`Self::apply_due_device_params`] and for the same reason:
+    /// both are addressed in timeline frames, so both have to run against the
+    /// span that actually renders those frames rather than against the
+    /// callback's first one. A device with no store is skipped, which is every
+    /// device but an instrument.
+    ///
+    /// Nothing is delivered while the transport is stopped. The playhead
+    /// stands still then, so every callback renders the same span and a note
+    /// under it would retrigger at the block rate — the same reason clips are
+    /// held back on a stopped transport, and a scheduled note is arrangement
+    /// material exactly as a clip is. The live path
+    /// ([`GraphCommand::SendMidiNote`]) still sounds a stopped transport,
+    /// because a note played on a keyboard is not addressed to the timeline at
+    /// all.
+    fn apply_due_midi_notes(&mut self, block_start: u64, frames: usize, span_offset: usize) {
+        if frames == 0 || !self.transport.is_playing {
+            return;
+        }
+
+        for slot in 0..self.effects.len() {
+            if self.effects[slot].enqueue_due_midi_notes(
+                block_start,
+                frames,
+                span_offset,
+                &mut self.midi_rt_diagnostics,
+            ) {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    /// Release every note the note stores have sounded, at the head of
+    /// whatever renders next.
+    ///
+    /// A stop, a locate and a loop wrap all leave the frame a sounding note's
+    /// note-off was written for behind: nothing is going to render it, so the
+    /// instrument would hold that key. Every trigger runs on the audio thread
+    /// and ahead of the next delivery, so the release reaches the instrument
+    /// before anything the new position schedules.
+    ///
+    /// `seam_offset` is where that "next" begins inside the callback's
+    /// buffers, which is what a master insert's stamps are measured from; a
+    /// chain device is handed the span itself, so its release sits at the
+    /// span's own head.
+    fn release_sounding_notes(&mut self, seam_offset: usize) {
+        for slot in 0..self.effects.len() {
+            let frame_offset = match self.effects[slot].placement {
+                EffectPlacement::MasterChain => seam_offset as u32,
+                _ => 0,
+            };
+            if self.effects[slot]
+                .release_sounding_notes(frame_offset, &mut self.midi_rt_diagnostics)
+            {
+                self.pending_midi_work.insert(slot);
             }
         }
     }
@@ -2989,7 +3505,7 @@ impl AudioScheduler {
     /// recover afterwards: the span just rendered walked every frame below it,
     /// while the published playhead is already back at the loop start by the
     /// time any snapshot is read.
-    fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
+    fn advance_playhead(&mut self, block_start: u64, span_frames: usize, seam_offset: usize) {
         if !self.transport.is_playing {
             return;
         }
@@ -2999,6 +3515,11 @@ impl AudioScheduler {
                 self.playhead_frames = self.loop_region.start_frame;
                 self.loop_wraps = self.loop_wraps.wrapping_add(1);
                 self.last_wrap_frame = next;
+                // The wrap takes the playhead back over the loop, so a
+                // sounding note whose note-off lies past the seam never gets
+                // one. Releasing on the seam is where a musician hears the
+                // loop close.
+                self.release_sounding_notes(seam_offset);
             }
             _ => self.playhead_frames = next,
         }
@@ -3036,6 +3557,7 @@ impl AudioScheduler {
 
             self.refresh_transport_at(block_start);
             self.apply_due_device_params(block_start, span_frames);
+            self.apply_due_midi_notes(block_start, span_frames, offset);
             self.render_timeline(
                 block_start,
                 span_frames,
@@ -3050,7 +3572,13 @@ impl AudioScheduler {
             };
             count += 1;
             offset += span_frames;
-            self.advance_playhead(block_start, span_frames);
+            // Where the next span begins inside this callback, which is where
+            // a loop wrap's releases are stamped for a master insert. A wrap
+            // on the callback's last span puts that one frame past the buffer,
+            // so it lands on the buffer's final sample instead — the nearest
+            // frame that exists, and the only one a plugin may be handed.
+            let seam_offset = offset.min(frames - 1);
+            self.advance_playhead(block_start, span_frames, seam_offset);
         }
 
         (spans, count)
@@ -3515,7 +4043,9 @@ mod tests {
         panic_on_drop: bool,
     ) {
         let plugin = drop_tracking_plugin(dropped_tx, panic_on_drop);
-        assert!(command_tx.push(GraphCommand::AddPlugin(id, plugin)).is_ok());
+        assert!(command_tx
+            .push(GraphCommand::AddPlugin(id, plugin, None))
+            .is_ok());
     }
 
     impl Drop for DropTrackingPlugin {
@@ -3741,6 +4271,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3775,6 +4306,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3829,6 +4361,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3849,6 +4382,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -3891,7 +4425,7 @@ mod tests {
             ),
         ] {
             command_tx
-                .push(GraphCommand::AddPlugin(id, plugin))
+                .push(GraphCommand::AddPlugin(id, plugin, None))
                 .unwrap();
         }
         command_tx
@@ -3901,6 +4435,7 @@ mod tests {
                     factor: 11.0,
                     offset: 7.0,
                 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3954,6 +4489,7 @@ mod tests {
                     factor: 7.0,
                     offset: 4.0,
                 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3982,6 +4518,7 @@ mod tests {
                     factor: 4.0,
                     offset: 2.0,
                 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4017,6 +4554,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .is_ok());
         scheduler.update_graph();
@@ -4043,6 +4581,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4134,6 +4673,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 7,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4175,6 +4715,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 8,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4206,6 +4747,7 @@ mod tests {
                 Box::new(VelocityRecordingPlugin {
                     received_velocity_sum: Arc::clone(&received_velocity_sum),
                 }),
+                None,
             ))
             .unwrap();
         command_tx
@@ -4235,6 +4777,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -4365,6 +4908,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4397,6 +4941,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 11,
                 Box::new(FakeNativePlugin { value: 0.0 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4443,6 +4988,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4523,6 +5069,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4555,6 +5102,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 EFFECT_TABLE_CAPACITY + 1,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4618,6 +5166,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4628,6 +5177,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 EFFECT_TABLE_CAPACITY,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4654,6 +5204,7 @@ mod tests {
                     received_event_count: Arc::clone(&received_event_count),
                     received_channel_sum,
                 }),
+                None,
             ))
             .unwrap();
         command_tx
@@ -4680,6 +5231,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -4727,6 +5279,7 @@ mod tests {
                     received_event_count: Arc::clone(&received_event_count),
                     received_channel_sum: Arc::clone(&received_channel_sum),
                 }),
+                None,
             ))
             .unwrap();
 
@@ -4744,6 +5297,7 @@ mod tests {
                         clip_id_hash: 0,
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
+                        frame_offset: 0,
                     },
                 ))
                 .unwrap();
@@ -4943,6 +5497,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4981,6 +5536,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         command_tx
@@ -5052,6 +5608,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         command_tx
@@ -5210,6 +5767,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     TAP_CONSUMER_ID,
                     capture_tap_plugin(&tap),
+                    None,
                 ))
                 .unwrap();
             command_tx
@@ -5263,6 +5821,7 @@ mod tests {
                         received_event_count: Arc::clone(&received_event_count),
                         received_channel_sum: Arc::clone(&received_channel_sum),
                     }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -5287,6 +5846,7 @@ mod tests {
                         clip_id_hash: 0,
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
+                        frame_offset: 0,
                     },
                 ))
                 .unwrap();
@@ -5406,6 +5966,7 @@ mod tests {
                     .push(GraphCommand::AddPlugin(
                         id,
                         Box::new(FakeNativePlugin { value: 0.0 }),
+                        None,
                     ))
                     .unwrap();
             }
@@ -5451,6 +6012,7 @@ mod tests {
                     .push(GraphCommand::AddPlugin(
                         id,
                         Box::new(FakeNativePlugin { value: 0.0 }),
+                        None,
                     ))
                     .unwrap();
             }
@@ -5572,12 +6134,14 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     41,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    None,
                 ))
                 .unwrap();
             command_tx
                 .push(GraphCommand::AddHostedPlugin(
                     42,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    MidiNoteStore::new(),
                 ))
                 .unwrap();
 
@@ -5594,6 +6158,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     41,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    None,
                 ))
                 .unwrap();
             assert_no_alloc(|| {
@@ -5632,6 +6197,7 @@ mod tests {
                         received_event_count: Arc::new(AtomicUsize::new(0)),
                         received_channel_sum: Arc::new(AtomicUsize::new(0)),
                     }),
+                    None,
                 ))
                 .unwrap();
             // Built control-side: these boxes are the allocations the issue
@@ -5697,6 +6263,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     7,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             for _ in 0..MIDI_FX_CHAIN_CAPACITY {
@@ -5745,6 +6312,7 @@ mod tests {
                 .push(GraphCommand::AddHostedPlugin(
                     7,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    MidiNoteStore::new(),
                 ))
                 .unwrap();
             command_tx
@@ -5918,6 +6486,81 @@ mod timeline_tests {
 
         fn name(&self) -> &str {
             "constant-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// How many notes one [`FrameRecordingInstrument`] can log.
+    ///
+    /// The log is reserved to it up front because this fixture also runs
+    /// inside the render allocation guard, where a growing `Vec` would be the
+    /// allocation the guard exists to catch.
+    const RECORDED_NOTE_CAPACITY: usize = 64;
+
+    /// One note as an instrument received it: the absolute frame it landed
+    /// on, which note it named, and whether it pressed or released.
+    type RecordedNote = (u64, u8, bool);
+
+    /// An instrument that records every note it receives: the frames it has
+    /// already been asked to render, plus the event's own offset inside the
+    /// block it arrived in, with the note and its direction.
+    ///
+    /// A chain device is called once per rendered span, in the order the spans
+    /// render; a master insert is called once per callback. Either way the
+    /// frames this fixture has already processed are where the call it is in
+    /// begins in the stream the harness drove, so a block-local stamp reads
+    /// back as a position a test can name — which is the only vantage a plugin
+    /// has on one.
+    struct FrameRecordingInstrument {
+        processed: u64,
+        received: Arc<Mutex<Vec<RecordedNote>>>,
+    }
+
+    impl FrameRecordingInstrument {
+        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<RecordedNote>>>) {
+            let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
+            let instrument = Box::new(Self {
+                processed: 0,
+                received: Arc::clone(&received),
+            });
+            (instrument, received)
+        }
+    }
+
+    impl NativePlugin for FrameRecordingInstrument {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.processed += num_samples as u64;
+        }
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            let mut received = self.received.lock().expect("the received note log");
+            for event in midi_events {
+                received.push((
+                    self.processed + u64::from(event.frame_offset),
+                    event.note,
+                    event.is_note_on,
+                ));
+            }
+            drop(received);
+            self.processed += num_samples as u64;
+        }
+
+        fn name(&self) -> &str {
+            "frame-recording-instrument"
         }
 
         fn as_any(&self) -> &dyn Any {
@@ -6179,6 +6822,7 @@ mod timeline_tests {
                 calls: Arc::clone(&calls),
                 midi_events: Arc::clone(&midi_events),
             }),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(track_id, effect(effect_id), 0));
 
@@ -6224,6 +6868,7 @@ mod timeline_tests {
             clip_id_hash: 0,
             event_id_hash: 0,
             absolute_occurrence_index: 0,
+            frame_offset: 0,
         }
     }
 
@@ -6250,6 +6895,38 @@ mod timeline_tests {
                 self.command_tx.push(command).is_ok(),
                 "the command ring should have room"
             );
+            self.scheduler.update_graph();
+            self
+        }
+
+        /// Push several commands and apply them in one drain, which is how a
+        /// producer's rewrite of a bar reaches the callback: the clear and the
+        /// batch replacing what it took out are one publication, never two the
+        /// graph could act on separately. The fence marks what makes it one
+        /// publication, matching `EngineHandle::send_graph_batch`.
+        fn send_in_one_drain(
+            &mut self,
+            commands: impl IntoIterator<Item = GraphCommand>,
+        ) -> &mut Self {
+            let commands_vec: Vec<GraphCommand> = commands.into_iter().collect();
+            let command_count = commands_vec.len();
+
+            assert!(
+                self.command_tx
+                    .push(GraphCommand::BeginBatch {
+                        commands: command_count
+                    })
+                    .is_ok(),
+                "the command ring should have room"
+            );
+
+            for command in commands_vec {
+                assert!(
+                    self.command_tx.push(command).is_ok(),
+                    "the command ring should have room"
+                );
+            }
+
             self.scheduler.update_graph();
             self
         }
@@ -6376,6 +7053,7 @@ mod timeline_tests {
                 Arc::clone(&declared),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            None,
         ));
         harness.send(insert_track_device(track_id, effect(effect_id), index));
         harness.send(set_latency(effect_id, latency));
@@ -6393,7 +7071,11 @@ mod timeline_tests {
         instrument: Box<dyn NativePlugin>,
         index: usize,
     ) {
-        harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            instrument,
+            MidiNoteStore::new(),
+        ));
         harness.send(insert_track_device(track_id, generator(effect_id), index));
     }
 
@@ -6425,7 +7107,11 @@ mod timeline_tests {
         instrument: Box<dyn NativePlugin>,
         index: usize,
     ) {
-        harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            instrument,
+            MidiNoteStore::new(),
+        ));
         harness.send(insert_bus_device(bus_id, generator(effect_id), index));
     }
 
@@ -6808,6 +7494,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
@@ -6874,6 +7561,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(2, effect(7), 0));
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(2)));
@@ -6913,6 +7601,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
 
@@ -6949,6 +7638,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
@@ -7178,7 +7868,7 @@ mod timeline_tests {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
             param: DeviceParamTarget::Hosted { id: 4 },
@@ -7233,7 +7923,7 @@ mod timeline_tests {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(false);
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
             param: DeviceParamTarget::Hosted { id: 7 },
@@ -7269,7 +7959,7 @@ mod timeline_tests {
         harness.playing();
         harness.send(GraphCommand::AddEffect(1, knead_instance()));
         let (plugin, queued) = parameter_recording_plugin(true);
-        harness.send(GraphCommand::AddPlugin(2, plugin));
+        harness.send(GraphCommand::AddPlugin(2, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 1,
             param: DeviceParamTarget::Hosted { id: 7 },
@@ -7317,7 +8007,7 @@ mod timeline_tests {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(GraphCommand::SetBypass(3, true));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
@@ -7359,7 +8049,7 @@ mod timeline_tests {
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(insert_track_device(1, effect(3), 0));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
@@ -7453,6 +8143,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::MasterGain,
@@ -7701,6 +8392,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(TailPlugin { value: 0.25 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
 
@@ -7732,6 +8424,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.send(insert_track_device(2, effect(7), 0));
@@ -7827,6 +8520,7 @@ mod timeline_tests {
             Box::new(MidiCountingPlugin {
                 received: Arc::clone(&received),
             }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
@@ -8057,6 +8751,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -8472,6 +9167,7 @@ mod timeline_tests {
                 Box::new(NoteOnCountingPlugin {
                     note_ons: Arc::clone(&note_ons),
                 }),
+                None,
             ));
             harness.send(GraphCommand::AddMidiFx(1, MidiFxKind::Arpeggiator.build()));
             harness.send(GraphCommand::SetTransportMaps(tempo_maps(segments)));
@@ -9109,6 +9805,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, LATENCY));
@@ -9162,6 +9859,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DETACHED_AT));
@@ -9216,6 +9914,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DETACHED_AT));
@@ -9264,6 +9963,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
         ));
         harness.send(insert_bus_device(50, effect(900), 0));
         harness.send(set_latency(900, LATENCY));
@@ -9603,6 +10303,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
         ));
         harness.send(insert_bus_device(50, effect(900), 0));
         harness.send(set_latency(900, BUS_LATENCY));
@@ -9636,6 +10337,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             900,
             Box::new(ScalingPlugin { factor: 1.0 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, declared));
@@ -9698,6 +10400,7 @@ mod timeline_tests {
                 Arc::new(AtomicUsize::new(declared)),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            None,
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, declared));
@@ -9750,6 +10453,7 @@ mod timeline_tests {
                 Arc::new(AtomicUsize::new(declared)),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            MidiNoteStore::new(),
         ));
         harness.send(set_latency(900, declared));
         harness.render(16);
@@ -10039,6 +10743,7 @@ mod timeline_tests {
                 Arc::new(AtomicUsize::new(AHEAD)),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            None,
         ));
         harness.send(insert_bus_device(50, effect(902), 0));
         harness.send(set_latency(902, AHEAD));
@@ -10318,6 +11023,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             901,
             Box::new(ConstantGenerator { value: 1.0 }),
+            MidiNoteStore::new(),
         ));
 
         // No track 7 in the graph, so the splice is refused with its line
@@ -10488,6 +11194,7 @@ mod timeline_tests {
             harness.send(GraphCommand::AddPlugin(
                 effect_id,
                 Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+                None,
             ));
             harness.send(insert_bus_device(bus_id, effect(effect_id), 0));
             harness.send(set_latency(effect_id, latency));
@@ -10538,6 +11245,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             901,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
         ));
         harness.send(insert_bus_device(51, effect(901), 0));
         harness.send(set_latency(901, SECOND_HOP));
@@ -10583,6 +11291,905 @@ mod timeline_tests {
             harness.render(16).0,
             vec![ALIGNED; 16],
             "past the onset every frame carries all three routes"
+        );
+    }
+
+    /// A note the control thread stamps for one timeline frame.
+    fn timed_note(at_frame: u64, note: u8) -> TimedMidiNote {
+        TimedMidiNote {
+            at_frame,
+            event: note_on(note),
+        }
+    }
+
+    /// The command a control thread ships for a run of notes: one note-on per
+    /// frame named, in the order they are named.
+    fn schedule_notes(plugin_id: usize, frames: &[u64]) -> GraphCommand {
+        let notes: Vec<TimedMidiNote> = frames.iter().map(|frame| timed_note(*frame, 60)).collect();
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    /// The same command for a phrase that names its own notes and releases:
+    /// `(frame, note, is_note_on)`, already in the frame order the store keeps.
+    fn schedule_phrase(plugin_id: usize, events: &[(u64, u8, bool)]) -> GraphCommand {
+        let notes: Vec<TimedMidiNote> = events
+            .iter()
+            .map(|(frame, note, is_note_on)| {
+                let mut timed = timed_note(*frame, *note);
+                timed.event.is_note_on = *is_note_on;
+                timed
+            })
+            .collect();
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    /// The batch as a producer authored it, put in order by the same
+    /// control-side step [`crate::EngineHandle::schedule_midi_notes`] takes —
+    /// which is what a scheduler test drives when the authoring order is the
+    /// thing under test.
+    fn schedule_authored(plugin_id: usize, events: &[(u64, u8)]) -> GraphCommand {
+        let mut notes: Vec<TimedMidiNote> = events
+            .iter()
+            .map(|(frame, note)| timed_note(*frame, *note))
+            .collect();
+        notes.sort_by_key(|note| note.at_frame);
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    fn received_notes(received: &Arc<Mutex<Vec<RecordedNote>>>) -> Vec<RecordedNote> {
+        received.lock().expect("the received note log").clone()
+    }
+
+    fn received_frames(received: &Arc<Mutex<Vec<RecordedNote>>>) -> Vec<u64> {
+        received_notes(received)
+            .iter()
+            .map(|(frame, _, _)| *frame)
+            .collect()
+    }
+
+    fn midi_diagnostics(harness: &Harness) -> ActiveMidiRtDiagnosticsSnapshot {
+        harness.scheduler.midi_rt_diagnostics.snapshot()
+    }
+
+    /// How many notes the graph is holding for one plugin, read from the
+    /// effect table itself.
+    ///
+    /// A refusal that kept a prefix is invisible from outside the engine until
+    /// some later block renders the frames it kept, which may be never.
+    fn stored_note_count(harness: &Harness, plugin_id: usize) -> usize {
+        harness
+            .scheduler
+            .effects
+            .iter()
+            .find(|effect| effect.id == plugin_id)
+            .and_then(|effect| effect.midi_notes.as_ref())
+            .map_or(0, |store| store.entries().len())
+    }
+
+    /// A playing track carrying a [`FrameRecordingInstrument`], spliced the
+    /// way a hosted instrument arrives.
+    fn track_with_recording_instrument(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+    ) -> Arc<Mutex<Vec<RecordedNote>>> {
+        const CLIP_FRAMES: usize = 8_192;
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        insert_track_generator(harness, track_id, effect_id, instrument, 0);
+        received
+    }
+
+    /// A scheduled note reaches the instrument on the sample that renders its
+    /// timeline frame, in the block that renders it.
+    ///
+    /// The frames named straddle a block boundary, so a delivery that shipped
+    /// no offset and one that measured the offset from the wrong block both
+    /// land somewhere the assertion names.
+    #[test]
+    fn a_scheduled_note_reaches_the_instrument_on_its_timeline_frame_across_a_block_boundary() {
+        const BLOCK: usize = 32;
+        const SCHEDULED: [u64; 4] = [5, 31, 32, 63];
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &SCHEDULED));
+
+        harness.render(BLOCK);
+        harness.render(BLOCK);
+
+        assert_eq!(received_frames(&received), SCHEDULED.to_vec());
+    }
+
+    /// A scheduled note belongs to its frame, not to a pass over it: every
+    /// loop pass that renders that frame delivers the note again. The entry
+    /// persists, so the second time round the region sounds like the first.
+    #[test]
+    fn a_scheduled_note_fires_on_every_loop_pass_that_renders_its_frame() {
+        const LOOP_START: u64 = 512;
+        const LOOP_END: u64 = 1_536;
+        const NOTE_FRAME: u64 = 600;
+        const PASS: u64 = LOOP_END - LOOP_START;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: LOOP_START,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SeekFrames(LOOP_START));
+        harness.send(schedule_notes(7, &[NOTE_FRAME]));
+
+        // One callback long enough to hold both passes, so the seam splits it
+        // and the assertion is about the spans the seam yields rather than
+        // about two separate callbacks.
+        harness.render(2 * PASS as usize);
+
+        let into_region = NOTE_FRAME - LOOP_START;
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (into_region, 60, true),
+                // The seam closes the note the first pass left sounding, on
+                // the frame the region restarts at.
+                (PASS, 60, false),
+                (PASS + into_region, 60, true),
+            ],
+            "the second pass delivers the note again, one region later in the render stream"
+        );
+    }
+
+    /// A locate past a scheduled note leaves it where it is. No block rendered
+    /// its frame, so nothing fires — and nothing is counted late, because
+    /// lateness is about where the playhead stood when the note was scheduled,
+    /// not about where it has been since.
+    #[test]
+    fn a_locate_past_a_scheduled_note_does_not_fire_it() {
+        const NOTE_FRAME: u64 = 100;
+        const LOCATE_TO: u64 = 512;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &[NOTE_FRAME]));
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+
+        harness.render(64);
+
+        assert!(
+            received_frames(&received).is_empty(),
+            "a note the playhead skipped over is not fired at the head of the block after it"
+        );
+        assert_eq!(midi_diagnostics(&harness).late_midi_notes, 0);
+    }
+
+    /// Clearing a window takes out exactly the notes inside it. The bounds are
+    /// half-open, so a clear aimed between two notes leaves both of them.
+    #[test]
+    fn clearing_a_window_removes_only_the_notes_inside_it() {
+        const SCHEDULED: [u64; 3] = [10, 40, 70];
+        const WINDOW_FROM: u64 = 32;
+        const WINDOW_TO: u64 = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &SCHEDULED));
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: WINDOW_FROM,
+            to_frame: WINDOW_TO,
+        });
+
+        harness.render(96);
+
+        assert_eq!(received_frames(&received), vec![10, 70]);
+    }
+
+    /// A batch past the store's free capacity is refused whole and counted.
+    /// Keeping the prefix that fits would silence an arbitrary tail of a
+    /// phrase and leave the caller nothing to notice it by.
+    #[test]
+    fn an_over_capacity_batch_is_refused_whole_and_counted() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let over_capacity: Vec<u64> =
+            (0..crate::midi::note_store::MIDI_NOTE_STORE_CAPACITY as u64 + 1).collect();
+        harness.send(schedule_notes(7, &over_capacity));
+
+        assert_eq!(stored_note_count(&harness, 7), 0);
+        assert_eq!(midi_diagnostics(&harness).midi_note_batches_refused, 1);
+
+        harness.send(schedule_notes(7, &[5]));
+        harness.render(32);
+
+        assert_eq!(
+            received_frames(&received),
+            vec![5],
+            "a refusal is about the batch, so the next batch that fits still applies"
+        );
+    }
+
+    /// A note scheduled behind the playhead is stored and counted late, never
+    /// fired. Firing it would put it out of order against everything already
+    /// sounding, and dropping it would lose it for the next pass over its
+    /// frame.
+    #[test]
+    fn a_note_behind_the_playhead_is_stored_and_counted_late() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.render(BLOCK);
+
+        harness.send(schedule_notes(7, &[0]));
+
+        assert_eq!(midi_diagnostics(&harness).late_midi_notes, 1);
+
+        harness.render(BLOCK);
+
+        assert!(
+            received_frames(&received).is_empty(),
+            "a late note is not fired at the head of the next block"
+        );
+
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_frames(&received),
+            vec![2 * BLOCK as u64],
+            "the stored note sounds on frame 0 of the pass that renders it, two blocks into \
+             the render stream"
+        );
+    }
+
+    /// An effect ships no note store, so a batch aimed at one is refused whole
+    /// and counted rather than reaching a device with nowhere to keep it.
+    #[test]
+    fn an_effect_without_a_store_refuses_scheduled_notes() {
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 1_024);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(7, instrument, None));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.playing();
+
+        harness.send(schedule_notes(7, &[5]));
+        harness.render(32);
+
+        assert_eq!(midi_diagnostics(&harness).midi_note_batches_refused, 1);
+        assert!(received_frames(&received).is_empty());
+    }
+
+    /// A stopped transport sounds no scheduled note. The playhead stands still,
+    /// so every callback renders the same span: a note under it would retrigger
+    /// at the block rate for as long as the transport stayed stopped. Notes
+    /// written against the timeline are arrangement material exactly as a clip
+    /// is, and a stopped transport plays neither.
+    #[test]
+    fn a_stopped_transport_does_not_re_fire_a_scheduled_note_every_callback() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(schedule_notes(7, &[5]));
+
+        for _ in 0..3 {
+            harness.render(32);
+        }
+
+        assert!(received_frames(&received).is_empty());
+    }
+
+    /// Two batches written against overlapping frames reach the instrument in
+    /// one non-decreasing run, whatever order their producers authored them
+    /// in. A plugin is owed a block's events in time order — CLAP requires it
+    /// — and two notes sharing a frame keep the order they were stored in,
+    /// which is the only order a producer can express for them.
+    #[test]
+    fn notes_scheduled_in_two_interleaving_batches_reach_the_instrument_in_frame_order() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(schedule_authored(7, &[(40, 63), (10, 60)]));
+        harness.send(schedule_authored(7, &[(25, 62), (10, 61)]));
+
+        harness.render(64);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (10, 61, true),
+                (25, 62, true),
+                (40, 63, true),
+            ],
+            "the two batches merge into one run in frame order, the pair on frame 10 in the \
+             order the batches carrying them arrived"
+        );
+    }
+
+    /// Stopping the transport releases every note the store has sounded. The
+    /// playhead stands still, so the frame each note's note-off was written
+    /// for is never rendered, and the instrument would hold those keys for as
+    /// long as the transport stayed stopped.
+    ///
+    /// A note the store already released is not released twice: its note-off
+    /// was delivered where the producer wrote it, and a second one is a
+    /// message the instrument never asked for.
+    #[test]
+    fn stopping_the_transport_releases_every_note_the_store_has_sounded() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(10, 60, true), (20, 61, true), (30, 61, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (20, 61, true),
+                (30, 61, false),
+                (BLOCK as u64, 60, false),
+            ],
+            "only the note still sounding is released, at the head of what renders next"
+        );
+    }
+
+    /// A locate while playing releases every note the store has sounded. The
+    /// playhead leaves the frames those notes' note-offs were written for
+    /// behind, so nothing is going to render them.
+    ///
+    /// A note scheduled past the locate target sounds on its own frame in the
+    /// same block. Without it the release alone would read the same whether
+    /// the locate resumed playback or silenced the instrument for good.
+    #[test]
+    fn a_locate_while_playing_releases_every_note_the_store_has_sounded() {
+        const BLOCK: usize = 64;
+        const LOCATE_TO: u64 = 4_096;
+        const AFTER_LOCATE: u64 = 10;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[
+                (10, 60, true),
+                (700, 60, false),
+                (LOCATE_TO + AFTER_LOCATE, 62, true),
+            ],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (BLOCK as u64, 60, false),
+                (BLOCK as u64 + AFTER_LOCATE, 62, true),
+            ],
+            "the note sounding when the playhead moved is released at the head of what plays \
+             from the new position, and the new position goes on playing"
+        );
+    }
+
+    /// A loop wrap releases a note whose note-off lies past the seam. The pass
+    /// never reaches that frame, so without the release the note is held while
+    /// the region starts again — and every further pass presses the same key
+    /// once more.
+    #[test]
+    fn a_loop_wrap_releases_a_note_whose_note_off_lies_past_the_seam() {
+        const LOOP_END: u64 = 512;
+        const NOTE_ON: u64 = 10;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true), (700, 60, false)]));
+
+        // One callback holding both passes, so the seam falls inside it and
+        // the release is measured against the same render stream as the notes.
+        harness.render(2 * LOOP_END as usize);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (NOTE_ON, 60, true),
+                (LOOP_END, 60, false),
+                (LOOP_END + NOTE_ON, 60, true),
+            ],
+            "the release lands on the seam, before the second pass presses the note again"
+        );
+    }
+
+    /// A release the pending buffer has no room for leaves its note held, and
+    /// the next trigger owes it again.
+    ///
+    /// The key is down either way. Counting the overflow and dropping the bit
+    /// that records the note turns one refused event into a key nothing can
+    /// ever lift, because every later trigger walks a set that no longer knows
+    /// the note is sounding.
+    #[test]
+    fn a_release_the_pending_buffer_refuses_is_retried_on_the_next_trigger() {
+        const LOOP_END: u64 = 512;
+        const LEAD_IN: usize = 64;
+        const CALLBACK: usize = 640;
+        const NOTE_ON: u64 = 5;
+        /// One scheduled note-on per frame below the seam, which is what fills
+        /// the master insert's pending buffer to its capacity before the wrap
+        /// asks for a release. They all press the note already sounding, so the
+        /// sounding set still holds exactly one note when the wrap arrives.
+        const FILL_FROM: u64 = LOOP_END - crate::midi_fx::MIDI_EVENT_BUFFER_CAPACITY as u64;
+
+        let mut harness = Harness::new(32);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            instrument,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        let phrase: Vec<(u64, u8, bool)> = std::iter::once((NOTE_ON, 60, true))
+            .chain((FILL_FROM..LOOP_END).map(|frame| (frame, 60, true)))
+            .collect();
+        harness.send(schedule_phrase(7, &phrase));
+
+        harness.render(LEAD_IN);
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true)],
+            "the note is sounding when the callback under test begins"
+        );
+        let overflows_before = midi_diagnostics(&harness).scheduler_event_buffer_overflows;
+
+        // One callback holding the rest of the pass, the seam, and the start of
+        // the next pass — so the wrap's release is asked for against a buffer
+        // the span before it has already filled.
+        harness.render(CALLBACK);
+
+        assert_eq!(
+            midi_diagnostics(&harness).scheduler_event_buffer_overflows - overflows_before,
+            2,
+            "the full buffer refused two events: the wrap's release, and the note-on the pass \
+             after the seam renders again"
+        );
+        assert!(
+            received_notes(&received)
+                .iter()
+                .all(|(_, _, is_note_on)| *is_note_on),
+            "no note-off reached the instrument in the callback that refused the release"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(LEAD_IN);
+
+        assert_eq!(
+            received_notes(&received).last().copied(),
+            Some(((LEAD_IN + CALLBACK) as u64, 60, false)),
+            "the stop still knows the note is sounding and releases it at the head of what \
+             renders next"
+        );
+    }
+
+    /// Clearing the note-off of a sounding note releases it at the head of
+    /// whatever renders next. The clear takes that frame out of the
+    /// arrangement, so nothing is ever going to render the note-off, and the
+    /// instrument would hold the key until something unrelated lifted it.
+    #[test]
+    fn clearing_the_note_off_of_a_sounding_note_releases_it_at_the_next_block_head() {
+        const BLOCK: usize = 128;
+        const REST: usize = 384;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(100, 60, true), (300, 60, false)]));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 200,
+            to_frame: 400,
+        });
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(100, 60, true), (BLOCK as u64, 60, false)],
+            "the release lands at the head of the block after the clear, and the frame the \
+             note-off was written for renders nothing"
+        );
+    }
+
+    /// Deleting a sounding note releases it even when the same pitch is
+    /// scheduled again later in the arrangement.
+    ///
+    /// The later pair leaves a note-off for that key ahead of the playhead,
+    /// but a note-on stands in front of it, so it is the release of the later
+    /// note and nothing is going to end the one sounding now. Reading the tail
+    /// for any note-off of the key would find that one and hold the deleted
+    /// note down until the later note-on pressed the key again.
+    #[test]
+    fn deleting_a_sounding_note_releases_it_even_when_the_pitch_repeats_later() {
+        const BLOCK: usize = 128;
+        /// Half the run to the later pair: one callback renders at most
+        /// [`crate::audio_thread::MAX_CALLBACK_FRAMES`], so reaching frame
+        /// 5,200 from the head of the second block takes two of them.
+        const TAIL: usize = 2_700;
+        const LATER_ON: u64 = 5_000;
+        const LATER_OFF: u64 = 5_200;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[
+                (100, 60, true),
+                (300, 60, false),
+                (LATER_ON, 60, true),
+                (LATER_OFF, 60, false),
+            ],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 200,
+            to_frame: 400,
+        });
+        harness.render(TAIL);
+        harness.render(TAIL);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (100, 60, true),
+                (BLOCK as u64, 60, false),
+                (LATER_ON, 60, true),
+                (LATER_OFF, 60, false),
+            ],
+            "the deleted note is released at the head of the block after the clear, and the \
+             later note keeps both of its own events"
+        );
+    }
+
+    /// A stored note-off reaches the instrument whatever probability its
+    /// producer wrote on it.
+    ///
+    /// The gate decides whether a note sounds, and it decides that on the
+    /// note-on. A note-on the gate rolls away has already marked the note
+    /// sounding here, so the release it earns is a note-off an instrument that
+    /// never heard the note-on ignores — harmless. A release the gate rolls
+    /// away instead leaves a key that did go down held for good, which is why
+    /// delivery hands a stored note-off over on the same terms
+    /// `release_note` states for the ones a stop, a locate or a clear supplies.
+    #[test]
+    fn a_stored_note_off_reaches_the_instrument_whatever_its_probability_cutoff() {
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 1_000;
+        const BLOCK: usize = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let mut phrase = [timed_note(NOTE_ON, 60), timed_note(NOTE_OFF, 60)];
+        phrase[1].event.is_note_on = false;
+        // The one cutoff the gate always rolls away.
+        phrase[1].event.probability_cutoff = 0;
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: 7,
+            notes: phrase.into(),
+        });
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+            "the release reaches the instrument on the frame its producer wrote it for"
+        );
+    }
+
+    /// A stored note-on keeps the probability its producer wrote on it, so a
+    /// cutoff of zero rolls the note away.
+    ///
+    /// This is the other half of the rule above: delivery lifts the cutoff off
+    /// a stored note-off and must leave it on a stored note-on, because the
+    /// gate is what makes a probabilistic note probabilistic. Lifting it off
+    /// both would make every stored note certain and delete the feature.
+    #[test]
+    fn a_stored_note_on_with_a_zero_cutoff_is_rolled_away() {
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 1_000;
+        const BLOCK: usize = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let mut phrase = [timed_note(NOTE_ON, 60), timed_note(NOTE_OFF, 60)];
+        // The one cutoff the gate always rolls away.
+        phrase[0].event.probability_cutoff = 0;
+        phrase[1].event.is_note_on = false;
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: 7,
+            notes: phrase.into(),
+        });
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_OFF, 60, false)],
+            "the note-on never reaches the instrument, and the note-off it would have earned \
+             is the harmless release of a key that never went down"
+        );
+    }
+
+    /// Lengthening a sounding note is a clear and a fresh batch in one drain,
+    /// and it moves the note's release rather than deleting it.
+    ///
+    /// The clear takes the note-off out of the store while the note is down,
+    /// which is exactly the shape of a deleted release; only the store the
+    /// whole drain leaves behind tells the two apart. Releasing at the clear
+    /// would cut the note short at the head of the next block — the one thing
+    /// a producer asking for a longer note cannot be handed.
+    #[test]
+    fn lengthening_a_sounding_note_in_one_drain_moves_its_release() {
+        const BLOCK: usize = 128;
+        const REST: usize = 512;
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 300;
+        const MOVED_OFF: u64 = 500;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: NOTE_OFF,
+                to_frame: NOTE_OFF + 1,
+            },
+            schedule_phrase(7, &[(MOVED_OFF, 60, false)]),
+        ]);
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (MOVED_OFF, 60, false)],
+            "no release lands at the head of the block after the clear, and the note ends on \
+             the frame the rewrite moved its note-off to"
+        );
+    }
+
+    /// One drain makes a clear and its replacement visible to the callback
+    /// together, but visible together is not the same as succeeding
+    /// together: the clear cannot fail, and the schedule that follows it
+    /// still can. The clear leaves the window empty regardless of what
+    /// happens to the schedule that follows it, so the sounding note it
+    /// stripped a note-off from is released at the head of whatever renders
+    /// next, exactly as an unreplaced clear would release it.
+    #[test]
+    fn a_refused_replacement_in_one_batch_leaves_the_clear_applied() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 300;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+
+        let over_capacity: Vec<u64> = (0..crate::midi::note_store::MIDI_NOTE_STORE_CAPACITY as u64
+            + 1)
+            .map(|offset| 1_000 + offset)
+            .collect();
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: 0,
+                to_frame: u64::MAX,
+            },
+            schedule_notes(7, &over_capacity),
+        ]);
+
+        assert_eq!(
+            stored_note_count(&harness, 7),
+            0,
+            "the clear applied even though the replacement that followed it was refused"
+        );
+        assert_eq!(
+            midi_diagnostics(&harness).midi_note_batches_refused,
+            1,
+            "the over-capacity replacement is counted a refusal, not silently dropped"
+        );
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (BLOCK as u64, 60, false)],
+            "the clear's release lands once at the head of the next block, and none of the \
+             refused batch's note-ons ever sounds"
+        );
+    }
+
+    /// Shortening a sounding note behind the playhead releases it now.
+    ///
+    /// The rewrite puts the note-off on a frame the playhead has already
+    /// passed, so it is stored and counted late like any other note behind the
+    /// playhead and no frame ahead is going to render it. The note is down, so
+    /// it is owed a release at the head of whatever renders next — the same
+    /// answer a deleted note-off gets, reached by asking where the store's
+    /// remaining note-off stands rather than whether one exists.
+    #[test]
+    fn shortening_a_sounding_note_behind_the_playhead_releases_it_now() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 10;
+        const NOTE_OFF: u64 = 300;
+        const MOVED_OFF: u64 = 50;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send_in_one_drain([
+            GraphCommand::ClearMidiNotes {
+                plugin_id: 7,
+                from_frame: NOTE_OFF,
+                to_frame: NOTE_OFF + 1,
+            },
+            schedule_phrase(7, &[(MOVED_OFF, 60, false)]),
+        ]);
+        harness.render(BLOCK);
+
+        assert_eq!(
+            midi_diagnostics(&harness).late_midi_notes,
+            1,
+            "the moved note-off is behind the playhead, so it is stored and counted late"
+        );
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_ON, 60, true), (BLOCK as u64, 60, false)],
+            "a release the rewrite left behind the playhead is owed at the head of what \
+             renders next"
+        );
+    }
+
+    /// A clear beside a sounding note leaves it sounding. The note-off the
+    /// producer wrote is still in the store, so the note ends where it was
+    /// written to end rather than at the clear.
+    #[test]
+    fn clearing_a_window_beside_a_sounding_note_leaves_it_sounding() {
+        const BLOCK: usize = 128;
+        const REST: usize = 384;
+        const NOTE_OFF: u64 = 300;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(100, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 400,
+            to_frame: 600,
+        });
+        harness.render(REST);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(100, 60, true), (NOTE_OFF, 60, false)],
+            "the stored note-off still fires on its own frame, and the clear released nothing"
+        );
+    }
+
+    /// A master insert's stamps are measured from the callback's first frame,
+    /// not from the span's.
+    ///
+    /// The master insert chain drains once per callback over the whole buffer,
+    /// so a device there is handed one block covering every span. Stamping it
+    /// from the span would put every delivery after a loop seam a seam's worth
+    /// early — and out of order behind the deliveries before it, which is a
+    /// block no plugin is allowed to be handed.
+    ///
+    /// [`GraphCommand::AddPlugin`] with a store is the registration Crumbs
+    /// takes, and it places the device on the master chain.
+    #[test]
+    fn a_master_chain_instrument_is_stamped_from_the_callback_start_across_a_loop_seam() {
+        const LOOP_END: u64 = 512;
+        const CALLBACK: usize = 640;
+        const NOTE_ON: u64 = 8;
+
+        let mut harness = Harness::new(32);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            instrument,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(schedule_notes(7, &[NOTE_ON]));
+
+        harness.render(CALLBACK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (NOTE_ON, 60, true),
+                (LOOP_END, 60, false),
+                (LOOP_END + NOTE_ON, 60, true),
+            ],
+            "the second pass is stamped from the callback's start, past the seam, and the \
+             whole block reads in non-decreasing time"
         );
     }
 }

@@ -5400,7 +5400,7 @@ mod tests {
 
         let mut crumbs_slots = 0;
         while let Ok(command) = command_rx.pop() {
-            if let GraphCommand::AddPlugin(_, plugin) = command {
+            if let GraphCommand::AddPlugin(_, plugin, Some(_)) = command {
                 if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
                     crumbs_slots += 1;
                 }

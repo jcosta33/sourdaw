@@ -17,6 +17,7 @@ use daw_dsp::crumbs::analysis::pitch::detect_pitch;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, SampleId};
+use daw_engine::midi::note_store::MidiNoteStore;
 use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
 use daw_engine::{EngineHandle, GraphBatchError};
 use rtrb::Producer;
@@ -425,11 +426,16 @@ fn register_crumbs_slot(
         command_rx,
         commit_tx,
         recycle_rx,
+        metering: Arc::clone(metering),
     };
 
     engine_handle
         .send_graph_batch(vec![
-            GraphCommand::AddPlugin(id, Box::new(slot)),
+            // The sampler is an instrument, so its slot arrives holding the
+            // note store a producer schedules against. Block-granular delivery
+            // is the wrapper's own answer, not a reason to register it without
+            // one.
+            GraphCommand::AddPlugin(id, Box::new(slot), Some(MidiNoteStore::new())),
             GraphCommand::RegisterCaptureConsumer(id),
         ])
         .map_err(|error| match error {
@@ -1376,7 +1382,7 @@ mod tests {
             Err(_) => panic!("a create must queue its batch fence"),
         }
         let id = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(id, _)) => id,
+            Ok(GraphCommand::AddPlugin(id, _, Some(_))) => id,
             Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("a create must queue the slot registration"),
         };
@@ -1834,17 +1840,19 @@ mod tests {
         let (command_tx, command_rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
-        let mut engine = CrumbsEngine::new(48_000.0);
+        let metering = Arc::new(CrumbsMetering::default());
+        let mut engine = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
         engine.enable_commit_handoff();
         let mut slot = CrumbsPluginSlot {
             engine,
             command_rx,
             commit_tx,
             recycle_rx,
+            metering: Arc::clone(&metering),
         };
         let instance = CrumbsInstanceData {
             samples: HashMap::new(),
-            metering: Arc::new(CrumbsMetering::default()),
+            metering,
             engine_slot: CrumbsEngineSlot::Attached {
                 plugin_id: 1000,
                 ends: CrumbsInstanceEnds {
@@ -1955,7 +1963,7 @@ mod tests {
             Err(_) => panic!("a create must queue its batch fence"),
         }
         let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(id, plugin)) => {
+            Ok(GraphCommand::AddPlugin(id, plugin, Some(_))) => {
                 let slot = plugin
                     .as_any()
                     .downcast_ref::<CrumbsPluginSlot>()
@@ -2158,7 +2166,7 @@ mod tests {
             Err(_) => panic!("an attach must queue its batch fence"),
         }
         let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(id, mut plugin)) => {
+            Ok(GraphCommand::AddPlugin(id, mut plugin, Some(_))) => {
                 let slot = plugin
                     .as_any_mut()
                     .downcast_mut::<CrumbsPluginSlot>()
@@ -2341,7 +2349,7 @@ mod tests {
             "an attach must publish its registration behind a batch fence"
         );
         let mut plugin = match command_rx.pop() {
-            Ok(GraphCommand::AddPlugin(_, plugin)) => plugin,
+            Ok(GraphCommand::AddPlugin(_, plugin, Some(_))) => plugin,
             Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("an attach must queue the slot registration"),
         };

@@ -20,6 +20,7 @@ use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
     ActiveMidiRtDiagnosticsSnapshot,
 };
+use midi::note_store::{MidiNoteStore, TimedMidiNote};
 use pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use plugin_slot::NativePlugin;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
@@ -637,12 +638,16 @@ impl EngineHandle {
     }
 
     /// Add a native plugin with an already reserved plugin ID.
+    ///
+    /// No note store: this route registers a device that transforms a signal
+    /// rather than one that plays notes. An instrument arrives through
+    /// [`Self::add_hosted_plugin`], or over a batch that ships its own store.
     pub fn add_plugin_with_id(
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
     ) -> Result<(), String> {
-        self.push(GraphCommand::AddPlugin(id, plugin))
+        self.push(GraphCommand::AddPlugin(id, plugin, None))
     }
 
     /// Register a hosted plugin instance, homed detached.
@@ -652,12 +657,20 @@ impl EngineHandle {
     /// the instance the moment a user took it off a strip. Homing it detached
     /// means releasing it from a chain returns it to a placement that runs
     /// nowhere.
+    ///
+    /// The note store travels with the registration, built here because the
+    /// audio thread may not allocate one: a hosted instrument that arrived
+    /// without one could never be scheduled against.
     pub fn add_hosted_plugin(
         &mut self,
         id: usize,
         plugin: Box<dyn NativePlugin>,
     ) -> Result<(), String> {
-        self.push(GraphCommand::AddHostedPlugin(id, plugin))
+        self.push(GraphCommand::AddHostedPlugin(
+            id,
+            plugin,
+            MidiNoteStore::new(),
+        ))
     }
 
     /// Remove a native plugin from the audio thread.
@@ -720,12 +733,83 @@ impl EngineHandle {
     }
 
     /// Send a MIDI note event to a specific plugin (lock-free).
+    ///
+    /// The live path: the note reaches the plugin at the head of the next
+    /// block it is handed. A note that has a timeline position of its own goes
+    /// through [`Self::schedule_midi_notes`], which delivers it on the sample
+    /// that renders that position.
     pub fn send_midi_note(
         &mut self,
         plugin_id: usize,
         event: plugin_slot::MidiNoteEvent,
     ) -> Result<(), String> {
         self.push(GraphCommand::SendMidiNote(plugin_id, event))
+    }
+
+    /// Write timeline-addressed notes into an instrument's note store.
+    ///
+    /// The batch is boxed here, on the control thread, because the audio
+    /// thread that copies it into the store may neither allocate nor free
+    /// (ADR 0020). It lands whole or not at all: a plugin registered without a
+    /// store, or a batch past that store's free capacity, is refused on the
+    /// callback and counted in
+    /// [`ActiveMidiRtDiagnosticsSnapshot::midi_note_batches_refused`], because
+    /// only the callback knows what the store is already holding.
+    ///
+    /// The batch is put in frame order here, and stably, so two notes a
+    /// producer wrote for the same sample keep the order it wrote them in. A
+    /// plugin must be handed a block's events in non-decreasing time, and the
+    /// sort allocates its scratch half — so it belongs on this side of the
+    /// ring, and the store refuses a batch that arrives unordered.
+    ///
+    /// A rewrite is a [`Self::clear_midi_notes`] and this call together. One
+    /// [`Self::send_graph_batch`] makes the pair visible to the callback
+    /// together, which is what keeps the clear from settling against a store
+    /// the replacement has not reached yet: pushed one at a time the two can
+    /// land in different drains, and the clear then settles too early —
+    /// releasing a note the rewrite only meant to move.
+    ///
+    /// Visible together is not the same as succeeding together. The clear
+    /// cannot fail, but this call still can — refused by the store on the
+    /// same terms as any other batch: over capacity, unordered, or naming a
+    /// note the store cannot address — and counted in
+    /// [`ActiveMidiRtDiagnosticsSnapshot::midi_note_batches_refused`]. A
+    /// refusal leaves the clear applied and the window empty regardless: the
+    /// sounding note it stripped a note-off from is released at the head of
+    /// whatever renders next, exactly as an unreplaced clear would release
+    /// it.
+    pub fn schedule_midi_notes(
+        &mut self,
+        plugin_id: usize,
+        mut notes: Box<[TimedMidiNote]>,
+    ) -> Result<(), String> {
+        notes.sort_by_key(|note| note.at_frame);
+        self.push(GraphCommand::ScheduleMidiNotes { plugin_id, notes })
+    }
+
+    /// Drop an instrument's scheduled notes in the half-open frame window
+    /// `from_frame..to_frame`; `0..u64::MAX` clears the store.
+    ///
+    /// A sounding note whose note-off this window takes away is not released
+    /// here. The callback records it and settles it once the whole drain has
+    /// applied, against the store that drain left — so a rewrite that moves
+    /// the note-off keeps the note sounding, and one that deletes it releases
+    /// the note at the head of whatever renders next. That settlement reads
+    /// the store the drain ends with, so a clear and its replacement batch
+    /// arrive together only when they travel in one
+    /// [`Self::send_graph_batch`] — see [`Self::schedule_midi_notes`] for what
+    /// a refused replacement leaves behind.
+    pub fn clear_midi_notes(
+        &mut self,
+        plugin_id: usize,
+        from_frame: u64,
+        to_frame: u64,
+    ) -> Result<(), String> {
+        self.push(GraphCommand::ClearMidiNotes {
+            plugin_id,
+            from_frame,
+            to_frame,
+        })
     }
 
     /// Add a timeline track.

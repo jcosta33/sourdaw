@@ -51,6 +51,19 @@ pub struct ActiveMidiRtDiagnosticsSnapshot {
     /// silence, so a recorder writes a gap it can see rather than splicing two
     /// takes together.
     pub capture_input_underruns: u64,
+    /// A `ScheduleMidiNotes` batch the engine would not store: the effect it
+    /// named holds no note store, or the batch was larger than the store's
+    /// free capacity. Refused whole rather than in part, so a producer sees a
+    /// count it can act on instead of a phrase with its middle missing.
+    pub midi_note_batches_refused: u64,
+    /// Scheduled notes stored behind the playhead they were written against.
+    ///
+    /// Stored, never fired: firing on arrival would put a note-on at a
+    /// position no producer asked for, and re-rendering the same frames would
+    /// fire it twice. The count is what tells a producer it is scheduling
+    /// behind the render, which is a producer to fix rather than an engine
+    /// that guesses.
+    pub late_midi_notes: u64,
 }
 
 pub(crate) struct ActiveMidiRtDiagnosticsReader {
@@ -87,6 +100,8 @@ impl ActiveMidiRtDiagnostics {
                 capture_consumer_refusals: 0,
                 capture_blocks_dropped: 0,
                 capture_input_underruns: 0,
+                midi_note_batches_refused: 0,
+                late_midi_notes: 0,
             },
         }
     }
@@ -141,6 +156,17 @@ impl ActiveMidiRtDiagnostics {
     pub fn record_capture_input_underrun(&mut self, count: u64) {
         self.snapshot.capture_input_underruns =
             self.snapshot.capture_input_underruns.saturating_add(count);
+    }
+
+    pub fn record_midi_note_batch_refusal(&mut self, count: u64) {
+        self.snapshot.midi_note_batches_refused = self
+            .snapshot
+            .midi_note_batches_refused
+            .saturating_add(count);
+    }
+
+    pub fn record_late_midi_notes(&mut self, count: u64) {
+        self.snapshot.late_midi_notes = self.snapshot.late_midi_notes.saturating_add(count);
     }
 }
 

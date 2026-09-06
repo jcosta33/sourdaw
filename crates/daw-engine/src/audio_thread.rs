@@ -1906,7 +1906,7 @@ mod capture_render_tests {
         }
 
         fn register_consumer(&mut self, plugin: Box<dyn NativePlugin>) {
-            self.send(GraphCommand::AddPlugin(CONSUMER_ID, plugin));
+            self.send(GraphCommand::AddPlugin(CONSUMER_ID, plugin, None));
             self.send(GraphCommand::RegisterCaptureConsumer(CONSUMER_ID));
         }
 
@@ -2561,8 +2561,9 @@ mod device_output_tests {
 mod compensation_render_alloc_guards {
     use super::DeviceRenderer;
     use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
+    use crate::midi::note_store::{MidiNoteStore, TimedMidiNote};
     use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
-    use crate::plugin_slot::{NativePlugin, TransportState};
+    use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
     use crate::scheduler::{
         graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
         GraphCommand, RetiredGraphObjects,
@@ -2574,6 +2575,8 @@ mod compensation_render_alloc_guards {
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     const SAMPLE_RATE: f32 = 48_000.0;
     const DEVICE_CHANNELS: usize = 2;
@@ -2701,7 +2704,11 @@ mod compensation_render_alloc_guards {
             level: 0.5,
             delay: Box::new(CompensationDelay::new(MAX_COMPENSATION_FRAMES)),
         });
-        harness.send(GraphCommand::AddPlugin(EFFECT_ID, Box::new(SilentPlugin)));
+        harness.send(GraphCommand::AddPlugin(
+            EFFECT_ID,
+            Box::new(SilentPlugin),
+            None,
+        ));
         harness.send(GraphCommand::InsertTrackDevice {
             track_id: 3,
             entry: ChainEntry {
@@ -2839,6 +2846,7 @@ mod compensation_render_alloc_guards {
         harness.send(GraphCommand::AddHostedPlugin(
             EFFECT_ID,
             Box::new(SilentPlugin),
+            MidiNoteStore::new(),
         ));
         let entry = ChainEntry {
             effect_id: EFFECT_ID,
@@ -2881,6 +2889,227 @@ mod compensation_render_alloc_guards {
             heard, expected,
             "the strip's own clip waited the generator's declared latency at the master, \
              so the callback ran the generator's dry line rather than an effect splice or none at all"
+        );
+    }
+
+    /// How many notes a [`ReceivedNoteLog`] holds.
+    const RECORDED_NOTE_CAPACITY: usize = 16;
+
+    /// The frames a [`NoteRecordingPlugin`] was handed a note on.
+    ///
+    /// A fixed array of atomics rather than a `Vec` behind a `Mutex`: this log
+    /// is written inside the allocation guard, where both a `Vec` that grew
+    /// and a mutex allocating its OS primitive on first lock would trip the
+    /// guard over the fixture rather than over the engine.
+    struct ReceivedNoteLog {
+        frames: [AtomicU64; RECORDED_NOTE_CAPACITY],
+        len: AtomicUsize,
+    }
+
+    impl ReceivedNoteLog {
+        fn new() -> Self {
+            Self {
+                frames: std::array::from_fn(|_| AtomicU64::new(0)),
+                len: AtomicUsize::new(0),
+            }
+        }
+
+        fn record(&self, frame: u64) {
+            let index = self.len.fetch_add(1, Ordering::Relaxed);
+            assert!(index < RECORDED_NOTE_CAPACITY, "the note log is full");
+            self.frames[index].store(frame, Ordering::Relaxed);
+        }
+
+        fn frames(&self) -> Vec<u64> {
+            self.frames[..self.len.load(Ordering::Relaxed)]
+                .iter()
+                .map(|frame| frame.load(Ordering::Relaxed))
+                .collect()
+        }
+    }
+
+    /// A hosted instrument that records the absolute frame every note it
+    /// receives lands on: the frames it has already rendered, plus the event's
+    /// own offset inside the block that carried it.
+    struct NoteRecordingPlugin {
+        processed: u64,
+        received: Arc<ReceivedNoteLog>,
+    }
+
+    impl NoteRecordingPlugin {
+        fn new() -> (Box<dyn NativePlugin>, Arc<ReceivedNoteLog>) {
+            let received = Arc::new(ReceivedNoteLog::new());
+            let plugin = Box::new(Self {
+                processed: 0,
+                received: Arc::clone(&received),
+            });
+            (plugin, received)
+        }
+    }
+
+    impl NativePlugin for NoteRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.processed += num_samples as u64;
+        }
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            for event in midi_events {
+                self.received
+                    .record(self.processed + u64::from(event.frame_offset));
+            }
+            self.processed += num_samples as u64;
+        }
+
+        fn name(&self) -> &str {
+            "note-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// One note-on stamped for a timeline frame.
+    fn timed_note(at_frame: u64, note: u8) -> TimedMidiNote {
+        TimedMidiNote {
+            at_frame,
+            event: MidiNoteEvent {
+                note,
+                velocity: 100,
+                channel: 0,
+                is_note_on: true,
+                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+            },
+        }
+    }
+
+    /// A hosted instrument holding scheduled notes renders across callbacks —
+    /// and is released when the transport stops — without allocating or
+    /// freeing on any of them.
+    ///
+    /// The batch is built control-side and drained on the callback, the store
+    /// is written and merged into frame order on the callback, the due entries
+    /// are copied into the pending buffer on the callback, and the stop walks
+    /// the sounding set and queues a note-off per held key on the callback —
+    /// every one a place a `Vec` that grew, a set that hashed, or a batch
+    /// dropped on the audio thread instead of retired would allocate.
+    ///
+    /// Two batches, whose frames interleave, so the second one runs the store's
+    /// merge rather than an append: the merge writes both runs into the store's
+    /// scratch, and a scratch taken per call is the allocation the reserve
+    /// exists to avoid.
+    ///
+    /// The guard alone proves only that nothing allocated, not that any of it
+    /// ran. Reading the recorded frames back is what makes this a guard over
+    /// the delivery path: the notes straddle the callback boundary, so only a
+    /// scan that took each block's own start and stamped each event's offset
+    /// produces them, and the releases only appear if the stop walked the set.
+    #[test]
+    fn scheduled_notes_reach_a_hosted_instrument_without_allocating_on_the_callback() {
+        const CALLBACKS: usize = 2;
+        const SCHEDULED: [u64; 4] = [3, 127, 128, 200];
+        /// One note per scheduled frame, so the release owes one note-off per
+        /// entry rather than one for a key pressed four times.
+        const NOTES: [u8; 4] = [60, 61, 62, 63];
+        /// A second batch, landing between the first's frames rather than
+        /// after them.
+        const INTERLEAVED: [u64; 2] = [5, 130];
+        const INTERLEAVED_NOTES: [u8; 2] = [64, 65];
+
+        let mut harness = CompensationHarness::new();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddClip(
+            1,
+            constant_clip(302, 0.5, CALLBACKS * CALLBACK_FRAMES),
+        ));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+        let (instrument, received) = NoteRecordingPlugin::new();
+        harness.send(GraphCommand::AddHostedPlugin(
+            EFFECT_ID,
+            instrument,
+            MidiNoteStore::new(),
+        ));
+        let entry = ChainEntry {
+            effect_id: EFFECT_ID,
+            kind: DeviceKind::Generator,
+        };
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry,
+            index: 0,
+            hold: entry.input_hold(),
+        });
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: EFFECT_ID,
+            notes: SCHEDULED
+                .iter()
+                .zip(NOTES)
+                .map(|(frame, note)| timed_note(*frame, note))
+                .collect(),
+        });
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: EFFECT_ID,
+            notes: INTERLEAVED
+                .iter()
+                .zip(INTERLEAVED_NOTES)
+                .map(|(frame, note)| timed_note(*frame, note))
+                .collect(),
+        });
+
+        // Sized outside the guard, the way its siblings size theirs: the
+        // callback is what is under test, not the buffer it is handed.
+        let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+
+        assert_no_alloc(|| {
+            for _ in 0..CALLBACKS {
+                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+            }
+        });
+
+        // Queued control-side; the stop itself is applied on the next
+        // callback, inside the guard, and so is the release it triggers.
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+
+        assert_no_alloc(|| {
+            harness.renderer.render(&mut data, DEVICE_CHANNELS);
+        });
+
+        let stop_frame = (CALLBACKS * CALLBACK_FRAMES) as u64;
+        let mut expected: Vec<u64> = SCHEDULED
+            .iter()
+            .chain(INTERLEAVED.iter())
+            .copied()
+            .collect();
+        expected.sort_unstable();
+        expected.extend(std::iter::repeat_n(
+            stop_frame,
+            NOTES.len() + INTERLEAVED_NOTES.len(),
+        ));
+        assert_eq!(
+            received.frames(),
+            expected,
+            "every scheduled note of both batches reached the instrument on its own frame over \
+             two callbacks, in one frame-ordered run, and the stop released each of them at the \
+             head of the third"
         );
     }
 }

@@ -14,6 +14,48 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 - **Headroom over Latency**: SPSC ring buffers must decouple the audio callback from asynchronous command processing, so control-thread work never blocks the callback and no queued command is silently dropped.
 - **One clock**: every plugin the engine hosts runs inline on the audio callback, inside the chain that holds it. A hosted instance is registered homed detached — releasing it from a chain returns it to a placement that runs nowhere — and nothing renders it on a second cadence.
 - **Teardown Order**: Audio streams must stop and drain before dropping downstream DSP nodes or CLAP plugin instances.
+- **A note reaches its instrument on the sample it was written for**: a scheduled note reaches the
+  instrument on the sample that renders its timeline frame, in the block that renders it; an
+  immediate note reaches it at the head of the next block, because a note played live has no
+  timeline position to stamp it against; and a note behind the playhead when it is scheduled is
+  stored and counted late, never fired out of order. Quantising a scheduled note to a block boundary
+  puts it up to a buffer away from where it was written, and firing a late one at the head of the
+  next block puts it ahead of everything already sounding — both are audible, and neither is a
+  timing a DAW is allowed to invent.
+- **Events reach a plugin in non-decreasing time**: every event a device is handed in one call is
+  stamped no earlier than the one before it, because that is what CLAP requires of a host and what a
+  VST3 processor reads its sample offsets as. That order is a property of the block a device is
+  handed, so it is the block's own frame of reference the stamps are measured in: a chain device is
+  handed one span at a time and its stamps run from the span's first frame, while a master insert
+  drains once per callback over the whole buffer and its stamps run from the callback's. Notes
+  scheduled for one frame reach the instrument in the order their producers stored them, which is
+  the only order a producer can express for a pair that sounds on one sample.
+- **A stop, a locate, a loop wrap, and a clear release every note the store has sounded**: each of
+  them leaves the frame a sounding note's note-off was written for behind — the playhead stands
+  still, moves away from it, turns back before reaching it, or the clear takes that frame out of the
+  arrangement altogether — so nothing is going to render that note-off, and the instrument would
+  hold the key until something unrelated happened to release it. The release is a note-off at the
+  head of whatever renders next, on the seam for a loop wrap. A note played live is not released: it
+  has no timeline position and no scheduled note-off, so a key the player is holding stays held
+  exactly as it does on hardware.
+- **A clear releases once the drain has settled, and only against what the store then holds**: a
+  producer rewrites a bar by clearing it and scheduling the replacement in one drain, so a note-off
+  a clear strips is as often a release being moved as one being deleted, and a release taken at the
+  clear cuts short a note the rewrite only meant to lengthen. A clear therefore records the sounding
+  notes whose note-off it removed and answers them once the whole drain has applied: a note the
+  settled store holds a note-off for on the playhead or past it, ahead of any note-on of that same
+  key, is released by that note-off, and one with none is owed the release at the head of whatever
+  renders next. A note-off standing past a later note-on is the release of that later note, so it
+  covers nothing and reading it as cover would hold the deleted note down until the arrangement
+  pressed the key again. A note-on a clear removes owes nothing either way; either it never sounded,
+  or it did and its own note-off is still where the producer wrote it. The sounding set holds one
+  bit per (channel, note), so the model admits at most one sounding note per key at a time, and the
+  first-entry-decides rule above is sound by that construction alone; a producer that overlaps two
+  notes on one key is answered with one release for both.
+- **A release the event buffer refuses leaves its note held**: the key is down whether or not the
+  note-off found room, so the note stays in the sounding set and the next stop, locate, wrap or
+  clear owes it again. Dropping the record along with the event turns one refused message into a
+  key nothing can ever lift, which is worse than releasing late.
 
 ## Plugin Delay Compensation
 
