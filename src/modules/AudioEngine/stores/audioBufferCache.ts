@@ -178,7 +178,7 @@ function waveformCacheSet(key: string, peaks: Float32Array): void {
 }
 
 const DB_NAME = 'sourdaw-audio';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_NAME = 'buffers';
 
 /** Everything the age and size collectors read, split out of the record so that
@@ -204,8 +204,17 @@ const STORE_NAME = 'buffers';
  * for a record written before this store existed. */
 const META_STORE_NAME = 'bufferMeta';
 const RECOVERY_STORE_NAME = 'preparedBufferRecovery';
+const CHECKPOINT_RETENTION_STORE_NAME = 'checkpointRetentions';
 
 type BufferMeta = PreparedAudioBufferMetadata;
+
+type CheckpointAudioRetention = {
+    schemaVersion: 1;
+    checkpointId: string;
+    projectOwnerId: string;
+    bufferIds: string[];
+    ownershipToken: string;
+};
 
 async function migrateLegacyPreparedRecoveryRows(database: IDBDatabase): Promise<void> {
     const markerTransaction = database.transaction(RECOVERY_STORE_NAME, 'readonly');
@@ -389,6 +398,9 @@ function openDbConnection(onConnectionLoss: () => void): Promise<IDBDatabase> {
             }
             if (!db.objectStoreNames.contains(RECOVERY_STORE_NAME)) {
                 db.createObjectStore(RECOVERY_STORE_NAME);
+            }
+            if (!db.objectStoreNames.contains(CHECKPOINT_RETENTION_STORE_NAME)) {
+                db.createObjectStore(CHECKPOINT_RETENTION_STORE_NAME);
             }
         };
         req.onsuccess = () => {
@@ -956,9 +968,12 @@ async function removeFromIdb(id: string): Promise<void> {
         }
         // Both rows under one transaction: a metadata row that outlived its
         // record keeps counting bytes that are no longer there.
-        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-        tx.objectStore(STORE_NAME).delete(id);
-        tx.objectStore(META_STORE_NAME).delete(id);
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
+        const retainedIds = await readCheckpointRetainedBufferIds(tx);
+        if (!retainedIds.has(id)) {
+            tx.objectStore(STORE_NAME).delete(id);
+            tx.objectStore(META_STORE_NAME).delete(id);
+        }
         await awaitTransaction(tx);
     } catch (error) {
         logger.warn('[audioBufferCache] Audio buffer removal failed', { id, error });
@@ -1349,6 +1364,160 @@ function isDurableAudioBufferPair(data: unknown, metadata: unknown): boolean {
     );
 }
 
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isDenseNonEmptyStringArray(values: readonly unknown[]): values is readonly string[] {
+    for (let index = 0; index < values.length; index++) {
+        if (!Object.hasOwn(values, index) || !isNonEmptyString(values[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function canonicalAudioBufferIds(bufferIds: readonly unknown[]): string[] {
+    if (!isDenseNonEmptyStringArray(bufferIds)) {
+        throw new Error('Checkpoint audio retention requires non-empty buffer IDs.');
+    }
+    return [...new Set(bufferIds)].toSorted();
+}
+
+function readCheckpointAudioRetention(value: unknown, key: IDBValidKey): CheckpointAudioRetention | null {
+    if (value === null || typeof value !== 'object' || Array.isArray(value) || typeof key !== 'string') {
+        return null;
+    }
+    const candidate = value as Record<string, unknown>;
+    const bufferIds = candidate.bufferIds;
+    if (
+        candidate.schemaVersion !== 1 ||
+        candidate.checkpointId !== key ||
+        !isNonEmptyString(candidate.checkpointId) ||
+        !isNonEmptyString(candidate.projectOwnerId) ||
+        !isNonEmptyString(candidate.ownershipToken) ||
+        !Array.isArray(bufferIds) ||
+        !isDenseNonEmptyStringArray(bufferIds)
+    ) {
+        return null;
+    }
+    const canonicalIds = canonicalAudioBufferIds(bufferIds);
+    if (canonicalIds.length !== bufferIds.length || canonicalIds.some((id, index) => id !== bufferIds[index])) {
+        return null;
+    }
+    return {
+        schemaVersion: 1,
+        checkpointId: candidate.checkpointId,
+        projectOwnerId: candidate.projectOwnerId,
+        bufferIds: canonicalIds,
+        ownershipToken: candidate.ownershipToken,
+    };
+}
+
+async function readCheckpointRetainedBufferIds(transaction: IDBTransaction): Promise<Set<string>> {
+    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
+    const [values, keys] = await Promise.all([
+        awaitRequest(retentionStore.getAll() as IDBRequest<unknown[]>),
+        awaitRequest(retentionStore.getAllKeys()),
+    ]);
+    if (values.length !== keys.length) {
+        throw new Error('Checkpoint audio retention ownership is unreadable.');
+    }
+    const retainedIds = new Set<string>();
+    for (let index = 0; index < keys.length; index++) {
+        const retention = readCheckpointAudioRetention(values[index], keys[index]!);
+        if (retention === null) {
+            throw new Error('Checkpoint audio retention ownership is invalid.');
+        }
+        for (const id of retention.bufferIds) {
+            retainedIds.add(id);
+        }
+    }
+    return retainedIds;
+}
+
+async function acquireCheckpointAudioRetentionInIdb({
+    checkpointId,
+    projectOwnerId,
+    bufferIds,
+}: {
+    checkpointId: string;
+    projectOwnerId: string;
+    bufferIds: readonly string[];
+}): Promise<{ ownershipToken: string }> {
+    if (!isNonEmptyString(checkpointId) || !isNonEmptyString(projectOwnerId)) {
+        throw new Error('Checkpoint audio retention requires checkpoint and project owner IDs.');
+    }
+    const canonicalBufferIds = canonicalAudioBufferIds(bufferIds);
+    const database = await openDb();
+    const transaction = database.transaction(
+        [STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
+        'readwrite'
+    );
+    const bufferStore = transaction.objectStore(STORE_NAME);
+    const metadataStore = transaction.objectStore(META_STORE_NAME);
+    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
+    const [retentionKeys, durablePairs] = await Promise.all([
+        awaitRequest(retentionStore.getAllKeys()),
+        Promise.all(
+            canonicalBufferIds.map((id) =>
+                Promise.all([
+                    awaitRequest(bufferStore.get(id) as IDBRequest<SerializedBuffer | undefined>),
+                    awaitRequest(metadataStore.get(id) as IDBRequest<BufferMeta | undefined>),
+                ])
+            )
+        ),
+    ]);
+    let refusal: Error | undefined;
+    if (retentionKeys.includes(checkpointId)) {
+        refusal = new Error(`Checkpoint audio retention already exists for ${checkpointId}.`);
+    } else if (durablePairs.some(([data, metadata]) => !isDurableAudioBufferPair(data, metadata))) {
+        refusal = new Error('Checkpoint audio retention has missing or invalid PCM.');
+    }
+    if (refusal) {
+        await awaitTransaction(transaction);
+        throw refusal;
+    }
+    const ownershipToken = crypto.randomUUID();
+    retentionStore.put(
+        {
+            schemaVersion: 1,
+            checkpointId,
+            projectOwnerId,
+            bufferIds: canonicalBufferIds,
+            ownershipToken,
+        } satisfies CheckpointAudioRetention,
+        checkpointId
+    );
+    await awaitTransaction(transaction);
+    return { ownershipToken };
+}
+
+async function releaseCheckpointAudioRetentionInIdb({
+    checkpointId,
+    projectOwnerId,
+    ownershipToken,
+}: {
+    checkpointId: string;
+    projectOwnerId: string;
+    ownershipToken: string;
+}): Promise<boolean> {
+    const database = await openDb();
+    const transaction = database.transaction(CHECKPOINT_RETENTION_STORE_NAME, 'readwrite');
+    const retentionStore = transaction.objectStore(CHECKPOINT_RETENTION_STORE_NAME);
+    const value = await awaitRequest(retentionStore.get(checkpointId) as IDBRequest<unknown>);
+    const retention = readCheckpointAudioRetention(value, checkpointId);
+    const matches =
+        retention !== null &&
+        retention.projectOwnerId === projectOwnerId &&
+        retention.ownershipToken === ownershipToken;
+    if (matches) {
+        retentionStore.delete(checkpointId);
+    }
+    await awaitTransaction(transaction);
+    return matches;
+}
+
 async function findNonDurableAudioBufferIds(ids: readonly string[]): Promise<string[]> {
     if (ids.length === 0) {
         return [];
@@ -1502,6 +1671,10 @@ export const audioBufferCache = {
     },
 
     ensureDurable: ensureDurableAudioBuffers,
+
+    acquireCheckpointRetention: acquireCheckpointAudioRetentionInIdb,
+
+    releaseCheckpointRetention: releaseCheckpointAudioRetentionInIdb,
 
     persistPreparedBuffer,
 
@@ -1667,12 +1840,24 @@ export const audioBufferCache = {
         // right after it commit in that order even on two connections.
         openDb()
             .then(async (db) => {
-                const tx = db.transaction([STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME], 'readwrite');
-                tx.objectStore(STORE_NAME).clear();
-                // Metadata rows left behind here would keep every buffer of the
-                // previous project counting against the 2 GiB size cap, and the
-                // size collector would evict live audio to make room for them.
-                tx.objectStore(META_STORE_NAME).clear();
+                const tx = db.transaction(
+                    [STORE_NAME, META_STORE_NAME, RECOVERY_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME],
+                    'readwrite'
+                );
+                const retainedIds = await readCheckpointRetainedBufferIds(tx);
+                const bufferStore = tx.objectStore(STORE_NAME);
+                const metadataStore = tx.objectStore(META_STORE_NAME);
+                const [bufferKeys, metadataKeys] = await Promise.all([
+                    awaitRequest(bufferStore.getAllKeys()),
+                    awaitRequest(metadataStore.getAllKeys()),
+                ]);
+                for (const key of new Set([...bufferKeys, ...metadataKeys])) {
+                    if (typeof key === 'string' && retainedIds.has(key)) {
+                        continue;
+                    }
+                    bufferStore.delete(key);
+                    metadataStore.delete(key);
+                }
                 tx.objectStore(RECOVERY_STORE_NAME).clear();
                 await awaitTransaction(tx);
                 return null;
@@ -2078,12 +2263,13 @@ export const audioBufferCache = {
     async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
         try {
             const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const metaStore = tx.objectStore(META_STORE_NAME);
-            const [metadataRows, metadataKeys] = await Promise.all([
+            const [metadataRows, metadataKeys, checkpointRetainedIds] = await Promise.all([
                 awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
                 awaitRequest(metaStore.getAllKeys()),
+                readCheckpointRetainedBufferIds(tx),
             ]);
             const collectedKeys = new Set<string>();
             const protectedKeys = new Set<string>();
@@ -2092,7 +2278,8 @@ export const audioBufferCache = {
                 const metadata = metadataRows[index];
                 if (
                     typeof key === 'string' &&
-                    (preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
+                    (checkpointRetainedIds.has(key) ||
+                        preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
                         (metadata && isProtectedFromCollection(metadata)))
                 ) {
                     protectedKeys.add(key);
@@ -2117,6 +2304,7 @@ export const audioBufferCache = {
                     key.startsWith('freeze-') &&
                     !activeIds.has(key) &&
                     !protectedKeys.has(key) &&
+                    !checkpointRetainedIds.has(key) &&
                     !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
                     freezeProjectId === projectId
                 ) {
@@ -2145,7 +2333,7 @@ export const audioBufferCache = {
             });
             deletedCount += recoveryCollection.count;
             const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const metaStore = tx.objectStore(META_STORE_NAME);
             // Reads the metadata store, not the records: the two numbers this
@@ -2160,10 +2348,11 @@ export const audioBufferCache = {
             // fallback is gone rather than moved. What replaces it is reading
             // the real value, from the row where there is one and from the
             // record where there is not.
-            const [metas, keys, recordKeys] = await Promise.all([
+            const [metas, keys, recordKeys, checkpointRetainedIds] = await Promise.all([
                 awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
                 awaitRequest(metaStore.getAllKeys()),
                 awaitRequest(store.getAllKeys()),
+                readCheckpointRetainedBufferIds(tx),
             ]);
 
             const migratedIds = new Set<IDBValidKey>(keys);
@@ -2172,6 +2361,7 @@ export const audioBufferCache = {
                 const meta = metas[index]!;
                 const key = keys[index]! as string;
                 if (
+                    checkpointRetainedIds.has(key) ||
                     preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
                     isProtectedFromCollection(meta)
                 ) {
@@ -2216,7 +2406,7 @@ export const audioBufferCache = {
                 if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
                     break;
                 }
-                if (typeof key !== 'string' || migratedIds.has(key)) {
+                if (typeof key !== 'string' || migratedIds.has(key) || checkpointRetainedIds.has(key)) {
                     continue;
                 }
                 const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
@@ -2278,7 +2468,7 @@ export const audioBufferCache = {
             deletedCount += recoveryCollection.count;
             const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
             const db = await openDb();
-            const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+            const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             const metaStore = tx.objectStore(META_STORE_NAME);
             // Metadata rows, for the same reason as `garbageCollectByAge`, and
@@ -2298,9 +2488,10 @@ export const audioBufferCache = {
             // a candidate that frees nothing when deleted, so the loop would
             // walk the whole store deleting audio without the total ever
             // falling.
-            const [metas, keys] = await Promise.all([
+            const [metas, keys, checkpointRetainedIds] = await Promise.all([
                 awaitRequest(metaStore.getAll() as IDBRequest<BufferMeta[]>),
                 awaitRequest(metaStore.getAllKeys()),
+                readCheckpointRetainedBufferIds(tx),
             ]);
 
             // Sort by access time ascending (oldest first)
@@ -2308,7 +2499,7 @@ export const audioBufferCache = {
                 .map((meta, index) => ({
                     id: keys[index]! as string,
                     lastAccessed: meta.lastAccessed,
-                    protected: isProtectedFromCollection(meta),
+                    protected: checkpointRetainedIds.has(keys[index]! as string) || isProtectedFromCollection(meta),
                     size: meta.sizeInBytes,
                 }))
                 .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')

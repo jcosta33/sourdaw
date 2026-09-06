@@ -19,6 +19,7 @@ export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
+export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
@@ -36,6 +37,7 @@ export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
 export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
+export { releaseCheckpointAudioRetention } from './releaseCheckpointAudioRetention';
 export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
