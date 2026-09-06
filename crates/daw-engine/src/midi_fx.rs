@@ -13,6 +13,7 @@ const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
     clip_id_hash: 0,
     event_id_hash: 0,
     absolute_occurrence_index: 0,
+    frame_offset: 0,
 };
 
 const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
@@ -541,6 +542,7 @@ impl Arpeggiator {
                 clip_id_hash: 0,
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
+                frame_offset: 0,
             });
         }
     }
@@ -651,6 +653,7 @@ impl MidiFx for Arpeggiator {
                 clip_id_hash: 0,
                 event_id_hash: 0,
                 absolute_occurrence_index: 0,
+                frame_offset: 0,
             });
             self.sounding = Some(SoundingNote {
                 note: pitch,
@@ -750,6 +753,7 @@ fn note_on(note: u8) -> MidiNoteEvent {
         clip_id_hash: 0,
         event_id_hash: 0,
         absolute_occurrence_index: 0,
+        frame_offset: 0,
     }
 }
 

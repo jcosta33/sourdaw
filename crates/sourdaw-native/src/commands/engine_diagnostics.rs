@@ -276,6 +276,9 @@ mod tests {
             capture_consumer_refusals: 10,
             capture_blocks_dropped: 12,
             capture_input_underruns: 13,
+            // Not on this payload, so there is no mapping here to get wrong.
+            midi_note_batches_refused: 0,
+            late_midi_notes: 0,
         };
 
         let diagnostics = running_engine_diagnostics(

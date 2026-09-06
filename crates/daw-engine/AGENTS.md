@@ -14,6 +14,14 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 - **Headroom over Latency**: SPSC ring buffers must decouple the audio callback from asynchronous command processing, so control-thread work never blocks the callback and no queued command is silently dropped.
 - **One clock**: every plugin the engine hosts runs inline on the audio callback, inside the chain that holds it. A hosted instance is registered homed detached — releasing it from a chain returns it to a placement that runs nowhere — and nothing renders it on a second cadence.
 - **Teardown Order**: Audio streams must stop and drain before dropping downstream DSP nodes or CLAP plugin instances.
+- **A note reaches its instrument on the sample it was written for**: a scheduled note reaches the
+  instrument on the sample that renders its timeline frame, in the block that renders it; an
+  immediate note reaches it at the head of the next block, because a note played live has no
+  timeline position to stamp it against; and a note behind the playhead when it is scheduled is
+  stored and counted late, never fired out of order. Quantising a scheduled note to a block boundary
+  puts it up to a buffer away from where it was written, and firing a late one at the head of the
+  next block puts it ahead of everything already sounding — both are audible, and neither is a
+  timing a DAW is allowed to invent.
 
 ## Plugin Delay Compensation
 

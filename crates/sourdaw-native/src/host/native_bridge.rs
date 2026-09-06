@@ -18,8 +18,8 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime, PluginParameter,
-    ProcessingGate,
+    HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime,
+    PluginParameter, ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -1020,11 +1020,20 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
     ) {
         let n = num_samples.min(MAX_BUFFER);
 
-        // Convert MidiNoteEvent → (u8, u8, i16, bool) using a stack array — no Vec alloc.
+        // Convert MidiNoteEvent → HostMidiEvent using a stack array — no Vec
+        // alloc. The engine's per-event frame offset travels with the note:
+        // dropping it here would collapse a block's timing onto its first
+        // frame, whatever the wrapper below does with it.
         let count = midi_events.len().min(MAX_MIDI_EVENTS);
-        let mut event_buf = [(0u8, 0u8, 0i16, false); MAX_MIDI_EVENTS];
-        for (i, e) in midi_events.iter().enumerate().take(count) {
-            event_buf[i] = (e.note, e.velocity, e.channel, e.is_note_on);
+        let mut event_buf = [HostMidiEvent::default(); MAX_MIDI_EVENTS];
+        for (slot, event) in event_buf.iter_mut().zip(midi_events).take(count) {
+            *slot = HostMidiEvent {
+                note: event.note,
+                velocity: event.velocity,
+                channel: event.channel,
+                is_note_on: event.is_note_on,
+                frame_offset: event.frame_offset,
+            };
         }
 
         let host_transport = host_transport_from(transport);
@@ -1156,7 +1165,7 @@ mod tests {
             _inputs: &[&[f32]],
             _outputs: &mut [&mut [f32]],
             _num_samples: usize,
-            _midi_events: &[(u8, u8, i16, bool)],
+            _midi_events: &[HostMidiEvent],
             _parameter_updates: &[HostParameterUpdate],
         ) {
         }
@@ -1325,7 +1334,7 @@ mod tests {
             _inputs: &[&[f32]],
             _outputs: &mut [&mut [f32]],
             _num_samples: usize,
-            _midi_events: &[(u8, u8, i16, bool)],
+            _midi_events: &[HostMidiEvent],
             parameter_updates: &[HostParameterUpdate],
         ) {
             self.record(parameter_updates);
@@ -2399,6 +2408,146 @@ mod tests {
                 "frame {frame}: the slot must add its voice to the mix, not replace it"
             );
         }
+    }
+
+    /// A backend that records what each note the runtime is handed carries, so
+    /// a field the bridge drops on the way in is visible as a wrong figure
+    /// rather than as a missing note.
+    struct MidiRecordingPlugin {
+        processing: Arc<ProcessingGate>,
+        notes: Arc<Mutex<Vec<(u8, u32)>>>,
+    }
+
+    impl AudioPlugin for MidiRecordingPlugin {
+        fn process(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+        ) {
+        }
+
+        fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            "midi-recording-fixture"
+        }
+    }
+
+    impl HostedPluginRuntime for MidiRecordingPlugin {
+        fn is_activated(&self) -> bool {
+            true
+        }
+
+        fn processing_gate(&self) -> Arc<ProcessingGate> {
+            Arc::clone(&self.processing)
+        }
+
+        fn sync_processing_state(&mut self) {}
+
+        fn set_transport(&mut self, _transport: HostTransport) {}
+
+        fn process_with_parameter_updates(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _parameter_updates: &[HostParameterUpdate],
+        ) {
+        }
+
+        fn process_with_midi_and_parameters(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            midi_events: &[HostMidiEvent],
+            _parameter_updates: &[HostParameterUpdate],
+        ) {
+            self.notes.lock().expect("the note log").extend(
+                midi_events
+                    .iter()
+                    .map(|event| (event.note, event.frame_offset)),
+            );
+        }
+
+        fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
+
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+            Ok(None)
+        }
+
+        fn latency_ms(&self) -> f64 {
+            0.0
+        }
+
+        fn latency_samples(&self) -> u32 {
+            0
+        }
+
+        fn tail_samples(&self) -> u32 {
+            0
+        }
+    }
+
+    /// One scheduled note as the engine stamps it for a block.
+    fn engine_note(note: u8, frame_offset: u32) -> MidiNoteEvent {
+        MidiNoteEvent {
+            note,
+            velocity: 100,
+            channel: 0,
+            is_note_on: true,
+            frame_offset,
+            probability_cutoff: u64::from(u32::MAX) + 1,
+            project_probability_seed: 0,
+            clip_id_hash: 0,
+            event_id_hash: 0,
+            absolute_occurrence_index: 0,
+        }
+    }
+
+    /// The bridge packs the engine's events into the host's own event type on
+    /// the audio thread, and the frame offset has to survive that packing: a
+    /// note that arrives with offset zero sounds on the block boundary rather
+    /// than on the frame it was written for, which is audible as timing jitter
+    /// of up to a whole buffer.
+    #[test]
+    fn process_with_events_carries_each_notes_frame_offset_into_the_host_event() {
+        const FRAMES: usize = 64;
+
+        let notes = Arc::new(Mutex::new(Vec::new()));
+        let shared = Arc::new(SharedHostedPlugin::new(MidiRecordingPlugin {
+            processing: Arc::new(ProcessingGate::default()),
+            notes: Arc::clone(&notes),
+        }));
+        let mut slot = HostedPluginSlot::new(Arc::clone(&shared));
+
+        let mut left = [0.0f32; FRAMES];
+        let mut right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[engine_note(60, 0), engine_note(64, 17), engine_note(67, 63)],
+            &TransportState::default(),
+        );
+
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![(60, 0), (64, 17), (67, 63)]
+        );
     }
 }
 

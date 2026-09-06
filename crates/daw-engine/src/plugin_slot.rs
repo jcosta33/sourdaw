@@ -9,6 +9,16 @@ pub struct MidiNoteEvent {
     pub velocity: u8,
     pub channel: i16,
     pub is_note_on: bool,
+    /// The sample, inside the buffer handed to
+    /// [`NativePlugin::process_with_events`], at which this event applies.
+    ///
+    /// Zero for an event delivered at the head of a block, which is the
+    /// immediate path's only answer: a note played live has no timeline
+    /// position to stamp it against. A scheduled note carries the distance
+    /// from the block's first frame to the timeline frame it was written on,
+    /// so the instrument sounds it on that sample rather than on whichever
+    /// block boundary happened to reach it first.
+    pub frame_offset: u32,
     /// Fixed acceptance cutoff in the inclusive range 0..=2^32.
     pub probability_cutoff: u64,
     pub project_probability_seed: u32,

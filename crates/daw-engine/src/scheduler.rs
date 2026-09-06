@@ -7,6 +7,7 @@ use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
+use crate::midi::note_store::{MidiNoteStore, TimedMidiNote};
 use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
@@ -303,7 +304,15 @@ pub enum GraphCommand {
     },
 
     // External plugins (CLAP/VST3/AU)
-    AddPlugin(usize, Box<dyn NativePlugin>),
+    /// Register a plugin instance on the master insert chain, with the note
+    /// store it plays from.
+    ///
+    /// The store is `Some` for an instrument and `None` for everything else.
+    /// A device with no store refuses [`GraphCommand::ScheduleMidiNotes`] and
+    /// counts the refusal, which is the honest answer for a body that has
+    /// nothing to sound a note with; building one on the audio thread instead
+    /// is the allocation ADR 0020 forbids.
+    AddPlugin(usize, Box<dyn NativePlugin>, Option<Box<MidiNoteStore>>),
     /// Register a hosted plugin instance, homed detached rather than on the
     /// master insert chain.
     ///
@@ -311,13 +320,40 @@ pub enum GraphCommand {
     /// master chain it would render the whole mix through that instance the
     /// moment a user took it off a strip; homed detached, releasing it from a
     /// chain returns it to a placement that runs nowhere.
-    AddHostedPlugin(usize, Box<dyn NativePlugin>),
+    ///
+    /// Its note store travels with it, unconditionally: a hosted instance is
+    /// the route every external instrument arrives on, and one registered
+    /// without a store could never be scheduled against.
+    AddHostedPlugin(usize, Box<dyn NativePlugin>, Box<MidiNoteStore>),
     /// Retire a registered plugin, handing the instance off the callback
     /// thread.
     RemovePlugin(usize),
 
     // MIDI events (routed to a specific plugin by ID)
+    /// Play one note at the head of the next block this plugin is handed.
+    ///
+    /// The live path: a note struck on a keyboard has no timeline position to
+    /// stamp it against, so it is delivered as soon as the plugin renders and
+    /// its `frame_offset` is zero. A note that does have a position is written
+    /// with [`GraphCommand::ScheduleMidiNotes`] instead.
     SendMidiNote(usize, MidiNoteEvent),
+    /// Write a batch of timeline-addressed notes into a plugin's note store.
+    ///
+    /// The batch is built control-side and lands whole or not at all: a plugin
+    /// with no store, or a batch past the store's free capacity, is refused
+    /// and counted rather than stored in part. The box leaves over the
+    /// retirement channel, because the audio thread may not free one.
+    ScheduleMidiNotes {
+        plugin_id: usize,
+        notes: Box<[TimedMidiNote]>,
+    },
+    /// Drop every stored note in the half-open frame window
+    /// `from_frame..to_frame`. `0..u64::MAX` clears the plugin's store.
+    ClearMidiNotes {
+        plugin_id: usize,
+        from_frame: u64,
+        to_frame: u64,
+    },
 
     // MIDI FX
     /// Add a user MIDI FX, already built control-side
@@ -685,6 +721,8 @@ impl GraphCommand {
             | Self::SetBypass(..)
             | Self::SetEffectLatency { .. }
             | Self::SendMidiNote(..)
+            | Self::ScheduleMidiNotes { .. }
+            | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
             | Self::RemoveMidiFx(..)
             | Self::SetMidiFxParam(..)
@@ -773,6 +811,8 @@ impl GraphCommand {
             | Self::SetParam(..)
             | Self::SetBypass(..)
             | Self::SendMidiNote(..)
+            | Self::ScheduleMidiNotes { .. }
+            | Self::ClearMidiNotes { .. }
             | Self::AddMidiFx(..)
             | Self::RemoveMidiFx(..)
             | Self::SetMidiFxParam(..)
@@ -886,6 +926,17 @@ struct ActiveEffect {
     midi_fx: MidiFxChain,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
+    /// The timeline-addressed notes this instrument plays from, or `None` for
+    /// a device that is not one.
+    ///
+    /// Built control-side and carried in by the command that registered the
+    /// device ([`GraphCommand::AddHostedPlugin`],
+    /// [`GraphCommand::AddPlugin`]), because the audio thread may neither
+    /// allocate one nor free one (ADR 0020). Unlike `pending_midi`, which is
+    /// this block's delivery and is emptied by it, the store outlives every
+    /// block: delivery reads from it and leaves it alone, so a loop pass
+    /// sounds the same note again and a locate away from it sounds nothing.
+    midi_notes: Option<Box<MidiNoteStore>>,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -1319,6 +1370,10 @@ pub struct RetiredGraphObjects {
     /// The tempo and meter maps a newer pair replaced. They own segment
     /// vectors, so they leave on the same contract as everything else here.
     transport_maps: Option<Box<TransportMaps>>,
+    /// A scheduled-note batch whose entries have been copied into their
+    /// store. The box is heap the control thread built, so freeing it here
+    /// would be a free on the callback.
+    midi_notes: Option<Box<[TimedMidiNote]>>,
     remaining_effects: Vec<ActiveEffect>,
     remaining_timeline: Option<TimelineGraph>,
     queued_commands: Vec<GraphCommand>,
@@ -1332,6 +1387,7 @@ impl RetiredGraphObjects {
             midi_fx,
             timeline_object: None,
             transport_maps: None,
+            midi_notes: None,
             remaining_effects: Vec::new(),
             remaining_timeline: None,
             queued_commands: Vec::new(),
@@ -1359,6 +1415,12 @@ impl RetiredGraphObjects {
         retired
     }
 
+    fn midi_notes(notes: Box<[TimedMidiNote]>) -> Self {
+        let mut retired = Self::removed(None, None);
+        retired.midi_notes = Some(notes);
+        retired
+    }
+
     /// The old command consumer a channel swap replaced. Its producer was
     /// dropped control-side when the swap was published, so the reclaimer's
     /// drain-until-abandoned loop terminates promptly.
@@ -1382,6 +1444,7 @@ impl RetiredGraphObjects {
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
             transport_maps: pending.transport_maps.take(),
+            midi_notes: pending.midi_notes.take(),
             remaining_effects,
             remaining_timeline: Some(remaining_timeline),
             queued_commands,
@@ -1472,10 +1535,22 @@ impl ActiveEffect {
             probability_evaluator: ProbabilityEvaluator,
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
+            midi_notes: None,
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
         }
+    }
+
+    /// Install the note store the registering command shipped.
+    ///
+    /// Taken as a step of its own so every refusal path can build the effect
+    /// holding the store and hand the whole of it to the retirement channel:
+    /// a store dropped where the registration was refused would be a free on
+    /// the callback.
+    fn holding_midi_notes(mut self, store: Option<Box<MidiNoteStore>>) -> Self {
+        self.midi_notes = store;
+        self
     }
 
     /// Take a newly declared latency and the line the control thread built
@@ -1566,6 +1641,47 @@ impl ActiveEffect {
         if !self.pending_midi.try_push(event) {
             diagnostics.record_scheduler_event_buffer_overflow(1);
         }
+    }
+
+    /// Queue every stored note the span `block_start..block_start + frames`
+    /// renders, each stamped at the sample inside that span which carries its
+    /// timeline frame.
+    ///
+    /// Returns whether the span reached any of them, so the caller can mark
+    /// the slot as holding block-local MIDI exactly as the immediate path
+    /// does. The store itself is only read: what a pass delivers stays
+    /// scheduled, which is what makes a note inside a loop region sound on
+    /// every pass over it.
+    #[inline]
+    fn enqueue_due_midi_notes(
+        &mut self,
+        block_start: u64,
+        frames: usize,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            midi_notes,
+            pending_midi,
+            ..
+        } = self;
+        let Some(store) = midi_notes.as_ref() else {
+            return false;
+        };
+
+        let span_end = block_start.saturating_add(frames as u64);
+        let mut delivered = false;
+        for entry in store.entries() {
+            if entry.at_frame < block_start || entry.at_frame >= span_end {
+                continue;
+            }
+            delivered = true;
+            let mut event = entry.event;
+            event.frame_offset = (entry.at_frame - block_start) as u32;
+            if !pending_midi.try_push(event) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+            }
+        }
+        delivered
     }
 }
 
@@ -2043,21 +2159,17 @@ impl AudioScheduler {
                         })
                     }
                 },
-                GraphCommand::AddPlugin(id, plugin) => {
+                GraphCommand::AddPlugin(id, plugin, store) => {
+                    let effect =
+                        ActiveEffect::new(id, PluginCore::Native(plugin)).holding_midi_notes(store);
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::effect(ActiveEffect::new(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else {
-                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_effect(effect);
                         None
                     }
                 }
@@ -2065,21 +2177,17 @@ impl AudioScheduler {
                 // belongs to the load that created it, not to the master
                 // insert chain: homed there it would render the whole mix
                 // through the instance the moment a user took it off a strip.
-                GraphCommand::AddHostedPlugin(id, plugin) => {
+                GraphCommand::AddHostedPlugin(id, plugin, store) => {
+                    let effect = ActiveEffect::detached(id, PluginCore::Native(plugin))
+                        .holding_midi_notes(Some(store));
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
-                        Some(RetiredGraphObjects::effect(ActiveEffect::detached(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY {
                         self.timeline.record_capacity_refusal();
-                        Some(RetiredGraphObjects::effect(ActiveEffect::detached(
-                            id,
-                            PluginCore::Native(plugin),
-                        )))
+                        Some(RetiredGraphObjects::effect(effect))
                     } else {
-                        self.push_effect(ActiveEffect::detached(id, PluginCore::Native(plugin)));
+                        self.push_effect(effect);
                         None
                     }
                 }
@@ -2123,6 +2231,26 @@ impl AudioScheduler {
                             effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
                             self.pending_midi_work.insert(slot);
                         }
+                    }
+                    None
+                }
+                GraphCommand::ScheduleMidiNotes { plugin_id, notes } => {
+                    self.schedule_midi_notes(plugin_id, &notes);
+                    // The batch was copied into the store; the box itself is a
+                    // control-side allocation and leaves the way every other
+                    // one does.
+                    Some(RetiredGraphObjects::midi_notes(notes))
+                }
+                GraphCommand::ClearMidiNotes {
+                    plugin_id,
+                    from_frame,
+                    to_frame,
+                } => {
+                    if let Some(store) = self
+                        .effect_mut(plugin_id)
+                        .and_then(|effect| effect.midi_notes.as_mut())
+                    {
+                        store.clear_window(from_frame, to_frame);
                     }
                     None
                 }
@@ -2796,6 +2924,63 @@ impl AudioScheduler {
         }
     }
 
+    /// Copy a scheduled batch into the store of the device it names.
+    ///
+    /// Whole or nothing: a device with no store, and a batch past the store's
+    /// free capacity, are both refused and counted. A note behind the playhead
+    /// is stored and counted late rather than fired — firing it here would put
+    /// a note-on at a position nobody wrote it at, and the frame it names is
+    /// still ahead of a later locate or loop pass.
+    fn schedule_midi_notes(&mut self, plugin_id: usize, notes: &[TimedMidiNote]) {
+        let stored = self
+            .effect_index
+            .lookup(plugin_id)
+            .and_then(|slot| self.effects.get_mut(slot))
+            .and_then(|effect| effect.midi_notes.as_mut())
+            .is_some_and(|store| store.try_extend(notes));
+
+        if !stored {
+            self.midi_rt_diagnostics.record_midi_note_batch_refusal(1);
+            return;
+        }
+
+        let playhead = self.playhead_frames;
+        let late = notes.iter().filter(|note| note.at_frame < playhead).count();
+        self.midi_rt_diagnostics.record_late_midi_notes(late as u64);
+    }
+
+    /// Deliver every scheduled note the span reaches, stamped at its sample.
+    ///
+    /// Sited beside [`Self::apply_due_device_params`] and for the same reason:
+    /// both are addressed in timeline frames, so both have to run against the
+    /// span that actually renders those frames rather than against the
+    /// callback's first one. A device with no store is skipped, which is every
+    /// device but an instrument.
+    ///
+    /// Nothing is delivered while the transport is stopped. The playhead
+    /// stands still then, so every callback renders the same span and a note
+    /// under it would retrigger at the block rate — the same reason clips are
+    /// held back on a stopped transport, and a scheduled note is arrangement
+    /// material exactly as a clip is. The live path
+    /// ([`GraphCommand::SendMidiNote`]) still sounds a stopped transport,
+    /// because a note played on a keyboard is not addressed to the timeline at
+    /// all.
+    fn apply_due_midi_notes(&mut self, block_start: u64, frames: usize) {
+        if frames == 0 || !self.transport.is_playing {
+            return;
+        }
+
+        for slot in 0..self.effects.len() {
+            if self.effects[slot].enqueue_due_midi_notes(
+                block_start,
+                frames,
+                &mut self.midi_rt_diagnostics,
+            ) {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
     /// Land every time-stamped device-parameter change the block has reached.
     ///
     /// A device owns its own parameter smoothing, so these apply once at the
@@ -3036,6 +3221,7 @@ impl AudioScheduler {
 
             self.refresh_transport_at(block_start);
             self.apply_due_device_params(block_start, span_frames);
+            self.apply_due_midi_notes(block_start, span_frames);
             self.render_timeline(
                 block_start,
                 span_frames,
@@ -3515,7 +3701,9 @@ mod tests {
         panic_on_drop: bool,
     ) {
         let plugin = drop_tracking_plugin(dropped_tx, panic_on_drop);
-        assert!(command_tx.push(GraphCommand::AddPlugin(id, plugin)).is_ok());
+        assert!(command_tx
+            .push(GraphCommand::AddPlugin(id, plugin, None))
+            .is_ok());
     }
 
     impl Drop for DropTrackingPlugin {
@@ -3741,6 +3929,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3775,6 +3964,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3829,6 +4019,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
         }
@@ -3849,6 +4040,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -3891,7 +4083,7 @@ mod tests {
             ),
         ] {
             command_tx
-                .push(GraphCommand::AddPlugin(id, plugin))
+                .push(GraphCommand::AddPlugin(id, plugin, None))
                 .unwrap();
         }
         command_tx
@@ -3901,6 +4093,7 @@ mod tests {
                     factor: 11.0,
                     offset: 7.0,
                 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3954,6 +4147,7 @@ mod tests {
                     factor: 7.0,
                     offset: 4.0,
                 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -3982,6 +4176,7 @@ mod tests {
                     factor: 4.0,
                     offset: 2.0,
                 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4017,6 +4212,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .is_ok());
         scheduler.update_graph();
@@ -4043,6 +4239,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 42,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4134,6 +4331,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 7,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4175,6 +4373,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 8,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4206,6 +4405,7 @@ mod tests {
                 Box::new(VelocityRecordingPlugin {
                     received_velocity_sum: Arc::clone(&received_velocity_sum),
                 }),
+                None,
             ))
             .unwrap();
         command_tx
@@ -4235,6 +4435,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -4365,6 +4566,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4397,6 +4599,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 11,
                 Box::new(FakeNativePlugin { value: 0.0 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4443,6 +4646,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4523,6 +4727,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4555,6 +4760,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 EFFECT_TABLE_CAPACITY + 1,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4618,6 +4824,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     id,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -4628,6 +4835,7 @@ mod tests {
             .push(GraphCommand::AddHostedPlugin(
                 EFFECT_TABLE_CAPACITY,
                 Box::new(FakeNativePlugin { value: 0.25 }),
+                MidiNoteStore::new(),
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4654,6 +4862,7 @@ mod tests {
                     received_event_count: Arc::clone(&received_event_count),
                     received_channel_sum,
                 }),
+                None,
             ))
             .unwrap();
         command_tx
@@ -4680,6 +4889,7 @@ mod tests {
                     clip_id_hash: 0,
                     event_id_hash: 0,
                     absolute_occurrence_index: 0,
+                    frame_offset: 0,
                 },
             ))
             .unwrap();
@@ -4727,6 +4937,7 @@ mod tests {
                     received_event_count: Arc::clone(&received_event_count),
                     received_channel_sum: Arc::clone(&received_channel_sum),
                 }),
+                None,
             ))
             .unwrap();
 
@@ -4744,6 +4955,7 @@ mod tests {
                         clip_id_hash: 0,
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
+                        frame_offset: 0,
                     },
                 ))
                 .unwrap();
@@ -4943,6 +5155,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -4981,6 +5194,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         command_tx
@@ -5052,6 +5266,7 @@ mod tests {
             .push(GraphCommand::AddPlugin(
                 TAP_CONSUMER_ID,
                 capture_tap_plugin(&tap),
+                None,
             ))
             .unwrap();
         command_tx
@@ -5210,6 +5425,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     TAP_CONSUMER_ID,
                     capture_tap_plugin(&tap),
+                    None,
                 ))
                 .unwrap();
             command_tx
@@ -5263,6 +5479,7 @@ mod tests {
                         received_event_count: Arc::clone(&received_event_count),
                         received_channel_sum: Arc::clone(&received_channel_sum),
                     }),
+                    None,
                 ))
                 .unwrap();
             scheduler.update_graph();
@@ -5287,6 +5504,7 @@ mod tests {
                         clip_id_hash: 0,
                         event_id_hash: 0,
                         absolute_occurrence_index: 0,
+                        frame_offset: 0,
                     },
                 ))
                 .unwrap();
@@ -5406,6 +5624,7 @@ mod tests {
                     .push(GraphCommand::AddPlugin(
                         id,
                         Box::new(FakeNativePlugin { value: 0.0 }),
+                        None,
                     ))
                     .unwrap();
             }
@@ -5451,6 +5670,7 @@ mod tests {
                     .push(GraphCommand::AddPlugin(
                         id,
                         Box::new(FakeNativePlugin { value: 0.0 }),
+                        None,
                     ))
                     .unwrap();
             }
@@ -5572,12 +5792,14 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     41,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    None,
                 ))
                 .unwrap();
             command_tx
                 .push(GraphCommand::AddHostedPlugin(
                     42,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    MidiNoteStore::new(),
                 ))
                 .unwrap();
 
@@ -5594,6 +5816,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     41,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    None,
                 ))
                 .unwrap();
             assert_no_alloc(|| {
@@ -5632,6 +5855,7 @@ mod tests {
                         received_event_count: Arc::new(AtomicUsize::new(0)),
                         received_channel_sum: Arc::new(AtomicUsize::new(0)),
                     }),
+                    None,
                 ))
                 .unwrap();
             // Built control-side: these boxes are the allocations the issue
@@ -5697,6 +5921,7 @@ mod tests {
                 .push(GraphCommand::AddPlugin(
                     7,
                     Box::new(FakeNativePlugin { value: 0.0 }),
+                    None,
                 ))
                 .unwrap();
             for _ in 0..MIDI_FX_CHAIN_CAPACITY {
@@ -5745,6 +5970,7 @@ mod tests {
                 .push(GraphCommand::AddHostedPlugin(
                     7,
                     Box::new(FakeNativePlugin { value: 0.25 }),
+                    MidiNoteStore::new(),
                 ))
                 .unwrap();
             command_tx
@@ -5918,6 +6144,72 @@ mod timeline_tests {
 
         fn name(&self) -> &str {
             "constant-generator"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// How many notes one [`FrameRecordingInstrument`] can log.
+    ///
+    /// The log is reserved to it up front because this fixture also runs
+    /// inside the render allocation guard, where a growing `Vec` would be the
+    /// allocation the guard exists to catch.
+    const RECORDED_NOTE_CAPACITY: usize = 64;
+
+    /// An instrument that records the absolute frame every note it receives
+    /// lands on: the frames it has already been asked to render, plus the
+    /// event's own offset inside the block it arrived in.
+    ///
+    /// A device is called once per rendered span, in the order the spans
+    /// render, so the frames this fixture has already processed are where the
+    /// current span begins in the stream the harness drove. That running count
+    /// is the only vantage inside a plugin from which a block-local stamp
+    /// reads back as a position a test can name.
+    struct FrameRecordingInstrument {
+        processed: u64,
+        received: Arc<Mutex<Vec<u64>>>,
+    }
+
+    impl FrameRecordingInstrument {
+        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<u64>>>) {
+            let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
+            let instrument = Box::new(Self {
+                processed: 0,
+                received: Arc::clone(&received),
+            });
+            (instrument, received)
+        }
+    }
+
+    impl NativePlugin for FrameRecordingInstrument {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], num_samples: usize) {
+            self.processed += num_samples as u64;
+        }
+
+        fn process_with_events(
+            &mut self,
+            _left: &mut [f32],
+            _right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            let mut received = self.received.lock().expect("the received note log");
+            for event in midi_events {
+                received.push(self.processed + u64::from(event.frame_offset));
+            }
+            drop(received);
+            self.processed += num_samples as u64;
+        }
+
+        fn name(&self) -> &str {
+            "frame-recording-instrument"
         }
 
         fn as_any(&self) -> &dyn Any {
@@ -6179,6 +6471,7 @@ mod timeline_tests {
                 calls: Arc::clone(&calls),
                 midi_events: Arc::clone(&midi_events),
             }),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(track_id, effect(effect_id), 0));
 
@@ -6224,6 +6517,7 @@ mod timeline_tests {
             clip_id_hash: 0,
             event_id_hash: 0,
             absolute_occurrence_index: 0,
+            frame_offset: 0,
         }
     }
 
@@ -6376,6 +6670,7 @@ mod timeline_tests {
                 Arc::clone(&declared),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            None,
         ));
         harness.send(insert_track_device(track_id, effect(effect_id), index));
         harness.send(set_latency(effect_id, latency));
@@ -6393,7 +6688,11 @@ mod timeline_tests {
         instrument: Box<dyn NativePlugin>,
         index: usize,
     ) {
-        harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            instrument,
+            MidiNoteStore::new(),
+        ));
         harness.send(insert_track_device(track_id, generator(effect_id), index));
     }
 
@@ -6425,7 +6724,11 @@ mod timeline_tests {
         instrument: Box<dyn NativePlugin>,
         index: usize,
     ) {
-        harness.send(GraphCommand::AddHostedPlugin(effect_id, instrument));
+        harness.send(GraphCommand::AddHostedPlugin(
+            effect_id,
+            instrument,
+            MidiNoteStore::new(),
+        ));
         harness.send(insert_bus_device(bus_id, generator(effect_id), index));
     }
 
@@ -6808,6 +7111,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         track_with_constant_clip(&mut harness, 2, 9, 1.0, 4);
@@ -6874,6 +7178,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(2, effect(7), 0));
         harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Track(2)));
@@ -6913,6 +7218,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
 
@@ -6949,6 +7255,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
@@ -7178,7 +7485,7 @@ mod timeline_tests {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
             param: DeviceParamTarget::Hosted { id: 4 },
@@ -7233,7 +7540,7 @@ mod timeline_tests {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(false);
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
             param: DeviceParamTarget::Hosted { id: 7 },
@@ -7269,7 +7576,7 @@ mod timeline_tests {
         harness.playing();
         harness.send(GraphCommand::AddEffect(1, knead_instance()));
         let (plugin, queued) = parameter_recording_plugin(true);
-        harness.send(GraphCommand::AddPlugin(2, plugin));
+        harness.send(GraphCommand::AddPlugin(2, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 1,
             param: DeviceParamTarget::Hosted { id: 7 },
@@ -7317,7 +7624,7 @@ mod timeline_tests {
         let mut harness = Harness::new(16);
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(GraphCommand::SetBypass(3, true));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
@@ -7359,7 +7666,7 @@ mod timeline_tests {
         harness.playing();
         let (plugin, queued) = parameter_recording_plugin(true);
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
-        harness.send(GraphCommand::AddPlugin(3, plugin));
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
         harness.send(insert_track_device(1, effect(3), 0));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 3,
@@ -7453,6 +7760,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(GraphCommand::AutomateParam {
             target: AutomationTarget::MasterGain,
@@ -7701,6 +8009,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(TailPlugin { value: 0.25 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
 
@@ -7732,6 +8041,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.send(insert_track_device(2, effect(7), 0));
@@ -7827,6 +8137,7 @@ mod timeline_tests {
             Box::new(MidiCountingPlugin {
                 received: Arc::clone(&received),
             }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(7), 0));
         harness.send(GraphCommand::RemoveTrack(1));
@@ -8057,6 +8368,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             7,
             Box::new(ScalingPlugin { factor: 0.5 }),
+            None,
         ));
         harness.send(GraphCommand::AddSend {
             track_id: 1,
@@ -8472,6 +8784,7 @@ mod timeline_tests {
                 Box::new(NoteOnCountingPlugin {
                     note_ons: Arc::clone(&note_ons),
                 }),
+                None,
             ));
             harness.send(GraphCommand::AddMidiFx(1, MidiFxKind::Arpeggiator.build()));
             harness.send(GraphCommand::SetTransportMaps(tempo_maps(segments)));
@@ -9109,6 +9422,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, LATENCY));
@@ -9162,6 +9476,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DETACHED_AT));
@@ -9216,6 +9531,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            MidiNoteStore::new(),
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, DETACHED_AT));
@@ -9264,6 +9580,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
         ));
         harness.send(insert_bus_device(50, effect(900), 0));
         harness.send(set_latency(900, LATENCY));
@@ -9603,6 +9920,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             900,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
         ));
         harness.send(insert_bus_device(50, effect(900), 0));
         harness.send(set_latency(900, BUS_LATENCY));
@@ -9636,6 +9954,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             900,
             Box::new(ScalingPlugin { factor: 1.0 }),
+            None,
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, declared));
@@ -9698,6 +10017,7 @@ mod timeline_tests {
                 Arc::new(AtomicUsize::new(declared)),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            None,
         ));
         harness.send(insert_track_device(1, effect(900), 0));
         harness.send(set_latency(900, declared));
@@ -9750,6 +10070,7 @@ mod timeline_tests {
                 Arc::new(AtomicUsize::new(declared)),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            MidiNoteStore::new(),
         ));
         harness.send(set_latency(900, declared));
         harness.render(16);
@@ -10039,6 +10360,7 @@ mod timeline_tests {
                 Arc::new(AtomicUsize::new(AHEAD)),
                 LATENT_PLUGIN_CAPACITY,
             )),
+            None,
         ));
         harness.send(insert_bus_device(50, effect(902), 0));
         harness.send(set_latency(902, AHEAD));
@@ -10318,6 +10640,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddHostedPlugin(
             901,
             Box::new(ConstantGenerator { value: 1.0 }),
+            MidiNoteStore::new(),
         ));
 
         // No track 7 in the graph, so the splice is refused with its line
@@ -10488,6 +10811,7 @@ mod timeline_tests {
             harness.send(GraphCommand::AddPlugin(
                 effect_id,
                 Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+                None,
             ));
             harness.send(insert_bus_device(bus_id, effect(effect_id), 0));
             harness.send(set_latency(effect_id, latency));
@@ -10538,6 +10862,7 @@ mod timeline_tests {
         harness.send(GraphCommand::AddPlugin(
             901,
             Box::new(LatentPlugin::new(declared, LATENT_PLUGIN_CAPACITY)),
+            None,
         ));
         harness.send(insert_bus_device(51, effect(901), 0));
         harness.send(set_latency(901, SECOND_HOP));
@@ -10584,5 +10909,261 @@ mod timeline_tests {
             vec![ALIGNED; 16],
             "past the onset every frame carries all three routes"
         );
+    }
+
+    /// A note the control thread stamps for one timeline frame.
+    fn timed_note(at_frame: u64, note: u8) -> TimedMidiNote {
+        TimedMidiNote {
+            at_frame,
+            event: note_on(note),
+        }
+    }
+
+    /// The command a control thread ships for a run of notes: one note-on per
+    /// frame named, in the order they are named.
+    fn schedule_notes(plugin_id: usize, frames: &[u64]) -> GraphCommand {
+        let notes: Vec<TimedMidiNote> = frames.iter().map(|frame| timed_note(*frame, 60)).collect();
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    fn received_frames(received: &Arc<Mutex<Vec<u64>>>) -> Vec<u64> {
+        received.lock().expect("the received note log").clone()
+    }
+
+    fn midi_diagnostics(harness: &Harness) -> ActiveMidiRtDiagnosticsSnapshot {
+        harness.scheduler.midi_rt_diagnostics.snapshot()
+    }
+
+    /// How many notes the graph is holding for one plugin, read from the
+    /// effect table itself.
+    ///
+    /// A refusal that kept a prefix is invisible from outside the engine until
+    /// some later block renders the frames it kept, which may be never.
+    fn stored_note_count(harness: &Harness, plugin_id: usize) -> usize {
+        harness
+            .scheduler
+            .effects
+            .iter()
+            .find(|effect| effect.id == plugin_id)
+            .and_then(|effect| effect.midi_notes.as_ref())
+            .map_or(0, |store| store.len())
+    }
+
+    /// A playing track carrying a [`FrameRecordingInstrument`], spliced the
+    /// way a hosted instrument arrives.
+    fn track_with_recording_instrument(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+    ) -> Arc<Mutex<Vec<u64>>> {
+        const CLIP_FRAMES: usize = 8_192;
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        insert_track_generator(harness, track_id, effect_id, instrument, 0);
+        received
+    }
+
+    /// A scheduled note reaches the instrument on the sample that renders its
+    /// timeline frame, in the block that renders it.
+    ///
+    /// The frames named straddle a block boundary, so a delivery that shipped
+    /// no offset and one that measured the offset from the wrong block both
+    /// land somewhere the assertion names.
+    #[test]
+    fn a_scheduled_note_reaches_the_instrument_on_its_timeline_frame_across_a_block_boundary() {
+        const BLOCK: usize = 32;
+        const SCHEDULED: [u64; 4] = [5, 31, 32, 63];
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &SCHEDULED));
+
+        harness.render(BLOCK);
+        harness.render(BLOCK);
+
+        assert_eq!(received_frames(&received), SCHEDULED.to_vec());
+    }
+
+    /// A scheduled note belongs to its frame, not to a pass over it: every
+    /// loop pass that renders that frame delivers the note again. The entry
+    /// persists, so the second time round the region sounds like the first.
+    #[test]
+    fn a_scheduled_note_fires_on_every_loop_pass_that_renders_its_frame() {
+        const LOOP_START: u64 = 512;
+        const LOOP_END: u64 = 1_536;
+        const NOTE_FRAME: u64 = 600;
+        const PASS: u64 = LOOP_END - LOOP_START;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: LOOP_START,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(GraphCommand::SeekFrames(LOOP_START));
+        harness.send(schedule_notes(7, &[NOTE_FRAME]));
+
+        // One callback long enough to hold both passes, so the seam splits it
+        // and the assertion is about the spans the seam yields rather than
+        // about two separate callbacks.
+        harness.render(2 * PASS as usize);
+
+        let into_region = NOTE_FRAME - LOOP_START;
+        assert_eq!(
+            received_frames(&received),
+            vec![into_region, PASS + into_region],
+            "the second pass delivers the note again, one region later in the render stream"
+        );
+    }
+
+    /// A locate past a scheduled note leaves it where it is. No block rendered
+    /// its frame, so nothing fires — and nothing is counted late, because
+    /// lateness is about where the playhead stood when the note was scheduled,
+    /// not about where it has been since.
+    #[test]
+    fn a_locate_past_a_scheduled_note_does_not_fire_it() {
+        const NOTE_FRAME: u64 = 100;
+        const LOCATE_TO: u64 = 512;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &[NOTE_FRAME]));
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+
+        harness.render(64);
+
+        assert!(
+            received_frames(&received).is_empty(),
+            "a note the playhead skipped over is not fired at the head of the block after it"
+        );
+        assert_eq!(midi_diagnostics(&harness).late_midi_notes, 0);
+    }
+
+    /// Clearing a window takes out exactly the notes inside it. The bounds are
+    /// half-open, so a clear aimed between two notes leaves both of them.
+    #[test]
+    fn clearing_a_window_removes_only_the_notes_inside_it() {
+        const SCHEDULED: [u64; 3] = [10, 40, 70];
+        const WINDOW_FROM: u64 = 32;
+        const WINDOW_TO: u64 = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_notes(7, &SCHEDULED));
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: WINDOW_FROM,
+            to_frame: WINDOW_TO,
+        });
+
+        harness.render(96);
+
+        assert_eq!(received_frames(&received), vec![10, 70]);
+    }
+
+    /// A batch past the store's free capacity is refused whole and counted.
+    /// Keeping the prefix that fits would silence an arbitrary tail of a
+    /// phrase and leave the caller nothing to notice it by.
+    #[test]
+    fn an_over_capacity_batch_is_refused_whole_and_counted() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let over_capacity: Vec<u64> =
+            (0..crate::midi::note_store::MIDI_NOTE_STORE_CAPACITY as u64 + 1).collect();
+        harness.send(schedule_notes(7, &over_capacity));
+
+        assert_eq!(stored_note_count(&harness, 7), 0);
+        assert_eq!(midi_diagnostics(&harness).midi_note_batches_refused, 1);
+
+        harness.send(schedule_notes(7, &[5]));
+        harness.render(32);
+
+        assert_eq!(
+            received_frames(&received),
+            vec![5],
+            "a refusal is about the batch, so the next batch that fits still applies"
+        );
+    }
+
+    /// A note scheduled behind the playhead is stored and counted late, never
+    /// fired. Firing it would put it out of order against everything already
+    /// sounding, and dropping it would lose it for the next pass over its
+    /// frame.
+    #[test]
+    fn a_note_behind_the_playhead_is_stored_and_counted_late() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.render(BLOCK);
+
+        harness.send(schedule_notes(7, &[0]));
+
+        assert_eq!(midi_diagnostics(&harness).late_midi_notes, 1);
+
+        harness.render(BLOCK);
+
+        assert!(
+            received_frames(&received).is_empty(),
+            "a late note is not fired at the head of the next block"
+        );
+
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_frames(&received),
+            vec![2 * BLOCK as u64],
+            "the stored note sounds on frame 0 of the pass that renders it, two blocks into \
+             the render stream"
+        );
+    }
+
+    /// An effect ships no note store, so a batch aimed at one is refused whole
+    /// and counted rather than reaching a device with nowhere to keep it.
+    #[test]
+    fn an_effect_without_a_store_refuses_scheduled_notes() {
+        let mut harness = Harness::new(32);
+        track_with_constant_clip(&mut harness, 1, 101, 1.0, 1_024);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(7, instrument, None));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.playing();
+
+        harness.send(schedule_notes(7, &[5]));
+        harness.render(32);
+
+        assert_eq!(midi_diagnostics(&harness).midi_note_batches_refused, 1);
+        assert!(received_frames(&received).is_empty());
+    }
+
+    /// A stopped transport sounds no scheduled note. The playhead stands still,
+    /// so every callback renders the same span: a note under it would retrigger
+    /// at the block rate for as long as the transport stayed stopped. Notes
+    /// written against the timeline are arrangement material exactly as a clip
+    /// is, and a stopped transport plays neither.
+    #[test]
+    fn a_stopped_transport_does_not_re_fire_a_scheduled_note_every_callback() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(schedule_notes(7, &[5]));
+
+        for _ in 0..3 {
+            harness.render(32);
+        }
+
+        assert!(received_frames(&received).is_empty());
     }
 }

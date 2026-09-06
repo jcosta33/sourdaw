@@ -89,6 +89,22 @@ pub struct HostParameterUpdate {
     pub value: f64,
 }
 
+/// One MIDI note event handed to a plugin with a block.
+///
+/// Its own type rather than the engine's, for the reason [`HostTransport`]
+/// gives: this crate stays loadable without the engine. `frame_offset` is the
+/// sample inside the block the event applies at — every format this host
+/// speaks carries such an offset, so delivering everything at the head of a
+/// block threw away timing the plugin was built to honour.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HostMidiEvent {
+    pub note: u8,
+    pub velocity: u8,
+    pub channel: i16,
+    pub is_note_on: bool,
+    pub frame_offset: u32,
+}
+
 /// Host timeline handed to a plugin each block.
 ///
 /// Deliberately its own type rather than the engine's transport struct: this
@@ -449,7 +465,7 @@ pub trait HostedPluginRuntime: AudioPlugin {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
+        midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     );
 

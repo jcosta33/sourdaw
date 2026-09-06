@@ -40,8 +40,9 @@ use crate::parameter_events::{
 use crate::params::PluginParameter;
 use crate::scanner::{category_from_clap_features, clap_library_path, owned_feature_list};
 use crate::traits::{
-    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
-    HostTransport, HostedPluginRuntime, PluginHostRequestNotifier, ProcessingGate,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostMidiEvent,
+    HostParameterUpdate, HostTransport, HostedPluginRuntime, PluginHostRequestNotifier,
+    ProcessingGate,
 };
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
@@ -1743,7 +1744,7 @@ impl ClapWrapper {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
+        midi_events: &[HostMidiEvent],
     ) {
         self.process_with_midi_and_parameters(inputs, outputs, num_samples, midi_events, &[]);
     }
@@ -1769,7 +1770,7 @@ impl ClapWrapper {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
+        midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     ) {
         if !self.activated
@@ -1780,28 +1781,7 @@ impl ClapWrapper {
             return;
         }
 
-        // Reuse preallocated scratch — no heap allocation on the RT thread.
-        self.midi_scratch.clear();
-        for &(note, vel, ch, is_on) in midi_events.iter().take(MAX_MIDI) {
-            self.midi_scratch.push(clap_event_note {
-                header: clap_event_header {
-                    size: mem::size_of::<clap_event_note>() as u32,
-                    time: 0,
-                    space_id: CLAP_CORE_EVENT_SPACE_ID,
-                    type_: if is_on {
-                        CLAP_EVENT_NOTE_ON
-                    } else {
-                        CLAP_EVENT_NOTE_OFF
-                    },
-                    flags: 0,
-                },
-                note_id: -1,
-                port_index: 0,
-                channel: ch,
-                key: note as i16,
-                velocity: vel as f64 / 127.0,
-            });
-        }
+        fill_note_scratch(&mut self.midi_scratch, midi_events);
         self.parameter_scratch.clear();
         for update in parameter_updates.iter().take(MAX_PARAMETER_EVENTS) {
             self.parameter_scratch.push(clap_event_param_value {
@@ -2319,6 +2299,37 @@ fn empty_transport_event() -> clap_event_transport {
 /// Writes every field in place — no allocation, safe to call from the audio
 /// thread. Beat and second positions are CLAP fixed point, and the flags say
 /// which fields carry meaning so a plugin does not read a zero as a real value.
+/// Refill the block's note scratch from the host's events.
+///
+/// Each event's `frame_offset` becomes the CLAP header's `time`, which is what
+/// makes an instrument sound a note on the sample it was written on rather than
+/// at the head of whichever block carried it. Events past [`MAX_MIDI`] are
+/// dropped: the scratch was reserved once and growing it here would allocate on
+/// the audio thread.
+fn fill_note_scratch(scratch: &mut Vec<clap_event_note>, midi_events: &[HostMidiEvent]) {
+    scratch.clear();
+    for event in midi_events.iter().take(MAX_MIDI) {
+        scratch.push(clap_event_note {
+            header: clap_event_header {
+                size: mem::size_of::<clap_event_note>() as u32,
+                time: event.frame_offset,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: if event.is_note_on {
+                    CLAP_EVENT_NOTE_ON
+                } else {
+                    CLAP_EVENT_NOTE_OFF
+                },
+                flags: 0,
+            },
+            note_id: -1,
+            port_index: 0,
+            channel: event.channel,
+            key: i16::from(event.note),
+            velocity: f64::from(event.velocity) / 127.0,
+        });
+    }
+}
+
 fn fill_transport_event(target: &mut clap_event_transport, source: HostTransport) {
     let mut flags = CLAP_TRANSPORT_HAS_TEMPO
         | CLAP_TRANSPORT_HAS_TIME_SIGNATURE
@@ -2858,7 +2869,7 @@ impl HostedPluginRuntime for ClapWrapper {
         inputs: &[&[f32]],
         outputs: &mut [&mut [f32]],
         num_samples: usize,
-        midi_events: &[(u8, u8, i16, bool)],
+        midi_events: &[HostMidiEvent],
         parameter_updates: &[HostParameterUpdate],
     ) {
         ClapWrapper::process_with_midi_and_parameters(
@@ -2900,6 +2911,72 @@ impl HostedPluginRuntime for ClapWrapper {
 mod tests {
     use super::*;
     use crate::clap_host::RESIZE_SIGNAL_TEST_LOCK;
+
+    // ── Note events ─────────────────────────────────────────────────────
+
+    fn host_note(
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
+        frame_offset: u32,
+    ) -> HostMidiEvent {
+        HostMidiEvent {
+            note,
+            velocity,
+            channel,
+            is_note_on,
+            frame_offset,
+        }
+    }
+
+    /// CLAP addresses an event by the sample it lands on, in the event header's
+    /// `time`. Stamping every note at zero would collapse a block's worth of
+    /// timing onto its first frame, so a phrase written across a block would
+    /// sound as a chord at its head.
+    #[test]
+    fn a_notes_frame_offset_becomes_the_event_headers_time() {
+        let mut scratch = Vec::with_capacity(MAX_MIDI);
+
+        fill_note_scratch(
+            &mut scratch,
+            &[
+                host_note(60, 100, 1, true, 0),
+                host_note(64, 100, 1, true, 37),
+                host_note(64, 0, 1, false, 511),
+            ],
+        );
+
+        let stamps: Vec<(u32, u16, i16)> = scratch
+            .iter()
+            .map(|event| (event.header.time, event.header.type_, event.key))
+            .collect();
+        assert_eq!(
+            stamps,
+            vec![
+                (0, CLAP_EVENT_NOTE_ON, 60),
+                (37, CLAP_EVENT_NOTE_ON, 64),
+                (511, CLAP_EVENT_NOTE_OFF, 64),
+            ]
+        );
+    }
+
+    /// The scratch is reserved once and refilled in place, so a block carrying
+    /// more notes than it holds drops the tail rather than growing on the audio
+    /// thread.
+    #[test]
+    fn a_block_past_the_scratch_capacity_keeps_the_prefix_that_fits() {
+        let mut scratch = Vec::with_capacity(MAX_MIDI);
+        let notes: Vec<HostMidiEvent> = (0..MAX_MIDI + 4)
+            .map(|index| host_note(60, 100, 0, true, index as u32))
+            .collect();
+
+        fill_note_scratch(&mut scratch, &notes);
+
+        assert_eq!(scratch.len(), MAX_MIDI);
+        assert_eq!(scratch[MAX_MIDI - 1].header.time, MAX_MIDI as u32 - 1);
+        assert_eq!(scratch.capacity(), MAX_MIDI);
+    }
 
     // ── Latency query + change notification (PH-4) ──────────────────────
 
