@@ -1,0 +1,199 @@
+release/open-source-inventory.json
+  s_87ab0a2f60ccf8::t_e8d585ec550c5d 1198
+.agents/skills/llm-action-bridge/SKILL.md
+  s_87ab0a2f60ccf8::t_3645128a4881e4 72-87
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_e6018a833562d4 59-62
+crates/daw-engine/src/midi/note_store.rs
+  s_87ab0a2f60ccf8::t_7af280ee9e9715 194-199
+crates/daw-engine/src/scheduler.rs
+  s_87ab0a2f60ccf8::t_fe30e528097edc 366-380,1126,1141-1143,1148-1159,1162,1165,1236-1249,1281-1290,1900,2001-2019,2022-2024,2028-2033,2052-2062,2071-2073,2131-2134,2142-2153,2163,2166-2168,2171,2176,2183-2187,2795-2803,2925-2928,2947,3169-3171,3173,3405-3408,3429-3431,3709,3712,3714-3725,3731,3737-3741,3747-3774,3981,3983-3986,4851,4854-4857,6968-6971,6984,6988,7016,9129-9131,9133,9172-9174,9176,11815-11826,11830,11862,12183-12482,12517-12567
+crates/sourdaw-native/src/commands/graph.rs
+  s_87ab0a2f60ccf8::t_b8d308b662f4d7 155-156,246-258,262-288,290-291,298-300,383-417,451-475,1390-1396,1405,1409-1433,1612-1613,1615-1621,1623,1626,1628,1631-1640,1819-1862,2803-2845,2883-2923,4315-4317,4352-4353,4369-4370,4372,4432-4449,7562-7969,8332-8533
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_87ab0a2f60ccf8::t_2f7b6c64f9179a 89
+src/modules/AiRuntime/models/PresetActions/Presets/Clip.ts
+  s_87ab0a2f60ccf8::t_62ed2976c53139 9
+src/modules/AiRuntime/models/PresetActions/Presets/Device.ts
+  s_87ab0a2f60ccf8::t_cf111ea5a97671 51
+src/modules/AiRuntime/models/PresetActions/Presets/Track.ts
+  s_87ab0a2f60ccf8::t_88680380189bc0 9,20,28,45,54,63,72,104,113
+src/modules/AiRuntime/models/PresetActions/Presets/Transport.ts
+  s_87ab0a2f60ccf8::t_4b409116aea50d 8,16,24,32
+src/modules/AiRuntime/models/PresetActions/Presets/Types.ts
+  s_87ab0a2f60ccf8::t_d827a36ff8bffb 21-22
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_87ab0a2f60ccf8::t_95202f517b721c 39-41
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_87ab0a2f60ccf8::t_6f78ef4db59044 38-79
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_87ab0a2f60ccf8::t_840d75cacc4c80 21,27
+src/modules/AiRuntime/services/__tests__/fuzzySearch.spec.ts
+  s_87ab0a2f60ccf8::t_2ee47be901704d 3
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_87ab0a2f60ccf8::t_917f57bd6a1959 654-752,1837-1839,1843,1917-1919,2118-2120,2509-2511,2519-2526
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_87ab0a2f60ccf8::t_8af27838d14c45 10,85-113,172,174,202,204-407,528-571,580-583,590,622-629,632-635,639,648-649,653,656-657,661
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_87ab0a2f60ccf8::t_61d4bd05341115 4,127,183,185,188,190,229,231,235,238-239,243
+src/modules/AiRuntime/transformers/promptParser/__tests__/promptQuotedText.spec.ts
+  s_87ab0a2f60ccf8::t_52e9ca6ff66770 1-39
+src/modules/AiRuntime/transformers/promptParser/__tests__/selectedClipReference.spec.ts
+  s_87ab0a2f60ccf8::t_21d39e51a5c083 1-80
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_87ab0a2f60ccf8::t_f32788b19cef73 4,7,10,13,68-74,78-79,82,124-129,144,154,159,161-165,193-196,199,201-202,212,214-215,226-228,231,233-235,247-250,256-259,262-265,274-276,278-312,314-316,318-325,327-329,331-366,368-369,371-375,378-383,385-386,389-393,396-400,402-420,422-437,439-444,446-454,456-458,460-466,468-480,482-483,485-493,495-498,500-507,510,514-525,530-534
+src/modules/AiRuntime/transformers/promptParser/promptQuotedText.ts
+  s_87ab0a2f60ccf8::t_867bc9da6b768c 1-67
+src/modules/AiRuntime/transformers/promptParser/selectedClipReference.ts
+  s_87ab0a2f60ccf8::t_898b273f847ce8 1-16
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_87ab0a2f60ccf8::t_8fe9b933a8d3f6 1,3-5,17,51-96,151-194,206-226,255-398,401-1558
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_87ab0a2f60ccf8::t_9991ffc8b98a40 459-460,462-479,495,538,555
+src/modules/AiRuntime/useCases/__tests__/promptInterpretationRouting.spec.ts
+  s_87ab0a2f60ccf8::t_f15dda26e8e797 1-540
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_151d534bb2b5e0 945-1032,6173-6702,6710-6714,6724-6726
+src/modules/AiRuntime/useCases/agentReference/__tests__/getApplicationProtectedObjects.spec.ts
+  s_87ab0a2f60ccf8::t_fb4ec657691ecd 56-84
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_87ab0a2f60ccf8::t_af8e4c87640ba2 1-233
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_87ab0a2f60ccf8::t_5d4ad1f0b43c48 5,99-108,164-327,437-461,994-1057
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_87ab0a2f60ccf8::t_233b197d7de9c9 20,78,781-793,795-799,801-806,808-827,829-849,1695-1697,2082-2184,3717,3721-3722,3726-3735,3869-3876,4099-4102,4166-4168,4387,4484
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_87ab0a2f60ccf8::t_1bce061ffb46eb 15,123,129
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_87ab0a2f60ccf8::t_6d3346443eaa95 1-161
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetScopeAdmissionStrategy.spec.ts
+  s_87ab0a2f60ccf8::t_f9cc6640e22b2a 101-157
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createPostTargetScopeAdmissionStrategyRegistry.ts
+  s_87ab0a2f60ccf8::t_450a9a8c286b15 6
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_87ab0a2f60ccf8::t_8cc6d4405f7db3 4,322-333
+src/modules/AiRuntime/useCases/agentReference/normalizeAgentReferenceText.ts
+  s_87ab0a2f60ccf8::t_467e9b0f2abadf 1-9
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_87ab0a2f60ccf8::t_333258ebb4c911 2-3,9,11,27,80,105,109,125,130-131,147,152,157-158,178-179,209,212-213,216-217,353,358,422-423,446,455,531,534-535
+src/modules/AiRuntime/useCases/agentReference/resolveCompleteClipReference.ts
+  s_87ab0a2f60ccf8::t_77d8e0e1e6bf8e 1-83
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_87ab0a2f60ccf8::t_b89b555db939d9 247,277
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_87ab0a2f60ccf8::t_68a8776839e173 198-207,290-310
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_87ab0a2f60ccf8::t_84e3f74eba25aa 31-36
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_fbbab3cd3e7f52 1-307
+src/modules/Arrangement/handlers/clip/__tests__/handleDiscardDrawnClip.spec.ts
+  s_87ab0a2f60ccf8::t_7264340c859051 1-51
+src/modules/Arrangement/handlers/clip/__tests__/handleDrawClip.spec.ts
+  s_87ab0a2f60ccf8::t_8fad65953d938f 1-242
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipAt.spec.ts
+  s_87ab0a2f60ccf8::t_9d1a2a78279195 1,3-37,39-56,59-70,73-77,80-82,85-92,95-96,99-105,108-114,116-128,130-132
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClips.spec.ts
+  s_87ab0a2f60ccf8::t_1e02acbdb55adc 1-179
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipMoves.spec.ts
+  s_87ab0a2f60ccf8::t_f103f171854eea 1-100
+src/modules/Arrangement/handlers/clip/__tests__/handleSetClipLoopLength.integration.spec.ts
+  s_87ab0a2f60ccf8::t_e36175f128959c 327-334,341-388,390-417,419,421,423-426,428-429,431-453
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_87ab0a2f60ccf8::t_cb19bf610ecc89 9,11,13,21,31,35,52-57
+src/modules/Arrangement/handlers/clip/handleDiscardDrawnClip.ts
+  s_87ab0a2f60ccf8::t_c61dbbe80551fd 1-26
+src/modules/Arrangement/handlers/clip/handleDrawClip.ts
+  s_87ab0a2f60ccf8::t_056de1485a3348 1-111
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  s_87ab0a2f60ccf8::t_65c24835a524c6 1-112
+src/modules/Arrangement/handlers/clip/handleMoveClips.ts
+  s_87ab0a2f60ccf8::t_f8b504ef2333a1 1-188
+src/modules/Arrangement/handlers/clip/handleRestoreClipMoves.ts
+  s_87ab0a2f60ccf8::t_1e89156c18ca15 1-44
+src/modules/Arrangement/handlers/clip/handleRestoreDrawnClip.ts
+  s_87ab0a2f60ccf8::t_c09c9369a5092c 1-42
+src/modules/Arrangement/handlers/validateCreationSessionEntries.ts
+  s_87ab0a2f60ccf8::t_0c7488351e35e4 1,57-179
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_87ab0a2f60ccf8::t_f09d676fea9d64 63,110
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_87ab0a2f60ccf8::t_cce5324a51c745 4-9,26-31,74-75,80-83,125-126,132-134,139-140,142-143,251-288,402-417,435,443-450,458,465,512-516,531-535,572-587,607-612,614-615,618,624,628,735-739,779-786,792,828-832,947-954,961,967,1042-1047,1053,1059,1096,1125-1136,1139-1141,1143-1147,1154-1158,1160-1162,1165-1167
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_87ab0a2f60ccf8::t_9b6265a413b13b 749,763-779,782,801-815,818,835-840,842,845,857-859,1061-1075,1078,1108-1119,1121-1122,1377-1384,1386,1389,1443-1456
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_87ab0a2f60ccf8::t_328f05e4cceb0a 5,68-71,816-824,830-832,907-908,911-929,931,952-968
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_87ab0a2f60ccf8::t_7de428d059db37 467-497,563-588,694,697
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_87ab0a2f60ccf8::t_cf1fdb85304f7a 98-102,190-195,262-330
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_87ab0a2f60ccf8::t_f570afc2b409af 126-131,144-152,270-276,289-298
+src/modules/AudioEngine/useCases/index.ts
+  s_87ab0a2f60ccf8::t_aef9408c2ec17a 117
+src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeLiveMidiNote.spec.ts
+  s_87ab0a2f60ccf8::t_bcd47e7fe3d730 1-105
+src/modules/AudioEngine/useCases/livePlayback/sendNativeLiveMidiNote.ts
+  s_87ab0a2f60ccf8::t_79e084744da7e0 1-54
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_87ab0a2f60ccf8::t_f0a16f99010c88 285-358
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_87ab0a2f60ccf8::t_910da942bb8946 345-349,359-363
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/applyExportNormalization.boundary.integration.spec.ts
+  s_87ab0a2f60ccf8::t_70bb0bee731d54 1-74
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/measureTruePeak.spec.ts
+  s_87ab0a2f60ccf8::t_6209f31f08e575 5-20,61-102
+src/modules/AudioRendering/repositories/audioEncoders/measureTruePeak.ts
+  s_87ab0a2f60ccf8::t_80f4f348b40b3f 97,99,101
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_87ab0a2f60ccf8::t_7147e2400361d9 227-274,1479-1509
+src/modules/Command/useCases/actionLabels.ts
+  s_87ab0a2f60ccf8::t_9dee796e6e9747 54-59
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_87ab0a2f60ccf8::t_793f31456b107b 549-621,2601-2604,2688-2690,2793-2795
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_87ab0a2f60ccf8::t_89be620fa458aa 8-14,43-45
+src/modules/Command/useCases/index.ts
+  s_87ab0a2f60ccf8::t_96e41029337d3f 107
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_87ab0a2f60ccf8::t_cc40f7b4a4692a 9,55-68,71,73-112
+src/modules/Command/useCases/macro/playback.ts
+  s_87ab0a2f60ccf8::t_cde698658373af 243-252,335-339
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_87ab0a2f60ccf8::t_ec2faccbb28359 1512-1607,1649,1653,1656,1660,1666,1678,1682,1699,1705,1708,1726,1733,1744,1780,1789-1790,1806,1817,1852,1857,1900,1905,1991,2014-2015,2038,2057,2065,2074,2085-2087,2101-2103,2134,2140,2149,2160,2168,2179-2180,2194-2195,2220-2221,2279,2288,2345,2363,2369,2417,2425,2434,2443-2444,2449-2454,2489,2496,2512,2520,2580-2581,2699,2705,2755,2770,2775,2793-2794,2814,2828-2829,2838,2840,2852-2853,2861-2862,2902-2903,2977-2978,3056-3057,3173,3180,3183,3192,3194,3275-3276,3303-3304,3326,3340,3349,3371,3385,3392,3399-3401,3442-3445,3467,3472,3484,3491,3496,3498,3504,3509,3511-3512,3531,3538,3546-3547,3553,3556,3600-3601,3610-3611,3674,3680-3681,3692-3693,3715-3716,3742,3750,3757,3762-3763,3779,3784-3785,3797,3807,3814,3820,3825,3834-3835,3856,3861-3862,3899-3900,3920,3934-3935,3943-3944,3985,4033,4040,4046-4047,4054,4068,4083,4097,4102-4105,4134,4140,4154,4160,4205,4207,4222,4231-4232,4234,4247-4248,4251,4258,4263,4290,4295,4390,4397,4425,4433,4439,4447-4448,4488,4499,4507,4513,4520,4525,4533-4534,4745,4761,4778,4785-4786,4789,4820,4833-4836,4846-4847,4892,4906,4911,4913,4961,4966,4984,4989,5013,5018,5106-5124,5131-5161,5164-5169,5173,5175-5192,5195,5197-5207,5209-5210,5218-5250,5256-5257,5260-5264,5266-5267,5269,5271-5281,5285-5287,5289-5295,5297-5299,5301-5313,5315,5317-5319,5324,5327-5330,5334-5339,5344,5346-5347,5349-5350,5353-5365,5369-5373,5375-5377,5381-5382,5384-5385
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/initProjectDirtyTracking.spec.ts
+  s_87ab0a2f60ccf8::t_7169b17889ddb6 1-78
+src/modules/Project/useCases/projectPersistence/saveProject/initProjectDirtyTracking.ts
+  s_87ab0a2f60ccf8::t_f9eb659a5b6f99 2,7,14-19
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.dirty.integration.spec.ts
+  s_87ab0a2f60ccf8::t_91067e5cbd54b2 1-259
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts
+  s_87ab0a2f60ccf8::t_289f6ee97422bb 4,81-94,111-115
+src/modules/Transport/handlers/transport/handleSetTempo.ts
+  s_87ab0a2f60ccf8::t_0629f6f9fd3914 4,51-55
+src/modules/Transport/stores/index.ts
+  s_87ab0a2f60ccf8::t_c73f5c81870edc 5
+src/modules/Transport/stores/tempoProjectRevisionStore.ts
+  s_87ab0a2f60ccf8::t_11d45cf2b8fa81 1-3
+src/modules/Transport/useCases/markTempoProjectWrite.ts
+  s_87ab0a2f60ccf8::t_204eb8844272d4 1-6
+src/modules/WorkspaceShell/presentations/hooks/__tests__/tempoAutosaveAfterSetTempo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_2acf45de41755a 1-132
+src/utils/handlerContract.ts
+  s_87ab0a2f60ccf8::t_1d621a680f0a05 181-197,1162-1224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5a78f848caf03f0b0b491ee5cf9a26bf0bd2bf3e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
