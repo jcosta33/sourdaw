@@ -1,0 +1,37 @@
+src/modules/CrdtDocument/models/CheckpointArtifact.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-15
+src/modules/CrdtDocument/repositories/crdtPersistence/requireCheckpointIdentity.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-6
+src/modules/CrdtDocument/repositories/crdtPersistence/normalizeCheckpointArtifactRecord.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-10
+src/modules/CrdtDocument/repositories/crdtPersistence/parseCheckpointArtifactEntry.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-34
+src/modules/CrdtDocument/repositories/crdtPersistence/deleteCheckpointArtifact.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1,3-9
+src/modules/CrdtDocument/repositories/crdtPersistence/commitCheckpointArtifact.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-2,4
+src/modules/CrdtDocument/repositories/crdtPersistence/combineCheckpointPair.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-31
+src/modules/CrdtDocument/repositories/crdtPersistence/parseCheckpointCatalogEntry.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1,5,7,50
+src/modules/CrdtDocument/repositories/crdtPersistence/readCheckpointArtifact.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-3,5
+src/modules/CrdtDocument/repositories/crdtPersistence/listCheckpointCatalog.ts
+  s_87ab0a2f60ccf8::t_a1a23ba0ad5b84 1-3,5-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "50c5e418eb06fb0fcf7916a413b6d6e926a977b5",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
