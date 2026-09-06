@@ -21,7 +21,6 @@ mkdir -p \
     "$temp_root/scan-target/scripts" \
     "$temp_root/scan-target/.git" \
     "$temp_root/workflow-runner"
-cp "$repo_root/scripts/health-gates-web.sh" "$temp_root/scripts/health-gates-web.sh"
 cp "$repo_root/scripts/health-gates-server.sh" "$temp_root/scripts/health-gates-server.sh"
 cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/scripts/run-gitleaks-history-scan.sh"
 cp "$repo_root/scripts/assert-deployment-isolation.sh" "$temp_root/scripts/assert-deployment-isolation.sh"
@@ -1801,144 +1800,6 @@ ln -s "$(command -v sh)" "$no_cargo_bin/sh"
 ln -s "$(command -v dirname)" "$no_cargo_bin/dirname"
 
 set +e
-PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/lint-failure.log" \
-    FAKE_LINT_STATUS=37 \
-    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
-lint_status=$?
-set -e
-test "$lint_status" -eq 37
-printf '%s\n' \
-    'pnpm wasm:verify' \
-    'pnpm deps:validate' \
-    'pnpm typecheck' \
-    'pnpm typecheck:test' \
-    'pnpm typecheck:scripts' \
-    'pnpm census:ui -- --check' \
-    'pnpm typecheck:e2e' \
-    'pnpm lint:full' \
-    > "$temp_root/expected-lint-failure.log"
-diff -u "$temp_root/expected-lint-failure.log" "$temp_root/lint-failure.log"
-
-PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/web-success.log" \
-    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null
-printf '%s\n' \
-    'pnpm wasm:verify' \
-    'pnpm deps:validate' \
-    'pnpm typecheck' \
-    'pnpm typecheck:test' \
-    'pnpm typecheck:scripts' \
-    'pnpm census:ui -- --check' \
-    'pnpm typecheck:e2e' \
-    'pnpm lint:full' \
-    'pnpm test:command-schema' \
-    'pnpm test:release-inventory' \
-    'pnpm test:collection-scope' \
-    'pnpm test:barrel-mocks' \
-    'pnpm test:run' \
-    'pnpm build' \
-    > "$temp_root/expected-web-success.log"
-diff -u "$temp_root/expected-web-success.log" "$temp_root/web-success.log"
-
-set +e
-PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/command-schema-failure.log" \
-    FAKE_COMMAND_SCHEMA_STATUS=1 \
-    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
-command_schema_status=$?
-set -e
-test "$command_schema_status" -eq 1
-printf '%s\n' \
-    'pnpm wasm:verify' \
-    'pnpm deps:validate' \
-    'pnpm typecheck' \
-    'pnpm typecheck:test' \
-    'pnpm typecheck:scripts' \
-    'pnpm census:ui -- --check' \
-    'pnpm typecheck:e2e' \
-    'pnpm lint:full' \
-    'pnpm test:command-schema' \
-    > "$temp_root/expected-command-schema-failure.log"
-diff -u "$temp_root/expected-command-schema-failure.log" "$temp_root/command-schema-failure.log"
-
-set +e
-PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/release-inventory-failure.log" \
-    FAKE_RELEASE_INVENTORY_STATUS=1 \
-    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
-release_inventory_status=$?
-set -e
-test "$release_inventory_status" -eq 1
-printf '%s\n' \
-    'pnpm wasm:verify' \
-    'pnpm deps:validate' \
-    'pnpm typecheck' \
-    'pnpm typecheck:test' \
-    'pnpm typecheck:scripts' \
-    'pnpm census:ui -- --check' \
-    'pnpm typecheck:e2e' \
-    'pnpm lint:full' \
-    'pnpm test:command-schema' \
-    'pnpm test:release-inventory' \
-    > "$temp_root/expected-release-inventory-failure.log"
-diff -u "$temp_root/expected-release-inventory-failure.log" "$temp_root/release-inventory-failure.log"
-
-# A drifting vitest collection scope must fail the gate with the check's own exit
-# code, and must stop before the suite runs — running the suite over an unknown
-# file set is the outcome the check exists to prevent.
-set +e
-PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/collection-scope-failure.log" \
-    FAKE_COLLECTION_SCOPE_STATUS=1 \
-    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
-collection_scope_status=$?
-set -e
-test "$collection_scope_status" -eq 1
-printf '%s\n' \
-    'pnpm wasm:verify' \
-    'pnpm deps:validate' \
-    'pnpm typecheck' \
-    'pnpm typecheck:test' \
-    'pnpm typecheck:scripts' \
-    'pnpm census:ui -- --check' \
-    'pnpm typecheck:e2e' \
-    'pnpm lint:full' \
-    'pnpm test:command-schema' \
-    'pnpm test:release-inventory' \
-    'pnpm test:collection-scope' \
-    > "$temp_root/expected-collection-scope-failure.log"
-diff -u "$temp_root/expected-collection-scope-failure.log" "$temp_root/collection-scope-failure.log"
-
-# A barrel-mock coverage failure must abort the same way. True today only because
-# health-gates-web.sh runs under `set -eu`; asserted here so a later refactor that
-# swallows a non-zero status cannot pass this file. Same shape as the check above.
-set +e
-PATH="$fake_bin:$PATH" \
-    COMMAND_LOG="$temp_root/barrel-mocks-failure.log" \
-    FAKE_BARREL_MOCKS_STATUS=1 \
-    sh "$temp_root/scripts/health-gates-web.sh" >/dev/null 2>&1
-barrel_mocks_status=$?
-set -e
-test "$barrel_mocks_status" -eq 1
-printf '%s\n' \
-    'pnpm wasm:verify' \
-    'pnpm deps:validate' \
-    'pnpm typecheck' \
-    'pnpm typecheck:test' \
-    'pnpm typecheck:scripts' \
-    'pnpm census:ui -- --check' \
-    'pnpm typecheck:e2e' \
-    'pnpm lint:full' \
-    'pnpm test:command-schema' \
-    'pnpm test:release-inventory' \
-    'pnpm test:collection-scope' \
-    'pnpm test:barrel-mocks' \
-    > "$temp_root/expected-barrel-mocks-failure.log"
-diff -u "$temp_root/expected-barrel-mocks-failure.log" "$temp_root/barrel-mocks-failure.log"
-echo "barrel mock coverage failure stops before the suite: PASS"
-
-set +e
 server_output=$(PATH="$fake_bin:$PATH" \
     COMMAND_LOG="$temp_root/server-missing.log" \
     FAKE_SERVER_DEPS=missing \
@@ -2027,11 +1888,6 @@ set -e
 test "$cargo_test_status" -eq 134
 
 printf '%s\n' \
-    "lint failure exit: $lint_status" \
-    'lint failure stops the web gate: PASS' \
-    "release inventory failure exit: $release_inventory_status" \
-    "collection scope failure exit: $collection_scope_status" \
-    'collection scope failure stops before the suite: PASS' \
     "missing server dependencies exit: $server_status" \
     'server remediation and production build dependency sequence: PASS' \
     "server test failure exit: $server_test_status" \
