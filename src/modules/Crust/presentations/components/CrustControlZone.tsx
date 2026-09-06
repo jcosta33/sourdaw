@@ -268,7 +268,7 @@ const Level1 = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): R
 );
 
 const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <Stack gap={2}>
+    <Stack gap={2} shrink={false}>
         {/* Algorithm pills */}
         <div>
             <SectionLabel>Algorithm</SectionLabel>
@@ -359,7 +359,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 onClick={() => setParam('satEnabled', !patch.satEnabled)}
             />
         }
-        className="rounded-[14px] border border-white/8 bg-[linear-gradient(180deg,rgba(212,136,58,0.12),rgba(0,0,0,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        className="shrink-0 rounded-[14px] border border-white/8 bg-[linear-gradient(180deg,rgba(212,136,58,0.12),rgba(0,0,0,0.18))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         titleClassName="text-[var(--color-accent-copper)]"
     >
         <Row gap={2}>
@@ -420,7 +420,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
 );
 
 const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <Row gap={2} className="mt-1">
+    <Row gap={2} shrink={false} className="mt-1">
         <DawPluginToggle
             id="crust-delta"
             pressed={patch.deltaListen}
@@ -447,7 +447,7 @@ const Level3Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
 );
 
 const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }): ReactElement => (
-    <Stack gap={2} className="mt-1 pt-1 border-t border-border/10">
+    <Stack gap={2} shrink={false} className="mt-1 pt-1 border-t border-border/10">
         <Row align="stretch" wrap gap={3}>
             {/* Multi-band mode */}
             <div>
@@ -582,7 +582,7 @@ const Level5Stats = ({
             cols={2}
             gapX={3}
             gapY={0.5}
-            className="mt-1 pt-1 border-t border-border/10"
+            className="shrink-0 mt-1 pt-1 border-t border-border/10"
             aria-label="Loudness statistics"
             role="group"
         >

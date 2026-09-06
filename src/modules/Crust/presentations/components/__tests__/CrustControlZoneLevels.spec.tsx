@@ -72,6 +72,14 @@ describe('CrustControlZone level 3 (saturation)', () => {
         const disabledHot = renderZone({ uiLevel: 3, satEnabled: false, satDrive: 12 });
         expect(disabledHot.queryByText('HOT')).not.toBeInTheDocument();
     });
+
+    it('prevents saturation section card from collapsing under flex-shrink', () => {
+        renderZone({ uiLevel: 3 });
+        const satTitle = screen.getByText('Saturation');
+        const satCard = satTitle.closest('.rounded-\\[14px\\]');
+        expect(satCard).toBeInTheDocument();
+        expect(satCard).toHaveClass('shrink-0');
+    });
 });
 
 describe('CrustControlZone level 4 (routing)', () => {
@@ -126,5 +134,11 @@ describe('CrustControlZone level 5 (loudness stats)', () => {
         expect(stats).toHaveTextContent('4.5 LU');
         expect(stats).toHaveTextContent('-0.8 dBTP');
         expect(stats).toHaveTextContent('-2.3 dB');
+    });
+
+    it('prevents loudness statistics grid from collapsing with shrink-0', () => {
+        renderZone({ uiLevel: 5 });
+        const stats = screen.getByRole('group', { name: /loudness statistics/i });
+        expect(stats).toHaveClass('shrink-0');
     });
 });
