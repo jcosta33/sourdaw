@@ -225,6 +225,54 @@ const EXPECTED_COMMANDS = [
         false
     ),
     expectedCommand(
+        'drawClip',
+        'Create one new empty clip with an explicit type and beat range on an existing clip-host track.',
+        {
+            trackId: { type: 'string', description: 'Existing clip-host track ID' },
+            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+            endBeat: { type: 'number', minimum: 0, description: 'Absolute end beat, strictly after startBeat' },
+            name: { type: 'string', description: 'Clip display name' },
+            type: { type: 'string', enum: ['audio', 'midi'], description: 'Clip type matching the track kind' },
+        },
+        ['trackId', 'startBeat', 'endBeat', 'name', 'type'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'duplicateClipAt',
+        'Duplicate an existing clip to an explicit destination track and absolute start beat.',
+        {
+            clipId: { type: 'string', description: 'Existing clip ID' },
+            destinationTrackId: { type: 'string', description: 'Destination track ID' },
+            startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+        },
+        ['clipId', 'destinationTrackId', 'startBeat'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
+        'moveClips',
+        'Move several existing clips to explicit tracks and absolute start beats in one step.',
+        {
+            moves: {
+                type: 'array',
+                description: 'One target placement per clip',
+                items: {
+                    type: 'object',
+                    properties: {
+                        clipId: { type: 'string', description: 'Existing clip ID' },
+                        trackId: { type: 'string', description: 'Destination track ID' },
+                        startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
+                    },
+                    required: ['clipId', 'trackId', 'startBeat'],
+                },
+            },
+        },
+        ['moves'],
+        'bounded-reversible',
+        false
+    ),
+    expectedCommand(
         'setClipGain',
         'Set an existing clip gain from 0.0 through 2.0.',
         {
@@ -1427,6 +1475,37 @@ const EXPECTED_GROUNDING = [
         intentPhrases: ['slip clip', 'slip clip content'],
         targetRules: [{ argument: 'clipId', capability: 'editable-clip' }],
         valueRules: [{ argument: 'offset', kind: 'number-if-present', requiredInPrompt: true }],
+    },
+    {
+        actionType: 'drawClip',
+        intentPhrases: ['draw clip', 'draw a clip', 'create clip', 'create a clip'],
+        targetRules: [{ argument: 'trackId', capability: 'track', promptRole: 'container' }],
+        valueRules: [
+            { argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'from' },
+            { argument: 'endBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' },
+            {
+                argument: 'name',
+                kind: 'text-after-keyword-if-present',
+                keywords: ['named', 'called'],
+                requiredInPrompt: true,
+                terminators: ['on', 'to', 'into', 'from'],
+            },
+        ],
+    },
+    {
+        actionType: 'duplicateClipAt',
+        intentPhrases: ['duplicate clip to', 'copy clip to'],
+        targetRules: [
+            { argument: 'clipId', capability: 'editable-clip', promptRole: 'source' },
+            { argument: 'destinationTrackId', capability: 'track', allowBatchLocal: false, promptRole: 'destination' },
+        ],
+        valueRules: [{ argument: 'startBeat', kind: 'number-if-present', requiredInPrompt: true, connector: 'to' }],
+    },
+    {
+        actionType: 'moveClips',
+        intentPhrases: ['move clips', 'move the clips', 'move selected clips'],
+        targetRules: [{ argument: 'moves', capability: 'editable-clip', cardinality: 'many' }],
+        valueRules: [],
     },
     {
         actionType: 'setClipGain',

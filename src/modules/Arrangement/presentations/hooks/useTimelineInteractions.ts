@@ -2,7 +2,7 @@ import { type MouseEvent, type DragEvent, useEffect, useRef, useState } from 're
 
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
-import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, generateGroupId } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -17,11 +17,7 @@ import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore'
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
-import { addClip } from '../../useCases/clip/addClip';
-import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
-import { moveClip } from '../../useCases/clip/moveClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
-import { removeClip } from '../../useCases/clip/removeClip';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -29,13 +25,6 @@ import { selectClipWithFocus } from '../../useCases/clipSelection/selectClipWith
 import { setClipSelection } from '../../useCases/clipSelection/setClipSelection';
 import { setMarqueeSelection } from '../../useCases/clipSelection/setMarqueeSelection';
 import { toggleClipInSelection } from '../../useCases/clipSelection/toggleClipInSelection';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
-import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
-import { undoRippleInsertClip } from '../../useCases/rippleInsert/undoRippleInsertClip';
-import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
-import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
-import { setTrackState } from '../../useCases/setTrackState';
 import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
 import { clipDropRejectionReason } from '../../useCases/timelineInteractions/clipDropRejectionReason';
 import { commitInlineAutomationPaint } from '../../useCases/timelineInteractions/commitInlineAutomationPaint';
@@ -76,10 +65,10 @@ const PINCH_ZOOM_FACTOR = 0.02;
 // the handler performs the write and mints the undo entry, so admission
 // refusals surface and session replay reaches the entry. Group gestures — the
 // same mousedown test that seeded the preview — keep the callback commit even
-// when locked or stale members leave exactly one previewed clip, as do
-// same-track moves under ripple editing (ripple and multi-clip moves migrate
-// in slice three). The write geometry is the callback loop's skip rule
-// verbatim: a release in place commits nothing.
+// when locked or stale members leave exactly one previewed clip; multi-clip,
+// ripple, draw, and duplicate-at-destination gestures dispatch their own
+// registered actions (slice three). The write geometry is the callback loop's
+// skip rule verbatim: a release in place commits nothing.
 const commitSingleClipMove = (
     preview: { positions: Map<string, ClipPreviewPosition>; originals: Map<string, ClipPreviewPosition> },
     rippleEnabled: boolean,
@@ -824,85 +813,23 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const state1 = Math.min(startBeat, endBeat);
             const length = Math.max(1, Math.max(startBeat, endBeat) - state1);
 
-            const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
-            if (rippleEnabled) {
-                // Ripple insert: compute plan BEFORE adding the clip so it doesn't include the new clip
-                const ripplePlan = planRippleInsert({
-                    trackId: drawTrackId,
-                    insertBeat: state1,
-                    insertDuration: length,
-                });
-                const clip = addClip({
-                    trackId: drawTrackId,
-                    startBeat: state1,
-                    endBeat: state1 + length,
-                    name: `Clip ${state1}`,
-                    type: drawClipType,
-                });
-                if (clip) {
-                    if (ripplePlan && ripplePlan.shiftedClips.length > 0) {
-                        rippleInsertClip({ trackId: drawTrackId, insertDuration: length, plan: ripplePlan });
-                        const clipId = clip.id;
-                        const savedPlan = ripplePlan;
-                        pushUndoEntry(
-                            'Draw clip (ripple)',
-                            () => {
-                                removeClip(clipId);
-                                undoRippleInsertClip({ trackId: drawTrackId, plan: savedPlan });
-                            },
-                            () => {
-                                const redrawn = addClip({
-                                    trackId: drawTrackId,
-                                    startBeat: state1,
-                                    endBeat: state1 + length,
-                                    name: `Clip ${state1}`,
-                                    type: drawClipType,
-                                });
-                                if (redrawn) {
-                                    rippleInsertClip({ trackId: drawTrackId, insertDuration: length, plan: savedPlan });
-                                }
-                            }
-                        );
-                    } else {
-                        const clipId = clip.id;
-                        pushUndoEntry(
-                            'Draw clip',
-                            () => removeClip(clipId),
-                            () =>
-                                addClip({
-                                    trackId: drawTrackId,
-                                    startBeat: state1,
-                                    endBeat: state1 + length,
-                                    name: `Clip ${state1}`,
-                                    type: drawClipType,
-                                })
-                        );
-                    }
-                }
-            } else {
-                const clip = addClip({
+            // Dispatched through the registered action (#3641), not pushUndoEntry:
+            // the handler plans the ripple insert before adding the clip, writes
+            // both, and records the same 'Draw clip' / 'Draw clip (ripple)'
+            // history entry, so admission refusals surface instead of vanishing.
+            // A disabled or no-shift ripple degrades to a plain draw inside the
+            // handler, and a refused add mints no entry.
+            void executeUserAppAction({
+                type: 'drawClip',
+                payload: {
                     trackId: drawTrackId,
                     startBeat: state1,
                     endBeat: state1 + length,
                     name: `Clip ${state1}`,
                     type: drawClipType,
-                });
-                if (clip) {
-                    const clipId = clip.id;
-                    pushUndoEntry(
-                        'Draw clip',
-                        () => removeClip(clipId),
-                        () =>
-                            addClip({
-                                trackId: drawTrackId,
-                                startBeat: state1,
-                                endBeat: state1 + length,
-                                name: `Clip ${state1}`,
-                                type: drawClipType,
-                            })
-                    );
-                }
-            }
+                    ripple: workspaceStore.value?.rippleEditing ?? false,
+                },
+            });
             drawDragRef.current = null;
             return;
         }
@@ -977,48 +904,31 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             if (preview && preview.positions.size > 0) {
                 if (dragMode === 'duplicate' && anyPreviewMoved) {
-                    // Alt+drag duplicate: originals stay, create copies at drop
-                    // positions (R-B1) — on the dragged-to track, as previewed.
+                    // Alt+drag duplicate: originals stay, copies land at drop
+                    // positions (R-B1) on the dragged-to track, as previewed.
                     // Gated on actual movement: a motionless Alt+click must not
                     // stack invisible copies on the originals.
-                    const copies: { copyId: string; sourceId: string; trackId: string; startBeat: number }[] = [];
-                    for (const [clipId, pos] of preview.positions) {
-                        if (dropRejected.clipIds.has(clipId)) {
-                            continue;
-                        }
-                        // Pre-allocate the copy's id so undo removes exactly the
-                        // created clip, never an array-position guess.
-                        const copyId = prepareDuplicateClipTargetId();
-                        const created = duplicateClipCore({
-                            clipId,
-                            targetClipId: copyId,
-                            destinationTrackId: pos.trackId,
-                            computeStartBeat: () => pos.startBeat,
-                        });
-                        if (created) {
-                            copies.push({ copyId, sourceId: clipId, trackId: pos.trackId, startBeat: pos.startBeat });
-                        }
-                    }
-                    if (copies.length > 0) {
-                        pushUndoEntry(
-                            `Duplicate ${copies.length} clip${copies.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const copy of copies) {
-                                    removeClip(copy.copyId);
-                                }
+                    //
+                    // Per-clip dispatch through the registered action (#3641);
+                    // copy ids are still pre-allocated so undo removes exactly
+                    // the created clips, and one fresh group id per gesture
+                    // makes the whole gesture a single undo step.
+                    const candidates = [...preview.positions].filter(([clipId]) => !dropRejected.clipIds.has(clipId));
+                    const { groupId, groupLabel } = generateGroupId(
+                        `Duplicate ${candidates.length} clip${candidates.length === 1 ? '' : 's'}`
+                    );
+                    for (const [clipId, pos] of candidates) {
+                        void executeUserAppAction(
+                            {
+                                type: 'duplicateClipAt',
+                                payload: {
+                                    clipId,
+                                    destinationTrackId: pos.trackId,
+                                    startBeat: pos.startBeat,
+                                    targetClipId: prepareDuplicateClipTargetId(),
+                                },
                             },
-                            () => {
-                                // Redo recreates exactly the copies undo removed
-                                // (same ids, same destinations).
-                                for (const copy of copies) {
-                                    duplicateClipCore({
-                                        clipId: copy.sourceId,
-                                        targetClipId: copy.copyId,
-                                        destinationTrackId: copy.trackId,
-                                        computeStartBeat: () => copy.startBeat,
-                                    });
-                                }
-                            }
+                            { groupId, groupLabel }
                         );
                     }
                 } else if (dragMode === 'move') {
@@ -1039,203 +949,23 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         }
                         return;
                     }
-                    // Every ripple-moved clip gets its own plan; keeping only the
-                    // last one made undo restore just that clip's shifted
-                    // neighbors on a multi-clip ripple drag.
-                    const rippleMoves: {
-                        clipId: string;
-                        trackId: string;
-                        origStartBeat: number;
-                        origEndBeat: number;
-                        newStartBeat: number;
-                        plan: NonNullable<ReturnType<typeof planRippleMove>>;
-                    }[] = [];
-                    // History is pushed only for clips whose write actually
-                    // landed — a rejected or no-op move mints no entry.
-                    const moved: {
-                        clipId: string;
-                        fromTrackId: string;
-                        fromStartBeat: number;
-                        toTrackId: string;
-                        toStartBeat: number;
-                    }[] = [];
-
-                    for (const [clipId, pos] of preview.positions) {
-                        const orig = preview.originals.get(clipId);
-                        if (!orig) {
-                            continue;
-                        }
-                        if (orig.trackId === pos.trackId && Object.is(orig.startBeat, pos.startBeat)) {
-                            continue;
-                        }
-                        if (rippleEnabled && orig.trackId === pos.trackId) {
-                            const state = trackStore.value;
-                            if (state) {
-                                const track = state.tracks.find((time) => time.id === pos.trackId);
-                                const clip = track?.clips.find((context) => context.id === clipId);
-                                if (clip) {
-                                    const duration = clip.endBeat - clip.startBeat;
-                                    const ripplePlan = planRippleMove({
-                                        trackId: pos.trackId,
-                                        clipId,
-                                        oldStartBeat: orig.startBeat,
-                                        newStartBeat: pos.startBeat,
-                                        clipDuration: duration,
-                                    });
-                                    if (ripplePlan) {
-                                        rippleMoveClip({
-                                            trackId: pos.trackId,
-                                            clipId,
-                                            newStartBeat: pos.startBeat,
-                                            clipDuration: duration,
-                                            plan: ripplePlan,
-                                        });
-                                        rippleMoves.push({
-                                            clipId,
-                                            trackId: pos.trackId,
-                                            origStartBeat: orig.startBeat,
-                                            origEndBeat: orig.endBeat,
-                                            newStartBeat: pos.startBeat,
-                                            plan: ripplePlan,
-                                        });
-                                        moved.push({
-                                            clipId,
-                                            fromTrackId: orig.trackId,
-                                            fromStartBeat: orig.startBeat,
-                                            toTrackId: pos.trackId,
-                                            toStartBeat: pos.startBeat,
-                                        });
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                        const didMove = moveClip(clipId, pos.trackId, pos.startBeat, orig.startBeat);
-                        if (didMove) {
-                            moved.push({
-                                clipId,
-                                fromTrackId: orig.trackId,
-                                fromStartBeat: orig.startBeat,
-                                toTrackId: pos.trackId,
-                                toStartBeat: pos.startBeat,
-                            });
-                        }
-                    }
-
-                    if (moved.length > 0) {
-                        if (rippleMoves.length > 0) {
-                            // Ripple move undo: restore every moved clip and every
-                            // neighbor shifted by any clip's plan.
-                            const savedRippleMoves = rippleMoves;
-                            const movedClips = moved;
-                            pushUndoEntry(
-                                'Move clip (ripple)',
-                                () => {
-                                    // Restore every moved clip to its original position
-                                    for (const movedClip of movedClips) {
-                                        moveClip(movedClip.clipId, movedClip.fromTrackId, movedClip.fromStartBeat);
-                                    }
-                                    // Restore ripple-shifted clips to original
-                                    // positions — merged across every clip's plan,
-                                    // keyed by clip id, across all tracks.
-                                    const state2 = getTrackStoreState();
-                                    if (state2) {
-                                        type ShiftedClip =
-                                            (typeof savedRippleMoves)[number]['plan']['gapClosedClips'][number];
-                                        const shiftMap = new Map<string, ShiftedClip>();
-                                        // First-wins: plans were computed
-                                        // sequentially with each rippleMoveClip
-                                        // applied before the next planRippleMove,
-                                        // so the FIRST plan mentioning a clip
-                                        // holds its true pre-drag original; a
-                                        // later plan records an already-shifted
-                                        // position.
-                                        for (const rippleMove of savedRippleMoves) {
-                                            const allShifted = [
-                                                ...rippleMove.plan.gapClosedClips,
-                                                ...rippleMove.plan.destinationOpenedClips,
-                                            ];
-                                            for (const shifted of allShifted) {
-                                                if (!shiftMap.has(shifted.clipId)) {
-                                                    shiftMap.set(shifted.clipId, shifted);
-                                                }
-                                            }
-                                        }
-                                        const updatedTracks = state2.tracks.map((time) => ({
-                                            ...time,
-                                            clips: time.clips.map((context) => {
-                                                const orig2 = shiftMap.get(context.id);
-                                                if (!orig2) {
-                                                    return context;
-                                                }
-                                                return {
-                                                    ...context,
-                                                    startBeat: orig2.origStartBeat,
-                                                    endBeat: orig2.origEndBeat,
-                                                };
-                                            }),
-                                        }));
-                                        setTrackState({ ...state2, tracks: updatedTracks });
-                                    }
-                                },
-                                () => {
-                                    const state2 = trackStore.value;
-                                    // Replay each ripple-moved clip with a fresh plan.
-                                    for (const rippleMove of savedRippleMoves) {
-                                        const track2 = state2?.tracks.find((time) => time.id === rippleMove.trackId);
-                                        const clip2 = track2?.clips.find((context) => context.id === rippleMove.clipId);
-                                        const dur = clip2
-                                            ? clip2.endBeat - clip2.startBeat
-                                            : rippleMove.origEndBeat - rippleMove.origStartBeat;
-                                        const redoPlan = state2
-                                            ? planRippleMove({
-                                                  trackId: rippleMove.trackId,
-                                                  clipId: rippleMove.clipId,
-                                                  oldStartBeat: rippleMove.origStartBeat,
-                                                  newStartBeat: rippleMove.newStartBeat,
-                                                  clipDuration: dur,
-                                              })
-                                            : null;
-                                        if (redoPlan) {
-                                            rippleMoveClip({
-                                                trackId: rippleMove.trackId,
-                                                clipId: rippleMove.clipId,
-                                                newStartBeat: rippleMove.newStartBeat,
-                                                clipDuration: dur,
-                                                plan: redoPlan,
-                                            });
-                                        } else {
-                                            moveClip(rippleMove.clipId, rippleMove.trackId, rippleMove.newStartBeat);
-                                        }
-                                    }
-                                    // Redo every moved clip that took the plain path.
-                                    for (const movedClip of movedClips) {
-                                        if (
-                                            !savedRippleMoves.some(
-                                                (rippleMove) => rippleMove.clipId === movedClip.clipId
-                                            )
-                                        ) {
-                                            moveClip(movedClip.clipId, movedClip.toTrackId, movedClip.toStartBeat);
-                                        }
-                                    }
-                                }
-                            );
-                        } else {
-                            const movedClips = moved;
-                            pushUndoEntry(
-                                movedClips.length > 1 ? `Move ${movedClips.length} clips` : 'Move clip',
-                                () => {
-                                    for (const movedClip of movedClips) {
-                                        moveClip(movedClip.clipId, movedClip.fromTrackId, movedClip.fromStartBeat);
-                                    }
-                                },
-                                () => {
-                                    for (const movedClip of movedClips) {
-                                        moveClip(movedClip.clipId, movedClip.toTrackId, movedClip.toStartBeat);
-                                    }
-                                }
-                            );
-                        }
+                    // The whole group gesture commits through ONE registered
+                    // moveClips dispatch (#3641), not pushUndoEntry: the handler
+                    // applies this loop's skip rules verbatim, computes each
+                    // ripple plan between sequential writes, and records one
+                    // history entry — 'Move clip (ripple)' or 'Move N clips'.
+                    // History follows only clips whose write actually landed; a
+                    // rejected or no-op move mints no entry.
+                    const moves = [...preview.positions].flatMap(([clipId, pos]) =>
+                        preview.originals.has(clipId)
+                            ? [{ clipId, trackId: pos.trackId, startBeat: pos.startBeat }]
+                            : []
+                    );
+                    if (moves.length > 0) {
+                        void executeUserAppAction({
+                            type: 'moveClips',
+                            payload: { moves, ripple: rippleEnabled },
+                        });
                     }
                 } else if (dragMode === 'trim-start' && primaryPos) {
                     // Dispatched through the registered action (not pushUndoEntry)
