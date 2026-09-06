@@ -189,7 +189,7 @@ function SectionCard({
 }): ReactElement {
     return (
         <DawPluginSectionCard
-            className="proof-chamber-window"
+            className="proof-chamber-window shrink-0"
             title={title}
             detail={detail ? <ChamberLed>{detail}</ChamberLed> : undefined}
             detailMode="badge"
