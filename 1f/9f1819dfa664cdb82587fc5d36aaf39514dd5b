@@ -1,0 +1,21 @@
+src/components/daw/__tests__/DawContextMenuSurface.spec.tsx
+  s_87ab0a2f60ccf8::t_a981e4c662efe8 1-2,8-24,28-52
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenuFocus.spec.tsx
+  s_87ab0a2f60ccf8::t_3c21b32a89b9b7 1-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1f9f1819dfa664cdb82587fc5d36aaf39514dd5b",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
