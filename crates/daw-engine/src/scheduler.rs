@@ -6902,17 +6902,31 @@ mod timeline_tests {
         /// Push several commands and apply them in one drain, which is how a
         /// producer's rewrite of a bar reaches the callback: the clear and the
         /// batch replacing what it took out are one publication, never two the
-        /// graph could act on separately.
+        /// graph could act on separately. The fence marks what makes it one
+        /// publication, matching `EngineHandle::send_graph_batch`.
         fn send_in_one_drain(
             &mut self,
             commands: impl IntoIterator<Item = GraphCommand>,
         ) -> &mut Self {
-            for command in commands {
+            let commands_vec: Vec<GraphCommand> = commands.into_iter().collect();
+            let command_count = commands_vec.len();
+
+            assert!(
+                self.command_tx
+                    .push(GraphCommand::BeginBatch {
+                        commands: command_count
+                    })
+                    .is_ok(),
+                "the command ring should have room"
+            );
+
+            for command in commands_vec {
                 assert!(
                     self.command_tx.push(command).is_ok(),
                     "the command ring should have room"
                 );
             }
+
             self.scheduler.update_graph();
             self
         }
