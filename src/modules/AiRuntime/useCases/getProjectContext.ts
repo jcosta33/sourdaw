@@ -18,6 +18,7 @@ import { MIN_CLIP_LOOP_LENGTH_BEATS, projectClipLoopExpansion } from '#/utils/cl
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type ProjectContext } from '../models/ProjectContext';
+import { projectDeviceDescriptorParameters } from '../transformers/projectDeviceDescriptorParameters';
 
 export type {
     ProjectContext,
@@ -133,7 +134,11 @@ export function getProjectContext(): ProjectContext {
         masterGain: (transportState?.masterGain ?? 80) / 100,
         availableDeviceTypes: getPlatformPlugins()
             .filter((plugin) => plugin.id !== 'crust')
-            .map((plugin) => ({ id: plugin.id, name: plugin.name })),
+            .map((plugin) => ({
+                id: plugin.id,
+                name: plugin.name,
+                parameters: projectDeviceDescriptorParameters(plugin.parameters),
+            })),
         adjustmentLayers: (adjustmentLayerState?.layers ?? []).map((layer) => ({
             id: layer.id,
             name: layer.name,
@@ -231,30 +236,10 @@ export function getProjectContext(): ProjectContext {
             })),
             devices: time.devices.map((data) => {
                 const descriptor = getPluginById(data.type);
-                const parameters = (descriptor?.parameters ?? []).flatMap((parameter) => {
-                    const value = data.parameterValues[parameter.id];
-                    if (
-                        typeof value !== 'number' ||
-                        !Number.isFinite(value) ||
-                        !Number.isFinite(parameter.minValue) ||
-                        !Number.isFinite(parameter.maxValue)
-                    ) {
-                        return [];
-                    }
-                    return [
-                        {
-                            id: parameter.id,
-                            name: parameter.name,
-                            type: parameter.type,
-                            value,
-                            minValue: parameter.minValue,
-                            maxValue: parameter.maxValue,
-                            unit: parameter.unit,
-                            ...(parameter.legalSet ? { legalValues: [...parameter.legalSet.values] } : {}),
-                            ...(parameter.choices ? { choices: [...parameter.choices] } : {}),
-                        },
-                    ];
-                });
+                const parameters = projectDeviceDescriptorParameters(
+                    descriptor?.parameters ?? [],
+                    data.parameterValues
+                );
                 return {
                     id: data.id,
                     name: data.name,

@@ -51,9 +51,33 @@ describe('pluginBridge repository', () => {
     describe('unloadPlugin', () => {
         it('should invoke the desktop command', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(true);
-            vi.mocked(desktopInvoke).mockResolvedValue([['i1'], []]);
+            vi.mocked(desktopInvoke).mockResolvedValue({ unloadedInstanceIds: ['i1'], errors: [], reports: [] });
             await unloadPlugin('i1');
             expect(desktopInvoke).toHaveBeenCalledWith('unload_plugin', { instanceId: 'i1' });
+        });
+
+        it('parses the released strip reports the reply carries', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockResolvedValue({
+                unloadedInstanceIds: ['i1'],
+                errors: [],
+                reports: [{ kind: 'track', id: 'lead', deviceIds: ['comp', 'limiter'] }],
+            });
+
+            const result = await unloadPlugin('i1');
+
+            expect(result.reports).toEqual([{ kind: 'track', id: 'lead', deviceIds: ['comp', 'limiter'] }]);
+        });
+
+        it('throws on a malformed strip report instead of handing a foreign module bad ids', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(desktopInvoke).mockResolvedValue({
+                unloadedInstanceIds: ['i1'],
+                errors: [],
+                reports: [{ kind: 'track', id: 'lead', deviceIds: [7] }],
+            });
+
+            await expect(unloadPlugin('i1')).rejects.toThrow('Invalid unload_plugin response');
         });
     });
 

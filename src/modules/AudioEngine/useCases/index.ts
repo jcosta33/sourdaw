@@ -109,6 +109,7 @@ export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSess
 export { isDeviceCarriedByNativeSession } from './livePlayback/isDeviceCarriedByNativeSession';
 export { mirrorDeviceChainDelta } from './livePlayback/mirrorDeviceChainDelta';
 export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSessionSplice';
+export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';

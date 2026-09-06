@@ -185,7 +185,9 @@ function ModelAction({
     downloadProgress,
 }: ModelActionProps): ReactElement {
     const handleDownload = (): void => {
-        void downloadModel({ modelId: id, family, url, sizeBytes, sha256 });
+        void downloadModel({ modelId: id, family, url, sizeBytes, sha256 }).catch((error: unknown) => {
+            logger.error(new Error(`[BrowserAi] Failed to download model "${id}"`, { cause: error }));
+        });
     };
     const handleRemove = (): void => {
         // Surface a failed delete instead of letting the rejection vanish into a

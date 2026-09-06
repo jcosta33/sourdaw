@@ -1,11 +1,11 @@
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextDeviceParameter } from '../../models/ProjectContext';
 
 export const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 
 /** Devices and their parameters are only identifiable inside an already-immutable owner. */
 export const CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY: ReadonlySet<string> = new Set(['device', 'device-parameter']);
 
-const BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST = ['createBus', 'addTrack', 'addClip'] as const;
+const BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST = ['createBus', 'addTrack', 'addClip', 'addDevice'] as const;
 
 export type BatchLocalBindingProducerName = (typeof BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST)[number];
 
@@ -22,8 +22,10 @@ export const BATCH_LOCAL_BINDING_PRODUCER_NAMES: ReadonlySet<string> = new Set(B
 export const PLAN_CREATED_OBJECT_COMMANDS: ReadonlySet<string> = new Set([
     'addTrack',
     'addClip',
+    'addDevice',
     'createBus',
     'addNotes',
+    'setDeviceParameter',
 ] as const);
 
 /**
@@ -37,7 +39,9 @@ export const PLAN_CREATED_OBJECT_COMMANDS: ReadonlySet<string> = new Set([
  * groups tracks that already exist and leaves no new track or clip behind.
  */
 export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
-    ...BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST,
+    'createBus',
+    'addTrack',
+    'addClip',
     'duplicateTrack',
     'duplicateClip',
     'duplicateClipToNextBar',
@@ -48,12 +52,20 @@ export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
 
 export type BatchLocalBindingProducer = {
+    /** The canonical descriptor identity for an `addDevice` producer. */
+    createdDeviceType?: string;
+    /** The canonical display name for an `addDevice` producer. */
+    createdDeviceName?: string;
+    /** Exact descriptor-backed defaults and write contract for the created device. */
+    createdDeviceParameters?: readonly ProjectContextDeviceParameter[];
     capabilities: readonly string[];
     /**
      * The producing `addClip` item's own track argument, kept so a consumer of the clip can
      * derive the owning track without a project snapshot that does not contain it yet.
      */
     parentTrackReference?: string;
+    /** The exact device-chain anchor declared by an `addDevice` producer. */
+    afterDeviceReference?: string;
     /**
      * The span the producing `addClip` item declared, in beats, kept so a later item writing into
      * the clip can be bounded by it. The clip does not exist in any snapshot yet, so this record is
@@ -89,6 +101,8 @@ const CREATED_TRACK_CAPABILITIES: readonly string[] = [
     'device-host-track',
     'vca-member-track',
 ];
+
+const BATCH_LOCAL_DEVICE_CAPABILITIES: readonly string[] = ['device'];
 
 /**
  * Keyed by the `kind` an `addTrack` plan item may declare; any other kind creates no bindable track.
@@ -174,6 +188,96 @@ function resolveCreatedClipProducer(input: {
     };
 }
 
+function findAvailableDeviceType(context: ProjectContext, assertedType: unknown) {
+    if (typeof assertedType !== 'string') {
+        return undefined;
+    }
+    const normalized = assertedType.toLocaleLowerCase();
+    const matches = (context.availableDeviceTypes ?? []).filter(
+        (deviceType) =>
+            deviceType.id.toLocaleLowerCase() === normalized || deviceType.name.toLocaleLowerCase() === normalized
+    );
+    return matches.length === 1 ? matches[0] : undefined;
+}
+
+function isCompatibleDeviceHostReference(
+    context: ProjectContext,
+    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>,
+    trackReference: string
+): boolean {
+    if (trackReference.startsWith('$')) {
+        return producersByBinding.get(trackReference.slice(1))?.capabilities.includes('device-host-track') ?? false;
+    }
+    const track = context.tracks.find((candidate) => candidate.id === trackReference);
+    return track !== undefined && track.kind !== 'vca' && track.frozen !== true;
+}
+
+function isCompatibleDeviceAnchor(input: {
+    afterDeviceReference: unknown;
+    context: ProjectContext;
+    parentTrackReference: string;
+    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+}): boolean {
+    if (input.afterDeviceReference === undefined) {
+        return true;
+    }
+    if (typeof input.afterDeviceReference !== 'string' || input.afterDeviceReference.length === 0) {
+        return false;
+    }
+    if (input.afterDeviceReference.startsWith('$')) {
+        const anchor = input.producersByBinding.get(input.afterDeviceReference.slice(1));
+        return anchor?.createdDeviceType !== undefined && anchor.parentTrackReference === input.parentTrackReference;
+    }
+    if (input.parentTrackReference.startsWith('$')) {
+        return false;
+    }
+    return (
+        input.context.tracks
+            .find((track) => track.id === input.parentTrackReference)
+            ?.devices.some((device) => device.id === input.afterDeviceReference) ?? false
+    );
+}
+
+function resolveCreatedDeviceProducer(input: {
+    arguments: Readonly<Record<string, unknown>>;
+    context: ProjectContext;
+    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+}): BatchLocalBindingProducer | null {
+    const trackReference = input.arguments.trackId;
+    if (
+        typeof trackReference !== 'string' ||
+        trackReference.length === 0 ||
+        !isCompatibleDeviceHostReference(input.context, input.producersByBinding, trackReference)
+    ) {
+        return null;
+    }
+    const descriptor = findAvailableDeviceType(input.context, input.arguments.deviceType);
+    if (descriptor === undefined || descriptor.parameters === undefined) {
+        return null;
+    }
+    if (
+        !isCompatibleDeviceAnchor({
+            afterDeviceReference: input.arguments.afterDeviceId,
+            context: input.context,
+            parentTrackReference: trackReference,
+            producersByBinding: input.producersByBinding,
+        })
+    ) {
+        return null;
+    }
+    return {
+        capabilities: BATCH_LOCAL_DEVICE_CAPABILITIES,
+        createdDeviceName: descriptor.name,
+        createdDeviceParameters: descriptor.parameters.map((parameter) => ({ ...parameter })),
+        createdDeviceType: descriptor.id,
+        ...(typeof input.arguments.afterDeviceId === 'string'
+            ? { afterDeviceReference: input.arguments.afterDeviceId }
+            : {}),
+        parentTrackReference: trackReference,
+        producerArgument: 'deviceId',
+    };
+}
+
 /**
  * The one place that decides which catalog commands may mint a batch-local `$binding`, which
  * application-owned argument carries the minted identity, and which target capabilities the
@@ -195,6 +299,9 @@ export function resolveBatchLocalBindingProducer(input: {
     }
     if (input.name === 'addClip') {
         return resolveCreatedClipProducer(input);
+    }
+    if (input.name === 'addDevice') {
+        return resolveCreatedDeviceProducer(input);
     }
     return null;
 }

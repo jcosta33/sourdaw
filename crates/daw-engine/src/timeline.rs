@@ -1315,7 +1315,29 @@ impl TimelineBus {
 /// bridges and their MIDI state, so the graph asks for one to be run rather
 /// than owning it.
 pub(crate) trait DeviceChain {
+    /// Run one effect over the chain signal, which it transforms in place.
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize);
+
+    /// Run one generator: it produces its own material into the cleared
+    /// scratch pair the caller sums in, and holds the chain signal passing
+    /// through it by whatever latency it declares.
+    ///
+    /// A generator is handed both pairs because it stands on both sides of the
+    /// fan-in. An instrument declaring latency emits its events that many
+    /// frames late, so everything else on the strip has to leave the device
+    /// that late too — otherwise the strip's own clips would arrive ahead of
+    /// the figure the chain declares and ahead of every sibling held to meet
+    /// it. Running the generator over `left` / `right` instead would erase
+    /// that signal, which is why the two passes are separate rather than one.
+    fn run_generator(
+        &mut self,
+        effect_id: usize,
+        scratch_left: &mut [f32],
+        scratch_right: &mut [f32],
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+    );
 }
 
 /// What one compensation pass asks of the same device table.
@@ -1336,6 +1358,10 @@ pub(crate) trait CompensationDevices {
     fn aim_generator(&mut self, effect_id: usize, depth: usize) -> bool;
 
     /// What a whole chain declares — the figure a strip's output arrives at.
+    ///
+    /// Every entry counts, generators included: a latent instrument holds the
+    /// signal passing through it exactly as a latent effect does, so the
+    /// strip's material really does leave the chain that late.
     fn chain_latency(&self, chain: &[ChainEntry]) -> usize {
         chain
             .iter()
@@ -2659,6 +2685,12 @@ fn render_track_source(
 /// output stays connected and the generator's output joins them — and it is the
 /// only way a chain can hold an instrument without the instrument erasing
 /// whatever the strip already carried.
+///
+/// A generator is handed the chain signal too, because a latent instrument
+/// delays what passes through it: its events come out as late as it declares,
+/// so the strip's own material has to leave the device that late as well. That
+/// is what makes the summed declared latency of a chain the arrival its strip
+/// really has.
 fn run_device_chain(
     chain: &[ChainEntry],
     devices: &mut impl DeviceChain,
@@ -2674,7 +2706,14 @@ fn run_device_chain(
             DeviceKind::Generator => {
                 generator_left.fill(0.0);
                 generator_right.fill(0.0);
-                devices.run_device(entry.effect_id, generator_left, generator_right, frames);
+                devices.run_generator(
+                    entry.effect_id,
+                    generator_left,
+                    generator_right,
+                    left,
+                    right,
+                    frames,
+                );
                 sum_into(left, generator_left);
                 sum_into(right, generator_right);
             }
@@ -2690,9 +2729,10 @@ fn run_device_chain(
 /// ahead of it declares. The hold is therefore that prefix on top of the
 /// input's depth: aimed at the depth alone, an instrument spliced behind a
 /// latent device would lead the routed-in material it was placed to meet by
-/// exactly the latency standing in front of it. Only an effect contributes to
-/// the prefix — a generator ahead of another is summed in rather than run over
-/// the signal, so it delays nothing passing through.
+/// exactly the latency standing in front of it. Every entry ahead contributes,
+/// generators included — a latent instrument holds the signal passing through
+/// it like any other device, so one standing in front of another puts its
+/// declared latency between that one and the strip's input.
 fn aim_chain_generators(
     chain: &[ChainEntry],
     depth: usize,
@@ -2701,12 +2741,10 @@ fn aim_chain_generators(
     let mut clamped = false;
     let mut prefix = 0;
     for entry in chain {
-        match entry.kind {
-            DeviceKind::Effect => prefix += devices.device_latency(entry.effect_id),
-            DeviceKind::Generator => {
-                clamped |= devices.aim_generator(entry.effect_id, depth + prefix);
-            }
+        if entry.kind == DeviceKind::Generator {
+            clamped |= devices.aim_generator(entry.effect_id, depth + prefix);
         }
+        prefix += devices.device_latency(entry.effect_id);
     }
     clamped
 }
@@ -3010,6 +3048,17 @@ mod tests {
             _frames: usize,
         ) {
         }
+
+        fn run_generator(
+            &mut self,
+            _effect_id: usize,
+            _scratch_left: &mut [f32],
+            _scratch_right: &mut [f32],
+            _left: &mut [f32],
+            _right: &mut [f32],
+            _frames: usize,
+        ) {
+        }
     }
 
     /// Runs one scaling effect and one generator that emits a constant,
@@ -3029,19 +3078,34 @@ mod tests {
             right: &mut [f32],
             frames: usize,
         ) {
-            if effect_id == self.scaler_id {
-                for index in 0..frames {
-                    left[index] *= self.factor;
-                    right[index] *= self.factor;
-                }
-            } else if effect_id == self.generator_id {
-                // A generator ignores whatever reached it and emits its own
-                // material, which is exactly why running one in place would
-                // erase the strip's signal.
-                for index in 0..frames {
-                    left[index] = self.emits;
-                    right[index] = self.emits;
-                }
+            if effect_id != self.scaler_id {
+                return;
+            }
+            for index in 0..frames {
+                left[index] *= self.factor;
+                right[index] *= self.factor;
+            }
+        }
+
+        fn run_generator(
+            &mut self,
+            effect_id: usize,
+            scratch_left: &mut [f32],
+            scratch_right: &mut [f32],
+            _left: &mut [f32],
+            _right: &mut [f32],
+            frames: usize,
+        ) {
+            if effect_id != self.generator_id {
+                return;
+            }
+            // A generator ignores whatever reached it and emits its own
+            // material, which is exactly why running one in place would
+            // erase the strip's signal. These fixtures declare no latency,
+            // so nothing here holds the signal passing through.
+            for index in 0..frames {
+                scratch_left[index] = self.emits;
+                scratch_right[index] = self.emits;
             }
         }
     }

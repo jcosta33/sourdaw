@@ -192,13 +192,24 @@ export function scheduleBuiltinSynthNote({
     const releaseStart = startTime + duration;
     const releaseEnd = releaseStart + params.release;
 
-    env.gain.linearRampToValueAtTime(peakGain, attackEnd);
-
-    if (decayEnd < releaseStart) {
-        env.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
-        env.gain.setValueAtTime(sustainLevel, releaseStart);
+    if (releaseStart <= attackEnd) {
+        // Note released during attack: ramp only up to the interpolated level reached at note-off
+        const attackProgress = velAttack > 0 ? (releaseStart - startTime) / velAttack : 1;
+        const currentGain = peakGain * Math.max(0, Math.min(1, attackProgress));
+        env.gain.linearRampToValueAtTime(currentGain, releaseStart);
+    } else if (releaseStart < decayEnd) {
+        // Note released during decay: complete attack, then ramp down to interpolated decay level
+        env.gain.linearRampToValueAtTime(peakGain, attackEnd);
+        const decayProgress = params.decay > 0 ? (releaseStart - attackEnd) / params.decay : 1;
+        const currentGain = peakGain + (sustainLevel - peakGain) * Math.max(0, Math.min(1, decayProgress));
+        env.gain.linearRampToValueAtTime(currentGain, releaseStart);
     } else {
-        env.gain.linearRampToValueAtTime(sustainLevel, releaseStart);
+        // Note sustained: full attack and decay, hold at sustain until note-off
+        env.gain.linearRampToValueAtTime(peakGain, attackEnd);
+        env.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
+        if (releaseStart > decayEnd) {
+            env.gain.setValueAtTime(sustainLevel, releaseStart);
+        }
     }
 
     env.gain.linearRampToValueAtTime(0, releaseEnd);

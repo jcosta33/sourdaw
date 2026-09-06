@@ -28,6 +28,7 @@ import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
+import { recordNativeChainReleases } from '../recordNativeChainReleases';
 
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn<(message: string, level: string) => void>(),
@@ -374,5 +375,28 @@ describe('mirrorDeviceChainDelta', () => {
         });
 
         expect(vi.mocked(rearmNativeLiveAutomationWriterInPlace)).not.toHaveBeenCalled();
+    });
+
+    /**
+     * An unload changes native strip state with no batch of its own, so
+     * nothing here observes it directly — the session's record is exactly
+     * what `recordNativeChainReleases` left it with. `proq` still sits in the
+     * project chain (its device box was never removed; only its native
+     * instance was retired elsewhere), so the index below is counted against
+     * the chain the engine actually holds, not against the project order that
+     * still names a device the engine no longer does (#3793).
+     */
+    it('lands an insert after a device an unload released before the next held device', async () => {
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['comp', 'proq', 'limiter']]]);
+        recordNativeChainReleases([{ id: 'audio-1', deviceIds: ['comp', 'limiter'] }]);
+
+        await mirrorDeviceChainDelta({
+            before: track([device('comp'), device('proq'), device('limiter')]),
+            after: track([device('comp'), device('proq'), device('knead'), device('limiter')]),
+        });
+
+        expect(sentCommands()).toEqual([
+            { kind: 'insert-device', trackId: 'audio-1', device: device('knead'), index: 1 },
+        ]);
     });
 });

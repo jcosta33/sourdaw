@@ -23,7 +23,7 @@ function makeFakeContext() {
 
     function makeGain() {
         return {
-            gain: makeParam(events),
+            gain: makeParam(events, 'gain'),
             connect: (destination: unknown) => destination,
             disconnect: () => {},
         };
@@ -336,5 +336,167 @@ describe('scheduleBuiltinSynthNote', () => {
         scheduleWithVelocity(maximum.ctx, 127, startTime);
 
         expect(over.events).toEqual(maximum.events);
+    });
+});
+
+describe('scheduleBuiltinSynthNote envelope note-off interruption', () => {
+    it('ends attack at note-off without scheduling future attack peak when released during attack', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 0.1,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 2.0,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
+                gain: 0.3,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.03, time: 0.1, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 0.4, param: 'gain' },
+        ]);
+        expect(gainEvents.some((event) => event.time === 1.0)).toBe(false);
+        expect(gainEvents.some((event) => event.value === 0.3)).toBe(false);
+        expect(gainEvents.some((event) => event.value === 0.21)).toBe(false);
+        const maxGain = Math.max(...gainEvents.map((event) => event.value));
+        expect(maxGain).toBe(0.03);
+    });
+
+    it('interpolates decay level at note-off when released during decay', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 0.35,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 0.5,
+                decay: 0.5,
+                sustain: 0.2,
+                release: 0.4,
+                gain: 1.0,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 1.0, time: 0.25, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: expect.closeTo(0.84), time: 0.35, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 0.75, param: 'gain' },
+        ]);
+        expect(gainEvents.some((event) => event.value === 0.2)).toBe(false);
+    });
+
+    it('holds at sustain and schedules full ADSR when note duration exceeds decayEnd', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 2.0,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 0.5,
+                decay: 0.5,
+                sustain: 0.4,
+                release: 0.3,
+                gain: 1.0,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 1.0, time: 0.25, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.4, time: 0.75, param: 'gain' },
+            { method: 'setValueAtTime', value: 0.4, time: 2.0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 2.3, param: 'gain' },
+        ]);
+    });
+
+    it('does not let later attack peak interrupt release when release is long', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 0.1,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 2.0,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 2.0,
+                gain: 0.3,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.03, time: 0.1, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 2.1, param: 'gain' },
+        ]);
+        expect(gainEvents.some((event) => event.time === 1.0)).toBe(false);
+    });
+
+    it('schedules a single ramp to peak gain without duplicate ramps when released exactly at attackEnd', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1.0,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 2.0,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
+                gain: 0.3,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.3, time: 1.0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 1.3, param: 'gain' },
+        ]);
     });
 });

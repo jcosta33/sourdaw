@@ -28,6 +28,7 @@ import {
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
+import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
 
 type Candidate = {
     id: string;
@@ -691,6 +692,29 @@ function dependsTransitivelyOn(
     return false;
 }
 
+function resolvesBatchLocalDeviceParameterTarget(input: {
+    dependencyArgument: string | undefined;
+    item: SemanticCommandListItem;
+    itemsById: ReadonlyMap<string, SemanticCommandListItem>;
+    parameterId: unknown;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
+}): boolean {
+    if (input.dependencyArgument === undefined) {
+        return false;
+    }
+    const dependencyReference = input.item.arguments[input.dependencyArgument];
+    if (typeof dependencyReference !== 'string' || !dependencyReference.startsWith('$')) {
+        return false;
+    }
+    const producer = input.producersByBinding.get(dependencyReference.slice(1));
+    return (
+        producer !== undefined &&
+        producer.createdDeviceType !== undefined &&
+        dependsTransitivelyOn(input.item, producer.itemId, input.itemsById) &&
+        isBatchLocalDeviceParameterTarget(producer, input.parameterId)
+    );
+}
+
 function validateTargetArgumentsWithoutSelectors(input: {
     context: ProjectContext;
     item: SemanticCommandListItem;
@@ -746,6 +770,20 @@ function validateTargetArgumentsWithoutSelectors(input: {
                     reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
                 };
             }
+            stableIdsByArgument.set(targetRule.argument, [value]);
+            continue;
+        }
+        if (
+            targetRule.capability === 'device-parameter' &&
+            resolvesBatchLocalDeviceParameterTarget({
+                dependencyArgument: targetRule.dependsOn,
+                item: input.item,
+                itemsById: input.itemsById,
+                parameterId: value,
+                producersByBinding: input.producersByBinding,
+            })
+        ) {
+            stableIdsByArgument.set(targetRule.argument, [value as string]);
             continue;
         }
         if (input.selectorArgument === undefined) {

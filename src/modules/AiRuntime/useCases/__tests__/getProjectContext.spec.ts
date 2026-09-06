@@ -161,7 +161,22 @@ describe('getProjectContext', () => {
         mocks.getPluginById.mockReturnValue(undefined);
         mocks.getGlueEligibleClipPairs.mockReturnValue([]);
         mocks.getPlatformPlugins.mockReturnValue([
-            { id: 'builtin-eq', name: 'EQ' },
+            {
+                id: 'builtin-eq',
+                name: 'EQ',
+                parameters: [
+                    {
+                        id: 'eq-mode',
+                        name: 'Mode',
+                        type: 'choice',
+                        defaultValue: 1,
+                        minValue: 0,
+                        maxValue: 2,
+                        unit: '',
+                        choices: ['Low', 'Bell', 'High'],
+                    },
+                ],
+            },
             { id: 'crust', name: 'Crust' },
         ]);
     });
@@ -233,7 +248,24 @@ describe('getProjectContext', () => {
         expect(context.metronomeEnabled).toBe(false);
         expect(context.metronomeVolume).toBe(0.5);
         expect(context.masterGain).toBe(0.8);
-        expect(context.availableDeviceTypes).toEqual([{ id: 'builtin-eq', name: 'EQ' }]);
+        expect(context.availableDeviceTypes).toEqual([
+            {
+                id: 'builtin-eq',
+                name: 'EQ',
+                parameters: [
+                    {
+                        id: 'eq-mode',
+                        name: 'Mode',
+                        type: 'choice',
+                        value: 1,
+                        minValue: 0,
+                        maxValue: 2,
+                        unit: '',
+                        choices: ['Low', 'Bell', 'High'],
+                    },
+                ],
+            },
+        ]);
         expect(context.adjustmentLayers).toEqual([]);
         expect(context.automationLanes).toEqual([]);
         expect(context.sidechainRoutes).toEqual([]);
