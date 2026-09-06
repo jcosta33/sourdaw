@@ -150,3 +150,25 @@ deliver that thing to the stub, drive each with the smallest project that hits i
 that device, nothing else) and require either the new carrier to take it or a notice that names
 why not. Then find the product's own standing consumers of that path — the nightly harness
 project, the smoke set — and run them through the same rule.
+
+### 2026-09-06 — a new device body admitted against the engine's vocabulary, never against the record its producer sends (escaped via 07102e912)
+
+The change that first admitted the Fermenter body to the native graph mapper kept the mapper's
+standing rule that any parameter key it cannot resolve refuses the whole batch, and it admitted the
+body on every strip. Every Fermenter device carries camelCase descriptor ids in `parameterValues`
+from the moment it is created — `addDevice.ts` seeds them and `serializeDevice` copies them
+verbatim — while the engine's Fermenter vocabulary is snake_case. So a native live session holding
+any Fermenter track was refused outright from the moment the body was admitted, on contributing and
+non-contributing strips alike. Four review rounds attacked the body's render and its pointer
+discipline and never ran the batch the producer actually sends.
+
+Blind spot: the mapper was checked against the vocabulary the engine defines rather than against the
+record the TypeScript producer emits today for that device type, and only on strips that contribute
+audio.
+
+Probe that would have caught it: when a mapper admits a new device type, build the batch the
+producer ships for a freshly created device of that type — read the creation use case's seeded
+`parameterValues`, then the serializer — and drive it through the mapper on a contributing strip and
+on a non-contributing one; a refusal on either is the finding. Then list every branch of that mapper
+that degrades to omission rather than refusing, and require any refusal reachable on the new type to
+obey the same law.

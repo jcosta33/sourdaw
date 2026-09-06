@@ -1102,27 +1102,47 @@ impl FermenterBody {
     /// Apply a whole patch, on the control thread, before this body crosses
     /// the command ring.
     ///
-    /// [`LAYER_ROUTING_KEY`] is applied after everything it routes, whatever
-    /// order the patch arrives in: a patch is an unordered record, so applied
-    /// in the middle it would send an arbitrary half of the patch to a layer
-    /// the author never aimed it at.
+    /// The [`LAYER_ROUTING_KEYS`] are applied before the writes they route: a
+    /// patch is an unordered record, so applied anywhere else they would send
+    /// an arbitrary half of it to a layer the author never aimed it at. They
+    /// go first rather than last because the selection outlives the patch —
+    /// the instance keeps it, and every later live `SetParam` is routed by it,
+    /// so a patch written to one layer while the instance selects another
+    /// would put patch-time and live-time writes on different layers with the
+    /// producer believing both landed together.
     fn load_patch(&mut self, patch: &[(FermenterParamName, f32)]) {
-        let routes_later_writes = |name: &FermenterParamName| name.as_str() == LAYER_ROUTING_KEY;
-        for (name, value) in patch.iter().filter(|(name, _)| !routes_later_writes(name)) {
-            self.set_param(name.as_str(), *value);
-        }
-        for (name, value) in patch.iter().filter(|(name, _)| routes_later_writes(name)) {
-            self.set_param(name.as_str(), *value);
+        for (name, value) in layer_routing_first(patch) {
+            self.set_param(name.as_str(), value);
         }
     }
 }
 
-/// The patch key that aims every later per-layer parameter write at one layer.
+/// The patch keys that aim every per-layer parameter write, in the order they
+/// have to be applied in: the count admits the layer, and the selection then
+/// names it — reversed, a selection past the count is clamped to a layer the
+/// patch never meant.
 ///
 /// Named here because [`FermenterBody::load_patch`] is what has to order a
-/// patch around it; the instrument's own `set_param` is the only other place
-/// the word means anything.
-const LAYER_ROUTING_KEY: &str = "active_layer";
+/// patch around them; the instrument's own `set_param` is the only other place
+/// the words mean anything.
+const LAYER_ROUTING_KEYS: [&str; 2] = ["num_layers", "active_layer"];
+
+/// `patch` with every layer-routing entry it carries brought to the front, in
+/// [`LAYER_ROUTING_KEYS`] order; everything else follows in patch order.
+fn layer_routing_first(
+    patch: &[(FermenterParamName, f32)],
+) -> impl Iterator<Item = (FermenterParamName, f32)> + '_ {
+    let routing = LAYER_ROUTING_KEYS
+        .into_iter()
+        .flat_map(move |key| patch.iter().filter(move |(name, _)| name.as_str() == key));
+    let routed = patch.iter().filter(|(name, _)| !routes_later_writes(name));
+    routing.chain(routed).copied()
+}
+
+/// Whether `name` is one of the keys that aims the writes around it.
+fn routes_later_writes(name: &FermenterParamName) -> bool {
+    LAYER_ROUTING_KEYS.contains(&name.as_str())
+}
 
 /// The Fermenter member channel a note's `i16` channel names, or `None` for a
 /// channel MIDI itself has no address for — the same addresses
@@ -12997,48 +13017,150 @@ mod timeline_tests {
         );
     }
 
-    /// A patch applies [`LAYER_ROUTING_KEY`] after the writes it routes,
-    /// whatever order its own entries arrive in.
+    /// A cutoff far from the instrument's own default, so a write that landed
+    /// on the wrong layer is a different signal rather than a rounding of the
+    /// same one.
+    const PATCHED_CUTOFF: f32 = 200.0;
+
+    /// The layer count the patches below widen the instrument to, and the
+    /// layer they then select — which is the first one *past* that count.
     ///
-    /// A patch is an unordered record control-side, and a fresh instrument
-    /// renders layer 0 alone. Applied in the middle, the routing key would
-    /// land `cutoff` on a layer nothing sounds on and the render would fall
-    /// back to the unpatched one — which is exactly what the first assertion
-    /// tells the other two apart from.
-    #[test]
-    fn a_fermenter_patch_applies_the_layer_routing_key_after_the_writes_it_routes() {
-        const CUTOFF: f32 = 0.2;
-        const SECOND_LAYER: f32 = 1.0;
+    /// The selection has to sit outside the rendered set for a spec to
+    /// observe which layer a write reached at all: the instrument builds
+    /// every layer identically, so while two layers both render, writing the
+    /// cutoff to one or to the other sums to the very same signal and no
+    /// ordering could be told apart. Selected outside it, the write is
+    /// inaudible when it is routed and audible when it lands on layer 0
+    /// instead — and the count itself stays observable, because widening to
+    /// two layers is what tells these renders from the unpatched one.
+    const RENDERED_LAYERS: f32 = 2.0;
+    const SELECTED_LAYER: f32 = 2.0;
 
-        fn render_patched(patch: &[(FermenterParamName, f32)]) -> Vec<f32> {
-            const BLOCK: usize = 128;
+    /// Render a Fermenter built with `patch`, sounding one note from the top
+    /// of the render.
+    fn render_fermenter_patch(patch: &[(FermenterParamName, f32)]) -> Vec<f32> {
+        render_fermenter_patch_then_write(patch, None)
+    }
 
-            let mut harness = Harness::new(32);
-            track_with_patched_fermenter(&mut harness, 1, 7, patch);
-            harness.playing();
-            harness.send(schedule_phrase(7, &[(0, 60, true)]));
-            render_master(&mut harness, BLOCK, 4).0
+    /// The same render, with `write` sent to the instance through the ordinary
+    /// `SetParam` path after the patch and before anything is rendered.
+    fn render_fermenter_patch_then_write(
+        patch: &[(FermenterParamName, f32)],
+        write: Option<(DeviceParam, f32)>,
+    ) -> Vec<f32> {
+        let mut harness = Harness::new(32);
+        track_with_patched_fermenter(&mut harness, 1, 7, patch);
+        harness.playing();
+        if let Some((param, value)) = write {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.send(schedule_phrase(7, &[(0, 60, true)]));
+        render_master(&mut harness, FERMENTER_PATCH_BLOCK, 4).0
+    }
+
+    const FERMENTER_PATCH_BLOCK: usize = 128;
+
+    /// The same render over an instance the spec wrote itself, one
+    /// `set_param` at a time in the order given — the instrument's own path,
+    /// and so an oracle independent of how a patch is ordered.
+    fn render_fermenter_writes(writes: &[(&str, f32)]) -> Vec<f32> {
+        let mut core = PluginCore::fermenter_with_patch(FERMENTER_RATE, &[]);
+        if let PluginCore::Fermenter(body) = &mut core {
+            for (name, value) in writes {
+                body.set_param(name, *value);
+            }
         }
 
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            core,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(insert_track_device(1, generator(7), 0));
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true)]));
+        render_master(&mut harness, FERMENTER_PATCH_BLOCK, 4).0
+    }
+
+    /// A patch routes its own writes to the layer it selects, whatever order
+    /// its entries arrive in.
+    ///
+    /// A patch is an unordered record control-side, so the mapper cannot
+    /// choose where the layer-management keys sit in it — here they sit after
+    /// the write they route. The oracle is the instrument's own `set_param`,
+    /// called in routing-first order; the old order is rendered beside it, so
+    /// a spec that agreed with both would be observing nothing.
+    #[test]
+    fn a_fermenter_patch_routes_its_writes_to_the_layer_it_selects() {
         let cutoff = fermenter_name("cutoff");
-        let routing = fermenter_name(LAYER_ROUTING_KEY);
+        let active_layer = fermenter_name("active_layer");
+        let num_layers = fermenter_name("num_layers");
 
-        let unpatched = render_patched(&[]);
-        let cutoff_alone = render_patched(&[(cutoff, CUTOFF)]);
-        let routing_first = render_patched(&[(routing, SECOND_LAYER), (cutoff, CUTOFF)]);
-        let cutoff_first = render_patched(&[(cutoff, CUTOFF), (routing, SECOND_LAYER)]);
+        let patched = render_fermenter_patch(&[
+            (cutoff, PATCHED_CUTOFF),
+            (active_layer, SELECTED_LAYER),
+            (num_layers, RENDERED_LAYERS),
+        ]);
+        let routing_first = render_fermenter_writes(&[
+            ("num_layers", RENDERED_LAYERS),
+            ("active_layer", SELECTED_LAYER),
+            ("cutoff", PATCHED_CUTOFF),
+        ]);
+        let writes_first = render_fermenter_writes(&[
+            ("cutoff", PATCHED_CUTOFF),
+            ("num_layers", RENDERED_LAYERS),
+            ("active_layer", SELECTED_LAYER),
+        ]);
 
+        assert!(
+            routing_first.iter().any(|sample| *sample != 0.0),
+            "the reference render is silent, so an agreement with it proves nothing"
+        );
         assert_ne!(
-            cutoff_alone, unpatched,
-            "the patch never reached the instrument, so the two orders below prove nothing"
+            routing_first, writes_first,
+            "the two orders render the same signal, so this spec cannot tell them apart"
         );
         assert_eq!(
-            routing_first, cutoff_alone,
-            "the routing key arriving first sent the rest of the patch to another layer"
+            patched, routing_first,
+            "the patch wrote the cutoff to a different layer from the one it selects"
+        );
+    }
+
+    /// A live `SetParam` after a patch lands on the layer the patch selected.
+    ///
+    /// The instance keeps that selection, and every later write is routed by
+    /// it. A patch that selected its layer after writing would therefore
+    /// leave its own writes on one layer and every live write on another,
+    /// with the producer believing both landed together.
+    #[test]
+    fn a_live_write_after_a_patch_lands_on_the_layer_the_patch_selected() {
+        let cutoff = fermenter_name("cutoff");
+        let active_layer = fermenter_name("active_layer");
+        let num_layers = fermenter_name("num_layers");
+        let selection = [
+            (num_layers, RENDERED_LAYERS),
+            (active_layer, SELECTED_LAYER),
+        ];
+
+        let carried_by_the_patch = render_fermenter_patch(&[
+            (num_layers, RENDERED_LAYERS),
+            (active_layer, SELECTED_LAYER),
+            (cutoff, PATCHED_CUTOFF),
+        ]);
+        let written_live = render_fermenter_patch_then_write(
+            &selection,
+            Some((fermenter_param("cutoff"), PATCHED_CUTOFF)),
+        );
+
+        assert!(
+            carried_by_the_patch.iter().any(|sample| *sample != 0.0),
+            "the patched render is silent, so an agreement with it proves nothing"
         );
         assert_eq!(
-            cutoff_first, cutoff_alone,
-            "the routing key arriving last changed what the patch reached"
+            written_live, carried_by_the_patch,
+            "the live write reached a different layer from the one the patch wrote to"
         );
     }
 }

@@ -1633,33 +1633,22 @@ fn fermenter_parameter(key: &str, device_id: &str) -> Result<FermenterParamName,
     })
 }
 
-/// One fermenter device's whole patch, in the instrument's own vocabulary.
+/// One device's whole `parameterValues` record, each key resolved through
+/// `resolve` and each value narrowed to the `f32` the engine applies.
 ///
-/// Resolved through [`fermenter_parameter`], the same rule
-/// [`builtin_parameter`] applies to this body, so the patch the instance is
-/// built with and the keys the mapper admits are one fact.
-fn fermenter_patch(device: &DevicePayload) -> Result<Vec<(FermenterParamName, f32)>, String> {
-    device
-        .parameter_values
-        .iter()
-        .map(|(key, value)| {
-            let name = fermenter_parameter(key, &device.id)?;
-            Ok((name, finite(*value, "device parameter value")? as f32))
-        })
-        .collect()
-}
-
-/// One built-in device's parameter writes as addressed commands, for a body
-/// whose patch travels over the ring.
-fn command_borne_param_writes(
-    builtin: BuiltinEffectType,
+/// A body's patch is either written into the instance control-side or sent as
+/// addressed commands, so what a key resolves to differs; the record is read
+/// and the values are checked the same way either side, and one collector is
+/// what keeps that one fact.
+fn resolved_param_writes<T>(
     device: &DevicePayload,
-) -> Result<Vec<(DeviceParam, f32)>, String> {
+    resolve: impl Fn(&str) -> Result<T, String>,
+) -> Result<Vec<(T, f32)>, String> {
     device
         .parameter_values
         .iter()
         .map(|(key, value)| {
-            let param = builtin_parameter(builtin, key, &device.id)?;
+            let param = resolve(key)?;
             Ok((param, finite(*value, "device parameter value")? as f32))
         })
         .collect()
@@ -1794,23 +1783,32 @@ fn map_device(
     // The built-in's parameters resolve control-side, through the same single
     // mapping the engine's addressed `SetParam` applies, and before the batch
     // charges a chain slot for the device. A key the body's own vocabulary
-    // does not map refuses here rather than being counted as an unmapped call
-    // on the audio thread after the fact.
+    // does not map is answered here rather than counted as an unmapped call on
+    // the audio thread after the fact — under the same law as a device with no
+    // body at all, because to a strip a device that cannot be built and one
+    // that cannot be written are the same missing device.
     //
     // Which side of the ring a patch is applied on is a property of the body.
     // A fermenter's patch is dozens of the instrument's own parameters per
     // strip and the command ring is finite, so it is written into the instance
     // on this thread; knead's handful travel as commands behind the
     // registration.
-    let (core, param_writes) = match builtin {
-        BuiltinEffectType::Fermenter => (
-            PluginCore::fermenter_with_patch(sample_rate, &fermenter_patch(device)?),
-            Vec::new(),
-        ),
-        BuiltinEffectType::Knead => (
-            PluginCore::builtin(builtin, sample_rate),
-            command_borne_param_writes(builtin, device)?,
-        ),
+    let resolved = match builtin {
+        BuiltinEffectType::Fermenter => {
+            resolved_param_writes(device, |key| fermenter_parameter(key, &device.id)).map(|patch| {
+                (
+                    PluginCore::fermenter_with_patch(sample_rate, &patch),
+                    Vec::new(),
+                )
+            })
+        }
+        BuiltinEffectType::Knead => {
+            resolved_param_writes(device, |key| builtin_parameter(builtin, key, &device.id))
+                .map(|writes| (PluginCore::builtin(builtin, sample_rate), writes))
+        }
+    };
+    let Some((core, param_writes)) = refuse_or_degrade(resolved, contributes_audio)? else {
+        return Ok(None);
     };
 
     charge_chain_slot(registry, &device.id)?;
@@ -1840,6 +1838,26 @@ fn map_device(
         builtin: Some(builtin),
         chain_kind: builtin_chain_kind(builtin),
     }))
+}
+
+/// A device the mapper could not resolve, answered under the one law
+/// [`no_native_body`] already sets: refused by name where the strip
+/// contributes audio, and omitted where it contributes silence by
+/// construction.
+///
+/// A strip that contributes audio is one the mix is short of if a device goes
+/// missing from it, so the batch refuses whole. A strip built only to keep the
+/// routing graph faithful contributes nothing to hear, so the device is left
+/// out and its absence is what the strip report says.
+fn refuse_or_degrade<T>(
+    resolved: Result<T, String>,
+    contributes_audio: bool,
+) -> Result<Option<T>, String> {
+    match resolved {
+        Ok(resolved) => Ok(Some(resolved)),
+        Err(reason) if contributes_audio => Err(reason),
+        Err(_) => Ok(None),
+    }
 }
 
 /// How a built-in body splices into a strip chain.
@@ -8725,6 +8743,18 @@ mod tests {
         }])
     }
 
+    /// The effect ids a mapping registered a body under, in the order it
+    /// registered them. `GraphCommand` carries no `Debug`, so the ids are what
+    /// a spec compares two mappings by.
+    fn registered_effect_ids(ops: &[GraphCommand]) -> Vec<usize> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::AddDetachedEffect(effect_id, _, _) => Some(*effect_id),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn builtin_param_writes(ops: &[GraphCommand]) -> Vec<(DeviceParam, f32)> {
         ops.iter()
             .filter_map(|op| match op {
@@ -8858,41 +8888,108 @@ mod tests {
         );
     }
 
-    /// A patch carrying the layer routing key applies it after the writes it
-    /// routes, however the key arrives in the record.
+    /// A patch's per-layer writes reach the layer the patch selects, however
+    /// the layer-management keys arrive in the record.
     ///
     /// `parameterValues` is a `HashMap`, so its order is arbitrary and the
-    /// mapper cannot choose it. `active_layer` aims every later per-layer
-    /// write at one layer, and only layer 0 sounds on a fresh instrument — so
-    /// a patch that applied it in passing would land `cutoff` where nothing
-    /// renders and read as the unpatched instrument.
+    /// mapper cannot choose it. The patch widens the instrument to two layers
+    /// and then selects the third, which is outside the rendered set: every
+    /// layer is built identically, so a cutoff written to one rendered layer
+    /// or another sums to the same signal and no ordering could be observed —
+    /// selected outside it, the cutoff is inaudible when it is routed and
+    /// audible when it lands on layer 0 instead.
     #[test]
-    fn a_fermenter_patch_applies_the_layer_routing_key_after_the_writes_it_routes() {
-        /// Draws of the two-key patch. A `HashMap` seeds its iteration order
-        /// per instance, so a single draw would read the routing key before
-        /// `cutoff` only about half the time — and a mapper that applied the
-        /// patch in arrival order would pass half its runs.
+    fn a_fermenter_patch_routes_its_writes_to_the_layer_it_selects() {
+        /// Draws of the three-key patch. A `HashMap` seeds its iteration order
+        /// per instance, so a single draw would read the layer-management keys
+        /// before `cutoff` only some of the time — and a mapper that applied
+        /// the patch in arrival order would pass a share of its runs.
         const DRAWS: usize = 16;
 
-        let cutoff_alone = render_patched_fermenter(json!({ "cutoff": 0.2 }));
+        let selection_only = render_patched_fermenter(json!({
+            "num_layers": 2, "active_layer": 2
+        }));
+        let cutoff_on_a_rendered_layer =
+            render_patched_fermenter(json!({ "num_layers": 2, "cutoff": 0.2 }));
 
         assert_ne!(
-            cutoff_alone,
-            render_patched_fermenter(json!({})),
-            "the patch never reached the instrument, so the agreement below proves nothing"
+            cutoff_on_a_rendered_layer, selection_only,
+            "the cutoff is inaudible even on a layer that renders, so the agreement below \
+             proves nothing"
         );
         for draw in 0..DRAWS {
             assert_eq!(
-                render_patched_fermenter(json!({ "active_layer": 1, "cutoff": 0.2 })),
-                cutoff_alone,
-                "draw {draw}: the layer routing key took the rest of the patch to a layer \
-                 nothing renders"
+                render_patched_fermenter(json!({
+                    "num_layers": 2, "active_layer": 2, "cutoff": 0.2
+                })),
+                selection_only,
+                "draw {draw}: the patch wrote the cutoff to a different layer from the one it \
+                 selects"
+            );
+        }
+    }
+
+    /// A parameter key the body cannot map degrades a non-contributing strip
+    /// exactly as a device with no native body does: the device is omitted,
+    /// and the rest of the strip maps as though it had never been sent.
+    ///
+    /// The two vocabularies refuse on different grounds — the fermenter's by
+    /// shape, knead's against the closed set the engine names — and both are
+    /// reachable from what a project really ships: a fermenter carries its
+    /// camelCase descriptor ids from the moment it is created. A refusal here
+    /// would take down a whole live session over a strip that contributes no
+    /// audio at all.
+    #[test]
+    fn an_unmappable_parameter_on_a_non_contributing_strip_omits_the_device_like_a_missing_body() {
+        let silent_strip = |devices: Value| {
+            batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T",
+                  "state": strip_state(1.0), "devices": devices,
+                  "honorMuted": true, "contributesAudio": false }
+            ]))
+        };
+        let map = |devices: Value| {
+            map_unbound_batch(
+                &silent_strip(devices),
+                &mut GraphRegistry::default(),
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect("a non-contributing strip maps")
+        };
+        let kept = json!({ "id": "d-keep", "type": "knead", "bypassed": false,
+                           "parameterValues": {} });
+
+        let without_the_device = map(json!([kept]));
+
+        for unmappable in [
+            json!({ "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                    "parameterValues": { "filterCutoff": 0.5 } }),
+            json!({ "id": "d-knead", "type": "knead", "bypassed": false,
+                    "parameterValues": { "shiftSemitones": 3.0 } }),
+        ] {
+            let degraded = map(json!([unmappable, kept]));
+
+            assert_eq!(
+                degraded.reports[0].device_ids, without_the_device.reports[0].device_ids,
+                "the strip reports a device the mapper could not write to"
+            );
+            assert_eq!(
+                registered_effect_ids(&degraded.ops),
+                registered_effect_ids(&without_the_device.ops),
+                "the omitted device still registered a body, or took an effect id from the \
+                 device that follows it"
+            );
+            assert!(
+                builtin_param_writes(&degraded.ops).is_empty(),
+                "the omitted device still carried a parameter write"
             );
         }
     }
 
     /// A key shaped unlike one of the instrument's own parameter names refuses
-    /// the batch, naming the device and the key.
+    /// a contributing strip — the fixture's `contributesAudio` is `true` —
+    /// naming the device and the key.
     ///
     /// The instrument answers a name it does not know by doing nothing at all,
     /// so a key that was never one of its names would otherwise be a write the

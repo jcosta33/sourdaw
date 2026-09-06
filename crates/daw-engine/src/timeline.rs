@@ -161,6 +161,14 @@ pub const FERMENTER_PARAM_NAME_CAPACITY: usize = 32;
 /// refuses what was never one of those names, and a well-shaped name the
 /// instrument happens not to have is the instrument's own silent no-op, on
 /// both runtimes alike.
+///
+/// The buffer is carried by value everywhere the address travels, and that is
+/// what it costs: [`DeviceParam`] is 34 bytes rather than the 8 an ordinal
+/// took, a [`DeviceParamEvent`] 56 rather than 24, and the
+/// [`DeviceParamQueue`] each scheduler effect holds inline 3.5 KiB rather than
+/// 1.5 KiB — roughly 12 MiB more preallocated across a scheduler's whole
+/// effect table. That is a one-off cost at construction, paid for a wire that
+/// never has to enumerate a vocabulary `daw-dsp` owns.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct FermenterParamName {
     bytes: [u8; FERMENTER_PARAM_NAME_CAPACITY],
@@ -3395,6 +3403,24 @@ mod tests {
         let parsed = FermenterParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
 
         assert_eq!(parsed.as_str(), "cutoff");
+    }
+
+    /// The inline name keeps a parameter address inside the size
+    /// [`FermenterParamName`] documents.
+    ///
+    /// The address sits in every slot of the [`DeviceParamQueue`] each effect
+    /// holds inline, so a byte here is multiplied by the queue's capacity and
+    /// again by the whole effect table. Widening it is a megabyte-scale
+    /// decision, and the documented figure has to move with it.
+    #[test]
+    fn fermenter_param_name_keeps_device_param_within_its_stated_size() {
+        let size = std::mem::size_of::<DeviceParam>();
+
+        assert!(
+            size <= 40,
+            "a device parameter address grew to {size} bytes, which multiplies through the \
+             device parameter queue of every effect the scheduler preallocates"
+        );
     }
 
     /// A name exactly as long as the buffer parses.
