@@ -1,8 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 
 export const DB_NAME = 'sourdaw-crdt-docs';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const STORE_NAME = 'documents';
+export const CHECKPOINT_ARTIFACT_STORE_NAME = 'checkpoint-artifacts';
+export const CHECKPOINT_CATALOG_STORE_NAME = 'checkpoint-catalog';
 let _db: IDBDatabase | null = null;
 let _dbPromise: Promise<IDBDatabase | null> | null = null;
 let _dbGeneration = 0;
@@ -57,6 +59,12 @@ export function openDatabase(): Promise<IDBDatabase | null> {
         const database = request.result;
         if (!database.objectStoreNames.contains(STORE_NAME)) {
             database.createObjectStore(STORE_NAME);
+        }
+        if (!database.objectStoreNames.contains(CHECKPOINT_ARTIFACT_STORE_NAME)) {
+            database.createObjectStore(CHECKPOINT_ARTIFACT_STORE_NAME);
+        }
+        if (!database.objectStoreNames.contains(CHECKPOINT_CATALOG_STORE_NAME)) {
+            database.createObjectStore(CHECKPOINT_CATALOG_STORE_NAME);
         }
     };
 
