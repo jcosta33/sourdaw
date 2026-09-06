@@ -2,7 +2,7 @@ import { type MouseEvent, type DragEvent, useEffect, useRef, useState } from 're
 
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
@@ -24,8 +24,6 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { removeClip } from '../../useCases/clip/removeClip';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
-import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
-import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
 import { selectClipWithFocus } from '../../useCases/clipSelection/selectClipWithFocus';
@@ -889,7 +887,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (dragState) {
-            const { startBeat: origStart, endBeat: origEnd, clipId: dragClipId, mode: dragMode } = dragState;
+            const { clipId: dragClipId, mode: dragMode } = dragState;
 
             // Commit preview positions to the store in one batch, then clear the ref.
             const preview = clipDragPreviewRef.current;
@@ -1189,24 +1187,23 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         }
                     }
                 } else if (dragMode === 'trim-start' && primaryPos) {
-                    const didWrite = trimClipStart(dragClipId, primaryPos.startBeat);
-                    if (didWrite && primaryOrig && primaryPos.startBeat !== primaryOrig.startBeat) {
-                        const newStart = primaryPos.startBeat;
-                        pushUndoEntry(
-                            'Trim clip start',
-                            () => trimClipStart(dragClipId, origStart),
-                            () => trimClipStart(dragClipId, newStart)
-                        );
+                    // Dispatched through the registered action (not pushUndoEntry)
+                    // so admission refusals surface and capability-gated step-over
+                    // can reach the entry (#3641). The handler's no-write result
+                    // mints no entry; the geometry guard skips a release in place.
+                    if (primaryOrig && primaryPos.startBeat !== primaryOrig.startBeat) {
+                        void executeUserAppAction({
+                            type: 'trimClipStart',
+                            payload: { clipId: dragClipId, newStartBeat: primaryPos.startBeat },
+                        });
                     }
                 } else if (dragMode === 'stretch' && primaryPos) {
-                    const didWrite = trimClipEnd(dragClipId, primaryPos.endBeat);
-                    if (didWrite && primaryOrig && primaryPos.endBeat !== primaryOrig.endBeat) {
-                        const newEnd = primaryPos.endBeat;
-                        pushUndoEntry(
-                            'Trim clip end',
-                            () => trimClipEnd(dragClipId, origEnd),
-                            () => trimClipEnd(dragClipId, newEnd)
-                        );
+                    // Same registered-action dispatch as trim start (#3641).
+                    if (primaryOrig && primaryPos.endBeat !== primaryOrig.endBeat) {
+                        void executeUserAppAction({
+                            type: 'trimClipEnd',
+                            payload: { clipId: dragClipId, newEndBeat: primaryPos.endBeat },
+                        });
                     }
                 }
             }
