@@ -57,9 +57,13 @@ export async function listCheckpointCatalog(ownerProjectId: string): Promise<Che
                 const catalog = catalogKeysRequest.result.flatMap((key, index) => {
                     const checkpointId = requireCheckpointIdentity(key, 'catalog checkpoint key');
                     catalogIds.add(checkpointId);
-                    const pair = combineCheckpointPair(artifactsById.get(checkpointId), catalogRequest.result[index]);
-                    if (!pair || pair.checkpointId !== checkpointId) {
-                        throw new Error('[CheckpointPersistence] Stored checkpoint pair key mismatch');
+                    const pair = combineCheckpointPair(
+                        artifactsById.get(checkpointId),
+                        catalogRequest.result[index],
+                        checkpointId
+                    );
+                    if (!pair) {
+                        throw new Error('[CheckpointPersistence] Stored checkpoint pair is incomplete');
                     }
                     if (pair.ownerProjectId !== normalizedOwnerProjectId) {
                         return [];

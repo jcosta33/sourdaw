@@ -102,6 +102,7 @@ describe('crdt persistence database helper', () => {
         const openPromise = openDatabase();
         request.onupgradeneeded?.();
 
+        expect(open).toHaveBeenCalledWith('sourdaw-crdt-docs', 2);
         expect(database.createObjectStore).not.toHaveBeenCalledWith('documents');
         expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-artifacts');
         expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-catalog');

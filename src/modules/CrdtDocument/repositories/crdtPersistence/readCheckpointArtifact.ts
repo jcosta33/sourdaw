@@ -26,7 +26,11 @@ export async function readCheckpointArtifact(
 
         transaction.oncomplete = () => {
             try {
-                const result = combineCheckpointPair(artifactRequest.result, catalogRequest.result);
+                const result = combineCheckpointPair(
+                    artifactRequest.result,
+                    catalogRequest.result,
+                    normalizedCheckpointId
+                );
                 resolve(result?.ownerProjectId === normalizedOwnerProjectId ? result : null);
             } catch (error) {
                 reject(error);

@@ -540,6 +540,36 @@ describe('checkpoint artifact persistence (simulated IndexedDB contract)', () =>
         expect(database.inspect(CHECKPOINT_CATALOG_STORE_NAME, 'mismatched')).toBeDefined();
     });
 
+    it('rejects lookup-key mismatch for read and delete while preserving both rows', async () => {
+        const {
+            CHECKPOINT_ARTIFACT_STORE_NAME,
+            CHECKPOINT_CATALOG_STORE_NAME,
+            commitCheckpointArtifact,
+            deleteCheckpointArtifact,
+            readCheckpointArtifact,
+        } = await repositories();
+        await commitCheckpointArtifact(checkpoint('seed-schema'));
+        const artifact = {
+            checkpointId: 'different',
+            ownerProjectId: ownerA,
+            rootBytes: new Uint8Array([8]),
+        };
+        const catalog = {
+            ...checkpoint('different', { ownershipToken: 'known-retention-token' }),
+            rootBytes: undefined,
+            audioBufferIds: ['buffer-a'],
+        };
+        database.seed(CHECKPOINT_ARTIFACT_STORE_NAME, 'requested', artifact);
+        database.seed(CHECKPOINT_CATALOG_STORE_NAME, 'requested', catalog);
+
+        await expect(readCheckpointArtifact('requested', ownerA)).rejects.toThrow(/identity mismatch/);
+        await expect(deleteCheckpointArtifact('requested', ownerA)).rejects.toThrow(/identity mismatch/);
+        const storedArtifact = database.inspect(CHECKPOINT_ARTIFACT_STORE_NAME, 'requested') as typeof artifact;
+        expect(storedArtifact).toMatchObject({ checkpointId: 'different', ownerProjectId: ownerA });
+        expect(Array.from(storedArtifact.rootBytes)).toEqual([8]);
+        expect(database.inspect(CHECKPOINT_CATALOG_STORE_NAME, 'requested')).toEqual(catalog);
+    });
+
     it('rejects writes when IndexedDB is unavailable', async () => {
         vi.stubGlobal('indexedDB', undefined);
         vi.resetModules();

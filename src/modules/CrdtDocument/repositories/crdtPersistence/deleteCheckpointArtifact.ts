@@ -35,7 +35,11 @@ export async function deleteCheckpointArtifact(
                 return;
             }
             try {
-                const pair = combineCheckpointPair(artifactRequest.result, catalogRequest.result);
+                const pair = combineCheckpointPair(
+                    artifactRequest.result,
+                    catalogRequest.result,
+                    normalizedCheckpointId
+                );
                 if (!pair || pair.ownerProjectId !== normalizedOwnerProjectId) {
                     return;
                 }
