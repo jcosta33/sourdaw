@@ -1,0 +1,39 @@
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_c8aecbc14507e1 3913
+  s_9b530f08172a54::t_77da8c538ac41e 12816-12820
+  s_9b530f08172a54::t_e6c8ec81395c09 12811
+  s_9b530f08172a54::t_48b997cc34f59a 12775,12779-12784,12885,12891,12896
+  s_9b530f08172a54::t_3869148e0c4ba5 12772-12774
+  s_9b530f08172a54::t_b13e7911a60529 12776-12778
+  s_9b530f08172a54::t_a97c52580eb1ab 12785-12787,12808-12810
+  s_9b530f08172a54::t_ff120ded96f850 12812-12815
+  s_9b530f08172a54::t_5a5fb28981bd8e 12821-12823,12882-12884
+  s_9b530f08172a54::t_895e8d69b74d7a 12886-12890
+  s_9b530f08172a54::t_2cf1a4342c833f 12892-12895
+  s_9b530f08172a54::t_9c2b0950e714c1 12897-12899
+  s_a115a04d07c4d8::t_a4d5729489ce55 953-976,1002-1004,1016-1020,1022,1025-1030,1074-1078,3906-3909,12745-12771,12788-12807,12824-12881,12900-12902
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "70deb96597a74b798a58df9aec47f361477038f1",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a115a04d07c4d8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a041e694a6f9d8c34",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
