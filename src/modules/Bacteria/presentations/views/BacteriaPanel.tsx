@@ -439,7 +439,7 @@ const PresetRail = ({
 
 const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState }): ReactElement => (
     <Grid gap={2} className="h-full min-h-0 grid-cols-[minmax(250px,0.92fr)_minmax(0,1.2fr)] gap-2.5 p-2.5">
-        <Stack gap={3} className="bacteria-window min-h-0 p-3">
+        <Stack gap={3} className="bacteria-window min-h-0 overflow-y-auto p-3">
             <SectionHeader
                 eyebrow="Petri pad"
                 title="Morph field"
@@ -469,7 +469,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
             </Grid>
         </Stack>
 
-        <Stack gap={2} className="min-h-0 gap-2.5">
+        <Stack gap={2} className="min-h-0 gap-2.5 overflow-y-auto">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick read"
@@ -508,50 +508,43 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                 />
             </Stack>
 
-            <Grid cols={2} gap={2} className="min-h-0 flex-1 gap-2.5">
-                <Stack gap={3} className="bacteria-window p-3">
-                    <SectionHeader
-                        eyebrow="Input"
-                        title="Gain staging"
-                        description="Keep the organism fed, not flooded."
+            <Stack gap={3} className="bacteria-window min-h-0 p-3">
+                <SectionHeader eyebrow="Input" title="Gain staging" description="Keep the organism fed, not flooded." />
+                <Row align="center" justify="between" gap={4} className="px-2">
+                    <K
+                        deviceId={deviceId}
+                        v={state.patch.inputGain}
+                        k="inputGain"
+                        label="Input"
+                        min={-24}
+                        max={24}
+                        step={0.5}
+                        def={0}
+                        unit="dB"
                     />
-                    <Row wrap gap={4}>
-                        <K
-                            deviceId={deviceId}
-                            v={state.patch.inputGain}
-                            k="inputGain"
-                            label="Input"
-                            min={-24}
-                            max={24}
-                            step={0.5}
-                            def={0}
-                            unit="dB"
-                        />
-                        <K
-                            deviceId={deviceId}
-                            v={state.patch.outputGain}
-                            k="outputGain"
-                            label="Output"
-                            min={-24}
-                            max={24}
-                            step={0.5}
-                            def={0}
-                            unit="dB"
-                        />
-                        <K
-                            deviceId={deviceId}
-                            v={state.patch.mix}
-                            k="mix"
-                            label="Mix"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            def={1}
-                        />
-                    </Row>
-                </Stack>
-                <BandMeters state={state} />
-            </Grid>
+                    <K
+                        deviceId={deviceId}
+                        v={state.patch.outputGain}
+                        k="outputGain"
+                        label="Output"
+                        min={-24}
+                        max={24}
+                        step={0.5}
+                        def={0}
+                        unit="dB"
+                    />
+                    <K
+                        deviceId={deviceId}
+                        v={state.patch.mix}
+                        k="mix"
+                        label="Mix"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        def={1}
+                    />
+                </Row>
+            </Stack>
         </Stack>
     </Grid>
 );
@@ -1773,25 +1766,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
-        // The faceplate must clip its subtree (#2311). InstrumentBottomPanel's
-        // Close button is an earlier flex-column sibling above this element, and
-        // the content stack sizes to its content — unclipped it spills past the
-        // faceplate's top edge and, painting as the later sibling, covers the
-        // chrome and swallows pointer clicks on it. Every sibling instrument
-        // faceplate (Fermenter, ProofChamber, Crust, …) carries the same
-        // `overflow-hidden` containment, and `align="stretch"` pins the content
-        // stack to the faceplate box — Row's default `center` lets it overflow
-        // symmetrically — so the internal `min-h-0` + scroll regions own the
-        // fit. The clip is an inline style, not a Tailwind class, because jsdom
-        // compiles no Tailwind and the containment must stay an observable DOM
-        // property for the regression test (same reasoning as ErrorBoundary's
-        // FALLBACK_HEIGHT).
-        <Row
-            align="stretch"
-            gap={2.5}
-            className="bacteria-faceplate h-full min-h-[460px] p-2.5"
-            style={{ overflow: 'hidden' }}
-        >
+        <Row align="stretch" gap={2.5} className="bacteria-faceplate h-full min-h-[460px] p-2.5">
             <PresetRail
                 deviceId={deviceId}
                 state={state}
