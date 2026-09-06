@@ -1,6 +1,7 @@
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
+export { captureCheckpointRoot } from './captureCheckpointRoot';
 export { captureProjectIdentity } from './captureProjectIdentity';
 export { captureProjectRevision } from './captureProjectRevision';
 export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
