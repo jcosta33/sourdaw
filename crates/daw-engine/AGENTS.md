@@ -22,6 +22,21 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
   puts it up to a buffer away from where it was written, and firing a late one at the head of the
   next block puts it ahead of everything already sounding — both are audible, and neither is a
   timing a DAW is allowed to invent.
+- **Events reach a plugin in non-decreasing time**: every event a device is handed in one call is
+  stamped no earlier than the one before it, because that is what CLAP requires of a host and what a
+  VST3 processor reads its sample offsets as. That order is a property of the block a device is
+  handed, so it is the block's own frame of reference the stamps are measured in: a chain device is
+  handed one span at a time and its stamps run from the span's first frame, while a master insert
+  drains once per callback over the whole buffer and its stamps run from the callback's. Notes
+  scheduled for one frame reach the instrument in the order their producers stored them, which is
+  the only order a producer can express for a pair that sounds on one sample.
+- **A stop, a locate, and a loop wrap release every note the store has sounded**: each of them
+  leaves the frame a sounding note's note-off was written for behind — the playhead stands still,
+  moves away from it, or turns back before reaching it — so nothing is going to render that
+  note-off, and the instrument would hold the key until something unrelated happened to release it.
+  The release is a note-off at the head of whatever renders next, on the seam for a loop wrap. A
+  note played live is not released: it has no timeline position and no scheduled note-off, so a key
+  the player is holding stays held exactly as it does on hardware.
 
 ## Plugin Delay Compensation
 

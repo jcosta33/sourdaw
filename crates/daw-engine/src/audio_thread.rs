@@ -2981,11 +2981,11 @@ mod compensation_render_alloc_guards {
     }
 
     /// One note-on stamped for a timeline frame.
-    fn timed_note(at_frame: u64) -> TimedMidiNote {
+    fn timed_note(at_frame: u64, note: u8) -> TimedMidiNote {
         TimedMidiNote {
             at_frame,
             event: MidiNoteEvent {
-                note: 60,
+                note,
                 velocity: 100,
                 channel: 0,
                 is_note_on: true,
@@ -2999,23 +2999,29 @@ mod compensation_render_alloc_guards {
         }
     }
 
-    /// A hosted instrument holding scheduled notes renders across callbacks
-    /// without allocating or freeing on any of them.
+    /// A hosted instrument holding scheduled notes renders across callbacks —
+    /// and is released when the transport stops — without allocating or
+    /// freeing on any of them.
     ///
     /// The batch is built control-side and drained on the callback, the store
-    /// is written on the callback, and the due entries are copied into the
-    /// pending buffer on the callback — three places a `Vec` that grew, or a
-    /// batch dropped on the audio thread instead of retired, would allocate.
+    /// is written and merged into frame order on the callback, the due entries
+    /// are copied into the pending buffer on the callback, and the stop walks
+    /// the sounding set and queues a note-off per held key on the callback —
+    /// every one a place a `Vec` that grew, a set that hashed, or a batch
+    /// dropped on the audio thread instead of retired would allocate.
     ///
     /// The guard alone proves only that nothing allocated, not that any of it
     /// ran. Reading the recorded frames back is what makes this a guard over
     /// the delivery path: the notes straddle the callback boundary, so only a
     /// scan that took each block's own start and stamped each event's offset
-    /// produces them.
+    /// produces them, and the releases only appear if the stop walked the set.
     #[test]
     fn scheduled_notes_reach_a_hosted_instrument_without_allocating_on_the_callback() {
         const CALLBACKS: usize = 2;
         const SCHEDULED: [u64; 4] = [3, 127, 128, 200];
+        /// One note per scheduled frame, so the release owes one note-off per
+        /// entry rather than one for a key pressed four times.
+        const NOTES: [u8; 4] = [60, 61, 62, 63];
 
         let mut harness = CompensationHarness::new();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
@@ -3045,7 +3051,11 @@ mod compensation_render_alloc_guards {
         });
         harness.send(GraphCommand::ScheduleMidiNotes {
             plugin_id: EFFECT_ID,
-            notes: SCHEDULED.iter().map(|frame| timed_note(*frame)).collect(),
+            notes: SCHEDULED
+                .iter()
+                .zip(NOTES)
+                .map(|(frame, note)| timed_note(*frame, note))
+                .collect(),
         });
 
         // Sized outside the guard, the way its siblings size theirs: the
@@ -3058,10 +3068,22 @@ mod compensation_render_alloc_guards {
             }
         });
 
+        // Queued control-side; the stop itself is applied on the next
+        // callback, inside the guard, and so is the release it triggers.
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+
+        assert_no_alloc(|| {
+            harness.renderer.render(&mut data, DEVICE_CHANNELS);
+        });
+
+        let stop_frame = (CALLBACKS * CALLBACK_FRAMES) as u64;
+        let mut expected = SCHEDULED.to_vec();
+        expected.extend(std::iter::repeat_n(stop_frame, NOTES.len()));
         assert_eq!(
             received.frames(),
-            SCHEDULED,
-            "every scheduled note reached the instrument on its own frame, over two callbacks"
+            expected,
+            "every scheduled note reached the instrument on its own frame over two callbacks, \
+             and the stop released each of them at the head of the third"
         );
     }
 }

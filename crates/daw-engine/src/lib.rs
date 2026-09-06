@@ -755,11 +755,18 @@ impl EngineHandle {
     /// callback and counted in
     /// [`ActiveMidiRtDiagnosticsSnapshot::midi_note_batches_refused`], because
     /// only the callback knows what the store is already holding.
+    ///
+    /// The batch is put in frame order here, and stably, so two notes a
+    /// producer wrote for the same sample keep the order it wrote them in. A
+    /// plugin must be handed a block's events in non-decreasing time, and the
+    /// sort allocates its scratch half — so it belongs on this side of the
+    /// ring, and the store refuses a batch that arrives unordered.
     pub fn schedule_midi_notes(
         &mut self,
         plugin_id: usize,
-        notes: Box<[TimedMidiNote]>,
+        mut notes: Box<[TimedMidiNote]>,
     ) -> Result<(), String> {
+        notes.sort_by_key(|note| note.at_frame);
         self.push(GraphCommand::ScheduleMidiNotes { plugin_id, notes })
     }
 

@@ -7,7 +7,7 @@ use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
-use crate::midi::note_store::{MidiNoteStore, TimedMidiNote};
+use crate::midi::note_store::{MidiNoteStore, SoundingNotes, TimedMidiNote};
 use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
@@ -937,6 +937,12 @@ struct ActiveEffect {
     /// block: delivery reads from it and leaves it alone, so a loop pass
     /// sounds the same note again and a locate away from it sounds nothing.
     midi_notes: Option<Box<MidiNoteStore>>,
+    /// Which of the store's notes this device is currently holding down.
+    ///
+    /// Written by delivery and emptied by [`Self::release_sounding_notes`].
+    /// Empty for every device that carries no store, because only delivery
+    /// from one ever sets a bit.
+    sounding: SoundingNotes,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -1536,6 +1542,7 @@ impl ActiveEffect {
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
             midi_notes: None,
+            sounding: SoundingNotes::default(),
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
@@ -1644,8 +1651,14 @@ impl ActiveEffect {
     }
 
     /// Queue every stored note the span `block_start..block_start + frames`
-    /// renders, each stamped at the sample inside that span which carries its
-    /// timeline frame.
+    /// renders, each stamped at the sample that carries its timeline frame.
+    ///
+    /// `span_offset` is where the span begins inside the callback's buffers.
+    /// A chain device is handed that span on its own, so its stamps are
+    /// measured from the span's first frame; a master insert drains once per
+    /// callback over the whole buffer, so its stamps are measured from the
+    /// callback's. Stamping a master insert from the span would put every
+    /// delivery after a loop seam a seam's worth early.
     ///
     /// Returns whether the span reached any of them, so the caller can mark
     /// the slot as holding block-local MIDI exactly as the immediate path
@@ -1657,31 +1670,105 @@ impl ActiveEffect {
         &mut self,
         block_start: u64,
         frames: usize,
+        span_offset: usize,
         diagnostics: &mut ActiveMidiRtDiagnostics,
     ) -> bool {
         let Self {
             midi_notes,
             pending_midi,
+            sounding,
+            placement,
             ..
         } = self;
         let Some(store) = midi_notes.as_ref() else {
             return false;
         };
 
+        let stamp_base = match *placement {
+            EffectPlacement::MasterChain => span_offset as u32,
+            _ => 0,
+        };
         let span_end = block_start.saturating_add(frames as u64);
+        let entries = store.entries();
+        // The store is frame-ordered, so the span's own run is a slice of it:
+        // where the frames reach `block_start`, up to where they leave the
+        // span. Delivering in that order is what keeps the pending buffer
+        // non-decreasing in time, which is what a plugin is owed.
+        let first_due = entries.partition_point(|entry| entry.at_frame < block_start);
         let mut delivered = false;
-        for entry in store.entries() {
-            if entry.at_frame < block_start || entry.at_frame >= span_end {
-                continue;
+        for entry in &entries[first_due..] {
+            if entry.at_frame >= span_end {
+                break;
             }
             delivered = true;
             let mut event = entry.event;
-            event.frame_offset = (entry.at_frame - block_start) as u32;
+            event.frame_offset = stamp_base + (entry.at_frame - block_start) as u32;
             if !pending_midi.try_push(event) {
                 diagnostics.record_scheduler_event_buffer_overflow(1);
+                continue;
+            }
+            // Only what reached the buffer is tracked: a note-on the overflow
+            // dropped never sounds, so a release owed for it would be a
+            // note-off the instrument never asked for.
+            if event.is_note_on {
+                sounding.hold(event.channel, event.note);
+            } else {
+                sounding.release(event.channel, event.note);
             }
         }
         delivered
+    }
+
+    /// Queue a note-off for every note this device's store has sounded and not
+    /// released, at `frame_offset` inside whatever renders next.
+    ///
+    /// Returns whether anything was queued, so the caller marks the slot as
+    /// holding block-local MIDI exactly as every other enqueue does.
+    ///
+    /// The store's own note-offs stay where the producer wrote them. This is
+    /// for the frames that are never going to be rendered — a stop, a locate,
+    /// or a loop wrap past a scheduled note-off — after which the instrument
+    /// would hold that key until something else happened to release it.
+    #[inline]
+    fn release_sounding_notes(
+        &mut self,
+        frame_offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) -> bool {
+        let Self {
+            sounding,
+            pending_midi,
+            ..
+        } = self;
+        let mut released = false;
+        sounding.drain(|channel, note| {
+            released = true;
+            if !pending_midi.try_push(release_note(channel, note, frame_offset)) {
+                diagnostics.record_scheduler_event_buffer_overflow(1);
+            }
+        });
+        released
+    }
+}
+
+/// The note-off that ends a note a store sounded.
+///
+/// Velocity zero is the release a MIDI source sends for a key let go without
+/// pressure. The probability cutoff passes: the gate decides whether a note
+/// sounds, and a release owed for a note that already did must never be rolled
+/// away, or the instrument holds that key for good.
+fn release_note(channel: i16, note: u8, frame_offset: u32) -> MidiNoteEvent {
+    MidiNoteEvent {
+        note,
+        velocity: 0,
+        channel,
+        is_note_on: false,
+        frame_offset,
+        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+        project_probability_seed: 0,
+        clip_id_hash: 0,
+        event_id_hash: 0,
+        absolute_occurrence_index: 0,
     }
 }
 
@@ -2262,6 +2349,10 @@ impl AudioScheduler {
                     // playback ends.
                     if self.transport.is_playing && !state.is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
+                        // A stopped playhead never reaches the frame a
+                        // sounding note's note-off was written for, so the
+                        // note is released here or it is held for good.
+                        self.release_sounding_notes(0);
                     }
                     self.transport = state;
                     None
@@ -2280,6 +2371,7 @@ impl AudioScheduler {
                     // (seconds, beats) pair.
                     if self.transport.is_playing && !is_playing {
                         self.timeline.hold_automation(self.playhead_frames);
+                        self.release_sounding_notes(0);
                     }
                     self.transport.is_playing = is_playing;
                     self.transport.song_pos_seconds = song_pos_seconds;
@@ -2498,6 +2590,14 @@ impl AudioScheduler {
                     None
                 }
                 GraphCommand::SeekFrames(frame) => {
+                    // The locate takes the playhead off the frames a sounding
+                    // note's note-off was written for. Nothing will render
+                    // them, so the note is released at the head of what plays
+                    // from the new position. A stopped transport sounded
+                    // nothing to release.
+                    if self.transport.is_playing {
+                        self.release_sounding_notes(0);
+                    }
                     self.timeline.seek(frame);
                     self.playhead_frames = frame;
                     None
@@ -2965,7 +3065,7 @@ impl AudioScheduler {
     /// ([`GraphCommand::SendMidiNote`]) still sounds a stopped transport,
     /// because a note played on a keyboard is not addressed to the timeline at
     /// all.
-    fn apply_due_midi_notes(&mut self, block_start: u64, frames: usize) {
+    fn apply_due_midi_notes(&mut self, block_start: u64, frames: usize, span_offset: usize) {
         if frames == 0 || !self.transport.is_playing {
             return;
         }
@@ -2974,8 +3074,36 @@ impl AudioScheduler {
             if self.effects[slot].enqueue_due_midi_notes(
                 block_start,
                 frames,
+                span_offset,
                 &mut self.midi_rt_diagnostics,
             ) {
+                self.pending_midi_work.insert(slot);
+            }
+        }
+    }
+
+    /// Release every note the note stores have sounded, at the head of
+    /// whatever renders next.
+    ///
+    /// A stop, a locate and a loop wrap all leave the frame a sounding note's
+    /// note-off was written for behind: nothing is going to render it, so the
+    /// instrument would hold that key. Every trigger runs on the audio thread
+    /// and ahead of the next delivery, so the release reaches the instrument
+    /// before anything the new position schedules.
+    ///
+    /// `seam_offset` is where that "next" begins inside the callback's
+    /// buffers, which is what a master insert's stamps are measured from; a
+    /// chain device is handed the span itself, so its release sits at the
+    /// span's own head.
+    fn release_sounding_notes(&mut self, seam_offset: usize) {
+        for slot in 0..self.effects.len() {
+            let frame_offset = match self.effects[slot].placement {
+                EffectPlacement::MasterChain => seam_offset as u32,
+                _ => 0,
+            };
+            if self.effects[slot]
+                .release_sounding_notes(frame_offset, &mut self.midi_rt_diagnostics)
+            {
                 self.pending_midi_work.insert(slot);
             }
         }
@@ -3174,7 +3302,7 @@ impl AudioScheduler {
     /// recover afterwards: the span just rendered walked every frame below it,
     /// while the published playhead is already back at the loop start by the
     /// time any snapshot is read.
-    fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
+    fn advance_playhead(&mut self, block_start: u64, span_frames: usize, seam_offset: usize) {
         if !self.transport.is_playing {
             return;
         }
@@ -3184,6 +3312,11 @@ impl AudioScheduler {
                 self.playhead_frames = self.loop_region.start_frame;
                 self.loop_wraps = self.loop_wraps.wrapping_add(1);
                 self.last_wrap_frame = next;
+                // The wrap takes the playhead back over the loop, so a
+                // sounding note whose note-off lies past the seam never gets
+                // one. Releasing on the seam is where a musician hears the
+                // loop close.
+                self.release_sounding_notes(seam_offset);
             }
             _ => self.playhead_frames = next,
         }
@@ -3221,7 +3354,7 @@ impl AudioScheduler {
 
             self.refresh_transport_at(block_start);
             self.apply_due_device_params(block_start, span_frames);
-            self.apply_due_midi_notes(block_start, span_frames);
+            self.apply_due_midi_notes(block_start, span_frames, offset);
             self.render_timeline(
                 block_start,
                 span_frames,
@@ -3236,7 +3369,13 @@ impl AudioScheduler {
             };
             count += 1;
             offset += span_frames;
-            self.advance_playhead(block_start, span_frames);
+            // Where the next span begins inside this callback, which is where
+            // a loop wrap's releases are stamped for a master insert. A wrap
+            // on the callback's last span puts that one frame past the buffer,
+            // so it lands on the buffer's final sample instead — the nearest
+            // frame that exists, and the only one a plugin may be handed.
+            let seam_offset = offset.min(frames - 1);
+            self.advance_playhead(block_start, span_frames, seam_offset);
         }
 
         (spans, count)
@@ -6162,22 +6301,27 @@ mod timeline_tests {
     /// allocation the guard exists to catch.
     const RECORDED_NOTE_CAPACITY: usize = 64;
 
-    /// An instrument that records the absolute frame every note it receives
-    /// lands on: the frames it has already been asked to render, plus the
-    /// event's own offset inside the block it arrived in.
+    /// One note as an instrument received it: the absolute frame it landed
+    /// on, which note it named, and whether it pressed or released.
+    type RecordedNote = (u64, u8, bool);
+
+    /// An instrument that records every note it receives: the frames it has
+    /// already been asked to render, plus the event's own offset inside the
+    /// block it arrived in, with the note and its direction.
     ///
-    /// A device is called once per rendered span, in the order the spans
-    /// render, so the frames this fixture has already processed are where the
-    /// current span begins in the stream the harness drove. That running count
-    /// is the only vantage inside a plugin from which a block-local stamp
-    /// reads back as a position a test can name.
+    /// A chain device is called once per rendered span, in the order the spans
+    /// render; a master insert is called once per callback. Either way the
+    /// frames this fixture has already processed are where the call it is in
+    /// begins in the stream the harness drove, so a block-local stamp reads
+    /// back as a position a test can name — which is the only vantage a plugin
+    /// has on one.
     struct FrameRecordingInstrument {
         processed: u64,
-        received: Arc<Mutex<Vec<u64>>>,
+        received: Arc<Mutex<Vec<RecordedNote>>>,
     }
 
     impl FrameRecordingInstrument {
-        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<u64>>>) {
+        fn new() -> (Box<dyn NativePlugin>, Arc<Mutex<Vec<RecordedNote>>>) {
             let received = Arc::new(Mutex::new(Vec::with_capacity(RECORDED_NOTE_CAPACITY)));
             let instrument = Box::new(Self {
                 processed: 0,
@@ -6202,7 +6346,11 @@ mod timeline_tests {
         ) {
             let mut received = self.received.lock().expect("the received note log");
             for event in midi_events {
-                received.push(self.processed + u64::from(event.frame_offset));
+                received.push((
+                    self.processed + u64::from(event.frame_offset),
+                    event.note,
+                    event.is_note_on,
+                ));
             }
             drop(received);
             self.processed += num_samples as u64;
@@ -10929,8 +11077,48 @@ mod timeline_tests {
         }
     }
 
-    fn received_frames(received: &Arc<Mutex<Vec<u64>>>) -> Vec<u64> {
+    /// The same command for a phrase that names its own notes and releases:
+    /// `(frame, note, is_note_on)`, already in the frame order the store keeps.
+    fn schedule_phrase(plugin_id: usize, events: &[(u64, u8, bool)]) -> GraphCommand {
+        let notes: Vec<TimedMidiNote> = events
+            .iter()
+            .map(|(frame, note, is_note_on)| {
+                let mut timed = timed_note(*frame, *note);
+                timed.event.is_note_on = *is_note_on;
+                timed
+            })
+            .collect();
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    /// The batch as a producer authored it, put in order by the same
+    /// control-side step [`crate::EngineHandle::schedule_midi_notes`] takes —
+    /// which is what a scheduler test drives when the authoring order is the
+    /// thing under test.
+    fn schedule_authored(plugin_id: usize, events: &[(u64, u8)]) -> GraphCommand {
+        let mut notes: Vec<TimedMidiNote> = events
+            .iter()
+            .map(|(frame, note)| timed_note(*frame, *note))
+            .collect();
+        notes.sort_by_key(|note| note.at_frame);
+        GraphCommand::ScheduleMidiNotes {
+            plugin_id,
+            notes: notes.into(),
+        }
+    }
+
+    fn received_notes(received: &Arc<Mutex<Vec<RecordedNote>>>) -> Vec<RecordedNote> {
         received.lock().expect("the received note log").clone()
+    }
+
+    fn received_frames(received: &Arc<Mutex<Vec<RecordedNote>>>) -> Vec<u64> {
+        received_notes(received)
+            .iter()
+            .map(|(frame, _, _)| *frame)
+            .collect()
     }
 
     fn midi_diagnostics(harness: &Harness) -> ActiveMidiRtDiagnosticsSnapshot {
@@ -10958,7 +11146,7 @@ mod timeline_tests {
         harness: &mut Harness,
         track_id: usize,
         effect_id: usize,
-    ) -> Arc<Mutex<Vec<u64>>> {
+    ) -> Arc<Mutex<Vec<RecordedNote>>> {
         const CLIP_FRAMES: usize = 8_192;
 
         track_with_constant_clip(harness, track_id, track_id + 100, 1.0, CLIP_FRAMES);
@@ -11017,8 +11205,14 @@ mod timeline_tests {
 
         let into_region = NOTE_FRAME - LOOP_START;
         assert_eq!(
-            received_frames(&received),
-            vec![into_region, PASS + into_region],
+            received_notes(&received),
+            vec![
+                (into_region, 60, true),
+                // The seam closes the note the first pass left sounding, on
+                // the frame the region restarts at.
+                (PASS, 60, false),
+                (PASS + into_region, 60, true),
+            ],
             "the second pass delivers the note again, one region later in the render stream"
         );
     }
@@ -11165,5 +11359,175 @@ mod timeline_tests {
         }
 
         assert!(received_frames(&received).is_empty());
+    }
+
+    /// Two batches written against overlapping frames reach the instrument in
+    /// one non-decreasing run, whatever order their producers authored them
+    /// in. A plugin is owed a block's events in time order — CLAP requires it
+    /// — and two notes sharing a frame keep the order they were stored in,
+    /// which is the only order a producer can express for them.
+    #[test]
+    fn notes_scheduled_in_two_interleaving_batches_reach_the_instrument_in_frame_order() {
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(schedule_authored(7, &[(40, 63), (10, 60)]));
+        harness.send(schedule_authored(7, &[(25, 62), (10, 61)]));
+
+        harness.render(64);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (10, 61, true),
+                (25, 62, true),
+                (40, 63, true),
+            ],
+            "the two batches merge into one run in frame order, the pair on frame 10 in the \
+             order the batches carrying them arrived"
+        );
+    }
+
+    /// Stopping the transport releases every note the store has sounded. The
+    /// playhead stands still, so the frame each note's note-off was written
+    /// for is never rendered, and the instrument would hold those keys for as
+    /// long as the transport stayed stopped.
+    ///
+    /// A note the store already released is not released twice: its note-off
+    /// was delivered where the producer wrote it, and a second one is a
+    /// message the instrument never asked for.
+    #[test]
+    fn stopping_the_transport_releases_every_note_the_store_has_sounded() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(10, 60, true), (20, 61, true), (30, 61, false)],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (10, 60, true),
+                (20, 61, true),
+                (30, 61, false),
+                (BLOCK as u64, 60, false),
+            ],
+            "only the note still sounding is released, at the head of what renders next"
+        );
+    }
+
+    /// A locate while playing releases every note the store has sounded. The
+    /// playhead leaves the frames those notes' note-offs were written for
+    /// behind, so nothing is going to render them.
+    #[test]
+    fn a_locate_while_playing_releases_every_note_the_store_has_sounded() {
+        const BLOCK: usize = 64;
+        const LOCATE_TO: u64 = 4_096;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(10, 60, true), (700, 60, false)]));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::SeekFrames(LOCATE_TO));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(10, 60, true), (BLOCK as u64, 60, false)],
+            "the note sounding when the playhead moved is released at the head of what plays \
+             from the new position"
+        );
+    }
+
+    /// A loop wrap releases a note whose note-off lies past the seam. The pass
+    /// never reaches that frame, so without the release the note is held while
+    /// the region starts again — and every further pass presses the same key
+    /// once more.
+    #[test]
+    fn a_loop_wrap_releases_a_note_whose_note_off_lies_past_the_seam() {
+        const LOOP_END: u64 = 512;
+        const NOTE_ON: u64 = 10;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true), (700, 60, false)]));
+
+        // One callback holding both passes, so the seam falls inside it and
+        // the release is measured against the same render stream as the notes.
+        harness.render(2 * LOOP_END as usize);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (NOTE_ON, 60, true),
+                (LOOP_END, 60, false),
+                (LOOP_END + NOTE_ON, 60, true),
+            ],
+            "the release lands on the seam, before the second pass presses the note again"
+        );
+    }
+
+    /// A master insert's stamps are measured from the callback's first frame,
+    /// not from the span's.
+    ///
+    /// The master insert chain drains once per callback over the whole buffer,
+    /// so a device there is handed one block covering every span. Stamping it
+    /// from the span would put every delivery after a loop seam a seam's worth
+    /// early — and out of order behind the deliveries before it, which is a
+    /// block no plugin is allowed to be handed.
+    ///
+    /// [`GraphCommand::AddPlugin`] with a store is the registration Crumbs
+    /// takes, and it places the device on the master chain.
+    #[test]
+    fn a_master_chain_instrument_is_stamped_from_the_callback_start_across_a_loop_seam() {
+        const LOOP_END: u64 = 512;
+        const CALLBACK: usize = 640;
+        const NOTE_ON: u64 = 8;
+
+        let mut harness = Harness::new(32);
+        let (instrument, received) = FrameRecordingInstrument::new();
+        harness.send(GraphCommand::AddPlugin(
+            7,
+            instrument,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+        harness.send(schedule_notes(7, &[NOTE_ON]));
+
+        harness.render(CALLBACK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (NOTE_ON, 60, true),
+                (LOOP_END, 60, false),
+                (LOOP_END + NOTE_ON, 60, true),
+            ],
+            "the second pass is stamped from the callback's start, past the seam, and the \
+             whole block reads in non-decreasing time"
+        );
     }
 }

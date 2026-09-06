@@ -47,7 +47,13 @@ fn host_transport_from(transport: &TransportState) -> HostTransport {
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
 const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events per block for the event-conversion scratch array.
-const MAX_MIDI_EVENTS: usize = 64;
+///
+/// The engine's own per-block buffer, so the array holds every event the
+/// engine can hand over in one call. Sized under it, the packing would drop a
+/// full block's tail — the notes latest in the block, silently and with no
+/// counter — which is the whole reason the figure is taken from the engine
+/// rather than restated here.
+const MAX_MIDI_EVENTS: usize = daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
 /// Bounded pending parameter capacity, matched to ClapWrapper's process-event scratch.
 ///
 /// The engine's per-effect stamp window,
@@ -1097,6 +1103,9 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The engine's own figure, not the bridge's alias for it: the point of
+    // these specs is that the two agree.
+    use daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
     use daw_plugin_host::{AudioPlugin, ClapWrapper};
 
     /// A backend that records only what the runtime owner asked of its editor.
@@ -2415,8 +2424,14 @@ mod tests {
     /// rather than as a missing note.
     struct MidiRecordingPlugin {
         processing: Arc<ProcessingGate>,
-        notes: Arc<Mutex<Vec<(u8, u32)>>>,
+        notes: Arc<Mutex<Vec<RecordedNote>>>,
     }
+
+    /// Every field the bridge copies out of an engine event, in the order the
+    /// host type declares them: note, velocity, channel, note-on, frame
+    /// offset. A field the packing crossed with another is a wrong figure
+    /// here rather than a note that still arrives.
+    type RecordedNote = (u8, u8, i16, bool, u32);
 
     impl AudioPlugin for MidiRecordingPlugin {
         fn process(
@@ -2476,11 +2491,18 @@ mod tests {
             midi_events: &[HostMidiEvent],
             _parameter_updates: &[HostParameterUpdate],
         ) {
-            self.notes.lock().expect("the note log").extend(
-                midi_events
-                    .iter()
-                    .map(|event| (event.note, event.frame_offset)),
-            );
+            self.notes
+                .lock()
+                .expect("the note log")
+                .extend(midi_events.iter().map(|event| {
+                    (
+                        event.note,
+                        event.velocity,
+                        event.channel,
+                        event.is_note_on,
+                        event.frame_offset,
+                    )
+                }));
         }
 
         fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
@@ -2502,13 +2524,22 @@ mod tests {
         }
     }
 
-    /// One scheduled note as the engine stamps it for a block.
-    fn engine_note(note: u8, frame_offset: u32) -> MidiNoteEvent {
+    /// One note as the engine stamps it for a block. Every field the bridge
+    /// copies takes a value of its own, so a packing that read one field into
+    /// another shows up as a wrong figure rather than as a note that happens
+    /// to match.
+    fn engine_note(
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
+        frame_offset: u32,
+    ) -> MidiNoteEvent {
         MidiNoteEvent {
             note,
-            velocity: 100,
-            channel: 0,
-            is_note_on: true,
+            velocity,
+            channel,
+            is_note_on,
             frame_offset,
             probability_cutoff: u64::from(u32::MAX) + 1,
             project_probability_seed: 0,
@@ -2518,21 +2549,67 @@ mod tests {
         }
     }
 
-    /// The bridge packs the engine's events into the host's own event type on
-    /// the audio thread, and the frame offset has to survive that packing: a
-    /// note that arrives with offset zero sounds on the block boundary rather
-    /// than on the frame it was written for, which is audible as timing jitter
-    /// of up to a whole buffer.
-    #[test]
-    fn process_with_events_carries_each_notes_frame_offset_into_the_host_event() {
-        const FRAMES: usize = 64;
-
+    /// A slot over a fixture that records what each note it is handed carries.
+    fn recording_slot() -> (
+        HostedPluginSlot<MidiRecordingPlugin>,
+        Arc<Mutex<Vec<RecordedNote>>>,
+    ) {
         let notes = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::new(SharedHostedPlugin::new(MidiRecordingPlugin {
             processing: Arc::new(ProcessingGate::default()),
             notes: Arc::clone(&notes),
         }));
-        let mut slot = HostedPluginSlot::new(Arc::clone(&shared));
+        (HostedPluginSlot::new(shared), notes)
+    }
+
+    /// The bridge packs the engine's events into the host's own event type on
+    /// the audio thread, and every field has to survive that packing. A frame
+    /// offset lost there sounds the note on the block boundary rather than on
+    /// the frame it was written for — timing jitter of up to a whole buffer —
+    /// and a velocity, channel or note-on flag crossed with another field is a
+    /// note at the wrong loudness, on the wrong part, or never released.
+    #[test]
+    fn process_with_events_carries_each_notes_frame_offset_into_the_host_event() {
+        const FRAMES: usize = 64;
+
+        let (mut slot, notes) = recording_slot();
+        let mut left = [0.0f32; FRAMES];
+        let mut right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[
+                engine_note(60, 100, 0, true, 0),
+                engine_note(64, 33, 5, true, 17),
+                engine_note(67, 0, 9, false, 63),
+            ],
+            &TransportState::default(),
+        );
+
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![
+                (60, 100, 0, true, 0),
+                (64, 33, 5, true, 17),
+                (67, 0, 9, false, 63),
+            ]
+        );
+    }
+
+    /// The engine hands over one fixed buffer of events per block, and the
+    /// bridge's packing array is the far side of it. Sized under that buffer
+    /// the packing drops the block's tail — the notes latest inside it —
+    /// silently, so a dense passage loses its end rather than reporting
+    /// anything.
+    #[test]
+    fn a_full_engine_block_of_midi_events_reaches_the_host_intact() {
+        const FRAMES: usize = 256;
+
+        let (mut slot, notes) = recording_slot();
+        let scheduled: Vec<MidiNoteEvent> = (0..MIDI_EVENT_BUFFER_CAPACITY)
+            .map(|index| engine_note(60, 100, 0, true, index as u32))
+            .collect();
 
         let mut left = [0.0f32; FRAMES];
         let mut right = [0.0f32; FRAMES];
@@ -2540,13 +2617,16 @@ mod tests {
             &mut left,
             &mut right,
             FRAMES,
-            &[engine_note(60, 0), engine_note(64, 17), engine_note(67, 63)],
+            &scheduled,
             &TransportState::default(),
         );
 
+        let received = notes.lock().expect("the note log");
+        assert_eq!(received.len(), MIDI_EVENT_BUFFER_CAPACITY);
+        let offsets: Vec<u32> = received.iter().map(|note| note.4).collect();
         assert_eq!(
-            *notes.lock().expect("the note log"),
-            vec![(60, 0), (64, 17), (67, 63)]
+            offsets,
+            (0..MIDI_EVENT_BUFFER_CAPACITY as u32).collect::<Vec<u32>>()
         );
     }
 }
