@@ -336,8 +336,7 @@ pub enum GraphCommandPayload {
         target: DeviceParameterTargetPayload,
         write: StepWritePayload,
     },
-    /// Write timeline-addressed notes into the note store of the instrument a
-    /// device holds.
+    /// Write timeline-addressed notes into the note store a device holds.
     ///
     /// A batch variant rather than a command of its own, because a producer
     /// rewriting a bar sends the [`GraphCommandPayload::ClearMidi`] that empties
@@ -1388,14 +1387,16 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 /// is decided at registration*, not what the device does with what lands in
 /// it. Every engine-owned device is registered through
 /// `EngineHandle::add_hosted_plugin`, which attaches a note store
-/// unconditionally — a hosted reverb or a CLAP note effect gets one exactly as
-/// an instrument does, and accepts scheduled notes into a store the plugin
-/// never reads, which is the plugin's own answer and not a refusal here. A
-/// built-in is an `AddDetachedEffect` and never gets one, and the crumbs
-/// capture slot is not in `registry.devices` at all. So `engine_owned ==
-/// false` is exactly "holds no note store" today, and scheduling at one
-/// spends a whole batch the store side can answer only as a count on the
-/// audio thread.
+/// unconditionally — a hosted reverb or a CLAP note effect gets one
+/// exactly as an instrument does. The drain reaches every hosted plugin:
+/// a reverb ignores the notes and a note effect reads them, but its note
+/// output has no route in this host, so what it makes of them is the
+/// plugin's own answer and not a refusal here. A built-in is an
+/// `AddDetachedEffect` and never gets one, and the crumbs capture slot is
+/// not in `registry.devices` at all. So `engine_owned == false` is
+/// exactly "holds no note store" today, and scheduling at one spends a
+/// whole batch the store side can answer only as a count on the audio
+/// thread.
 ///
 /// A built-in with a store (#3124) parts those two facts the moment it
 /// exists, flipping this test through an explicit note-sink flag on

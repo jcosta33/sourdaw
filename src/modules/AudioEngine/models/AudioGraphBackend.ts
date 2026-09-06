@@ -498,7 +498,7 @@ export type AudioGraphMidiNoteEvent = Readonly<{
 }>;
 
 /**
- * Write notes into the store the device's instrument plays from.
+ * Write notes into the note store a device holds.
  *
  * A rewrite is an {@link AudioGraphClearMidiCommand} and this together, in one
  * {@link AudioGraphCommandBatch}: a batch is one visibility, so the clear
@@ -508,8 +508,8 @@ export type AudioGraphMidiNoteEvent = Readonly<{
  * why this is a command in the batch rather than a call of its own.
  *
  * Visible together is not the same as succeeding together. A backend refuses a
- * device that has no instrument to sound the notes, and a batch past what its
- * store can hold, while the clear stays applied either way.
+ * device holding no note store, and a batch past what its store can hold,
+ * while the clear stays applied either way.
  */
 export type AudioGraphScheduleMidiCommand = Readonly<{
     kind: 'schedule-midi';
