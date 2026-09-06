@@ -6,6 +6,7 @@ import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClip
 import { type RippleInsertPlan, planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
 import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+import { isDrawClipSessionEntry } from '../validateCreationSessionEntries';
 
 type DrawClipAction = Extract<AppAction, { type: 'drawClip' }>;
 
@@ -106,4 +107,5 @@ export const handleDrawClip = createHandler<'drawClip'>({
     undoable: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
+    validateSessionEntry: isDrawClipSessionEntry,
 });

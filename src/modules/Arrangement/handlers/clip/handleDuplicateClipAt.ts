@@ -5,6 +5,7 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries';
 
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 
@@ -107,4 +108,5 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
     undoable: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
+    validateSessionEntry: isDuplicateClipAtSessionEntry,
 });

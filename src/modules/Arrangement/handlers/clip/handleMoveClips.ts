@@ -7,6 +7,7 @@ import { type RippleMovePlan } from '../../useCases/rippleMove/planRippleMove';
 import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
 import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+import { isMoveClipsSessionEntry } from '../validateCreationSessionEntries';
 
 type MoveClipsAction = Extract<AppAction, { type: 'moveClips' }>;
 type RestoreClipMovesAction = Extract<AppAction, { type: 'restoreClipMoves' }>;
@@ -183,4 +184,5 @@ export const handleMoveClips = createHandler<'moveClips'>({
     undoable: true,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
+    validateSessionEntry: isMoveClipsSessionEntry,
 });
