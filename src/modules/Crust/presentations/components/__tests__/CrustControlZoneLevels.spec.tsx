@@ -51,6 +51,13 @@ describe('CrustControlZone level 2 (algorithm chips)', () => {
         expect(screen.getByRole('button', { name: 'Wall' })).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByRole('button', { name: 'Transparent' })).not.toHaveAttribute('aria-pressed');
     });
+
+    it('prevents level 2 core controls from collapsing with shrink-0', () => {
+        renderZone({ uiLevel: 2 });
+        const algorithmLabel = screen.getByText('Algorithm');
+        const coreContainer = algorithmLabel.closest('.shrink-0');
+        expect(coreContainer).toBeInTheDocument();
+    });
 });
 
 describe('CrustControlZone level 3 (saturation)', () => {
@@ -76,9 +83,16 @@ describe('CrustControlZone level 3 (saturation)', () => {
     it('prevents saturation section card from collapsing under flex-shrink', () => {
         renderZone({ uiLevel: 3 });
         const satTitle = screen.getByText('Saturation');
-        const satCard = satTitle.closest('.rounded-\\[14px\\]');
+        const satCard = satTitle.closest('section');
         expect(satCard).toBeInTheDocument();
         expect(satCard).toHaveClass('shrink-0');
+    });
+
+    it('prevents level 3 extra controls from collapsing with shrink-0', () => {
+        renderZone({ uiLevel: 3 });
+        const deltaToggle = screen.getByRole('switch', { name: 'DELTA' });
+        const extraRow = deltaToggle.closest('.shrink-0');
+        expect(extraRow).toBeInTheDocument();
     });
 });
 
@@ -120,6 +134,13 @@ describe('CrustControlZone level 4 (routing)', () => {
         fireEvent.change(screen.getByRole('combobox', { name: /dither mode/i }), { target: { value: 'powr2' } });
 
         expect(setParam).toHaveBeenCalledWith('dither', 'powr2');
+    });
+
+    it('prevents level 4 extra controls from collapsing with shrink-0', () => {
+        renderZone({ uiLevel: 4 });
+        const multiBandLabel = screen.getByText('Multi-band');
+        const extraContainer = multiBandLabel.closest('.shrink-0');
+        expect(extraContainer).toBeInTheDocument();
     });
 });
 
