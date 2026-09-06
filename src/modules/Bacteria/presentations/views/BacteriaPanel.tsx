@@ -469,7 +469,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
             </Grid>
         </Stack>
 
-        <Stack gap={2} className="min-h-0 gap-2.5 overflow-y-auto">
+        <Stack gap={2.5} className="min-h-0 overflow-y-auto">
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick read"
@@ -510,7 +510,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
 
             <Stack gap={3} className="bacteria-window min-h-0 p-3">
                 <SectionHeader eyebrow="Input" title="Gain staging" description="Keep the organism fed, not flooded." />
-                <Row align="center" justify="between" gap={4} className="px-2">
+                <Row justify="between" gap={4} className="px-2">
                     <K
                         deviceId={deviceId}
                         v={state.patch.inputGain}
@@ -1766,7 +1766,23 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
     const moduleMeta = getModuleMeta(state.activeModule);
 
     return (
-        <Row align="stretch" gap={2.5} className="bacteria-faceplate h-full min-h-[460px] p-2.5">
+        // The faceplate must clip its subtree (#2311). InstrumentBottomPanel's
+        // Close button is an earlier flex-column sibling above this element, and
+        // the content stack sizes to its content — unclipped it spills past the
+        // faceplate's top edge and, painting as the later sibling, covers the
+        // chrome and swallows pointer clicks on it. Every sibling instrument
+        // faceplate carries containment, and align="stretch" pins the content
+        // stack to the faceplate box, while internal min-h-0 + scroll regions
+        // own the fit. The clip is an inline style, not a Tailwind class, because
+        // jsdom compiles no Tailwind and the containment must stay an observable DOM
+        // property for the regression test (same reasoning as ErrorBoundary's
+        // FALLBACK_HEIGHT).
+        <Row
+            align="stretch"
+            gap={2.5}
+            className="bacteria-faceplate h-full min-h-[460px] p-2.5"
+            style={{ overflow: 'hidden' }}
+        >
             <PresetRail
                 deviceId={deviceId}
                 state={state}

@@ -33,12 +33,12 @@ describe('BacteriaPanel', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('should establish min-height floor without hard overflow clipping', () => {
+    it('should establish min-height floor and retain overflow containment', () => {
         const { container } = render(<BacteriaPanel deviceId="dev-1" />);
         const faceplate = container.querySelector<HTMLElement>('.bacteria-faceplate');
         expect(faceplate).not.toBeNull();
         expect(faceplate?.className).toContain('min-h-[460px]');
-        expect(faceplate?.style.overflow).not.toBe('hidden');
+        expect(faceplate?.style.overflow).toBe('hidden');
     });
 
     it('renders Gain staging with full-width layout without nested subgrid collision', () => {
@@ -63,8 +63,15 @@ describe('BacteriaPanel', () => {
     });
 
     it('supports vertical scrolling in PlayHero columns when height is constrained', () => {
-        const { container } = render(<BacteriaPanel deviceId="dev-1" />);
-        const scrollableHeroColumns = container.querySelectorAll('.overflow-y-auto');
-        expect(scrollableHeroColumns.length).toBeGreaterThanOrEqual(2);
+        render(<BacteriaPanel deviceId="dev-1" />);
+        const morphFieldHeader = screen.getByText('Morph field');
+        const morphColumn = morphFieldHeader.closest('.bacteria-window');
+        expect(morphColumn).not.toBeNull();
+        expect(morphColumn?.className).toContain('overflow-y-auto');
+
+        const currentBrothHeader = screen.getByText('Current broth');
+        const brothColumn = currentBrothHeader.closest('.bacteria-window')?.parentElement;
+        expect(brothColumn).not.toBeNull();
+        expect(brothColumn?.className).toContain('overflow-y-auto');
     });
 });
