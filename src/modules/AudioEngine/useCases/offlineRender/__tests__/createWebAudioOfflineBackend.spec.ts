@@ -282,6 +282,42 @@ describe('createWebAudioOfflineBackend', () => {
         });
     });
 
+    /**
+     * Accepted and ignored, on the same terms as scheduled MIDI. An immediate
+     * patch load addresses a native built-in, which only a natively carried
+     * strip holds, so refusing it would take down the strips a batch carrying
+     * one also builds.
+     */
+    it('accepts an immediate device-parameter batch without applying it and without failing the batch', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'd', name: 'd', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'set-device-parameters',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    values: { active_layer: 1, cutoff: 0.3 },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            reports: [{ kind: 'track', id: 't1', deviceIds: ['d'] }],
+        });
+    });
+
     it('refuses a correlated batch the composition root calls stale, before touching the graph', async () => {
         const master = fakeNode('gain');
         const backend = createWebAudioOfflineBackend({

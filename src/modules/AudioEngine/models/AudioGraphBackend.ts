@@ -464,6 +464,37 @@ export type AudioGraphWriteDeviceParameterCommand = Readonly<{
     write: AudioGraphStepWrite;
 }>;
 
+/**
+ * Land a whole record of a device's own parameters at the next audio callback,
+ * replacing each parameter's current value and leaving whatever the device's
+ * stamp queue is holding untouched.
+ *
+ * The immediate counterpart of {@link AudioGraphWriteDeviceParameterCommand},
+ * and a record rather than one write, because what reaches here is a patch: a
+ * Fermenter's is around a hundred keys, and a morph or a macro drag reloads the
+ * whole record at animation-frame rate. A stamped write cannot carry that — a
+ * backend's per-device queue holds a few dozen pending stamps in total, so one
+ * patch overruns it several times over — while a value applied on the next
+ * callback queues nothing.
+ *
+ * It addresses a **native built-in** only. An externally hosted plugin's
+ * parameters are the plugin's own, addressed over the plugin host's control
+ * path, and a backend refuses one aimed there rather than mapping it through a
+ * built-in vocabulary that cannot name it.
+ *
+ * Keys are the built-in's own native parameter names — for a Fermenter, the
+ * instrument's snake_case vocabulary, not the camelCase descriptor ids a panel
+ * authors. A key the device has no address for refuses the whole batch, naming
+ * the device and the key, exactly as {@link
+ * AudioGraphWriteDeviceParameterCommand} does: a batch reported applied while
+ * some of its values went nowhere is worse than one refused.
+ */
+export type AudioGraphSetDeviceParametersCommand = Readonly<{
+    kind: 'set-device-parameters';
+    target: AudioGraphDeviceTarget;
+    values: Readonly<Record<string, number>>;
+}>;
+
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
     playback: AudioGraphClipPlayback;
@@ -634,6 +665,7 @@ export type AudioGraphCommand =
     | AudioGraphRemoveDeviceCommand
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
+    | AudioGraphSetDeviceParametersCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
     | AudioGraphClearMidiCommand

@@ -123,6 +123,12 @@ export type NativeGraphWireCommand =
     | Readonly<{ kind: 'remove-device'; trackId: string; deviceId: string }>
     | Readonly<{ kind: 'write-parameter'; target: AudioGraphStripParameterTarget; write: AudioGraphParameterWrite }>
     | Readonly<{ kind: 'write-device-parameter'; target: AudioGraphDeviceParameterTarget; write: AudioGraphStepWrite }>
+    | Readonly<{
+          kind: 'set-device-parameters';
+          trackId: string;
+          deviceId: string;
+          values: Readonly<Record<string, number>>;
+      }>
     | Readonly<{ kind: 'schedule-clip'; playback: NativeGraphWireClipPlayback }>
     // The contract's device target is flattened here, because `graph.rs` reads
     // the strip and the device as the variant's own fields rather than as a
@@ -252,6 +258,13 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             return { kind: 'write-parameter', target: { ...command.target }, write: { ...command.write } };
         case 'write-device-parameter':
             return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
+        case 'set-device-parameters':
+            return {
+                kind: 'set-device-parameters',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                values: { ...command.values },
+            };
         case 'schedule-clip':
             return { kind: 'schedule-clip', playback: serializePlayback(command.playback) };
         case 'schedule-midi':

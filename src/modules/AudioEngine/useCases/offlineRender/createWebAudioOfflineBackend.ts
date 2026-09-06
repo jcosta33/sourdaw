@@ -342,6 +342,11 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'write-device-parameter':
                 writeDeviceParameter(command.target, command.write);
                 return null;
+            case 'set-device-parameters':
+                // An immediate patch load addresses a native built-in, and only
+                // a strip the native engine carries holds one — so a producer
+                // never aims one here.
+                return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);
                 return null;

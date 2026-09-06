@@ -96,6 +96,11 @@ describe('serializeAudioGraphCommandBatch', () => {
                     write: { shape: 'step', value: -2, time: 0.5 },
                 },
                 {
+                    kind: 'set-device-parameters',
+                    target: { trackId: 'track-1', deviceId: 'dev-knead' },
+                    values: { formant_preserve: 1 },
+                },
+                {
                     kind: 'schedule-clip',
                     playback: {
                         trackId: 'track-1',
@@ -183,6 +188,12 @@ describe('serializeAudioGraphCommandBatch', () => {
                     write: { shape: 'step', value: -2, time: 0.5 },
                 },
                 {
+                    kind: 'set-device-parameters',
+                    trackId: 'track-1',
+                    deviceId: 'dev-knead',
+                    values: { formant_preserve: 1 },
+                },
+                {
                     kind: 'schedule-clip',
                     playback: {
                         trackId: 'track-1',
@@ -246,6 +257,38 @@ describe('serializeAudioGraphCommandBatch', () => {
                 write: { shape: 'step', value: 0.25, time: 1.5 },
             },
         ]);
+    });
+
+    /**
+     * The same flattening as `schedule-midi`, and one more thing the mapper
+     * depends on: `values` are the built-in's own native parameter names, which
+     * `graph.rs` looks up by their exact spelling. A serializer that renamed,
+     * cased or dropped a key would address a parameter the body does not have.
+     */
+    it('flattens an immediate device-parameter batch onto the graph.rs set-device-parameters spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-device-parameters',
+                    target: { trackId: 'track-1', deviceId: 'dev-ferm' },
+                    values: { active_layer: 1, cutoff: 0.3, num_layers: 2 },
+                },
+            ],
+        });
+
+        const written = wire.commands[0];
+        if (written?.kind !== 'set-device-parameters') {
+            throw new Error('the batch must serialize as set-device-parameters');
+        }
+        expect(written).toEqual({
+            kind: 'set-device-parameters',
+            trackId: 'track-1',
+            deviceId: 'dev-ferm',
+            values: { active_layer: 1, cutoff: 0.3, num_layers: 2 },
+        });
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(written)).toEqual(['kind', 'trackId', 'deviceId', 'values']);
     });
 
     /**
