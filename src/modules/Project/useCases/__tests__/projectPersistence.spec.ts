@@ -101,6 +101,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
+    executeAppActionBatch: vi.fn(),
     reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),

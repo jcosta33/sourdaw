@@ -114,6 +114,15 @@ describe('isGeneratedMidiStateCurrent', () => {
     it.each([
         ['a changed scalar', (track: ReturnType<typeof createTrack>) => ({ ...track, name: 'Changed' })],
         [
+            'a changed nested alternative name',
+            (track: ReturnType<typeof createTrack>) => ({
+                ...track,
+                alternatives: track.alternatives.map((alternative, index) =>
+                    index === 0 ? { ...alternative, name: 'Changed alternative' } : alternative
+                ),
+            }),
+        ],
+        [
             'changed array order',
             (track: ReturnType<typeof createTrack>) => ({
                 ...track,

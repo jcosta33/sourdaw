@@ -130,6 +130,52 @@ function expectTrackStateMatchesDocument(): void {
     expect(requireProjectedTrackState().tracks).toEqual(requireAuthoritativeTrackState().tracks);
 }
 
+async function expectPeerImportEditToConflict(edit: (track: Track) => void): Promise<void> {
+    await expect(importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true })).resolves.toBe('completed');
+    flushAutomergeStorageWrites();
+    const importedTrack = requireProjectedTrackState().tracks.find((track) => track.id !== 'track-original');
+    if (!importedTrack || !importedTrack.clips[0]) {
+        throw new Error('Expected imported track and clip');
+    }
+
+    mergePeerTrackEdit((tracks) => {
+        const imported = tracks.find((track) => track.id === importedTrack.id);
+        if (!imported) {
+            throw new Error('Expected imported peer track');
+        }
+        edit(imported);
+    });
+
+    const authoritativeBeforeUndo = requireAuthoritativeTrackState();
+    const projectionBeforeUndo = structuredClone(requireProjectedTrackState());
+    const historyBeforeUndo = requireActionHistory();
+    expect(historyBeforeUndo.entries.map((entry) => entry.groupLabel)).toEqual([
+        'Import audio: loop',
+        'Import audio: loop',
+    ]);
+
+    expect(await undo()).toEqual({ headConsumed: false });
+    flushAutomergeStorageWrites();
+
+    expect(requireAuthoritativeTrackState()).toEqual(authoritativeBeforeUndo);
+    expect(requireProjectedTrackState()).toEqual(projectionBeforeUndo);
+    expect(requireActionHistory()).toEqual(historyBeforeUndo);
+    expect(notifications).toEqual([
+        {
+            message: 'Cannot undo "Import audio: loop": project state has changed',
+            level: 'warning',
+        },
+    ]);
+
+    expect(await undo()).toEqual({ headConsumed: false });
+    flushAutomergeStorageWrites();
+    expect(requireAuthoritativeTrackState()).toEqual(authoritativeBeforeUndo);
+    expect(requireProjectedTrackState()).toEqual(projectionBeforeUndo);
+    expect(requireActionHistory()).toEqual(historyBeforeUndo);
+    expect(notifications).toHaveLength(2);
+    expect(notifications[1]).toEqual(notifications[0]);
+}
+
 describe('importAudioFile semantic undo integration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -246,58 +292,22 @@ describe('importAudioFile semantic undo integration', () => {
         expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
     });
 
-    it('conflicts the whole import group when a peer changes only the imported track aggregate', async () => {
-        await importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true });
-        flushAutomergeStorageWrites();
-        const importedTrack = requireProjectedTrackState().tracks.find((track) => track.id !== 'track-original');
-        const importedClip = importedTrack?.clips[0];
-        if (!importedTrack || !importedClip) {
-            throw new Error('Expected imported track and clip');
-        }
+    it('conflicts the whole import group when a peer renames only the imported track alternative', async () => {
+        await expectPeerImportEditToConflict((track) => {
+            track.alternatives[0]!.name = 'Peer alternative';
+        });
+    });
 
-        mergePeerTrackEdit((tracks) => {
-            const imported = tracks.find((track) => track.id === importedTrack.id);
-            if (!imported) {
-                throw new Error('Expected imported peer track');
-            }
-            imported.alternatives[0]!.name = 'Peer alternative';
-            imported.clips.push(
+    it('conflicts the whole import group when a peer adds only another clip to the imported track', async () => {
+        await expectPeerImportEditToConflict((track) => {
+            track.clips.push(
                 ClipDummy.create({
                     id: 'clip-peer-extra',
-                    trackId: imported.id,
+                    trackId: track.id,
                     name: 'Peer extra clip',
                     audioBufferId: 'buffer-peer',
                 })
             );
         });
-
-        const authoritativeBeforeUndo = requireAuthoritativeTrackState();
-        const projectionBeforeUndo = structuredClone(requireProjectedTrackState());
-        const historyBeforeUndo = requireActionHistory();
-        expect(historyBeforeUndo.entries.map((entry) => entry.groupLabel)).toEqual([
-            'Import audio: loop',
-            'Import audio: loop',
-        ]);
-
-        expect(await undo()).toEqual({ headConsumed: false });
-        flushAutomergeStorageWrites();
-
-        expect(requireAuthoritativeTrackState()).toEqual(authoritativeBeforeUndo);
-        expect(requireProjectedTrackState()).toEqual(projectionBeforeUndo);
-        expect(requireActionHistory()).toEqual(historyBeforeUndo);
-        expect(notifications).toEqual([
-            {
-                message: 'Cannot undo "Import audio: loop": project state has changed',
-                level: 'warning',
-            },
-        ]);
-
-        expect(await undo()).toEqual({ headConsumed: false });
-        flushAutomergeStorageWrites();
-        expect(requireAuthoritativeTrackState()).toEqual(authoritativeBeforeUndo);
-        expect(requireProjectedTrackState()).toEqual(projectionBeforeUndo);
-        expect(requireActionHistory()).toEqual(historyBeforeUndo);
-        expect(notifications).toHaveLength(2);
-        expect(notifications[1]).toEqual(notifications[0]);
     });
 });

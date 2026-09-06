@@ -10,6 +10,7 @@ const dispatched: { type: string; payload: unknown }[] = [];
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     executeUserAppAction: (action: { type: string; payload: unknown }) => {
         dispatched.push(action);
         return Promise.resolve({ status: 'ok' });

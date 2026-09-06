@@ -8,6 +8,7 @@ import { undoLastAction } from '../aiPanelActions/undoLastAction';
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     executeUserAppAction: vi.fn(),
     undo: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),

@@ -83,9 +83,13 @@ describe('handleDiscardCreatedTrack', () => {
                 },
             },
         };
+        const validate = handleDiscardCreatedTrack.validate;
+        if (!validate) {
+            throw new Error('Expected discardCreatedTrack to provide validation');
+        }
 
         expect(
-            handleDiscardCreatedTrack.validate(action, {
+            validate(action, {
                 actions: [{ type: 'discardDuplicatedClip', payload: { clipId: 'created-clip' } }, action],
                 actionIndex: 1,
             })
