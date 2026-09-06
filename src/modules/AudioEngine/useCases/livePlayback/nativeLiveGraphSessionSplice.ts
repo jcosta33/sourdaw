@@ -23,6 +23,7 @@ import { markAttachedInstances } from './markAttachedInstances';
 import { nativeInsertIndex } from './nativeChainIndex';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { notifyDeferredChainChange } from './notifyDeferredChainChange';
+import { projectDeviceForNativeBody } from './projectDeviceForNativeBody';
 import { readNativeChain } from './readNativeChain';
 import { recordNativeChains } from './recordNativeChains';
 import { requestNativeLiveAutomationWriterRearm } from './requestNativeLiveAutomationWriterRearm';
@@ -85,7 +86,7 @@ export function nativeLiveGraphSessionSplice(
                 {
                     kind: 'insert-device',
                     trackId: placed.track.id,
-                    device: placed.device,
+                    device: projectDeviceForNativeBody(placed.device),
                     index: nativeInsertIndex(
                         placed.track.devices.map((candidate) => candidate.id),
                         placed.device.id,

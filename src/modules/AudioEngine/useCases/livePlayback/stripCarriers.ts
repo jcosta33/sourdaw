@@ -40,6 +40,7 @@ import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 
 import { admittedSendBusIds } from './admittedSendBusIds';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
+import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 
 /**
@@ -60,15 +61,13 @@ export type StripCarriersInput = Readonly<{
 }>;
 
 /**
- * The one built-in device type `daw-engine` builds a body for, matched the way
- * `no_native_body` matches it. Stated here because this module's whole job is
+ * Whether the native engine can build a body for this device.
+ *
+ * A built-in is answered from `nativeBuiltinBodies`, which is the renderer's
+ * mirror of the engine's own registry and states why it must stay one. This
+ * module reads that registry rather than restating it, because its whole job is
  * to answer for a batch the engine takes: a second, looser reading of what is
  * representable is how `contributesAudio` starts refusing sessions.
- */
-const NATIVE_DEVICE_TYPE = 'knead';
-
-/**
- * Whether the native engine can build a body for this device.
  *
  * An externally hosted plugin is the one device whose answer is not a property
  * of the project at all: `map_device` splices in the engine-owned instance the
@@ -86,7 +85,7 @@ function hasNativeBody(device: AudioGraphDeviceChain[number], attachedInstanceId
     if (device.externalPluginId !== undefined) {
         return false;
     }
-    return device.type.toLowerCase() === NATIVE_DEVICE_TYPE;
+    return nativeBuiltinBody(device.type) !== null;
 }
 
 /** The first strip on a route the native engine cannot build, and what stopped it. */
@@ -128,9 +127,12 @@ function chainOf(track: Track, context: CarrierContext): AudioGraphDeviceChain {
  * Whether this strip's own chain names an externally hosted plugin instance
  * the engine reports attached.
  *
- * Only an attached plugin counts, not a `knead` insert: `knead` processes an
- * input and generates nothing on its own, so it gives a clip-less strip
- * nothing to sound.
+ * Only an attached plugin counts, never a built-in body. A built-in effect
+ * processes an input and generates nothing on its own, so it gives a clip-less
+ * strip nothing to sound; a built-in instrument would, but the engine addresses
+ * a strip's notes to a plugin instance, so no note reaches one yet and a strip
+ * whose only body is a built-in instrument is still a strip nothing sounds
+ * (#3893).
  */
 function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
     return chainOf(track, context).some(

@@ -120,6 +120,35 @@ describe('nativeLiveGraphSessionSplice', () => {
         ]);
     });
 
+    // The splice puts a device on the wire exactly as the topology batch does,
+    // so it owes the same translation: a chain sent in the ids a panel authors
+    // is refused by name, and this batch is the one holding the transport open.
+    // The device is addressed by instance here because that is the only handle
+    // this route takes; what is under test is the record it carries.
+    it('carries a built-in it splices in under the names the engine answers to', async () => {
+        const builtin = device('device-synth', {
+            type: 'fermenter',
+            externalInstanceId: 'inst-2',
+            parameterValues: { oscEngine: 2 },
+        });
+        trackStore.set({
+            tracks: [trackHolding([device('device-eq'), builtin])],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await nativeLiveGraphSessionSplice({ instanceId: 'inst-2' });
+
+        expect(apply.mock.calls[0]?.[0].commands).toEqual([
+            {
+                kind: 'insert-device',
+                trackId: 'audio-1',
+                device: { ...builtin, parameterValues: { engine: 2 } },
+                index: 1,
+            },
+        ]);
+    });
+
     /**
      * Idempotence, and it is not decoration: the mirror and this splice both
      * fire for a plugin added mid-roll, and the mapper refuses a batch naming a
