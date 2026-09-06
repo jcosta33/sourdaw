@@ -79,6 +79,8 @@ Deterministic execution requires a grammar that consumes the whole request and r
 
 Masked text supports intent discovery and segmentation; it never proves literal source syntax or target authority. Compiler-resolved identities validate selector structure, but deterministic, direct, and compiler-backed proposals must derive source authority from the same original request text and the same complete selection set; a primary selection field does not prove that the selection is unique. Reserved selection phrases apply only outside quotes so quoted project names remain literal references. Parse quote boundaries once with an offset-preserving scanner that treats in-word apostrophes as content. Extract preservation clauses quote-aware from the original whole request, resolve every bounded list member independently while retaining whole-name evidence, and conservatively union every protected candidate. An incomplete explicit protection is a rejection, not an empty permission set. Enforce protections after final target resolution including compiler overrides, and carry protected objects into the application-owned proposal scope.
 
+Build project-reference masks from immutable original-text spans and render them once; a generated intent marker must never become evidence for a later reference match. When one command grammar permits an optional connector, classify source and value from one quote-aware original-text parse, and keep semantic whitespace inside a protection reference without joining separate punctuation-bounded clauses.
+
 **Why:** a project-name placeholder can resemble executable grammar, while a qualifier split away from an action still limits what the whole request authorizes.
 
 ## References

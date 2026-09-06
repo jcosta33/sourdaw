@@ -41,6 +41,9 @@ const literalSelectedClip = createClip('clip-literal-selected-singular', 'Select
 const lead = createClip('clip-lead', 'Lead');
 const rockAndRoll = createClip('clip-rock-and-roll', 'Rock and Roll');
 const literalComma = createClip('clip-literal-comma', 'Verse, Alternate');
+const literalMultiline = createClip('clip-literal-multiline', 'Verse,\nAlternate');
+const dottedName = createClip('clip-dotted-name', 'Verse.1');
+const dottedWordName = createClip('clip-dotted-word-name', 'Verse.alt');
 const vocalVerse = createClip('clip-vocal-verse', 'Verse');
 const guitarVerse = createClip('clip-guitar-verse', 'Verse');
 const context: ProjectContext = {
@@ -66,6 +69,9 @@ const context: ProjectContext = {
             lead,
             rockAndRoll,
             literalComma,
+            literalMultiline,
+            dottedName,
+            dottedWordName,
         ]),
         createTrack('track-vocals', 'Vocals', [vocalVerse]),
         createTrack('track-guitar', 'Guitar', [guitarVerse]),
@@ -178,11 +184,49 @@ describe('getExplicitlyProtectedClips', () => {
     });
 
     it.each([
+        ['leave selected\nclips unchanged', [bassVerse, apostrophe]],
+        ['leave Bass Verse,\nLead unchanged', [bassVerse, lead]],
+        ['leave selected\r\nclips unchanged', [bassVerse, apostrophe]],
+    ])('extracts a protected list across semantic newlines for %s', (prompt, expectedClips) => {
+        const multiSelectionContext = {
+            ...context,
+            selectedClipIds: [bassVerse.id, apostrophe.id],
+        };
+
+        expect(getProtectedClips(prompt, multiSelectionContext)).toEqual(
+            expect.arrayContaining(expectedClips.map(({ id, name }) => ({ id, name })))
+        );
+    });
+
+    it('keeps independent protection clauses and quoted multiline names separate', () => {
+        expect(getProtectedClips('leave Bass Verse unchanged; keep Lead unchanged', context)).toEqual(
+            expect.arrayContaining([
+                { id: bassVerse.id, name: bassVerse.name },
+                { id: lead.id, name: lead.name },
+            ])
+        );
+        expect(getProtectedClips('leave "Verse,\nAlternate" unchanged', context)).toContainEqual({
+            id: literalMultiline.id,
+            name: literalMultiline.name,
+        });
+    });
+
+    it.each([
+        ['leave Verse.1 unchanged', dottedName],
+        ['leave "Verse.1" unchanged', dottedName],
+        ['leave Verse.alt unchanged', dottedWordName],
+        ['leave "Verse.alt" unchanged', dottedWordName],
+    ])('preserves a dotted clip name in %s', (prompt, clip) => {
+        expect(getProtectedClips(prompt, context)).toContainEqual({ id: clip.id, name: clip.name });
+    });
+
+    it.each([
         'rename Lead to Opening; leave unchanged',
         'rename Lead to Opening; leave Bass Verse and unchanged',
         'rename Lead to Opening; leave and Bass Verse unchanged',
         'rename Lead to Opening; leave Bass Verse, , Lead unchanged',
         'rename Lead to Opening; leave "Bass Verse unchanged',
+        'rename Lead to Opening; leave Bass Verse; mute Lead',
     ])('marks malformed protection syntax incomplete for %s', (prompt) => {
         expect(getExplicitClipProtection(prompt, context).complete).toBe(false);
     });

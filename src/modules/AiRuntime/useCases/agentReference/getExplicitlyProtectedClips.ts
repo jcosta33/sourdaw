@@ -12,15 +12,38 @@ export type ExplicitClipProtection = {
 type ProjectClip = ProjectContext['tracks'][number]['clips'][number];
 
 const protectionVerb = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving)`;
-const protectionPattern = new RegExp(String.raw`\b${protectionVerb}\s+(.+?)\s+unchanged\b`, 'giu');
+const protectionClauseBoundary = String.raw`(?:;|[.!?](?=\s|$))`;
+const protectionReferenceCharacter = String.raw`(?:(?!${protectionClauseBoundary})[\s\S])`;
+const protectionPattern = new RegExp(
+    String.raw`\b${protectionVerb}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
+    'giu'
+);
 const emptyProtectionPattern = new RegExp(String.raw`\b${protectionVerb}\s+unchanged\b`, 'iu');
 const protectionVerbPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'iu');
+const allProtectionVerbsPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'giu');
+const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
 
 type ProtectedReferenceParse = {
     complete: boolean;
     references: string[];
 };
+
+function hasDanglingProtectionClause(maskedPrompt: string, completeVerbStarts: ReadonlySet<number>): boolean {
+    const boundaries = [...maskedPrompt.matchAll(protectionClauseBoundaryPattern)];
+    for (const verb of maskedPrompt.matchAll(allProtectionVerbsPattern)) {
+        if (completeVerbStarts.has(verb.index)) {
+            continue;
+        }
+        const precedingBoundary = boundaries.findLast((boundary) => boundary.index + boundary[0].length <= verb.index);
+        const clauseStart = precedingBoundary ? precedingBoundary.index + precedingBoundary[0].length : 0;
+        const prefix = maskedPrompt.slice(clauseStart, verb.index).trim();
+        if (prefix.length === 0 || /\b(?:and|then)\s*$/iu.test(prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 function splitProtectedReferenceList(reference: string): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(reference);
@@ -54,11 +77,13 @@ function getProtectedReferenceTexts(prompt: string): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const references: string[] = [];
     let complete = !emptyProtectionPattern.test(quoteScan.maskedText);
+    const completeVerbStarts = new Set<number>();
 
     for (const match of quoteScan.maskedText.matchAll(protectionPattern)) {
         if (match.index === undefined || match[1] === undefined) {
             continue;
         }
+        completeVerbStarts.add(match.index);
         const referenceOffset = match[0].indexOf(match[1]);
         const reference = prompt.slice(match.index + referenceOffset, match.index + referenceOffset + match[1].length);
         const parsed = splitProtectedReferenceList(reference);
@@ -70,6 +95,7 @@ function getProtectedReferenceTexts(prompt: string): ProtectedReferenceParse {
         references.push(...parsed.references);
     }
 
+    complete &&= !hasDanglingProtectionClause(quoteScan.maskedText, completeVerbStarts);
     if (!quoteScan.complete && protectionVerbPattern.test(quoteScan.maskedText)) {
         complete = false;
     }

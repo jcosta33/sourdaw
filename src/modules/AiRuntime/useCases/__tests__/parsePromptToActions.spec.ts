@@ -456,8 +456,27 @@ describe('parsePromptToActions', () => {
     it('preserves user text case when renaming a clip through deterministic parameterized path', async () => {
         vi.mocked(tryParameterizedPath).mockImplementation(actualParsing.tryParameterizedPath);
 
+        const mixerContext = createMixerContext();
+        const track = mixerContext.tracks[0]!;
         const context: ProjectContext = {
-            ...baseContext,
+            ...mixerContext,
+            tracks: [
+                {
+                    ...track,
+                    clipCount: 1,
+                    clips: [
+                        {
+                            id: 'c1',
+                            name: 'Intro',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 0,
+                        },
+                    ],
+                },
+                ...mixerContext.tracks.slice(1),
+            ],
             selectedClipId: 'c1',
             selectedClipIds: ['c1'],
         };

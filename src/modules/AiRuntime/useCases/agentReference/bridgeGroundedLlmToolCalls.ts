@@ -17,6 +17,7 @@ import {
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
+import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
@@ -776,25 +777,75 @@ function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
         .sort((left, right) => right.length - left.length);
 }
 
-function maskProjectReferences(prompt: string, context: ProjectContext): string {
-    let maskedPrompt = prompt;
-    for (const reference of getSemanticClipReferenceTexts(context)) {
+type ProjectReferenceMaskSpan = {
+    end: number;
+    replacement: string;
+    start: number;
+};
+
+function collectProjectReferenceMaskSpans(
+    prompt: string,
+    references: readonly string[],
+    spans: ProjectReferenceMaskSpan[],
+    getReplacement: (match: string, end: number) => string
+): void {
+    for (const reference of references) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
-            const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
-                maskedPrompt.slice(offset + match.length)
-            );
-            if (explicitEntitySuffix) {
-                return '□'.repeat(match.length);
+        for (const match of prompt.matchAll(pattern)) {
+            const start = match.index;
+            const value = match[0];
+            if (start === undefined || !value) {
+                continue;
             }
-            return `clip${'□'.repeat(match.length - 'clip'.length)}`;
-        });
+            const end = start + value.length;
+            if (spans.some((span) => start < span.end && end > span.start)) {
+                continue;
+            }
+            spans.push({ start, end, replacement: getReplacement(value, end) });
+        }
     }
-    for (const reference of getProjectReferenceTexts(context)) {
-        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        maskedPrompt = maskedPrompt.replaceAll(pattern, (match) => '□'.repeat(match.length));
+}
+
+function maskProjectReferences(prompt: string, context: ProjectContext): string {
+    const spans: ProjectReferenceMaskSpan[] = [];
+    collectProjectReferenceMaskSpans(prompt, getSemanticClipReferenceTexts(context), spans, (match, end) => {
+        const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
+            prompt.slice(end)
+        );
+        return explicitEntitySuffix ? '□'.repeat(match.length) : `clip${'□'.repeat(match.length - 'clip'.length)}`;
+    });
+    collectProjectReferenceMaskSpans(prompt, getProjectReferenceTexts(context), spans, (match) =>
+        '□'.repeat(match.length)
+    );
+
+    let maskedPrompt = '';
+    let cursor = 0;
+    for (const span of spans.toSorted((left, right) => left.start - right.start)) {
+        maskedPrompt += prompt.slice(cursor, span.start);
+        maskedPrompt += span.replacement;
+        cursor = span.end;
     }
-    return maskedPrompt;
+    return maskedPrompt + prompt.slice(cursor);
+}
+
+function restoreClipRenameIntentCarrier(prompt: string, maskedPrompt: string): string {
+    const quoteScan = scanPromptQuotedText(prompt);
+    if (!quoteScan.complete) {
+        return maskedPrompt;
+    }
+
+    let restoredPrompt = maskedPrompt;
+    for (const clause of getPromptClauses(prompt, quoteScan.maskedText)) {
+        const carrier = /^\s*rename\s+(?:the\s+)?clip(?=\s|$)/iu.exec(clause.masked);
+        if (!carrier) {
+            continue;
+        }
+        const carrierClipOffset = carrier[0].toLocaleLowerCase().lastIndexOf('clip');
+        const start = clause.start + carrierClipOffset;
+        const end = start + 'clip'.length;
+        restoredPrompt = `${restoredPrompt.slice(0, start)}${prompt.slice(start, end)}${restoredPrompt.slice(end)}`;
+    }
+    return restoredPrompt;
 }
 
 function isClipFadeValueSeparator({
@@ -1640,6 +1691,9 @@ function resolveActionPromptScope({
         }
     }
     let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
+    if (actionName === 'renameClip') {
+        projectMaskedPrompt = restoreClipRenameIntentCarrier(prompt, projectMaskedPrompt);
+    }
     if (actionName === 'glueClips') {
         projectMaskedPrompt = restoreGlueCommandIntents(prompt, projectMaskedPrompt);
     }
@@ -2024,21 +2078,53 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
-function getBareClipRenameValue(actionScope: ActionPromptScope): string | null {
+type ClipRenameCarrier =
+    { kind: 'bare-selected-source'; value: string } | { kind: 'explicit-source'; sourcePrompt: string; value: string };
+
+function getClipRenameCarrier(actionScope: ActionPromptScope): ClipRenameCarrier | null {
     const sourceScope = actionScope.text.trim();
-    const bareRename = /^rename\s+(?:the\s+)?clip\s+(\S[\s\S]*)$/iu.exec(sourceScope);
-    if (!bareRename) {
+    const quoteScan = scanPromptQuotedText(sourceScope);
+    const prefix = /^rename\s+(?:the\s+)?clip(?=\s|$)\s*/iu.exec(quoteScan.maskedText);
+    if (!quoteScan.complete || !prefix) {
         return null;
     }
-    const valueCarrier = bareRename[1]!.trim();
-    if (/^to$/iu.test(valueCarrier)) {
+
+    const carrierText = sourceScope.slice(prefix[0].length).trim();
+    const maskedCarrier = quoteScan.maskedText.slice(prefix[0].length).trim();
+    if (carrierText.length === 0) {
         return null;
     }
-    return /^to\s+(\S[\s\S]*)$/iu.exec(valueCarrier)?.[1]?.trim() ?? valueCarrier;
+
+    const leadingConnector = /^to(?:\s+|$)/iu.exec(maskedCarrier);
+    if (leadingConnector) {
+        const value = carrierText.slice(leadingConnector[0].length).trim();
+        return value.length > 0 ? { kind: 'bare-selected-source', value } : null;
+    }
+
+    const internalConnector = /\bto\b/iu.exec(maskedCarrier);
+    if (!internalConnector) {
+        return { kind: 'bare-selected-source', value: carrierText };
+    }
+
+    const explicitSource = carrierText.slice(0, internalConnector.index).trim();
+    const value = carrierText.slice(internalConnector.index + internalConnector[0].length).trim();
+    if (explicitSource.length === 0 || value.length === 0) {
+        return null;
+    }
+    const sourceEnd = prefix[0].length + internalConnector.index;
+    return {
+        kind: 'explicit-source',
+        sourcePrompt: sourceScope.slice(0, sourceEnd).trim(),
+        value,
+    };
 }
 
 function getBareClipRenameTargetPrompt(actionScope: ActionPromptScope, targetPrompt: string): string {
-    return getBareClipRenameValue(actionScope) === null ? targetPrompt : 'selected clip';
+    const carrier = getClipRenameCarrier(actionScope);
+    if (carrier?.kind === 'bare-selected-source') {
+        return 'selected clip';
+    }
+    return carrier?.sourcePrompt ?? targetPrompt;
 }
 
 function collectPromptClearSolosRestrictionClauses(
@@ -3582,15 +3668,15 @@ function validateGroundedValues(
     for (const valueRule of groundingRules.valueRules) {
         const assertedValue = groundedArguments[valueRule.argument];
         let valueRejection: string | null;
-        const bareRenameValue =
-            actionName === 'renameClip' && valueRule.argument === 'name' ? getBareClipRenameValue(actionScope) : null;
-        if (bareRenameValue === null) {
+        const renameCarrier =
+            actionName === 'renameClip' && valueRule.argument === 'name' ? getClipRenameCarrier(actionScope) : null;
+        if (renameCarrier === null) {
             valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
         } else {
-            const matchesBareRenameValue =
+            const matchesRenameValue =
                 typeof assertedValue === 'string' &&
-                normalizePromptText(assertedValue) === normalizePromptText(bareRenameValue);
-            valueRejection = matchesBareRenameValue ? null : getValueMismatchReason(valueRule.argument);
+                normalizePromptText(assertedValue) === normalizePromptText(renameCarrier.value);
+            valueRejection = matchesRenameValue ? null : getValueMismatchReason(valueRule.argument);
         }
         if (valueRejection) {
             return valueRejection;
