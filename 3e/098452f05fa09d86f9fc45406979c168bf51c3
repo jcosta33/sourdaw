@@ -1,0 +1,131 @@
+src/modules/AudioEngine/useCases/livePlayback/nativeMidiNoteSink.ts
+  s_9b530f08172a54::t_5bb9a278b853ef 5-13,23-28
+  s_9b530f08172a54::t_46fe71f70d971f 41
+  s_9b530f08172a54::t_9afca4ba2919f7 67
+  s_9b530f08172a54::t_8029e81944dbc6 65,78
+  s_9b530f08172a54::t_46883d8b7a9d38 68-69
+  s_9b530f08172a54::t_ad9076f4d1817f 42
+src/modules/MIDI/useCases/webMidiInput/midiMessageHandlerDependencies.ts
+  s_9b530f08172a54::t_52d6f3ead3cd1e 7
+  s_9b530f08172a54::t_f01feb41cf4c26 66
+src/modules/MIDI/useCases/webMidiInput/resolveNativeNoteSink.ts
+  s_9b530f08172a54::t_778c369bac7474 3-9,11-14,16,18
+  s_9b530f08172a54::t_988938a6ea18a5 19
+  s_9b530f08172a54::t_0d8db3bf1ca8b2 20
+src/modules/AudioEngine/useCases/index.ts
+  s_9b530f08172a54::t_fa3953f6dc0f5d 115
+  s_9b530f08172a54::t_fdcd3a5a85cd2c 114
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_9b530f08172a54::t_78457f797594df 199
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_9b530f08172a54::t_2a74d71e5b657f 444-478
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_9b530f08172a54::t_d692973c2d7a7e 293-358
+src/modules/AudioEngine/useCases/livePlayback/soundsNativeNotes.ts
+  s_9b530f08172a54::t_bdd418aa294132 1-10
+src/modules/AudioEngine/useCases/livePlayback/stripCarriers.ts
+  s_9b530f08172a54::t_f5e6a280b2de9f 238
+  s_9b530f08172a54::t_74ea52cdae0214 46
+  s_9b530f08172a54::t_32b94efe517ec2 142-143
+  s_9b530f08172a54::t_e9dd7898b5b471 151-153,159,163
+  s_9b530f08172a54::t_6b2148b1d776bf 129-131,133-137,139
+  s_9b530f08172a54::t_7010215f4193c5 21-25
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_9b530f08172a54::t_1a260636ec8655 67
+  s_9b530f08172a54::t_9d3d34ae3e7cfd 38
+  s_9b530f08172a54::t_10accfef7ef9d2 638-677
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_9b530f08172a54::t_cb41be748ff426 72
+  s_9b530f08172a54::t_cf9b80b60692ef 27
+src/modules/MIDI/useCases/webMidiInput/__tests__/resolveNativeNoteSink.spec.ts
+  s_9b530f08172a54::t_5bdf9910b9a43b 21-24,32-35,46-49,64-75
+  s_9b530f08172a54::t_02b8de628286f1 11-13,15-16,18,25-30,54-63,76,85
+  s_9b530f08172a54::t_d0f695976f8412 14
+  s_9b530f08172a54::t_df7eea059fb94f 31
+  s_9b530f08172a54::t_ae496603c532ca 77
+src/modules/AudioEngine/useCases/livePlayback/__tests__/stripCarriers.spec.ts
+  s_9b530f08172a54::t_5b55bd2f59bf85 356-361,369-383,387-399
+  s_9b530f08172a54::t_6c53447c6d9ff7 400
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_9b530f08172a54::t_9fc36f9a3c0640 68-71
+src/modules/AudioEngine/useCases/livePlayback/__tests__/soundsNativeNotes.spec.ts
+  s_9b530f08172a54::t_a136f98b65eea3 1-21
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_9b530f08172a54::t_bc9362ef52035f 147
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_9b530f08172a54::t_f1af0435a9515f 31
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_9b530f08172a54::t_b11192d14b04f3 13
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_9b530f08172a54::t_bccdeab128af0e 57
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_9b530f08172a54::t_cedf684dcf80b5 40
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_9b530f08172a54::t_e80bf0fa3f11cf 145
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_9b530f08172a54::t_f547c8d7d1c490 190
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_9b530f08172a54::t_a5d767276ac54c 16
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_9b530f08172a54::t_d39b08b4dea50a 51
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_9b530f08172a54::t_3b52262e265999 42
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_9b530f08172a54::t_6302474e8c9f1b 43
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_9b530f08172a54::t_6b9275da0dfd11 143
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_9b530f08172a54::t_bd9f21fde5a6e4 22
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_9b530f08172a54::t_f194e59430f8ce 19
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_9b530f08172a54::t_a37e365303e2ff 18
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_59ab52e7e363bb 233
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_530bf956a18104 21
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_9b530f08172a54::t_b79fc546e8760c 35
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.integration.spec.ts
+  s_9b530f08172a54::t_f5dd9b41826f66 30
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_9b530f08172a54::t_36682ffbe0ca28 51
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_6bad3b84414469 106
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_9b25f05f94ec24 59
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_9b530f08172a54::t_5361020c00e248 70
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_9b530f08172a54::t_3974868632906d 20
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_9b530f08172a54::t_004df5eef733ca 37
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_9b530f08172a54::t_4688020df69ce6 38
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_9b530f08172a54::t_d6aabe49b563fd 45
+src/modules/Toaster/useCases/__tests__/disposeToasterDevice.spec.ts
+  s_9b530f08172a54::t_a5e39da1d32ea0 23
+src/modules/Toaster/useCases/__tests__/sequencerPlayback.spec.ts
+  s_9b530f08172a54::t_b34372db8ae9a6 19
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_9b530f08172a54::t_b9e9dc27eb7783 71
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_9b530f08172a54::t_1eb8232e943d36 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3e098452f05fa09d86f9fc45406979c168bf51c3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
