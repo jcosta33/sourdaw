@@ -5,6 +5,7 @@ import { Button } from '#/components/ui/button';
 import {
     compileReorderDevicesAction,
     executeAddDeviceAction,
+    executeRemoveDeviceAction,
     getPlatformPlugins,
     selectTrack,
 } from '#/modules/Arrangement/useCases';
@@ -89,13 +90,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
                             onClick={(event) => {
                                 event.stopPropagation();
-                                // Same boundary routing as bypass: the
-                                // removeDevice action is undoable (its
-                                // restoreDevice inverse snapshots the device).
-                                void executeUserAppAction({
-                                    type: 'removeDevice',
-                                    payload: { deviceId: data.id },
-                                });
+                                void executeRemoveDeviceAction(data.id);
                             }}
                             aria-label={`Remove ${data.name}`}
                             title={`Remove ${data.name}`}

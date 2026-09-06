@@ -93,6 +93,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         createAndAssignVcaGroup: actual.createAndAssignVcaGroup,
         createTrack: vi.fn(),
         executeAddDeviceAction: actual.executeAddDeviceAction,
+        executeRemoveDeviceAction: actual.executeRemoveDeviceAction,
         getArrangementHandlers: actual.getArrangementHandlers,
         getEffectiveGain: vi.fn(),
         getFactoryPresets: vi.fn(),
