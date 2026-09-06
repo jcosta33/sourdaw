@@ -30,6 +30,7 @@ describe('clipHandlers', () => {
             'addClip',
             'drawClip',
             'discardDrawnClip',
+            'restoreDrawnClip',
             'duplicateClipAt',
             'moveClips',
             'restoreClipMoves',

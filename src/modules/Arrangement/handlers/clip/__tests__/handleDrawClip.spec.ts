@@ -1,20 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
+import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDrawClip } from '../handleDrawClip';
+import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
 
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     getNextAppActionClipId: vi.fn(() => 'clip-next'),
     planRippleInsert: vi.fn(),
     rippleInsertClip: vi.fn(),
+    undoRippleInsertClip: vi.fn(),
+    removeClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
 vi.mock('../../../useCases/clip/getNextAppActionClipId', () => ({
     getNextAppActionClipId: mocks.getNextAppActionClipId,
 }));
+vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: mocks.removeClip }));
 vi.mock('../../../useCases/rippleInsert/planRippleInsert', () => ({ planRippleInsert: mocks.planRippleInsert }));
 vi.mock('../../../useCases/rippleInsert/rippleInsertClip', () => ({ rippleInsertClip: mocks.rippleInsertClip }));
+vi.mock('../../../useCases/rippleInsert/undoRippleInsertClip', () => ({
+    undoRippleInsertClip: mocks.undoRippleInsertClip,
+}));
 
 const drawPayload = (overrides: Record<string, unknown> = {}) => ({
     type: 'drawClip' as const,
@@ -91,7 +101,18 @@ describe('handleDrawClip', () => {
             type: 'discardDrawnClip',
             payload: { clipId: 'clip-next', trackId: 't1', ripplePlan: null },
         });
-        expect(desc.redoAction).toEqual({ type: 'drawClip', payload: expect.objectContaining({ id: 'clip-next' }) });
+        expect(desc.redoAction).toEqual({
+            type: 'restoreDrawnClip',
+            payload: {
+                clipId: 'clip-next',
+                trackId: 't1',
+                startBeat: 2,
+                endBeat: 5,
+                name: 'Clip 2',
+                type: 'audio',
+                ripplePlan: null,
+            },
+        });
     });
 
     it('describes a ripple draw whose inverse restores the exact shifted neighbors', () => {
@@ -129,6 +150,90 @@ describe('handleDrawClip', () => {
                 ripplePlan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
             },
         });
+    });
+
+    it('re-plays the captured ripple plan on redo even after the ripple preference is switched off', () => {
+        // Failure scenario A: draw with ripple ON (a neighbor shifts), undo,
+        // toggle ripple OFF, redo. Re-planning live would return no plan and
+        // the neighbor would stay shifted forward — the recorded edit would
+        // not come back. The redo carries the captured plan instead.
+        const plan = { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] };
+        mocks.planRippleInsert.mockReturnValue(plan);
+        const action = drawPayload({ ripple: true });
+
+        const desc = handleDrawClip.describe(action);
+        void handleDrawClip.execute(action);
+
+        // Undo through the guarded inverse; the user then flips ripple off —
+        // irrelevant, because redo must not consult the live preference.
+        const inverse = desc.inverseAction;
+        expect(inverse).not.toBeNull();
+        // The toEqual above proved the concrete payload shape.
+        void handleDiscardDrawnClip.execute(inverse! as Extract<AppAction, { type: 'discardDrawnClip' }>);
+        expect(mocks.undoRippleInsertClip).toHaveBeenCalledWith({
+            trackId: 't1',
+            plan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
+        });
+
+        const redo = desc.redoAction;
+        expect(redo).toEqual({
+            type: 'restoreDrawnClip',
+            payload: {
+                clipId: 'clip-next',
+                trackId: 't1',
+                startBeat: 2,
+                endBeat: 5,
+                name: 'Clip 2',
+                type: 'audio',
+                ripplePlan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
+            },
+        });
+
+        mocks.addClip.mockClear();
+        mocks.rippleInsertClip.mockClear();
+        mocks.planRippleInsert.mockClear();
+        // The toEqual above proved the concrete payload shape.
+        void handleRestoreDrawnClip.execute(redo! as Extract<AppAction, { type: 'restoreDrawnClip' }>);
+
+        // The clip comes back with the same id and the CAPTURED plan shifts the
+        // same neighbor — planRippleInsert is never consulted on redo.
+        expect(mocks.planRippleInsert).not.toHaveBeenCalled();
+        expect(mocks.addClip).toHaveBeenCalledWith({
+            id: 'clip-next',
+            trackId: 't1',
+            startBeat: 2,
+            endBeat: 5,
+            name: 'Clip 2',
+            type: 'audio',
+        });
+        expect(mocks.rippleInsertClip).toHaveBeenCalledWith({
+            trackId: 't1',
+            insertDuration: 3,
+            plan: { shiftedClips: [{ clipId: 'c9', origStartBeat: 5, origEndBeat: 9 }] },
+        });
+    });
+
+    it('redoes an empty-plan draw as a plain re-add that shifts nothing', () => {
+        // Failure scenario B: a draw whose plan shifted nobody must never grow
+        // a plan on redo — a clip a user added since sits at that beat and
+        // would be shifted by a gesture that never touched it.
+        mocks.planRippleInsert.mockReturnValue({ shiftedClips: [] });
+        const action = drawPayload({ ripple: true });
+
+        const desc = handleDrawClip.describe(action);
+        void handleDrawClip.execute(action);
+        expect(desc.redoAction).toEqual({
+            type: 'restoreDrawnClip',
+            payload: expect.objectContaining({ ripplePlan: null }),
+        });
+
+        mocks.addClip.mockClear();
+        mocks.rippleInsertClip.mockClear();
+        // The toEqual above proved the concrete payload shape.
+        void handleRestoreDrawnClip.execute(desc.redoAction! as Extract<AppAction, { type: 'restoreDrawnClip' }>);
+
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ id: 'clip-next' }));
+        expect(mocks.rippleInsertClip).not.toHaveBeenCalled();
     });
 
     it('is undoable', () => {

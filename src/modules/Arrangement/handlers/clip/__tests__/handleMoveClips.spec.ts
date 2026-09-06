@@ -89,6 +89,31 @@ describe('handleMoveClips', () => {
         expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't1', 2, 0);
     });
 
+    it('shifts no neighbors and records no entry when the clip is gone at execution time (stale-origin replay)', () => {
+        // A redo/macro replay re-runs the same action object, so the memoized
+        // origins still remember the clip — but a later macro step deleted it.
+        // The callback's `if (clip)` guard: no clip in the live store, no plan,
+        // no neighbor shift, no history entry for that clip.
+        const plan = {
+            gapClosedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],
+            destinationOpenedClips: [],
+        };
+        mocks.planRippleMove.mockReturnValue(plan);
+        const action = moveAction([{ clipId: 'c1', trackId: 't1', startBeat: 2 }], true);
+        handleMoveClips.describe(action);
+
+        // A later macro step removes the moved clip before this action replays.
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c2', startBeat: 4, endBeat: 8 }] }],
+        });
+        // The real moveClip refuses a clip it cannot find.
+        mocks.moveClip.mockReturnValue(false);
+
+        expect(handleMoveClips.execute(action)).toEqual({ status: 'no-write' });
+        expect(mocks.planRippleMove).not.toHaveBeenCalled();
+        expect(mocks.rippleMoveClip).not.toHaveBeenCalled();
+    });
+
     it('finalizes the inverse to the exact pre-gesture placements and first-wins neighbor shifts', () => {
         const firstPlan = {
             gapClosedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],

@@ -32,6 +32,7 @@ import { handleRestoreClipMoves } from './handleRestoreClipMoves';
 import { handleRestoreClipPlacement } from './handleRestoreClipPlacement';
 import { handleRestoreClipSplitState } from './handleRestoreClipSplitState';
 import { handleRestoreCrossfadeClips } from './handleRestoreCrossfadeClips';
+import { handleRestoreDrawnClip } from './handleRestoreDrawnClip';
 import { handleRestoreReversedClip } from './handleRestoreReversedClip';
 import { handleRestoreStripSilenceState } from './handleRestoreStripSilenceState';
 import { handleReverseClip } from './handleReverseClip';
@@ -50,6 +51,7 @@ export const clipHandlers = {
     addClip: handleAddClip,
     drawClip: handleDrawClip,
     discardDrawnClip: handleDiscardDrawnClip,
+    restoreDrawnClip: handleRestoreDrawnClip,
     duplicateClipAt: handleDuplicateClipAt,
     moveClips: handleMoveClips,
     restoreClipMoves: handleRestoreClipMoves,

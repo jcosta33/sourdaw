@@ -84,7 +84,23 @@ export const handleDrawClip = createHandler<'drawClip'>({
                     ripplePlan: plan ? { shiftedClips: structuredClone(plan.shiftedClips) } : null,
                 },
             },
-            redoAction: { type: 'drawClip', payload: { ...action.payload, id: state.clipId } },
+            // Redo replays the captured plan through `restoreDrawnClip` rather
+            // than re-dispatching the forward draw: re-planning live would
+            // quietly diverge from the recorded edit once the ripple preference
+            // or the surrounding clips change (the deleteTime describe-finalize
+            // precedent — redo restores captured state, never re-runs the op).
+            redoAction: {
+                type: 'restoreDrawnClip',
+                payload: {
+                    clipId: state.clipId,
+                    trackId: action.payload.trackId,
+                    startBeat: action.payload.startBeat,
+                    endBeat: action.payload.endBeat,
+                    name: action.payload.name,
+                    type: action.payload.type,
+                    ripplePlan: plan ? { shiftedClips: structuredClone(plan.shiftedClips) } : null,
+                },
+            },
         };
     },
     undoable: true,

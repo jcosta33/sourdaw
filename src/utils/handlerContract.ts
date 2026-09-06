@@ -1182,6 +1182,23 @@ export type AppAction =
           payload: { clipId: string; trackId: string; ripplePlan: ClipRippleInsertPlanSnapshot | null };
       }
     | {
+          /** Redo of `drawClip`. Re-creates the drawn clip and re-applies the
+           *  ripple plan captured at draw time — never re-plans against live
+           *  state, so redo restores the forward placement whatever the current
+           *  ripple preference is. Emitted only by the `drawClip` handler's
+           *  `describe()` — not invoked directly. */
+          type: 'restoreDrawnClip';
+          payload: {
+              clipId: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type: 'audio' | 'midi';
+              ripplePlan: ClipRippleInsertPlanSnapshot | null;
+          };
+      }
+    | {
           type: 'duplicateClipAt';
           payload: {
               clipId: string;

@@ -106,25 +106,35 @@ export const handleMoveClips = createHandler<'moveClips'>({
                 continue;
             }
             if (action.payload.ripple && origin.trackId === target.trackId) {
-                const duration = origin.endBeat - origin.startBeat;
-                const plan = planRippleMove({
-                    trackId: target.trackId,
-                    clipId: target.clipId,
-                    oldStartBeat: origin.startBeat,
-                    newStartBeat: target.startBeat,
-                    clipDuration: duration,
-                });
-                if (plan) {
-                    rippleMoveClip({
+                // The callback's `if (clip)` guard: read the clip from the live
+                // store before planning. A clip the memoized origin remembers
+                // but the store no longer holds (replay or redo after a later
+                // delete) must skip the ripple entirely — shifting neighbors
+                // around a move that never landed would corrupt the timeline.
+                const clip = getTrackStoreState()
+                    ?.tracks.find((candidate) => candidate.id === target.trackId)
+                    ?.clips.find((candidate) => candidate.id === target.clipId);
+                if (clip) {
+                    const duration = clip.endBeat - clip.startBeat;
+                    const plan = planRippleMove({
                         trackId: target.trackId,
                         clipId: target.clipId,
+                        oldStartBeat: origin.startBeat,
                         newStartBeat: target.startBeat,
                         clipDuration: duration,
-                        plan,
                     });
-                    state.recordedRipplePlans.push(plan);
-                    restored.push({ clipId: target.clipId, trackId: origin.trackId, startBeat: origin.startBeat });
-                    continue;
+                    if (plan) {
+                        rippleMoveClip({
+                            trackId: target.trackId,
+                            clipId: target.clipId,
+                            newStartBeat: target.startBeat,
+                            clipDuration: duration,
+                            plan,
+                        });
+                        state.recordedRipplePlans.push(plan);
+                        restored.push({ clipId: target.clipId, trackId: origin.trackId, startBeat: origin.startBeat });
+                        continue;
+                    }
                 }
             }
             // The four-arg form keeps the automation delta anchored on the
