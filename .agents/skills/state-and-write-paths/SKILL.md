@@ -56,7 +56,7 @@ Ephemeral UI and query-cache churn never create undo entries. Continuous gesture
 
 **Why:** undo that rewinds hover state or network cache is unusable; missing undo on project edits is data loss.
 
-When a committed command must update transient project state such as `dirty`, return paired `afterCommit` and `afterAmbiguousCommit` effects from the owning handler. Do not set that state inside the transaction or subscribe broadly to mixed project/runtime stores: no-write, refusal, conflict, and isolated preview paths must remain clean.
+When a committed command must update another module's transient state such as Project `dirty`, return paired `afterCommit` and `afterAmbiguousCommit` effects that publish a dedicated nonpersistent revision notification owned by the command's module. The receiving module subscribes through the public stores contract and owns its local write and subscription disposal. Do not import the receiver's business barrel, set transient state inside the transaction, or subscribe broadly to mixed project/runtime stores: no-write, refusal, conflict, and isolated preview paths must remain clean. The notification is shared runtime state, never persisted project truth or undo state.
 
 **Why:** the command runtime is the commit witness; a store observer cannot distinguish a durable user edit from hydration, playback, or preview.
 

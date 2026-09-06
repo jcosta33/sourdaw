@@ -1,7 +1,7 @@
-import { markDirty } from '#/modules/Project/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
+import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { setTempo } from '../../useCases/setTempo';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
 
@@ -50,8 +50,8 @@ export const handleSetTempo = createHandler<'setTempo'>({
         }
         return {
             status: 'written',
-            afterCommit: markDirty,
-            afterAmbiguousCommit: markDirty,
+            afterCommit: markTempoProjectWrite,
+            afterAmbiguousCommit: markTempoProjectWrite,
         };
     },
     // Compare against the governing tempo, not `transport.tempo`: with a tempo

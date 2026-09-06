@@ -36,8 +36,6 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { defaultPreferences } from '#/modules/Preferences/models/Preferences';
-import { preferencesStore } from '#/modules/Preferences/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import {
@@ -46,13 +44,19 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { initProjectDirtyTracking } from '#/modules/Project/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { useAppInitialization } from '../useAppInitialization';
 
 describe('tempo edit autosave integration', () => {
+    let disposeDirtyTracking: (() => void) | undefined;
+    let previousPreferences: typeof preferencesStore.value;
+    let previousFirstLoadHint: string | null;
+
     beforeEach(() => {
         vi.useFakeTimers();
         saveProjectSpy.mockReset();
@@ -74,11 +78,26 @@ describe('tempo edit autosave integration', () => {
         });
         transportStore.set({ ...defaultTransportState, tempo: 120, isPlaying: false });
         tempoMapStore.set({ changes: [] });
-        preferencesStore.set({ ...defaultPreferences, autoSave: true, autoSaveIntervalMs: 1_000 });
+        previousPreferences = preferencesStore.value;
+        if (!previousPreferences) {
+            throw new Error('Expected initialized preferences');
+        }
+        preferencesStore.set({ ...previousPreferences, autoSave: true, autoSaveIntervalMs: 30_000 });
+        previousFirstLoadHint = localStorage.getItem('wd:first-load-hint-shown');
         localStorage.setItem('wd:first-load-hint-shown', '1');
+        disposeDirtyTracking = initProjectDirtyTracking();
     });
 
     afterEach(() => {
+        disposeDirtyTracking?.();
+        if (previousPreferences) {
+            preferencesStore.set(previousPreferences);
+        }
+        if (previousFirstLoadHint === null) {
+            localStorage.removeItem('wd:first-load-hint-shown');
+        } else {
+            localStorage.setItem('wd:first-load-hint-shown', previousFirstLoadHint);
+        }
         vi.useRealTimers();
         clearUndoHistory();
         clearHandlerRegistry();
@@ -89,13 +108,17 @@ describe('tempo edit autosave integration', () => {
 
     it('calls saveProject on the timer after a committed tempo edit marks the initialized project dirty', async () => {
         const hook = renderHook(() => useAppInitialization());
+        try {
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(saveProjectSpy).not.toHaveBeenCalled();
 
-        await executeAppAction({ type: 'setTempo', payload: { bpm: 133 } });
-        expect(projectStore.value?.dirty).toBe(true);
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 133 } });
+            expect(projectStore.value?.dirty).toBe(true);
 
-        await vi.advanceTimersByTimeAsync(1_000);
-        expect(saveProjectSpy).toHaveBeenCalledOnce();
-
-        hook.unmount();
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(saveProjectSpy).toHaveBeenCalledOnce();
+        } finally {
+            hook.unmount();
+        }
     });
 });
