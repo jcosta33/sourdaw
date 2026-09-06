@@ -248,6 +248,92 @@ describe('serializeAudioGraphCommandBatch', () => {
         ]);
     });
 
+    /**
+     * The contract nests the strip and the device in a target; `graph.rs` reads
+     * them as the variant's own fields. That flattening is the whole of what
+     * this serializer does for the command, so it is stated as literals.
+     */
+    it('flattens a scheduled note batch onto the graph.rs schedule-midi spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'schedule-midi',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    notes: [
+                        {
+                            time: 0.25,
+                            note: 60,
+                            velocity: 100,
+                            channel: 1,
+                            isNoteOn: true,
+                            probability: 0.5,
+                            clipIdHash: 11,
+                            eventIdHash: 22,
+                            absoluteOccurrenceIndex: 33,
+                        },
+                        // Everything optional left unstated: absence is the
+                        // contract's "always plays", and it must stay absent.
+                        { time: 0.5, note: 60, velocity: 0, channel: 1, isNoteOn: false },
+                    ],
+                },
+            ],
+        });
+
+        const scheduled = wire.commands[0];
+        if (scheduled?.kind !== 'schedule-midi') {
+            throw new Error('the batch must serialize as schedule-midi');
+        }
+        expect(scheduled).toEqual({
+            kind: 'schedule-midi',
+            trackId: 'track-1',
+            deviceId: 'dev-plugin',
+            notes: [
+                {
+                    time: 0.25,
+                    note: 60,
+                    velocity: 100,
+                    channel: 1,
+                    isNoteOn: true,
+                    probability: 0.5,
+                    clipIdHash: 11,
+                    eventIdHash: 22,
+                    absoluteOccurrenceIndex: 33,
+                },
+                { time: 0.5, note: 60, velocity: 0, channel: 1, isNoteOn: false },
+            ],
+        });
+        // `toEqual` reads an explicit `undefined` as absence; the mirror does
+        // not, so the keys themselves are what say the optionals stayed off.
+        expect(Object.keys(scheduled.notes[1] ?? {})).toEqual(['time', 'note', 'velocity', 'channel', 'isNoteOn']);
+    });
+
+    it('carries a clear-midi window onto the wire with an open end left null', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'clear-midi',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    fromTime: 1,
+                    toTime: 2,
+                },
+                {
+                    kind: 'clear-midi',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    fromTime: 0,
+                    // The end of the store, which is what clears it whole.
+                    toTime: null,
+                },
+            ],
+        });
+
+        expect(wire.commands).toEqual([
+            { kind: 'clear-midi', trackId: 'track-1', deviceId: 'dev-plugin', fromTime: 1, toTime: 2 },
+            { kind: 'clear-midi', trackId: 'track-1', deviceId: 'dev-plugin', fromTime: 0, toTime: null },
+        ]);
+    });
+
     it('leaves an absent correlation absent — absence is meaningful in the contract', () => {
         const wire = serializeAudioGraphCommandBatch({ schemaVersion: 1, commands: [] });
 

@@ -144,6 +144,16 @@ export const EXPOSED_COMMANDS = [
  * addon, for the path a native dialog is about to return, which is what makes
  * "the user picked this" the only way a path becomes reachable.
  *
+ * `send_plugin_midi` is denied for a reason of its own: it is block-immediate
+ * and carries no timing contract. It hands a plugin one note at the head of
+ * whichever block it is next given, because a note struck on a keyboard has no
+ * timeline position to stamp it against — which makes it the wrong shape for
+ * arranged material entirely. Notes that do have a position travel as
+ * `schedule-midi` and `clear-midi` commands inside `apply_graph_commands`,
+ * where the pair that rewrites a bar shares one batch and so one visibility on
+ * the audio thread. A renderer able to name this command could only play a
+ * note late and out of order beside them.
+ *
  * `is_plugin_gui_supported` moved here from the exposed list when its
  * renderer repository was retired (#2307): the inspector reads editor
  * capability through `resolvePluginEditorCapability`, so no `src/` caller

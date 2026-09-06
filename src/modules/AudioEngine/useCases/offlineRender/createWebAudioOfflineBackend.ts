@@ -345,6 +345,12 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'schedule-clip':
                 scheduleClip(command.playback);
                 return null;
+            case 'schedule-midi':
+            case 'clear-midi':
+                // This carrier voices MIDI through its own device scheduler, and
+                // only a strip the native engine carries stores notes on an
+                // engine instrument — so a producer never aims one here.
+                return null;
             case 'insert-device':
             case 'remove-device':
             case 'set-transport':

@@ -239,6 +239,48 @@ describe('createWebAudioOfflineBackend', () => {
         expect(backend.getTrackStrip('t1')).toBeUndefined();
     });
 
+    /**
+     * Accepted and ignored, not refused. This carrier voices MIDI through its
+     * own device scheduler, and only a natively carried strip stores notes on an
+     * engine instrument — so a batch carrying both is a batch that also builds
+     * strips, and refusing it would take those strips down with it.
+     */
+    it('accepts scheduled MIDI without applying it and without failing the batch', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'd', name: 'd', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'clear-midi',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    fromTime: 0,
+                    toTime: null,
+                },
+                {
+                    kind: 'schedule-midi',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    notes: [{ time: 0.25, note: 60, velocity: 100, channel: 0, isNoteOn: true }],
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            reports: [{ kind: 'track', id: 't1', deviceIds: ['d'] }],
+        });
+    });
+
     it('refuses a correlated batch the composition root calls stale, before touching the graph', async () => {
         const master = fakeNode('gain');
         const backend = createWebAudioOfflineBackend({
