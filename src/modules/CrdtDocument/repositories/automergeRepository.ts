@@ -64,6 +64,7 @@ type WorkerResponse =
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: [string, Uint8Array][] }
     | { id: number; type: 'compactStale'; reason: string }
+    | { id: number; type: 'checkpointRootMediaInspected'; audioBufferIds: string[] }
     | { id: number; type: 'error'; message: string };
 
 type PendingWorkerRequest = {
@@ -479,6 +480,21 @@ class AutomergeRepository {
             bundle.set(id, save(doc));
         }
         return bundle;
+    }
+
+    /** Inspect one captured root document without installing it as live or worker-shadow state. */
+    async inspectCheckpointRootMedia({
+        rootBytes,
+    }: {
+        rootBytes: Uint8Array;
+    }): Promise<{ audioBufferIds: readonly string[] }> {
+        const response = await invokeWorker({ type: 'inspectCheckpointRootMedia', rootBytes });
+        if (response.type !== 'checkpointRootMediaInspected') {
+            throw new Error(
+                `[AutomergeRepository] Unexpected worker response for inspectCheckpointRootMedia: ${response.type}`
+            );
+        }
+        return { audioBufferIds: response.audioBufferIds };
     }
 
     /** Record the worker replica's per-document heads after installing its output. */

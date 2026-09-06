@@ -31,13 +31,21 @@ export type CompactShadowRequest = {
     expectedHeads: HeadsEntry[];
 };
 
-export type WorkerRequest = LoadBundleRequest | MergeBundleRequest | CompactShadowRequest;
+export type InspectCheckpointRootMediaRequest = {
+    id: number;
+    type: 'inspectCheckpointRootMedia';
+    rootBytes: Uint8Array;
+};
+
+export type WorkerRequest =
+    LoadBundleRequest | MergeBundleRequest | CompactShadowRequest | InspectCheckpointRootMediaRequest;
 
 export type WorkerResponse =
     | { id: number; type: 'loaded'; compacted: BundleEntry[]; rootId: string }
     | { id: number; type: 'merged'; compacted: BundleEntry[]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'compacted'; bundle: BundleEntry[] }
-    | { id: number; type: 'compactStale'; reason: string };
+    | { id: number; type: 'compactStale'; reason: string }
+    | { id: number; type: 'checkpointRootMediaInspected'; audioBufferIds: string[] };
 
 export type FatalWorkerEvent = 'error' | 'messageerror';
 
@@ -119,6 +127,9 @@ function parseWorkerRequest(value: unknown): WorkerRequest {
             expectedHeads: value.expectedHeads,
         };
     }
+    if (value.type === 'inspectCheckpointRootMedia' && 'rootBytes' in value && value.rootBytes instanceof Uint8Array) {
+        return { id: value.id, type: value.type, rootBytes: value.rootBytes };
+    }
     throw new TypeError('Expected a supported worker request');
 }
 
@@ -127,6 +138,7 @@ export class ControlledWorker {
     static onPostMessage: ((worker: ControlledWorker, request: WorkerRequest) => void) | null = null;
 
     readonly posted: WorkerRequest[] = [];
+    readonly postMessageTransferArguments: Array<StructuredSerializeOptions | Transferable[] | undefined> = [];
     terminated = false;
 
     private failed = false;
@@ -158,12 +170,13 @@ export class ControlledWorker {
         this.listeners.get(type)?.delete(listener);
     }
 
-    postMessage(value: unknown): void {
+    postMessage(value: unknown, transferOrOptions?: StructuredSerializeOptions | Transferable[]): void {
         if (this.failed) {
             throw new Error('postMessage called on a failed worker');
         }
         const request = parseWorkerRequest(value);
         this.posted.push(request);
+        this.postMessageTransferArguments.push(transferOrOptions);
         ControlledWorker.onPostMessage?.(this, request);
     }
 
