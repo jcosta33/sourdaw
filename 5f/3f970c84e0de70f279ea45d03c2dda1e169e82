@@ -1,0 +1,107 @@
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_9b530f08172a54::t_8e29f9eb811338 39-41
+src/modules/AiRuntime/models/Tools/ClipAndDevice.ts
+  s_9b530f08172a54::t_f09beeb1019b06 38-79
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_9b530f08172a54::t_aa3bf1d20aa33f 63,110
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_9b530f08172a54::t_4216b475150666 1512-1593,1635,1639,1642,1646,1652,1664,1668,1685,1691,1694,1712,1719,1730,1766,1775-1776,1792,1803,1838,1843,1886,1891,1977,2000-2001,2024,2043,2051,2060,2071-2073,2087-2089,2120,2126,2135,2146,2154,2165-2166,2180-2181,2206-2207,2265,2274,2331,2349,2355,2403,2411,2420,2429-2430,2435-2440,2475,2482,2498,2506,2566-2567,2685,2691,2741,2756,2761,2779-2780,2800,2814-2815,2824,2826,2838-2839,2847-2848,2888-2889,2963-2964,3042-3043,3159,3166,3169,3178,3180,3261-3262,3289-3290,3312,3326,3335,3357,3371,3378,3385-3387,3428-3431,3453,3458,3470,3477,3482,3484,3490,3495,3497-3498,3517,3524,3532-3533,3539,3542,3586-3587,3596-3597,3660,3666-3667,3678-3679,3701-3702,3728,3736,3743,3748-3749,3765,3770-3771,3783,3793,3800,3806,3811,3820-3821,3842,3847-3848,3885-3886,3906,3920-3921,3929-3930,3971,4019,4026,4032-4033,4040,4054,4069,4083,4088-4091,4120,4126,4140,4146,4191,4193,4208,4217-4218,4220,4233-4234,4237,4244,4249,4276,4281,4376,4383,4411,4419,4425,4433-4434,4474,4485,4493,4499,4506,4511,4519-4520,4731,4747,4764,4771-4772,4775,4806,4819-4822,4832-4833,4878,4892,4897,4899,4947,4952,4970,4975,4999,5004,5092-5109,5116-5146,5149-5154,5158,5160-5177,5180,5182-5192,5194-5195,5203-5235,5241-5242,5245-5249,5251-5252,5254,5256-5266,5270-5272,5274-5280,5282-5284,5286-5298,5300,5302-5304,5309,5312-5315,5319-5324,5329,5331-5332,5334-5335,5338-5350,5354-5358,5360-5362,5366-5367,5369-5370
+release/open-source-inventory.json
+  s_4882f3adf9dc4c::t_3f4359a46e76a0 1198
+src/modules/AiRuntime/models/__tests__/RuntimeAction.spec.ts
+  s_87ab0a2f60ccf8::t_91fa465e18366c 21,27
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_9b530f08172a54::t_8527943796ea73 198-207,290-310
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_5bfa2b33c83d76::t_4348b2b577d30f 31-35
+src/modules/Arrangement/handlers/clip/__tests__/handleDiscardDrawnClip.spec.ts
+  s_87ab0a2f60ccf8::t_868aafd34f7e05 1-51
+src/modules/Arrangement/handlers/clip/__tests__/handleDrawClip.spec.ts
+  s_d8b0d4f2978756::t_be32e1f456c664 1-137
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipAt.spec.ts
+  s_4882f3adf9dc4c::t_07038af31860c2 1-134
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClips.spec.ts
+  s_4882f3adf9dc4c::t_4d6761f75f7534 1-154
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipMoves.spec.ts
+  s_4882f3adf9dc4c::t_6b45c5a70626a4 1-100
+src/modules/Arrangement/handlers/clip/clipHandlers.ts
+  s_82fd57e388946e::t_7a5c281b5fd2a0 9,11,13,21,31,51-55
+src/modules/Arrangement/handlers/clip/handleDiscardDrawnClip.ts
+  s_9b530f08172a54::t_b09d6a246ac15e 1-26
+src/modules/Arrangement/handlers/clip/handleDrawClip.ts
+  s_4882f3adf9dc4c::t_b77612021fde22 1-93
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  s_4882f3adf9dc4c::t_a07d5811084f36 1-110
+src/modules/Arrangement/handlers/clip/handleRestoreClipMoves.ts
+  s_9b530f08172a54::t_718f88df0c4d36 1-44
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  s_4882f3adf9dc4c::t_11cca24929e0ef 4-9,26-31,74-75,80-83,125-126,132-134,139-140,142-143,251-288,402-417,435,443-450,458,465,512-516,531-535,572-587,607-612,614-615,618,624,628,735-739,779-786,792,828-832,947-954,961,967,1042-1047,1053,1059,1096,1125-1136,1139-1141,1143-1147,1154-1158,1160-1162,1165-1167
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_87ab0a2f60ccf8::t_a47b2c65b6a0e8 749,763-779,782,801-815,818,835-840,842,845,857-859,1061-1075,1078,1108-1119,1121-1122,1377-1384,1386,1389,1443-1456
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_4882f3adf9dc4c::t_eac7b1eb3aaf00 5,68-71,816-824,830-832,907-908,911-929,931,952-968
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_5bfa2b33c83d76::t_de2b0939ff06d7 227-274,1479-1509
+src/modules/Command/useCases/actionLabels.ts
+  s_87ab0a2f60ccf8::t_b8bdc37fc1fcd0 54-58
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_4882f3adf9dc4c::t_6fe87bbfe3fa0a 549-621,2601-2604,2688-2690,2793-2795
+src/utils/handlerContract.ts
+  s_9b530f08172a54::t_6b3d6d10188158 181-197,1162-1207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5f3f970c84e0de70f279ea45d03c2dda1e169e82",
+  "prompts": {},
+  "sessions": {
+    "s_4882f3adf9dc4c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0756e-d873-7380-b48e-d9c96ea6c8bd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5bfa2b33c83d76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4a83252ac16765c1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_82fd57e388946e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07675-9a62-79d1-889b-5959f0c11936",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d8b0d4f2978756": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8c60ab407990cedc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
