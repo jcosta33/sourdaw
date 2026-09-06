@@ -1,0 +1,37 @@
+src/modules/AudioEngine/useCases/releaseCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_99590c237e78d9 1-15
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_5bf63c7a88a202 181,207,211-218,402-403
+  s_87ab0a2f60ccf8::t_f3ea8be1383bd0 1666-1669
+  s_87ab0a2f60ccf8::t_06e83a850f19f0 971-976
+  s_87ab0a2f60ccf8::t_d8379a50896b60 1367-1511
+  s_87ab0a2f60ccf8::t_f2dbbc93d6c7fd 1834-1851
+  s_87ab0a2f60ccf8::t_2ab487bcae6790 2257,2260,2263,2272-2273,2298,2327,2342,2346,2355,2400,2462,2482,2485,2493
+  s_87ab0a2f60ccf8::t_2e58324eaea85b 404
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_037a0c6a0afd8f 364,367,375,379,387,393,399,405-406
+  s_87ab0a2f60ccf8::t_8420849ad6f518 1-337,339-363,365-366,368-374,376-378,380-386,388-392,394-398,400-404,407-408
+  s_87ab0a2f60ccf8::t_fa3af137bdaf9f 338
+src/modules/AudioEngine/useCases/acquireCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_99590c237e78d9 1-15
+src/modules/AudioEngine/useCases/index.ts
+  s_87ab0a2f60ccf8::t_99590c237e78d9 22,40
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_87ab0a2f60ccf8::t_cf9af1341d619e 78-86,91,174-175,552,566,569-571,867
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e367ba0d94d51269c938de9901e4d3ddff8a2537",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
