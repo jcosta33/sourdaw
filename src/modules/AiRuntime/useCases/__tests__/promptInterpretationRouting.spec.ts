@@ -160,7 +160,8 @@ describe('whole-request prompt interpretation routing', () => {
         ['create 2 tracks named Bass, "Keys. Mute Bass"', 'addTrack'],
         ['create 3 tracks named Bass, Keys and "mute Drums"', 'addTrack'],
         ['create 2 tracks named Bass and "Play"', 'addTrack'],
-        ['rename clip to Bridge Solo', 'renameClip'],
+        ['rename clip to "Bridge Solo"', 'renameClip'],
+        ['rename clip to "match the track name"', 'renameClip'],
         ['rename clip to "Bridge And Solo"', 'renameClip'],
         ['rename clip to "Verse. Mute Bass"', 'renameClip'],
         ['rename clip to "Verse: mute Bass"', 'renameClip'],
@@ -168,6 +169,7 @@ describe('whole-request prompt interpretation routing', () => {
         ['rename clip "to"', 'renameClip'],
         ['rename clip to to', 'renameClip'],
         ['join session invite-ABC', 'joinCollabSession'],
+        ['join session "using the invitation in the chat"', 'joinCollabSession'],
         ['join session "invite-ABC. Mute Bass"', 'joinCollabSession'],
     ])('keeps the complete explicit command %s on the deterministic route', async (prompt, actionType) => {
         const context = createContext();
@@ -249,17 +251,17 @@ describe('whole-request prompt interpretation routing', () => {
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
-    it('preserves prior numeric and opaque-value semantics with every interpreter active', async () => {
+    it('preserves prior numeric and quoted-value semantics with every interpreter active', async () => {
         const context = createContext();
 
         const onePercent = await parsePromptToActions('volume 1%', context);
         const bareOne = await parsePromptToActions('set volume to 1', context);
-        const unquotedRename = await parsePromptToActions('rename clip to Bridge Solo', context);
+        const quotedBridgeRename = await parsePromptToActions('rename clip to "Bridge Solo"', context);
         const quotedRename = await parsePromptToActions('rename clip to "Bridge And Solo"', context);
 
         expect(onePercent.actions[0]?.payload).toMatchObject({ trackId: 'track-bass', gain: 0.01 });
         expect(bareOne.actions[0]?.payload).toMatchObject({ trackId: 'track-bass', gain: 1 });
-        expect(unquotedRename.actions[0]?.payload).toMatchObject({ clipId: 'clip-bass', name: 'Bridge Solo' });
+        expect(quotedBridgeRename.actions[0]?.payload).toMatchObject({ clipId: 'clip-bass', name: 'Bridge Solo' });
         expect(quotedRename.actions[0]?.payload).toMatchObject({
             clipId: 'clip-bass',
             name: 'Bridge And Solo',
@@ -448,6 +450,10 @@ describe('whole-request prompt interpretation routing', () => {
         ['create 2 tracks named Bass and brighten guitar', createContext],
         ['create 2 tracks named Bass and play', createContext],
         ['create 2 audio tracks named Lead Vocals, Backing Vocals', createContext],
+        ['rename clip to Bridge Solo', createContext],
+        ['rename clip to match the track name', createContext],
+        ['rename clip to something warmer', createContext],
+        ['join session using the invitation in the chat', createContext],
         ['rename clip to', createContext],
         ['RENAME THE CLIP TO   ', createContext],
         ['rename clip to Verse. Mute Bass', createContext],

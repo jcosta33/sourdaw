@@ -48,6 +48,44 @@ const emptyProject: ProjectContext = {
     playheadPosition: 0,
 };
 
+const selectedClipProject: ProjectContext = {
+    ...emptyProject,
+    loopEnd: 16,
+    selectedTrackId: 'track-bass',
+    selectedClipId: 'clip-bass',
+    selectedClipIds: ['clip-bass'],
+    tracks: [
+        {
+            id: 'track-bass',
+            name: 'Bass',
+            kind: 'audio',
+            muted: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            frozen: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read',
+            outputId: 'master',
+            clipCount: 1,
+            deviceCount: 0,
+            clips: [
+                {
+                    id: 'clip-bass',
+                    name: 'Bass Verse',
+                    type: 'audio',
+                    startBeat: 0,
+                    endBeat: 8,
+                    noteCount: 0,
+                },
+            ],
+            devices: [],
+            sends: [],
+        },
+    ],
+};
+
 /**
  * Names no track, no clip and no beat: every object the batch creates is one the plan invents. That
  * is exactly what the plan-created object evidence route exists to admit.
@@ -124,6 +162,28 @@ const namedTracksDiscoverTurn = {
     ],
 };
 
+const renameSearchTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'search-rename',
+            name: 'agent.command-index.search',
+            arguments: { intent: 'rename the selected clip' },
+        },
+    ],
+};
+
+const renameDiscoverTurn = {
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'discover-rename',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['renameClip'] },
+        },
+    ],
+};
+
 const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
     status: 'complete' as const,
     toolCalls: [
@@ -131,6 +191,27 @@ const proposeTurn = (items: ReadonlyArray<Record<string, unknown>>) => ({
             id: 'propose-1',
             name: 'command.batch.propose',
             arguments: { plan, list: { schemaVersion: 1, items } },
+        },
+    ],
+});
+
+const proposeCommandsTurn = (commands: ReadonlyArray<Record<string, unknown>>) => ({
+    status: 'complete' as const,
+    toolCalls: [
+        {
+            id: 'propose-commands',
+            name: 'command.batch.propose',
+            arguments: {
+                commands,
+                plan: {
+                    ...plan,
+                    semantic: { classification: 'simple' as const, uncertainty: [] },
+                    objective: 'Execute the grounded command batch.',
+                    capabilityIds: commands.map((command) => String(command.name)),
+                    validationStrategy: ['Validate the grounded command batch.'],
+                    stoppingConditions: ['Stop if application validation fails.'],
+                },
+            },
         },
     ],
 });
@@ -176,9 +257,16 @@ const namedTrackItems = [
     },
 ];
 
+const renameClipItems = [
+    {
+        name: 'renameClip',
+        arguments: { clipId: 'clip-bass', name: 'Bridge Solo' },
+    },
+];
+
 describe('high-level intent compilation', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.mocked(generateToolPlanningOutcome).mockReset();
     });
 
     afterEach(() => {
@@ -234,6 +322,48 @@ describe('high-level intent compilation', () => {
                     operation: 'addTrack',
                     normalizedProjectRevision: 'revision-named-tracks',
                     arguments: expect.objectContaining({ name: 'Backing Vocals', kind: 'audio' }),
+                }),
+            }),
+        ]);
+    });
+
+    it('semantically preserves an unquoted multiword clip name through canonical command compilation', async () => {
+        const prompt = 'rename clip to Bridge Solo';
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeCommandsTurn(renameClipItems));
+
+        const result = await parsePromptToActions(prompt, selectedClipProject, undefined, 'revision-rename');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.planningOutcome).toEqual({ kind: 'proposal' });
+        expect(result.actions).toMatchObject([
+            { type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } },
+        ]);
+
+        registerHandlerMap(getArrangementHandlers());
+        const compiled = compilePlannedActionCommandBatch({
+            actions: result.actions,
+            actionLabels: result.actions.map((action) => action.type),
+            autoCommit: false,
+            context: selectedClipProject,
+            group: { groupId: 'rename-clip', groupLabel: 'Rename clip' },
+            intent: prompt,
+            projectRevision: 'revision-rename',
+            runId: 'run-rename',
+        });
+        const parsed = compiled.commandEnvelopes.map((serialized) => parseVersionedCommandEnvelope(serialized));
+
+        expect(parsed).toEqual([
+            expect.objectContaining({
+                status: 'valid',
+                envelope: expect.objectContaining({
+                    operation: 'renameClip',
+                    normalizedProjectRevision: 'revision-rename',
+                    arguments: expect.objectContaining({ clipId: 'clip-bass', name: 'Bridge Solo' }),
                 }),
             }),
         ]);

@@ -124,7 +124,7 @@ describe('tryParameterizedPath', () => {
         expect(result).toHaveLength(1);
         expect(result[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Verse' } });
 
-        const upperResult = tryParameterizedPath('RENAME THE CLIP TO Bridge Solo', ctx);
+        const upperResult = tryParameterizedPath('RENAME THE CLIP TO "Bridge Solo"', ctx);
         expect(upperResult).toHaveLength(1);
         expect(upperResult[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Bridge Solo' } });
 

@@ -158,7 +158,7 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
     const renameClipMatch = text.match(/^rename\s+(?:the\s+)?clip(?:\s+(.+))?$/i);
     if (renameClipMatch && selectedClipId) {
         const renameValue = consumeOptionalLeadingWord(renameClipMatch[1], 'to');
-        const name = renameValue === null ? null : parseOpaqueValue(renameValue);
+        const name = renameValue === null ? null : parseLiteralValue(renameValue);
         if (name !== null) {
             return [{ type: 'renameClip', payload: { clipId: selectedClipId, name } }];
         }
@@ -189,7 +189,7 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
 
     const joinMatch = text.match(/^join\s+session\s+(.+)$/i);
     if (joinMatch) {
-        const inviteString = parseOpaqueValue(joinMatch[1]!);
+        const inviteString = parseLiteralValue(joinMatch[1]!);
         if (inviteString !== null) {
             return [{ type: 'joinCollabSession', payload: { inviteString, peerName: 'Peer' } }];
         }
@@ -297,7 +297,7 @@ const DEVICE_TYPES: ReadonlyMap<string, string> = new Map([
 ]);
 
 const CLAUSE_CONNECTOR_PATTERN = /(?:[,;]|\b(?:and|or|then|also|plus|without|except|but|while|before|after)\b)/iu;
-const UNQUOTED_TRACK_NAME_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{N}'’._/-]*[\p{L}\p{N}])?$/u;
+const UNQUOTED_LITERAL_VALUE_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{N}'’._/-]*[\p{L}\p{N}])?$/u;
 const SENTENCE_CONTINUATION_PATTERN = /(?:[.!?]|:)\s+\S/u;
 const SELECTED_TRACK_REFERENCES = new Set(['selected track', 'this track', 'tagged track']);
 
@@ -327,7 +327,15 @@ function parseQuotedValue(value: string): string | null {
     return content.length > 0 && !content.includes(quote) ? content : null;
 }
 
-function parseOpaqueValue(value: string): string | null {
+function parseLiteralValue(value: string): string | null {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+        return parseQuotedValue(trimmed);
+    }
+    return UNQUOTED_LITERAL_VALUE_PATTERN.test(trimmed) ? trimmed : null;
+}
+
+function parseReferenceValue(value: string): string | null {
     const trimmed = value.trim();
     if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
         return parseQuotedValue(trimmed);
@@ -404,7 +412,7 @@ function parseTrackNameList(value: string): string[] | null {
             /"/u.test(part) ||
             SENTENCE_CONTINUATION_PATTERN.test(part) ||
             isExactRegisteredCommand(part) ||
-            !UNQUOTED_TRACK_NAME_PATTERN.test(part)
+            !UNQUOTED_LITERAL_VALUE_PATTERN.test(part)
         ) {
             return null;
         }
@@ -504,7 +512,7 @@ export function resolveTrackReference(
 ): ProjectContext['tracks'][number] | undefined {
     const trimmedReference = reference.trim();
     const isQuoted = trimmedReference.startsWith('"') || trimmedReference.startsWith("'");
-    const parsedReference = isQuoted ? parseQuotedValue(trimmedReference) : parseOpaqueValue(trimmedReference);
+    const parsedReference = isQuoted ? parseQuotedValue(trimmedReference) : parseReferenceValue(trimmedReference);
     if (parsedReference === null) {
         return undefined;
     }

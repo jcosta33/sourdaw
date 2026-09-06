@@ -473,7 +473,7 @@ describe('parsePromptToActions', () => {
         ]);
         expect(generateToolCalls).not.toHaveBeenCalled();
 
-        const upperResult = await parsePromptToActions('RENAME THE CLIP TO Chorus 1', context);
+        const upperResult = await parsePromptToActions('RENAME THE CLIP TO "Chorus 1"', context);
 
         expect(upperResult.actions).toEqual([
             {
@@ -516,7 +516,7 @@ describe('parsePromptToActions', () => {
         vi.mocked(tryCompoundFastPath).mockImplementation(actualParsing.tryCompoundFastPath);
 
         const result = await parsePromptToActions(
-            'create 2 audio tracks named Lead Vocals, Backing Vocals',
+            'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
             baseContext
         );
 
@@ -533,7 +533,7 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).not.toHaveBeenCalled();
 
         const upperResult = await parsePromptToActions(
-            'CREATE 2 AUDIO TRACKS NAMED Lead Vocals, Backing Vocals',
+            'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
             baseContext
         );
         expect(upperResult.actions).toEqual([

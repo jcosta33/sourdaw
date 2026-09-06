@@ -6082,6 +6082,70 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('grounds a bare clip rename source to the unique selected clip', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+    });
+
+    it('does not ground a bare clip rename without exactly one selected clip', () => {
+        const context = createClipContext();
+        const withoutSelection = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            { ...context, selectedClipId: null, selectedClipIds: [] }
+        );
+        const withMultipleSelections = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            { ...context, selectedClipIds: ['clip-intro', 'clip-chorus'] }
+        );
+
+        expect(withoutSelection.actions).toEqual([]);
+        expect(withMultipleSelections.actions).toEqual([]);
+    });
+
+    it('rejects a provider clip that differs from the bare rename selection', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-chorus', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            createClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('does not match');
+    });
+
+    it('does not mistake the new bare rename value for the source clip', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Chorus' } }],
+            'rename clip to Chorus',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Chorus' } }],
+            rejections: [],
+        });
+    });
+
+    it('does not apply bare rename selection grounding to another clip operation', () => {
+        const result = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-intro' } }],
+            'rename clip to Bridge Solo',
+            createClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
     it('grounds duplicate clip names only with an exact track qualifier', () => {
         const context = createClipContext();
         const qualified = bridge(

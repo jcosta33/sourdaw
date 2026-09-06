@@ -260,9 +260,13 @@ describe('promptParser parsing', () => {
             ]);
         });
 
-        it('admits only a complete opaque rename or join value', () => {
-            expect(tryParameterizedPath('rename clip to Bridge Solo', context)).toEqual([
-                { type: 'renameClip', payload: { clipId: 'c1', name: 'Bridge Solo' } },
+        it('admits only quoted or bounded single-token rename and join values', () => {
+            expect(tryParameterizedPath('rename clip to Bridge Solo', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to match the track name', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to something warmer', context)).toEqual([]);
+            expect(tryParameterizedPath('join session using the invitation in the chat', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to Verse', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Verse' } },
             ]);
             expect(tryParameterizedPath('rename clip to "Verse and Chorus"', context)).toEqual([
                 { type: 'renameClip', payload: { clipId: 'c1', name: 'Verse and Chorus' } },
@@ -316,7 +320,8 @@ describe('promptParser parsing', () => {
                     payload: { inviteString: 'invite-ABC. Mute Bass', peerName: 'Peer' },
                 },
             ]);
-            expect(tryParameterizedPath('rename clip to Lead 2.0', context)).toEqual([
+            expect(tryParameterizedPath('rename clip to Lead 2.0', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to "Lead 2.0"', context)).toEqual([
                 { type: 'renameClip', payload: { clipId: 'c1', name: 'Lead 2.0' } },
             ]);
             expect(tryParameterizedPath('rename clip to Dr.Dre', context)).toEqual([

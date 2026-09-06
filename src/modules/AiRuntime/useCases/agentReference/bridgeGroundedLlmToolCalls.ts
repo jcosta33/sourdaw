@@ -2024,6 +2024,11 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
+function getBareClipRenameTargetPrompt(actionScope: ActionPromptScope, targetPrompt: string): string {
+    const maskedScope = actionScope.masked.trim();
+    return /^rename\s+(?:the\s+)?clip\s+to\s+\S[\s\S]*$/iu.test(maskedScope) ? 'selected clip' : targetPrompt;
+}
+
 function collectPromptClearSolosRestrictionClauses(
     prompt: string,
     catalog: GroundingCatalog,
@@ -3987,7 +3992,9 @@ function groundToolCall({
             continue;
         }
         let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
-        if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
+        if (call.name === 'renameClip' && targetRule.argument === 'clipId') {
+            targetPrompt = getBareClipRenameTargetPrompt(actionScope, targetPrompt);
+        } else if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
             targetPrompt = prompt;
         } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
             targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog, context.tracks);
