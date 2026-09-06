@@ -1,0 +1,39 @@
+src/modules/AudioEngine/useCases/index.ts
+  s_87ab0a2f60ccf8::t_99590c237e78d9 22,40
+src/modules/AudioEngine/useCases/acquireCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_99590c237e78d9 1-15
+src/modules/AudioEngine/useCases/__tests__/checkpointAudioRetention.spec.ts
+  s_87ab0a2f60ccf8::t_037a0c6a0afd8f 391,394,402,406,414,420,426,432-433
+  s_87ab0a2f60ccf8::t_d97dd5ebb5d0bd 189-195,309-310,315-316,323-324,359-375
+  s_87ab0a2f60ccf8::t_8420849ad6f518 1-188,196-308,311-314,317-322,325-347,349-358,376-390,392-393,395-401,403-405,407-413,415-419,421-425,427-431,434-435
+  s_87ab0a2f60ccf8::t_fa3af137bdaf9f 348
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_f3ea8be1383bd0 1675-1678
+  s_87ab0a2f60ccf8::t_06e83a850f19f0 971-976
+  s_87ab0a2f60ccf8::t_2e58324eaea85b 404
+  s_87ab0a2f60ccf8::t_f2dbbc93d6c7fd 1843-1860
+  s_87ab0a2f60ccf8::t_5bf63c7a88a202 181,207,211-218,402-403
+  s_87ab0a2f60ccf8::t_d8379a50896b60 1367-1370,1382-1399,1401-1520
+  s_87ab0a2f60ccf8::t_2ab487bcae6790 2266,2269,2272,2281-2282,2307,2336,2351,2355,2364,2409,2471,2491,2494,2502
+  s_87ab0a2f60ccf8::t_d97dd5ebb5d0bd 1371-1381,1400
+src/modules/AudioEngine/stores/__tests__/fakeAudioBufferIndexedDb.ts
+  s_87ab0a2f60ccf8::t_cf9af1341d619e 78-86,91,174-175,552,566,569-571,867
+src/modules/AudioEngine/useCases/releaseCheckpointAudioRetention.ts
+  s_87ab0a2f60ccf8::t_99590c237e78d9 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "709a08afa6a4f74fbcc8008a6fb9c2c9cc83c076",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
