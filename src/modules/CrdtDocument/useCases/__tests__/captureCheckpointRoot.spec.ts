@@ -18,6 +18,7 @@ import {
     type CompactShadowRequest,
 } from '../../repositories/__tests__/automergeWorkerTestHarness';
 import { captureCheckpointRoot } from '../captureCheckpointRoot';
+import { captureProjectRevision } from '../captureProjectRevision';
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
 
 type HeldCompactRequest = {
@@ -90,6 +91,10 @@ describe('captureCheckpointRoot', () => {
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.checkpoint = 'stable';
         });
+        automergeRepository.createChildDoc('branch_checkpoint');
+        automergeRepository.changeDoc('branch_checkpoint', (doc: Record<string, unknown>) => {
+            doc.checkpoint = 'child';
+        });
 
         const capture = captureCheckpointRoot();
         const exchange = await compactRequest;
@@ -97,6 +102,9 @@ describe('captureCheckpointRoot', () => {
         const checkpoint = await capture;
 
         const expectedRootHeads = exchange.request.expectedHeads.find(([id]) => id === 'root')?.[1];
+        const expectedDocuments = exchange.request.expectedHeads
+            .map(([docId, heads]) => ({ docId, heads: heads.toSorted() }))
+            .toSorted(({ docId: left }, { docId: right }) => left.localeCompare(right));
         expect(checkpoint.rootBytes).toBe(emittedRootBytes);
         expect(getHeads(load<Record<string, unknown>>(checkpoint.rootBytes)).toSorted()).toEqual(
             expectedRootHeads?.toSorted()
@@ -105,10 +113,11 @@ describe('captureCheckpointRoot', () => {
             seed: true,
             checkpoint: 'stable',
         });
+        expect(checkpoint.projectRevision).toBe(captureProjectRevision());
         expect(JSON.parse(checkpoint.projectRevision)).toEqual({
             documentIdentityEpoch: automergeRepository.getDocumentIdentityEpoch(),
             mutationEpoch: automergeRepository.getMutationEpoch(),
-            documents: [{ docId: 'root', heads: expectedRootHeads?.toSorted() }],
+            documents: expectedDocuments,
         });
     });
 
