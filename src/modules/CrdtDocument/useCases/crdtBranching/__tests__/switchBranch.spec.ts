@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
     replaceDoc: vi.fn(),
     removeDoc: vi.fn(),
     clearUndoHistory: vi.fn(),
-    captureUndoHistory: vi.fn<() => UndoSnapshot>(() => ({ past: [], future: [] })),
+    captureUndoHistory: vi.fn<() => UndoSnapshot>(() => ({ past: [], future: [], undoTree: null })),
     restoreUndoHistory: vi.fn(),
     storeValue: {
         branches: [
@@ -185,7 +185,7 @@ describe('switchBranch', () => {
             undo: () => {},
             redo: () => undefined,
         };
-        const preSwitchSnapshot: UndoSnapshot = { past: [preSwitchEntry], future: [] };
+        const preSwitchSnapshot: UndoSnapshot = { past: [preSwitchEntry], future: [], undoTree: null };
         mocks.captureUndoHistory.mockReturnValueOnce(preSwitchSnapshot);
 
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
