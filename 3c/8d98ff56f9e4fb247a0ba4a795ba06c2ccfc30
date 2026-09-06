@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/agentReference/resolveCompleteClipReference.ts
+  s_87ab0a2f60ccf8::t_772b8c1a550c10 28
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_87ab0a2f60ccf8::t_772b8c1a550c10 235-260,277,279-280,283
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_87ab0a2f60ccf8::t_772b8c1a550c10 961
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_772b8c1a550c10 6322,6336-6340,6351-6355,6363-6367
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3c8d98ff56f9e4fb247a0ba4a795ba06c2ccfc30",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
