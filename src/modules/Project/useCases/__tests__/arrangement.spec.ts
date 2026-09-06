@@ -49,6 +49,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getRuntimeGraphRevision: vi.fn(),
     getTrackStrip: vi.fn(),
     hasLiveNativeGraphSession: vi.fn(),
+    holdWebFallbackDeviceParam: vi.fn(),
     initializeTrackStripFromSnapshot: vi.fn(),
     isDeviceCarriedByNativeSession: vi.fn(),
     matchesRuntimeDeviceChainTopology: vi.fn(),

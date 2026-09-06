@@ -9,6 +9,7 @@ import {
 import {
     getCompensationDelay,
     getCurrentTime,
+    holdWebFallbackDeviceParam,
     isDeviceCarriedByNativeSession,
     scheduleSendAutomation,
     scheduleTrackPan,
@@ -22,7 +23,7 @@ import {
     isRecordingAutomation,
     resolveAutoMatchValue,
 } from '#/modules/Automation/useCases';
-import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
+import { applyFermenterRuntimeParam, mapFermenterParamToDspParam } from '#/modules/Fermenter/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
@@ -469,33 +470,51 @@ export function applyAutomation(currentBeat: number): Set<string> {
                     isDiscontinuity ||
                     (Math.abs(smoothed - prev) > AUTOMATION_SLEW_EPSILON && delivered !== previousDelivered);
                 const released = takeBypassReleaseEdge(bypassReleaseEdges, device.id, device.bypassed);
+                // A device the native session carries has its parameters
+                // stamped on the audio thread from the engine's own queue,
+                // block-accurately and ahead of the playhead — a hosted plugin
+                // (#3568) and a built-in the engine builds a body for (#3893)
+                // alike. Sending the same parameter down the full door as well
+                // would double-drive that one body, and the tick-grid write
+                // would land late enough to undo a stamp that was already
+                // correct.
+                //
+                // The release from bypass is the one write a carried device
+                // still owes, and it is forced past the gate above: the engine
+                // discards a stamp due at a bypassed effect, so the body
+                // resumes holding whatever it held before, and the curve may sit
+                // still for a long time before it stamps again. Renderer IPC is
+                // ordered, so this write lands after the bypass release itself.
+                //
+                // A carried built-in owes one more thing than a hosted plugin
+                // does: its Web Audio node is the strip's fallback carrier the
+                // moment Stop reopens the gate, so `holdWebFallbackDeviceParam`
+                // keeps that node on the curve while the engine owns the sound.
+                // It writes nothing for a hosted plugin, whose Web Audio path is
+                // IPC to the very instance being stamped.
+                const carried = isDeviceCarriedByNativeSession(lane.trackId, device.id);
                 if (device.type === 'fermenter') {
                     // Fermenter params use camelCase ids that must be mapped to
                     // their snake_case DSP ids before reaching the WASM node —
                     // the same translation the UI bridge applies. Runtime
                     // automation bypasses UI state and persistence so the
                     // user's manual base and CRDT history remain unchanged.
-                    if (moved) {
+                    if (carried ? released : moved) {
                         applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
+                    } else if (carried && moved) {
+                        holdWebFallbackDeviceParam(
+                            targetOwner.trackId,
+                            targetOwner.deviceId,
+                            mapFermenterParamToDspParam({ paramId }),
+                            delivered
+                        );
                     }
                     continue;
                 }
-                // A device the native session carries has its parameters
-                // stamped on the audio thread from the engine's own queue
-                // (#3568), block-accurately and ahead of the playhead. Writing
-                // the same parameter over IPC as well would double-drive one
-                // plugin instance, and the tick-grid write would land late
-                // enough to undo the stamp that was already correct.
-                //
-                // The release from bypass is the one write a carried device
-                // still owes, and it is forced past the gate above: the engine
-                // discards a stamp due at a bypassed effect, so the plugin
-                // resumes holding whatever it held before, and the curve may sit
-                // still for a long time before it stamps again. Renderer IPC is
-                // ordered, so this write lands after the bypass release itself.
-                const carried = isDeviceCarriedByNativeSession(lane.trackId, device.id);
                 if (carried ? released : moved) {
                     updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
+                } else if (carried && moved) {
+                    holdWebFallbackDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);
                 }
                 continue;
             }
