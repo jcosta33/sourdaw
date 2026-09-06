@@ -1,0 +1,20 @@
+src/modules/Command/useCases/__tests__/restoreUndoHistory.spec.ts
+  h_1228e573df1f42 6-11,13-14,16-21,23-45,49-51,67,71-90
+src/modules/Command/useCases/restoreUndoHistory.ts
+  h_1228e573df1f42 2-4,13-19
+src/modules/Command/useCases/undoTree/rebuildTreeFromPast.ts
+  h_1228e573df1f42 1-19
+src/modules/Command/useCases/undoTree/toggleUndoTree/toggleUndoTree.ts
+  h_1228e573df1f42 3,14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a03799fff8b7ab3df65439b83e3101981de17615",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
