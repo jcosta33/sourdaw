@@ -31,11 +31,14 @@ import {
 import {
     type ProofChamberAlgorithm,
     ALGORITHM_MAP,
+    BOOLEAN_ENGINE_FIELDS,
     DEFAULT_PARAMS,
+    NUMERIC_ENGINE_FIELDS,
     PARAM_MAP,
     type ProofChamberEngineState,
     PROOF_CHAMBER_ALGORITHMS,
     PROOF_CHAMBER_DECAY_EQ_BANDS,
+    proofChamberAlgorithmFromWireValue,
     expandSpacePreset,
     type SpaceType,
     usesRt60DecayLaw,
@@ -299,6 +302,54 @@ function KnobCell({
     );
 }
 
+/**
+ * The engine state project truth describes, overlaid on `base`.
+ *
+ * The space-load rollback must not snapshot the live engine store: an earlier
+ * optimistic click may still own it, and a snapshot read back from there would
+ * restore that click's preset as if it were the pre-click state. Project truth
+ * never moves on an optimistic write, so every persisted field is read from
+ * `parameterValues` — the same projection `hydrateChamberStateFromProject`
+ * applies on project open — while the fields truth does not hold (the
+ * session-only `space`) stay as `base` has them. `base` is the updater's own
+ * pre-write state, so a device with nothing stored yet still rolls back to
+ * what the click actually replaced.
+ */
+function engineStateFromProjectParameters(
+    parameterValues: Record<string, number> | undefined,
+    base: ProofChamberEngineState
+): ProofChamberEngineState {
+    if (parameterValues === undefined) {
+        return base;
+    }
+    const restored: ProofChamberEngineState = { ...base };
+    for (const field of NUMERIC_ENGINE_FIELDS) {
+        const paramId = PARAM_MAP[field];
+        if (paramId === undefined) {
+            continue;
+        }
+        const stored = parameterValues[paramId];
+        if (typeof stored === 'number' && Number.isFinite(stored)) {
+            restored[field] = stored;
+        }
+    }
+    for (const field of BOOLEAN_ENGINE_FIELDS) {
+        const paramId = PARAM_MAP[field];
+        if (paramId === undefined) {
+            continue;
+        }
+        const stored = parameterValues[paramId];
+        if (typeof stored === 'number' && Number.isFinite(stored)) {
+            restored[field] = stored > 0.5;
+        }
+    }
+    const storedAlgorithm = parameterValues.algorithm;
+    if (typeof storedAlgorithm === 'number' && Number.isFinite(storedAlgorithm)) {
+        restored.algorithm = proofChamberAlgorithmFromWireValue(storedAlgorithm);
+    }
+    return restored;
+}
+
 export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const storeState = useStore(chamberStore, { activeInstanceId: null, instances: {} });
     const trackState = useStore(trackStore, defaultTrackState);
@@ -395,7 +446,27 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     async function selectSpace(space: SpaceType): Promise<void> {
         const nextParams = expandSpacePreset(space);
 
-        updateChamberEngine(deviceId, () => nextParams);
+        // The optimistic preset must not survive a refused load (issue #3860):
+        // project truth never moved, so the panel would keep showing the new
+        // space and its preset while the refusal below says nothing changed.
+        // The snapshot is derived through `engineStateFromProjectParameters`
+        // rather than read back from the live store, because an earlier
+        // unresolved optimistic click may already own that store — its preset
+        // must never become this click's "previous" state. `ambiguous` is the
+        // one outcome that may have landed, so instead of restoring a snapshot
+        // over a landed write it re-hydrates from project truth below.
+        let previousEngineState: ProofChamberEngineState | null = null;
+        updateChamberEngine(deviceId, (current) => {
+            previousEngineState = engineStateFromProjectParameters(projectParameterValues, current);
+            return nextParams;
+        });
+        const restorePreviousEngineState = (): void => {
+            const engineState = previousEngineState;
+            if (engineState === null) {
+                return;
+            }
+            updateChamberEngine(deviceId, () => engineState);
+        };
 
         const actions: AppAction[] = [
             {
@@ -444,12 +515,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         if (result.status === 'ambiguous') {
             // The write may or may not have persisted — the storage transaction's
             // commit state is unknown — so the toast hedges instead of naming an
-            // outcome the batch never reported. The hedge points at reloading the
-            // project because that is the one truth-derived view: the Space tray
-            // renders the optimistic engine store written before the batch and
-            // never resynced, so it shows the load as active even when nothing
-            // persisted.
+            // outcome the batch never reported. The store is re-hydrated from
+            // project truth, but which truth that is depends on the unknown
+            // commit, so the hedge still points at reloading the project as the
+            // one way to confirm what the engine is actually running.
             logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            hydrateChamberStateFromProject(deviceId);
             notifyUser(
                 `The "${space}" space load may not have persisted — reload the project to confirm before retrying.`,
                 'warning'
@@ -457,6 +528,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             return;
         }
         if (result.status === 'failed') {
+            restorePreviousEngineState();
             // A handler or storage throw, not a project refusal: the refusal
             // message here would name a false cause, so the toast stays
             // cause-neutral and the durable log keeps the reason diagnosable.
@@ -465,6 +537,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             return;
         }
         if (result.status === 'rejected' || result.status === 'conflicted') {
+            restorePreviousEngineState();
             // The batch resolves rather than rejecting when it is turned away,
             // so the click used to leave no trace at all. The toast names the
             // outcome; the durable log keeps the reason diagnosable.
