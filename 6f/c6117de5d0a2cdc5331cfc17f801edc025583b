@@ -1,0 +1,26 @@
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_9b530f08172a54::t_b29a3fa7ed091b 538-541
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_8c6e853c90a1e3 7260-7261
+  s_9b530f08172a54::t_190ff3fc3d3aee 1385,1388-1389,1391-1398,1400-1403
+  s_9b530f08172a54::t_138a45a0b154c7 1421
+  s_9b530f08172a54::t_5a1ab8f4307041 383-388
+  s_9b530f08172a54::t_1780e2b329e617 7228
+  s_9b530f08172a54::t_365ae015bb0d9e 7279-7280
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6fc6117de5d0a2cdc5331cfc17f801edc025583b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
