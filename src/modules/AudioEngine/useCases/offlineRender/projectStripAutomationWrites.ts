@@ -52,15 +52,16 @@ import { createAutomationRecorder, type AutomationRecorder } from './createAutom
 /**
  * One device on this strip whose parameters the caller's backend can carry.
  *
- * The instance id is on it because the only caller that names devices today is
- * the live producer, and the law it enforces is the hosting plugin instance's
- * own published parameter list — a question no device type answers, since every
- * external plugin device spells the same type.
+ * A hosted plugin carries its instance id because the law it is held to is the
+ * instance's own published parameter list — a question no device type answers,
+ * since every external plugin device spells the same type. A built-in the
+ * engine addresses by its own vocabulary carries none: its law is the device
+ * type's declared descriptor, which the type alone already names.
  */
 export type StripAutomationDeviceEntry = Readonly<{
     deviceId: string;
     deviceType: string;
-    externalInstanceId: string;
+    externalInstanceId?: string;
 }>;
 
 export type StripAutomationWritesEntry = Readonly<{

@@ -150,6 +150,8 @@ function hostedValues(result: ReturnType<typeof readLiveAutomationWrites>, param
 function emptySeam(): void {
     offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
     offlineDeviceParameterLawState.clampExternalPluginValue = null;
+    offlineDeviceParameterLawState.isAutomatable = null;
+    offlineDeviceParameterLawState.clampValue = null;
     offlineDeviceParameterLawState.quantiseValue = null;
 }
 
@@ -309,5 +311,255 @@ describe('readLiveAutomationWrites', () => {
         const result = readOneRegion();
 
         expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+    });
+});
+
+/**
+ * The other family the engine can be stamped for (#3893): a built-in whose body
+ * `daw-engine` builds, admitted on the device *type*'s declared law rather than
+ * on a plugin instance's, and addressed in the vocabulary that body answers to
+ * rather than the one project truth stores.
+ */
+describe('readLiveAutomationWrites — carried built-in devices', () => {
+    const FERMENTER_DEVICE: Device = {
+        id: 'd1',
+        name: 'Fermenter',
+        type: 'fermenter',
+        bypassed: false,
+        parameterValues: { filterCutoff: 0.4 },
+    };
+
+    /** `DeviceParam::from_name`'s own vocabulary, which is Knead's project id too. */
+    const KNEAD_PARAMETER_ID = 'shift_semitones';
+
+    const KNEAD_DEVICE: Device = {
+        id: 'd2',
+        name: 'Knead',
+        type: 'knead',
+        bypassed: false,
+        parameterValues: { [KNEAD_PARAMETER_ID]: 0 },
+    };
+
+    const FERMENTER_LANE: StoredAutomationLane = {
+        ...HOSTED_LANE,
+        id: 'lane-d1-filterCutoff',
+        parameterId: 'd1:filterCutoff',
+        parameterName: 'd1:filterCutoff',
+    };
+
+    const KNEAD_LANE: StoredAutomationLane = {
+        ...HOSTED_LANE,
+        id: 'lane-d2-shift',
+        parameterId: `d2:${KNEAD_PARAMETER_ID}`,
+        parameterName: `d2:${KNEAD_PARAMETER_ID}`,
+    };
+
+    /** The built-in half of the seam: the device type's own declared law. */
+    function fillBuiltinSeam(accepts: (paramId: string) => boolean = () => true): void {
+        offlineDeviceParameterLawState.isAutomatable = ({ paramId }) => accepts(paramId);
+        offlineDeviceParameterLawState.clampValue = ({ value }) => value;
+        offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+    }
+
+    function carry(devices: readonly Device[]): void {
+        automationStore.set({ lanes: [FERMENTER_LANE, KNEAD_LANE] });
+        nativeLiveGraphSession.carriedStripIds = new Set([TRACK.id]);
+        nativeLiveGraphSession.nativeChainByStripId = new Map([[TRACK.id, devices.map((device) => device.id)]]);
+    }
+
+    function readStrip(devices: readonly Device[]): ReturnType<typeof readLiveAutomationWrites> {
+        return readLiveAutomationWrites({
+            stripTracks: [{ ...TRACK, devices: [...devices] }],
+            sampleRate: SAMPLE_RATE,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+    }
+
+    function deviceTargets(
+        result: ReturnType<typeof readLiveAutomationWrites>
+    ): readonly { deviceId: string; parameterId: string }[] {
+        return result.entries.flatMap((entry) =>
+            entry.target.kind === 'device-parameter'
+                ? [{ deviceId: entry.target.deviceId, parameterId: entry.target.parameterId }]
+                : []
+        );
+    }
+
+    it('stamps a carried Fermenter lane under the name the instrument answers to', () => {
+        fillBuiltinSeam();
+        carry([FERMENTER_DEVICE]);
+
+        const result = readStrip([FERMENTER_DEVICE]);
+
+        // The lane is authored `filterCutoff`; `builtin_parameter` resolves the
+        // instrument's own `cutoff`, and a stamp under the stored id has no
+        // native address at all.
+        expect(result.entries.find((entry) => entry.target.kind === 'device-parameter')?.target).toEqual({
+            kind: 'device-parameter',
+            trackId: TRACK.id,
+            deviceId: FERMENTER_DEVICE.id,
+            parameterId: 'cutoff',
+        });
+    });
+
+    // Knead's ids are already the engine's names, so its entry must come back
+    // untouched — a translation applied to every body would break this one.
+    it('stamps a carried Knead lane under the id the project stores', () => {
+        fillBuiltinSeam();
+        carry([KNEAD_DEVICE]);
+
+        const result = readStrip([KNEAD_DEVICE]);
+
+        expect(deviceTargets(result)).toEqual([{ deviceId: KNEAD_DEVICE.id, parameterId: KNEAD_PARAMETER_ID }]);
+    });
+
+    it('admits no built-in lane the seam’s automatable predicate refuses', () => {
+        fillBuiltinSeam((paramId) => paramId !== KNEAD_PARAMETER_ID);
+        carry([KNEAD_DEVICE]);
+
+        const result = readStrip([KNEAD_DEVICE]);
+
+        expect(deviceTargets(result)).toEqual([]);
+    });
+
+    // The two halves answer different questions and arrive independently, so a
+    // seam holding one of them must admit that family and refuse the other —
+    // not gate both on all five functions.
+    it('admits the hosted device while the built-in half of the seam is unset', () => {
+        fillSeam();
+        carry([HOSTED_DEVICE, FERMENTER_DEVICE]);
+        automationStore.set({ lanes: [HOSTED_LANE, FERMENTER_LANE] });
+
+        const result = readStrip([HOSTED_DEVICE, FERMENTER_DEVICE]);
+
+        expect(deviceTargets(result)).toEqual([{ deviceId: HOSTED_DEVICE.id, parameterId: '7' }]);
+    });
+
+    it('admits the built-in while the hosted half of the seam is unset', () => {
+        fillBuiltinSeam();
+        carry([HOSTED_DEVICE, FERMENTER_DEVICE]);
+        automationStore.set({ lanes: [HOSTED_LANE, FERMENTER_LANE] });
+
+        const result = readStrip([HOSTED_DEVICE, FERMENTER_DEVICE]);
+
+        expect(deviceTargets(result)).toEqual([{ deviceId: FERMENTER_DEVICE.id, parameterId: 'cutoff' }]);
+    });
+
+    // A built-in's bounds are the device type's declared range, which the
+    // hosted clamp cannot answer for: it is asked of an instance, and this
+    // device has none.
+    it('holds a built-in’s stamped values to the seam’s type clamp, never the instance clamp', () => {
+        fillBuiltinSeam();
+        offlineDeviceParameterLawState.clampValue = ({ value }) => Math.min(value, 1);
+        offlineDeviceParameterLawState.clampExternalPluginValue = () => 99;
+        carry([FERMENTER_DEVICE]);
+        automationStore.set({
+            lanes: [
+                {
+                    ...FERMENTER_LANE,
+                    maxValue: 5,
+                    points: [
+                        { beat: 0, value: 0.2, curve: 'step', tension: 0 },
+                        { beat: 2, value: 5, curve: 'step', tension: 0 },
+                    ],
+                },
+            ],
+        });
+
+        const values = hostedValues(readStrip([FERMENTER_DEVICE]), 'cutoff');
+
+        // The curve rides to 5; the type law's ceiling is 1, and the instance
+        // clamp — which has no instance to answer for here — would say 99.
+        expect(values).not.toHaveLength(0);
+        expect(Math.max(...values)).toBe(1);
+    });
+
+    // The stamped route is for what the engine is actually sounding. A built-in
+    // no splice has placed in the native chain is still Web Audio's.
+    it('admits no lane for a built-in this session does not carry', () => {
+        fillBuiltinSeam();
+        carry([]);
+
+        const result = readStrip([FERMENTER_DEVICE]);
+
+        expect(deviceTargets(result)).toEqual([]);
+    });
+
+    // The descriptor law fails open on a name its descriptor never declares —
+    // Knead's own descriptor declares no parameters at all — so an accept-all
+    // law is exactly the case that would let a lane the device does not hold
+    // through if the presence check were missing (#3893).
+    it('refuses a carried Knead lane the device does not hold', () => {
+        const KNEAD_WITHOUT_PARAMETERS: Device = { ...KNEAD_DEVICE, parameterValues: {} };
+        fillBuiltinSeam();
+        carry([KNEAD_WITHOUT_PARAMETERS]);
+
+        const result = readStrip([KNEAD_WITHOUT_PARAMETERS]);
+
+        expect(deviceTargets(result)).toEqual([]);
+    });
+
+    // Presence on the device is not enough either: the device can hold a key
+    // the body still cannot resolve. For Knead that key would fail
+    // `DeviceParam::from_name` and refuse the whole `write-device-parameter`
+    // batch it travels in; for the Fermenter fixture used here, `bogus` is
+    // shape-valid (`fermenter_parameter` in
+    // `crates/sourdaw-native/src/commands/graph.rs` only checks shape), so the
+    // wire accepts it and this body silently drops it instead — neither is a
+    // write the lane meant.
+    it('refuses a parameter the body does not resolve even when the device holds it', () => {
+        const FERMENTER_WITH_BOGUS: Device = {
+            ...FERMENTER_DEVICE,
+            parameterValues: { filterCutoff: 0.4, bogus: 1 },
+        };
+        const BOGUS_LANE: StoredAutomationLane = {
+            ...HOSTED_LANE,
+            id: 'lane-d1-bogus',
+            parameterId: 'd1:bogus',
+            parameterName: 'd1:bogus',
+        };
+        fillBuiltinSeam();
+        carry([FERMENTER_WITH_BOGUS]);
+        automationStore.set({ lanes: [BOGUS_LANE] });
+
+        const result = readStrip([FERMENTER_WITH_BOGUS]);
+
+        expect(deviceTargets(result)).toEqual([]);
+    });
+
+    /** The hosted half of the seam, accepting one chosen parameter id rather than {@link HOSTED_LANE}'s fixed `'7'`. */
+    function fillHostedSeamAccepting(parameterId: string): void {
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, candidateId) =>
+            candidateId === parameterId;
+        offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => value;
+        offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+    }
+
+    // A camelCase hosted id is exactly what the Fermenter translator would
+    // visibly mangle (`driveAmount` -> `drive_amount`) if it were ever applied
+    // to the wrong device on the strip — the regression `addressedNatively`
+    // must resolve each entry's own device for, not the strip's first built-in.
+    it('re-addresses only the built-in when a hosted device shares the strip', () => {
+        const HOSTED_DRIVE_LANE: StoredAutomationLane = {
+            ...HOSTED_LANE,
+            id: 'lane-plugin-driveAmount',
+            parameterId: `${HOSTED_DEVICE.id}:driveAmount`,
+            parameterName: `${HOSTED_DEVICE.id}:driveAmount`,
+        };
+        fillHostedSeamAccepting('driveAmount');
+        fillBuiltinSeam();
+        carry([HOSTED_DEVICE, FERMENTER_DEVICE]);
+        automationStore.set({ lanes: [HOSTED_DRIVE_LANE, FERMENTER_LANE] });
+
+        const result = readStrip([HOSTED_DEVICE, FERMENTER_DEVICE]);
+
+        expect(deviceTargets(result)).toHaveLength(2);
+        expect(deviceTargets(result)).toEqual(
+            expect.arrayContaining([
+                { deviceId: HOSTED_DEVICE.id, parameterId: 'driveAmount' },
+                { deviceId: FERMENTER_DEVICE.id, parameterId: 'cutoff' },
+            ])
+        );
     });
 });

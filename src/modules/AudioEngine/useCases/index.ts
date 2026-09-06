@@ -59,6 +59,7 @@ export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
 export { discardDecodedAudioFile } from './discardDecodedAudioFile';
 
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
+export { holdWebFallbackDeviceParam } from './deviceControls/holdWebFallbackDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
 export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';

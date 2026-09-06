@@ -231,6 +231,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
+    holdWebFallbackDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     // The rate `projectTrackToLiveStrip` activates external plugins at. It must
     // agree with the mocked context above: a live engine has exactly one clock,

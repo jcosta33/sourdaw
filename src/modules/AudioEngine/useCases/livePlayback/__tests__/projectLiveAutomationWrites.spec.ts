@@ -614,3 +614,69 @@ describe('projectLiveAutomationWrites — hosted device lanes', () => {
         ]);
     });
 });
+
+/**
+ * A built-in the engine builds a body for is in the same position a hosted
+ * plugin is (#3893): the session may not be carrying it yet, but the engine
+ * *can* carry it, so an uncarried lane on one is omitted in silence rather than
+ * reported as automation with nowhere to go. A device the engine builds no body
+ * for keeps the exclusion it has always had.
+ */
+describe('projectLiveAutomationWrites — native built-in device lanes', () => {
+    const fermenter: Device = {
+        id: 'fermenter-1',
+        name: 'Fermenter',
+        type: 'fermenter',
+        bypassed: false,
+        parameterValues: { filterCutoff: 0.4 },
+    };
+
+    const crust: Device = {
+        id: 'crust-1',
+        name: 'Crust',
+        type: 'crust',
+        bypassed: false,
+        parameterValues: { drive: 0.4 },
+    };
+
+    /** Accepts every parameter, so admission turns on the device rather than the id. */
+    const permissiveLaw: LiveAutomationWritesInput['deviceParameterLaw'] = {
+        acceptsAutomation: () => true,
+        clampValue: ({ value }) => value,
+        quantiseValue: ({ value }) => value,
+    };
+
+    function projectBothLanes(): ReturnType<typeof projectLiveAutomationWrites> {
+        const track = createTrack({ devices: [fermenter, crust] });
+        return projectLiveAutomationWrites({
+            ...baseInput,
+            // The engine is carrying nothing on this strip: what separates the
+            // two lanes below is only whether the engine has a body to carry.
+            carriedDeviceEntries: () => [],
+            deviceParameterLaw: permissiveLaw,
+            stripTracks: [track],
+            lanes: [
+                lane({ trackId: track.id, parameterId: 'fermenter-1:filterCutoff', points: [point(0, 0.3, 'step')] }),
+                lane({ trackId: track.id, parameterId: 'crust-1:drive', points: [point(0, 0.3, 'step')] }),
+            ],
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+    }
+
+    it('does not exclude an uncarried lane on a device the engine builds a body for', () => {
+        expect(projectBothLanes().exclusions.map((exclusion) => exclusion.subjectId)).not.toContain(
+            'lane-track-1-fermenter-1:filterCutoff'
+        );
+    });
+
+    it('still excludes a lane on a device the engine builds no body for', () => {
+        expect(projectBothLanes().exclusions).toEqual([
+            {
+                stripId: 'track-1',
+                subjectId: 'lane-track-1-crust-1:drive',
+                reason: 'device parameter automation has no native body yet (#3124)',
+            },
+        ]);
+    });
+});

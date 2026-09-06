@@ -4,6 +4,7 @@ import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } fro
 import {
     getCompensationDelay,
     getCurrentTime,
+    holdWebFallbackDeviceParam,
     isDeviceCarriedByNativeSession,
     scheduleSendAutomation,
     scheduleTrackGain,
@@ -75,6 +76,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         scheduleTrackPan: vi.fn(),
         getCurrentTime: vi.fn(() => 5),
         getCompensationDelay: vi.fn(() => 0),
+        holdWebFallbackDeviceParam: vi.fn(),
         isDeviceCarriedByNativeSession: vi.fn(() => false),
         updateDeviceParam: vi.fn(),
         updateMidiFxParam: vi.fn(),
@@ -708,6 +710,124 @@ describe('applyAutomation', () => {
             applyAutomation(2);
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        // A carried built-in is stamped from the engine's queue like a carried
+        // plugin, but unlike a plugin its Web Audio node is the strip's own
+        // fallback carrier — silent only while the session holds the gate
+        // closed, and heard again the moment Stop reopens it. So the tick grid
+        // still has one thing to do for it: keep that node on the curve,
+        // without letting the value reach the engine.
+        it('holds a carried built-in’s Web Audio fallback on a moving tick instead of writing the engine', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
+                laneParameterId: 'device-k1:shift_semitones',
+            });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-k1',
+                'shift_semitones',
+                slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
+            );
+        });
+
+        it('restates a carried built-in through the full door on release from bypass, not the fallback hold', () => {
+            const device: SeedDevice = {
+                id: 'device-k1',
+                type: 'knead',
+                parameterValues: { shift_semitones: 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-k1:shift_semitones' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
+
+            applyAutomation(0);
+            commitBypass(device.id, false);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.8);
+            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('writes an uncarried built-in through the full door and holds nothing', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
+                laneParameterId: 'device-k1:shift_semitones',
+            });
+
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-k1',
+                'shift_semitones',
+                slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
+            );
+            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+        });
+
+        // The Fermenter's fallback node answers to the instrument's snake_case
+        // name, which is what `applyFermenterRuntimeParam` would have handed it
+        // — the hold takes the same door and owes the same translation.
+        it('holds a carried Fermenter’s fallback under the instrument’s own name', () => {
+            // Its own device id: the per-parameter slew is module state keyed by
+            // it, and a ride left behind by another spec would make this one's
+            // first tick a movement it never made.
+            seedDeviceLane({
+                devices: [{ id: 'device-f2', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
+                laneParameterId: 'device-f2:filterCutoff',
+            });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            // Hertz, both inside the declared cutoff range, so the first tick
+            // rests where the curve already is and the value that lands on the
+            // second is the slew's own rather than a clamp to the range floor.
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(5_000).mockReturnValue(10_000);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(applyFermenterRuntimeParam).not.toHaveBeenCalled();
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-f2',
+                'cutoff',
+                slewStep(5_000, 10_000, AUTOMATION_SLEW_ALPHA)
+            );
+        });
+
+        it('restates a carried Fermenter through the runtime use case on release from bypass', () => {
+            const device: SeedDevice = {
+                id: 'device-f1',
+                type: 'fermenter',
+                parameterValues: { filterCutoff: 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-f1:filterCutoff' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(1_000).mockReturnValue(5_000);
+
+            applyAutomation(0);
+            commitBypass(device.id, false);
+            applyAutomation(1);
+
+            // The un-bypass replaced the track snapshot, which drops the slew,
+            // so the restatement owes the curve value itself.
+            expect(applyFermenterRuntimeParam).toHaveBeenCalledWith(
+                expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff', value: 5_000 })
+            );
+            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
         });
     });
 

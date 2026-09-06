@@ -9,7 +9,14 @@
  *
  * The registry is pure, so nothing is mocked. The Fermenter vocabulary is the
  * module's own, read through its published translation rather than restated.
+ * The Knead vocabulary is welded the same way, below, against the Rust arms
+ * themselves rather than against a hand-copied list that could drift from
+ * them without either side noticing.
  */
+
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -17,6 +24,71 @@ import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermente
 
 import { MAX_IMMEDIATE_DEVICE_PARAMETERS } from '../../../models/AudioGraphBackend';
 import { nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
+
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
+
+/** Strip line and block comments so brace matching does not see prose. */
+function stripComments(source: string): string {
+    return source.replaceAll(/\/\*[\S\s]*?\*\//g, ' ').replaceAll(/\/\/[^\n]*/g, ' ');
+}
+
+/**
+ * The braced block starting at `openIndex`, skipping string literals so a
+ * quoted brace inside the block cannot close it early.
+ */
+function readBalancedBlock(source: string, openIndex: number): string {
+    let depth = 0;
+    let inString = false;
+    let quote = '';
+    for (let index = openIndex; index < source.length; index++) {
+        const char = source[index]!;
+        if (inString) {
+            if (char === '\\') {
+                index++;
+                continue;
+            }
+            if (char === quote) {
+                inString = false;
+            }
+            continue;
+        }
+        if (char === '"' || char === "'") {
+            inString = true;
+            quote = char;
+            continue;
+        }
+        if (char === '{') {
+            depth++;
+            continue;
+        }
+        if (char === '}') {
+            depth--;
+            if (depth === 0) {
+                return source.slice(openIndex, index + 1);
+            }
+        }
+    }
+    return source.slice(openIndex);
+}
+
+/**
+ * Every string-literal match arm inside `DeviceParam::from_name`
+ * (`crates/daw-engine/src/timeline.rs`) — the closed set of names Knead's
+ * body resolves. Read from the Rust source itself rather than restated, so a
+ * new or removed arm on the Rust side moves this set without an edit here.
+ */
+function readKneadEngineArmsFromRust(): readonly string[] {
+    const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/daw-engine/src/timeline.rs'), 'utf8'));
+    const signature = /\bfn\s+from_name\s*\(/;
+    const signatureMatch = signature.exec(source);
+    if (signatureMatch === null) {
+        throw new Error("could not find 'fn from_name' in crates/daw-engine/src/timeline.rs");
+    }
+    const openIndex = source.indexOf('{', signatureMatch.index + signatureMatch[0].length);
+    const body = readBalancedBlock(source, openIndex).replaceAll(/\s+/g, ' ');
+    const arm = /"([\w-]+)"(?=(?: \| "[\w-]+")* =>)/g;
+    return [...body.matchAll(arm)].map((match) => match[1]!);
+}
 
 /** The registry entry under test, with the `null` case already refused. */
 function bodyOf(deviceType: string): NativeBuiltinBody {
@@ -100,6 +172,17 @@ describe('the fermenter body', () => {
             expect(Object.keys(projected).length).toBeLessThanOrEqual(MAX_IMMEDIATE_DEVICE_PARAMETERS);
         }
     });
+
+    // Every authored id resolves; a macro slot does not, because project truth
+    // stores the eight slots as one `macros` array rather than as individually
+    // keyed `parameterValues` entries, so no lane parameter id ever spells one.
+    it('resolves every authored id, and refuses a macro slot or an unknown id', () => {
+        for (const param of FERMENTER_PARAMS) {
+            expect(bodyOf('fermenter').addressesParameter(param.id)).toBe(true);
+        }
+        expect(bodyOf('fermenter').addressesParameter('macro0')).toBe(false);
+        expect(bodyOf('fermenter').addressesParameter('bogus')).toBe(false);
+    });
 });
 
 describe('the knead body', () => {
@@ -112,5 +195,43 @@ describe('the knead body', () => {
         expect(bodyOf('knead').projectPatch({ shift_semitones: 3, label: 'up a third' })).toEqual({
             shift_semitones: 3,
         });
+    });
+
+    // `DeviceParam::from_name` (`crates/daw-engine/src/timeline.rs`) is the
+    // closed set this mirrors. Knead's own descriptor declares no parameters
+    // at all, so this is the only thing that stops the descriptor law from
+    // admitting any id a lane can spell for it (#3893). Welded against the
+    // Rust arms themselves — a hard-coded list on either side could drift
+    // without either side noticing, the way `KNEAD_ENGINE_PARAM_NAMES` and
+    // `DeviceParam::from_name` could before this case read one from the other.
+    it('resolves exactly the arms DeviceParam::from_name matches, and nothing else', () => {
+        const engineArms = readKneadEngineArmsFromRust();
+        // Presence pin: a broken extraction (a truncated body, a signature the
+        // regex no longer matches) would yield an empty set, and every
+        // assertion below would pass vacuously against it.
+        expect(engineArms.length).toBeGreaterThan(0);
+
+        for (const name of engineArms) {
+            expect(bodyOf('knead').addressesParameter(name)).toBe(true);
+        }
+
+        // Names outside the arms the body must still refuse — including the
+        // camelCase spelling of a real arm, since the wire is a snake_case
+        // vocabulary and the body must not fold case to admit it.
+        const probeNames = ['pitch', 'mix', 'formant', 'shiftSemitones'];
+        for (const name of probeNames) {
+            expect(bodyOf('knead').addressesParameter(name)).toBe(false);
+        }
+
+        // The "nothing else" direction, made mechanical rather than sampled: a
+        // candidate universe of the real arms, the probe names, and every id a
+        // Fermenter lane can author, filtered down to what the body actually
+        // admits, must equal the arm set exactly. A name added to the body's
+        // admission on either side without a matching Rust arm — or a Rust arm
+        // the body stops admitting — moves this set away from `engineArms`.
+        const candidateUniverse = new Set([...engineArms, ...probeNames, ...FERMENTER_PARAMS.map((param) => param.id)]);
+        const admitted = [...candidateUniverse].filter((name) => bodyOf('knead').addressesParameter(name));
+
+        expect(new Set(admitted)).toEqual(new Set(engineArms));
     });
 });

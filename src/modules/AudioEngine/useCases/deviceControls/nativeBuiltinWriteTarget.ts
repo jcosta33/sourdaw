@@ -18,18 +18,13 @@
  * device the engine does not hold.
  */
 
-import { trackStore } from '#/modules/Arrangement/stores';
-
 import { isDeviceCarriedByNativeSession } from '../livePlayback/isDeviceCarriedByNativeSession';
 import { nativeBuiltinBody, type NativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
-function deviceType(trackId: string, deviceId: string): string | null {
-    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    return track?.devices.find((device) => device.id === deviceId)?.type ?? null;
-}
+import { deviceTypeOnStrip } from './deviceTypeOnStrip';
 
 export function nativeBuiltinWriteTarget(trackId: string, deviceId: string): NativeBuiltinBody | null {
-    const type = deviceType(trackId, deviceId);
+    const type = deviceTypeOnStrip(trackId, deviceId);
     if (type === null) {
         return null;
     }

@@ -41,13 +41,14 @@
  *     `resolveDeviceAutomationTargetIndex` + law the tick path resolves on.
  *     It is handed to the extraction and comes back as a `device-parameter`
  *     entry the engine stamps (#3568).
- *   - The lane names a hosted plugin this session does *not* carry — a
- *     web-carried strip, or a device no splice has placed in the native chain
- *     yet. Omitted with no exclusion: Web Audio is still driving it over IPC,
- *     so it is carried elsewhere rather than dropped, and saying otherwise
- *     would report a fault that does not exist.
- *   - Anything else — a built-in device lane, or an orphan lane left behind by
- *     `prepareRemoveDevice.ts`, which deletes the device and never its lanes.
+ *   - The lane names a device with a native body this session does *not* carry
+ *     — a web-carried strip, or a device no splice has placed in the native
+ *     chain yet. Omitted with no exclusion: Web Audio is still driving it, so
+ *     it is carried elsewhere rather than dropped, and saying otherwise would
+ *     report a fault that does not exist.
+ *   - Anything else — a lane on a device the engine builds no body for, or an
+ *     orphan lane left behind by `prepareRemoveDevice.ts`, which deletes the
+ *     device and never its lanes.
  *     `projectStripAutomationWrites` silently drops it; live has an exclusion
  *     channel the export does not, so this producer names each one (#3124),
  *     while still emitting the strip's converted fader/pan/send entries: one
@@ -75,6 +76,7 @@ import {
 } from '../offlineRender/projectStripAutomationWrites';
 
 import { admittedSendBusIds } from './admittedSendBusIds';
+import { nativeBuiltinBody } from './nativeBuiltinBodies';
 
 export type LiveAutomationWritesExclusion = Readonly<{
     stripId: string;
@@ -110,9 +112,9 @@ export type LiveAutomationWritesInput = Readonly<{
     slewTickSeconds: number;
     resolveLaneCeiling: StripAutomationWritesInput['resolveLaneCeiling'];
     /**
-     * The hosted plugin devices the native session is sounding on this strip,
-     * in the strip's own chain order. Everything else on the strip is either
-     * still Web Audio's or has no native automation body.
+     * The devices with a native body the session is sounding on this strip, in
+     * the strip's own chain order. Everything else on the strip is either still
+     * Web Audio's or has no native automation body.
      */
     carriedDeviceEntries: (stripId: string) => readonly StripAutomationDeviceEntry[];
     /** The device-parameter law both the admission and the extraction are held to. */
@@ -161,13 +163,19 @@ function deviceParameterLanes(input: {
     });
 }
 
-/** Every hosted plugin on this strip, in chain order, as the entry shape both readers take. */
-function hostedDeviceEntries(track: Track): readonly StripAutomationDeviceEntry[] {
-    return track.devices.flatMap((device) =>
-        device.externalInstanceId === undefined
-            ? []
-            : [{ deviceId: device.id, deviceType: device.type, externalInstanceId: device.externalInstanceId }]
-    );
+/**
+ * Every device on this strip the engine has a body for, in chain order, as the
+ * entry shape both readers take — a hosted plugin under its instance id, and a
+ * built-in the engine builds under no id at all, because the engine addresses
+ * it by its own vocabulary rather than through an instance.
+ */
+function nativeBodyDeviceEntries(track: Track): readonly StripAutomationDeviceEntry[] {
+    return track.devices.flatMap((device) => {
+        if (device.externalInstanceId !== undefined) {
+            return [{ deviceId: device.id, deviceType: device.type, externalInstanceId: device.externalInstanceId }];
+        }
+        return nativeBuiltinBody(device.type) ? [{ deviceId: device.id, deviceType: device.type }] : [];
+    });
 }
 
 /**
@@ -245,7 +253,7 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
         // off never earns an exclusion for a lane it was never going to read,
         // and has no consumer for the clip-bounds map either.
         if (track.automationMode !== 'off') {
-            const hosted = hostedDeviceEntries(track);
+            const withNativeBody = nativeBodyDeviceEntries(track);
             const candidateLanes = deviceParameterLanes({
                 lanes,
                 laneById,
@@ -253,16 +261,17 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
                 clipBounds: clipBoundsById(track),
             });
             for (const lane of candidateLanes) {
-                // `carried` is a subset of `hosted`, and testing it separately
-                // is still not redundant: a legacy lane naming no device id
-                // resolves against a single accepting candidate and reports
-                // ambiguous against two (`resolveDeviceAutomationTargetIndex`),
-                // so a lane that resolves inside the carried subset can go
-                // unresolved across the whole chain. Excluding it then would
-                // report a fault in a lane the engine is stamping.
+                // `carried` is a subset of `withNativeBody`, and testing it
+                // separately is still not redundant: a legacy lane naming no
+                // device id resolves against a single accepting candidate and
+                // reports ambiguous against two
+                // (`resolveDeviceAutomationTargetIndex`), so a lane that
+                // resolves inside the carried subset can go unresolved across
+                // the whole chain. Excluding it then would report a fault in a
+                // lane the engine is stamping.
                 if (
                     laneAddresses(lane, carried, deviceParameterLaw) ||
-                    laneAddresses(lane, hosted, deviceParameterLaw)
+                    laneAddresses(lane, withNativeBody, deviceParameterLaw)
                 ) {
                     continue;
                 }
