@@ -1,0 +1,80 @@
+src/modules/ProjectVersioning/useCases/versionControl/restoreVersion.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 24-26
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/autoSaveVersion.spec.ts
+  s_87ab0a2f60ccf8::t_5b6085d173513a 10,29,33,35,38,44-51
+  s_87ab0a2f60ccf8::t_1c88e0f11ba5c6 52
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/snapshotHelpers.spec.ts
+  s_87ab0a2f60ccf8::t_f6ca240d4bee45 3-22
+  s_87ab0a2f60ccf8::t_83496b69cd797e 37-44,51-57,61-62,74,86,96,100-134
+src/modules/ProjectVersioning/handlers/versionControl/handleCreateProjectVersion.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 2,9-13
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/restoreVersion.spec.ts
+  s_87ab0a2f60ccf8::t_74bf570998fe44 9,34-38,53-61
+src/modules/ProjectVersioning/useCases/versionControl/createProjectVersion.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 6,9,13-15,28-29
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/restoreSnapshot.ts
+  s_87ab0a2f60ccf8::t_f6ca240d4bee45 14-17,19,23
+  s_87ab0a2f60ccf8::t_74bf570998fe44 24,28
+  s_87ab0a2f60ccf8::t_0f714e2cfbebf0 39
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 10-13,18,20-22,25-27,29-30,36-38,40-43,45-46,48,50,53-64,66-79
+src/modules/ProjectVersioning/stores/__tests__/versionControlStore.spec.ts
+  s_87ab0a2f60ccf8::t_32846151c84659 6,15-19,132,141,162,178-189,263
+src/modules/ProjectVersioning/handlers/versionControl/handleRestoreProjectVersion.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 13-14,16
+  s_87ab0a2f60ccf8::t_7144442b4407e3 9-10
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/__tests__/captureSnapshot.spec.ts
+  s_87ab0a2f60ccf8::t_74bf570998fe44 94-108
+  s_87ab0a2f60ccf8::t_f6ca240d4bee45 3-16
+  s_87ab0a2f60ccf8::t_3113d01fbbcab7 51-58,69-70,75-81,83-89,92-93,109-120
+src/modules/ProjectVersioning/models/__tests__/ProjectVersion.spec.ts
+  s_87ab0a2f60ccf8::t_32846151c84659 9,23-28
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/createProjectVersion.spec.ts
+  s_87ab0a2f60ccf8::t_5b6085d173513a 11,41-45,49,52,56-60,68-76
+  s_87ab0a2f60ccf8::t_9f67077c855ca1 77
+src/modules/ProjectVersioning/stores/versionControlStore.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 54,68,157
+src/modules/ProjectVersioning/handlers/versionControl/__tests__/handleCreateProjectVersion.spec.ts
+  s_87ab0a2f60ccf8::t_74bf570998fe44 33,35,37,41,47-62,66,72
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/versionControlTestFixtures.ts
+  s_87ab0a2f60ccf8::t_32846151c84659 3-4,12
+src/modules/ProjectVersioning/models/ProjectVersion.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 10-11
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/getActiveCheckpointOwnerId.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 1-11
+src/modules/ProjectVersioning/useCases/versionControl/branching/switchBranch.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 4,7,12-21,26,34-35
+  s_87ab0a2f60ccf8::t_cf5ac22e78dc59 25
+src/modules/ProjectVersioning/useCases/versionControl/snapshotHelpers/captureSnapshot.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 8-9,16-21,33
+src/modules/ProjectVersioning/useCases/versionControl/branching/__tests__/switchBranch.spec.ts
+  s_87ab0a2f60ccf8::t_74bf570998fe44 10,28-36,49,52,54-60,64-86
+src/modules/ProjectVersioning/handlers/versionControl/__tests__/handleRestoreProjectVersion.spec.ts
+  s_87ab0a2f60ccf8::t_74bf570998fe44 29,35-36,42,48
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_f90bfa2263effc 96-103
+src/modules/ProjectVersioning/useCases/versionControl/autoSaveVersion.ts
+  s_87ab0a2f60ccf8::t_4c13ceabca84ea 5,8,11
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/checkpointProjectIsolation.integration.spec.ts
+  s_87ab0a2f60ccf8::t_7144442b4407e3 47-48,346
+  s_87ab0a2f60ccf8::t_3a33e9db0baa03 373-395
+  s_87ab0a2f60ccf8::t_cba1c23846ecd0 285
+  s_87ab0a2f60ccf8::t_2adeae49824465 1,3,17-18,97,197-205,249,350
+  s_87ab0a2f60ccf8::t_9b916d99d095de 4-16,19-46,49-96,98-196,206-248,250-284,286-345,347-349,351-372,396
+  s_87ab0a2f60ccf8::t_79faa5e96e10e9 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "23786c59874c7a67d28793313b287dcd9630a9af",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
