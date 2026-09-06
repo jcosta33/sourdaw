@@ -53,3 +53,8 @@ export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
 export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';
 export { subscribeToCrdtChanges } from './subscribeToCrdtChanges';
+export { commitCheckpointArtifact } from './commitCheckpointArtifact';
+export { readCheckpointArtifact } from './readCheckpointArtifact';
+export { listCheckpointCatalog } from './listCheckpointCatalog';
+export { deleteCheckpointArtifact } from './deleteCheckpointArtifact';
+export { inspectCheckpointRootMedia } from './inspectCheckpointRootMedia';
