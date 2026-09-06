@@ -259,6 +259,31 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('treats quoted reserved track references as literal names', () => {
+        const project = createProjectState();
+        const bass = project.tracks[1];
+        if (!bass) {
+            throw new Error('Expected Bass track fixture');
+        }
+        project.tracks = [...project.tracks, { ...bass, id: 'track-literal-selected', name: 'Selected Track' }];
+
+        expect(resolveTrack('mute selected track', 'track-vocals', project)).toEqual({
+            status: 'resolved',
+            id: 'track-vocals',
+            evidence: 'selection',
+        });
+        expect(resolveTrack('mute "Selected Track"', 'track-literal-selected', project)).toEqual({
+            status: 'resolved',
+            id: 'track-literal-selected',
+            evidence: 'exact-name',
+        });
+        expect(resolveTrack('mute “Selected Track”', 'track-literal-selected', project)).toEqual({
+            status: 'resolved',
+            id: 'track-literal-selected',
+            evidence: 'exact-name',
+        });
+    });
+
     it('grounds an accent-insensitive exact display name', () => {
         const project = createProjectState();
         project.tracks = [{ ...project.tracks[0]!, id: 'track-cafe', name: 'Café' }];
@@ -788,6 +813,52 @@ describe('resolveAgentReference', () => {
             status: 'resolved',
             id: 'clip-intro',
             evidence: 'selection',
+        });
+    });
+
+    it('treats quoted reserved clip references as literal names without masking apostrophes', () => {
+        const project = createClipProjectState();
+        const track = project.tracks[0];
+        if (!track) {
+            throw new Error('Expected Vocals track fixture');
+        }
+        const literalSelectedClip = {
+            ...track.clips[0]!,
+            id: 'clip-literal-selected',
+            name: 'Selected Clip',
+            startBeat: 24,
+            endBeat: 32,
+        };
+        const apostropheClip = {
+            ...track.clips[0]!,
+            id: 'clip-drummer-cut',
+            name: "Drummer's Cut",
+            startBeat: 32,
+            endBeat: 40,
+        };
+        project.tracks = [
+            {
+                ...track,
+                clipCount: track.clipCount + 2,
+                clips: [...track.clips, literalSelectedClip, apostropheClip],
+            },
+            ...project.tracks.slice(1),
+        ];
+
+        expect(resolveClip('rename selected clip', 'clip-intro', project)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'selection',
+        });
+        expect(resolveClip('rename "Selected Clip"', literalSelectedClip.id, project)).toEqual({
+            status: 'resolved',
+            id: literalSelectedClip.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveClip("rename Drummer's Cut", apostropheClip.id, project)).toEqual({
+            status: 'resolved',
+            id: apostropheClip.id,
+            evidence: 'exact-name',
         });
     });
 

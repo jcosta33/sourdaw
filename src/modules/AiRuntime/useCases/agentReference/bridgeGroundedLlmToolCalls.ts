@@ -3702,11 +3702,14 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
-function admitsCompilerResolvedTrackControlTarget(actionName: string, prompt: string): boolean {
-    return (
-        (actionName !== 'muteTrack' && actionName !== 'soloTrack') ||
-        getUniversalTrackControlIntentPhrases(prompt).length > 0
-    );
+function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
+    if (actionName === 'renameClip') {
+        return false;
+    }
+    if (actionName === 'muteTrack' || actionName === 'soloTrack') {
+        return getUniversalTrackControlIntentPhrases(prompt).length > 0;
+    }
+    return true;
 }
 
 /**
@@ -4213,7 +4216,7 @@ function groundToolCall({
         if (
             compilerTargetOverride !== undefined &&
             'stableIds' in compilerTargetOverride &&
-            admitsCompilerResolvedTrackControlTarget(call.name, prompt)
+            admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt)
         ) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||

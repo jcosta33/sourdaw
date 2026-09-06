@@ -962,6 +962,30 @@ function createNamedClipSourceContext(): ProjectContext {
     };
 }
 
+function createLiteralSelectedClipContext(): ProjectContext {
+    const context = createNamedClipSourceContext();
+    const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
+    const literalSelectedClip = {
+        ...sourceTrack.clips[0]!,
+        id: 'clip-literal-selected',
+        name: 'Selected Clip',
+        startBeat: 56,
+        endBeat: 64,
+    };
+    return {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === sourceTrack.id
+                ? {
+                      ...track,
+                      clipCount: sourceTrack.clipCount + 1,
+                      clips: [...sourceTrack.clips, literalSelectedClip],
+                  }
+                : track
+        ),
+    };
+}
+
 function crossfadeCall(argumentsPayload: Record<string, unknown>) {
     return { name: 'crossfadeClips', arguments: argumentsPayload };
 }
@@ -6204,6 +6228,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections[0]?.reason).toContain('protected');
     });
 
+    it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],
+            'rename clip-literal-selected to Bridge Solo; leave "Selected Clip" unchanged',
+            createLiteralSelectedClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
     it('rejects renaming an explicitly named member of a protected clip selection', () => {
         const context = createNamedClipSourceContext();
         const result = bridge(
@@ -6234,6 +6269,25 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     type: 'renameClip',
                     payload: { clipId: 'clip-intro', name: 'leave Intro unchanged' },
                 },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('preserves multiple ordinary rename sources in prompt order', () => {
+        const result = bridge(
+            [
+                { name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } },
+                { name: 'renameClip', arguments: { clipId: 'clip-chorus', name: 'Hook' } },
+            ],
+            'rename Intro to Opening, then rename Chorus to Hook',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [
+                { type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Opening' } },
+                { type: 'renameClip', payload: { clipId: 'clip-chorus', name: 'Hook' } },
             ],
             rejections: [],
         });

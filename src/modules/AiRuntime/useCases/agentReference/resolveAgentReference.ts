@@ -4,6 +4,7 @@ import {
     isAgentReferenceCapabilityCandidate,
     type AgentReferenceCapability,
 } from './isAgentReferenceCapabilityCandidate';
+import { maskQuotedTextContents } from './maskQuotedTextContents';
 
 type ResolveAgentReferenceInput = {
     prompt: string;
@@ -147,12 +148,12 @@ function containsQualifiedVcaGroupReference(prompt: string, reference: string): 
 }
 
 function hasExplicitTrackSelection(prompt: string): boolean {
-    const normalized = normalizeReferenceText(prompt);
+    const normalized = normalizeReferenceText(maskQuotedTextContents(prompt));
     return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
 }
 
 function hasExplicitClipSelection(prompt: string): boolean {
-    const normalized = normalizeReferenceText(prompt);
+    const normalized = normalizeReferenceText(maskQuotedTextContents(prompt));
     return /\b(?:selected|current|this) (?:audio |midi )?clip\b/u.test(normalized);
 }
 

@@ -37,6 +37,7 @@ function createClip(id: string, name: string, locked = false) {
 const bassVerse = createClip('clip-bass-verse', 'Bass Verse', true);
 const apostrophe = createClip('clip-drummer-cut', "Drummer's Cut");
 const literalSelectedClips = createClip('clip-literal-selected', 'Selected Clips');
+const literalSelectedClip = createClip('clip-literal-selected-singular', 'Selected Clip');
 const vocalVerse = createClip('clip-vocal-verse', 'Verse');
 const guitarVerse = createClip('clip-guitar-verse', 'Verse');
 const context: ProjectContext = {
@@ -54,7 +55,7 @@ const context: ProjectContext = {
     metronomeVolume: 0.5,
     masterGain: 0.8,
     tracks: [
-        createTrack('track-bass', 'Bass', [bassVerse, apostrophe, literalSelectedClips]),
+        createTrack('track-bass', 'Bass', [bassVerse, apostrophe, literalSelectedClips, literalSelectedClip]),
         createTrack('track-vocals', 'Vocals', [vocalVerse]),
         createTrack('track-guitar', 'Guitar', [guitarVerse]),
     ],
@@ -110,6 +111,15 @@ describe('getExplicitlyProtectedClips', () => {
         ]);
         expect(getExplicitlyProtectedClips('leave "selected clips" unchanged', multiSelectionContext)).toEqual([
             { id: literalSelectedClips.id, name: literalSelectedClips.name },
+        ]);
+    });
+
+    it('distinguishes an unquoted selected clip from a quoted literal name', () => {
+        expect(getExplicitlyProtectedClips('leave selected clip unchanged', context)).toEqual([
+            { id: bassVerse.id, name: bassVerse.name },
+        ]);
+        expect(getExplicitlyProtectedClips('leave "Selected Clip" unchanged', context)).toEqual([
+            { id: literalSelectedClip.id, name: literalSelectedClip.name },
         ]);
     });
 });

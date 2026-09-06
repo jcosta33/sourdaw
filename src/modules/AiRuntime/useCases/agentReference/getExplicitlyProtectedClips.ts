@@ -1,22 +1,15 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 
+import { maskQuotedTextContents } from './maskQuotedTextContents';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
 type ProjectClip = ProjectContext['tracks'][number]['clips'][number];
 
-const quotedSpanPattern = /"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|(?<![\p{L}\p{N}])'[^'\n]*'(?![\p{L}\p{N}])/gu;
 const protectionPattern = /\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu;
 
-function maskQuotedContents(value: string): string {
-    return value.replaceAll(quotedSpanPattern, (quoted) => {
-        const closingQuote = quoted.at(-1)!;
-        return `${quoted[0]!}${' '.repeat(quoted.length - 2)}${closingQuote}`;
-    });
-}
-
 function getProtectedReferenceTexts(prompt: string): string[] {
-    const maskedPrompt = maskQuotedContents(prompt);
+    const maskedPrompt = maskQuotedTextContents(prompt);
     return [...maskedPrompt.matchAll(protectionPattern)].flatMap((match) => {
         if (match.index === undefined || match[1] === undefined) {
             return [];
