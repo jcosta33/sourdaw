@@ -165,4 +165,25 @@ describe('ClipContextMenu focus management', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
         expect(priorControl).toHaveFocus();
     });
+
+    it('closes through the parent onClose when focus leaves the clip menu surface', () => {
+        const onClose = vi.fn();
+        render(<MenuHarness onClose={onClose} />);
+
+        const priorControl = screen.getByTestId('prior-control');
+        priorControl.focus();
+        fireEvent.contextMenu(screen.getByTestId('timeline'));
+
+        const menu = screen.getByRole('menu');
+        expect(menu).toHaveFocus();
+
+        // The surface must hold the parent's close callback: a focusout with
+        // no inside related target is the surface closing itself, so the clip
+        // menu cannot stay open behind ungated keydowns.
+        fireEvent.focusOut(menu, { relatedTarget: document.createElement('button') });
+
+        expect(onClose).toHaveBeenCalledOnce();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(priorControl).toHaveFocus();
+    });
 });
