@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useId, useRef } from 'react';
 
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
 export type AgentRunDecisionControl = {
@@ -70,7 +71,7 @@ export const AgentRunDecisionControls = ({
             >
                 {statusMessage}
             </p>
-            <ul className="mt-2 space-y-3" aria-label="Pending agent decisions">
+            <Stack as="ul" gap={3} className="mt-2" aria-label="Pending agent decisions">
                 {decisions.map((decision, decisionIndex) => {
                     const isAvailable = decision.allowedActions.resume;
                     const unavailableReason = isAvailable ? null : getUnavailableReason(decision);
@@ -78,12 +79,12 @@ export const AgentRunDecisionControls = ({
                     return (
                         <li key={decision.runId} className="rounded border border-border/60 bg-surface-raised/80 p-2.5">
                             <p className="text-xs text-foreground">{decision.decision.reason}</p>
-                            <ul className="mt-2 space-y-2" aria-label="Decision alternatives">
+                            <Stack as="ul" gap={2} className="mt-2" aria-label="Decision alternatives">
                                 {decision.decision.alternatives.map((alternative, alternativeIndex) => {
                                     const alternativeStatusId = `${statusId}-alternative-${decisionIndex}-${alternativeIndex}`;
 
                                     return (
-                                        <li key={alternative.id} className="flex items-center justify-between gap-2">
+                                        <Row as="li" key={alternative.id} justify="between" gap={2}>
                                             <span className="text-xs text-foreground">{alternative.label}</span>
                                             <Button
                                                 ref={
@@ -109,17 +110,17 @@ export const AgentRunDecisionControls = ({
                                                     ? 'Available. Select this alternative to resume the agent run.'
                                                     : `Unavailable: ${unavailableReason}`}
                                             </span>
-                                        </li>
+                                        </Row>
                                     );
                                 })}
-                            </ul>
+                            </Stack>
                             {!isAvailable ? (
                                 <p className="mt-2 text-xs text-muted-foreground">Unavailable: {unavailableReason}</p>
                             ) : null}
                         </li>
                     );
                 })}
-            </ul>
+            </Stack>
         </section>
     );
 };

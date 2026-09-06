@@ -5,7 +5,7 @@ import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers, Sli
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
-import { Row } from '#/components/layout';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Slider } from '#/components/ui/slider';
@@ -80,7 +80,7 @@ const TransportSettingsContent = ({
     onCycleCountInBars,
 }: TransportSettingsContentProps): ReactElement => {
     return (
-        <div className="space-y-2">
+        <Stack gap={2}>
             <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
                 Transport settings
             </p>
@@ -165,7 +165,7 @@ const TransportSettingsContent = ({
                     Count-in bars <span>{countInBars}</span>
                 </Button>
             ) : null}
-        </div>
+        </Stack>
     );
 };
 

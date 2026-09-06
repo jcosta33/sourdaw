@@ -1,12 +1,15 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+
 type DesktopStartupErrorProps = {
     onReload: () => void;
 };
 
 export function DesktopStartupError({ onReload }: DesktopStartupErrorProps): ReactElement {
     return (
-        <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+        <Row as="main" justify="center" className="min-h-screen bg-background p-6 text-foreground">
             <section
                 aria-labelledby="desktop-startup-error-title"
                 className="daw-floating-surface w-full max-w-md rounded-md p-6 text-center"
@@ -18,14 +21,16 @@ export function DesktopStartupError({ onReload }: DesktopStartupErrorProps): Rea
                 <p className="mt-2 text-sm text-muted-foreground">
                     The desktop connection did not load. Reload Sourdaw to try starting it again.
                 </p>
-                <button
+                <Button
+                    variant="bare"
+                    size="bare"
                     className="mt-5 rounded border border-border bg-surface-raised px-4 py-2 text-sm font-medium hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={onReload}
                     type="button"
                 >
                     Reload Sourdaw
-                </button>
+                </Button>
             </section>
-        </main>
+        </Row>
     );
 }

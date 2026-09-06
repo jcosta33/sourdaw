@@ -508,6 +508,10 @@
             "run": "pnpm test:barrel-mocks"
           },
           {
+            "name": "UI restatement census",
+            "run": "pnpm census:ui -- --check"
+          },
+          {
             "name": "Device write boundary census",
             "run": "pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts"
           },
@@ -1074,6 +1078,10 @@
           {
             "name": "Barrel mock coverage",
             "run": "pnpm test:barrel-mocks"
+          },
+          {
+            "name": "UI restatement census",
+            "run": "pnpm census:ui -- --check"
           },
           {
             "name": "Device write boundary census",

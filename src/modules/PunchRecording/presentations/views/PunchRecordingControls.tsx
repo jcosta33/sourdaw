@@ -4,7 +4,7 @@ import { Radio, Scissors, SlidersHorizontal } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
-import { Row } from '#/components/layout';
+import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
@@ -208,13 +208,15 @@ export const PunchRecordingControls = ({ compact = false }: PunchRecordingContro
                         <TooltipContent>Punch recording settings</TooltipContent>
                     </Tooltip>
                     <PopoverContent align="start" aria-label="Punch recording settings">
-                        <div className="space-y-2">
+                        <Stack gap={2}>
                             <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
                                 Punch recording
                             </p>
-                            <div className="grid grid-cols-2 gap-2">{punchFields}</div>
+                            <Grid cols={2} gap={2}>
+                                {punchFields}
+                            </Grid>
                             {markControl}
-                        </div>
+                        </Stack>
                     </PopoverContent>
                 </Popover>
             ) : (

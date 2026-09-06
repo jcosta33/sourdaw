@@ -115,6 +115,9 @@ jobs:
       - name: Barrel mock coverage
         run: pnpm test:barrel-mocks
 
+      - name: UI restatement census
+        run: pnpm census:ui -- --check
+
       # The census walks production sources and is isolated from the unit
       # shards so it never inherits their accumulated jsdom/module load debt.
       - name: Device write boundary census

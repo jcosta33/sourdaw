@@ -365,8 +365,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                         >
                             <p className="font-medium text-foreground">Committed project change has pending effects</p>
                             <p className="mt-1 text-muted-foreground">{recoveryDescription}</p>
-                            <ul
-                                className="mt-2 space-y-1 text-muted-foreground"
+                            <Stack
+                                as="ul"
+                                gap={1}
+                                className="mt-2 text-muted-foreground"
                                 aria-label={`Pending effects for batch ${continuation.batchId}`}
                             >
                                 {continuation.effects.map((effect) => (
@@ -375,7 +377,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                         {`: ${effect.reason}`}
                                     </li>
                                 ))}
-                            </ul>
+                            </Stack>
                             {continuation.lastError ? (
                                 <p className="mt-1 text-destructive">{continuation.lastError}</p>
                             ) : null}
