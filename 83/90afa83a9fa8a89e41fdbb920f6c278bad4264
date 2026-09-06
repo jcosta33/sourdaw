@@ -1,0 +1,21 @@
+src/modules/ProofChamber/presentations/views/ProofChamberPanel.tsx
+  s_9d777a78d6966e::t_7938109fbb5cd4 398-415,464-467,469,477,486
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_9d777a78d6966e::t_6fe7dc9cf14330 8-10,81-84,129-145,156-158,177-183,192-194,211-214,217-218,229-232,268-271,274,294-298,307-309,327-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8390afa83a9fa8a89e41fdbb920f6c278bad4264",
+  "prompts": {},
+  "sessions": {
+    "s_9d777a78d6966e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07550-d4de-7fc2-98f9-9c61d93bc094",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
