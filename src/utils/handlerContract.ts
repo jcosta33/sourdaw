@@ -178,6 +178,23 @@ export type ClipMoveActionSnapshot = {
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
 };
+/** One clip's target placement in a multi-clip move — the `moveClips` payload unit
+ *  and the moved-clip half of its `restoreClipMoves` inverse. */
+export type ClipMoveTarget = {
+    readonly clipId: string;
+    readonly trackId: string;
+    readonly startBeat: number;
+};
+/** A ripple-shifted neighbor's pre-gesture placement, captured for exact restore. */
+export type ClipShiftSnapshot = {
+    readonly clipId: string;
+    readonly origStartBeat: number;
+    readonly origEndBeat: number;
+};
+/** The neighbor shifts one ripple insert produced — the ripple half of `discardDrawnClip`'s payload. */
+export type ClipRippleInsertPlanSnapshot = {
+    readonly shiftedClips: readonly ClipShiftSnapshot[];
+};
 export type ClipStretchStateSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
@@ -1142,6 +1159,69 @@ export type AppAction =
     | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
     | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
+    | {
+          /** Draw-tool clip creation; `ripple` shifts later clips on the track by the
+           *  drawn length, exactly as the gesture's ripple insert did. */
+          type: 'drawClip';
+          payload: {
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              id?: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type: 'audio' | 'midi';
+              ripple: boolean;
+          };
+      }
+    | {
+          /** Inverse of `drawClip`. Removes the drawn clip and restores any
+           *  ripple-shifted neighbors. Emitted only by the `drawClip` handler's
+           *  `describe()` — not invoked directly. */
+          type: 'discardDrawnClip';
+          payload: { clipId: string; trackId: string; ripplePlan: ClipRippleInsertPlanSnapshot | null };
+      }
+    | {
+          /** Redo of `drawClip`. Re-creates the drawn clip and re-applies the
+           *  ripple plan captured at draw time — never re-plans against live
+           *  state, so redo restores the forward placement whatever the current
+           *  ripple preference is. Emitted only by the `drawClip` handler's
+           *  `describe()` — not invoked directly. */
+          type: 'restoreDrawnClip';
+          payload: {
+              clipId: string;
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type: 'audio' | 'midi';
+              ripplePlan: ClipRippleInsertPlanSnapshot | null;
+          };
+      }
+    | {
+          type: 'duplicateClipAt';
+          payload: {
+              clipId: string;
+              destinationTrackId: string;
+              startBeat: number;
+              /** Internal replay identity. AiRuntime payload validation rejects this field. */
+              targetClipId?: string;
+          };
+      }
+    | {
+          /** One multi-clip move gesture — plain and ripple commits alike. The
+           *  handler computes each ripple plan between sequential writes, exactly
+           *  as the callback loop did. */
+          type: 'moveClips';
+          payload: { moves: readonly ClipMoveTarget[]; ripple: boolean };
+      }
+    | {
+          /** Inverse of `moveClips`. Restores every moved clip's placement and the
+           *  pre-gesture positions of every ripple-shifted neighbor. Emitted only
+           *  by the `moveClips` handler — not invoked directly. */
+          type: 'restoreClipMoves';
+          payload: { movedClips: readonly ClipMoveTarget[]; neighborShifts: readonly ClipShiftSnapshot[] };
+      }
     | {
           type: 'addDevice';
           payload: {

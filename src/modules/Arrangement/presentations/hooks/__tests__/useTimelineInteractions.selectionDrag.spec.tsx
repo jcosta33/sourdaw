@@ -1,6 +1,12 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
+import { handleDiscardDuplicatedClip } from '../../../handlers/clip/handleDiscardDuplicatedClip';
+import { handleDuplicateClipAt } from '../../../handlers/clip/handleDuplicateClipAt';
+import { handleMoveClips } from '../../../handlers/clip/handleMoveClips';
+import { handleRestoreClipMoves } from '../../../handlers/clip/handleRestoreClipMoves';
 import { createTrack, type Clip, type Track, type TrackKind } from '../../../models/Track';
 import { clipDragPreviewRef, previewDirtyFlag } from '../../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
@@ -17,6 +23,12 @@ import { useTimelineInteractions } from '../useTimelineInteractions';
  * removeClipSatelliteData, and other side-effect sinks are mocked. The
  * mocked-out sibling spec cannot see selection collapse or per-clip undo
  * behavior at all.
+ *
+ * Since slice three the gesture ends in a registered-action dispatch, so each
+ * commit test captures the dispatched action and applies it through the REAL
+ * registered handler — describe, execute, inverse — mirroring the two kernel
+ * calls the dispatch pipeline would make. Undo/redo round trips therefore
+ * prove the handler pair, not a gesture-internal callback.
  */
 
 const mocks = vi.hoisted(() => {
@@ -59,10 +71,16 @@ const mocks = vi.hoisted(() => {
         getTransportState: vi.fn(),
         setLoopRegion: vi.fn(),
         pushUndoEntry: vi.fn(),
+        executeUserAppAction: vi.fn(),
+        generateGroupId: vi.fn((label: string) => ({ groupId: 'group-test', groupLabel: label })),
         shiftClipAutomation: vi.fn(),
         duplicateClipAutomation: vi.fn(),
         duplicateClipNotes: vi.fn(),
         removeMidiClipData: vi.fn(),
+        projectMidiNotesByClipIdThroughRestores: vi.fn(),
+        serializeMidiStateForClips: vi.fn(),
+        getAutomationLanes: vi.fn(() => []),
+        getAutomationLaneCeiling: vi.fn(),
         notifyUser: vi.fn(),
         collaborationStoreValue: storeBox({ isEnabled: false }),
         workspaceStoreValue: storeBox({ activeTool: 'select', automationVisibility: 'hidden' }),
@@ -104,18 +122,25 @@ vi.mock('#/modules/Preferences/stores', () => ({
     },
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
+    generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
     duplicateClipAutomation: mocks.duplicateClipAutomation,
+    // Read-only lookups pulled in by the dispatched handlers' guard modules.
+    getAutomationLanes: mocks.getAutomationLanes,
+    getAutomationLaneCeiling: mocks.getAutomationLaneCeiling,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     // Full factory, not importOriginal: the spec never exercises the inline
     // note paths, and loading the real barrel would drag in MIDI's whole
-    // Project/CrdtDocument graph for two side-effect sinks.
+    // Project/CrdtDocument graph for the side-effect sinks and the discard
+    // inverse's session guard.
     duplicateClipNotes: mocks.duplicateClipNotes,
+    projectMidiNotesByClipIdThroughRestores: mocks.projectMidiNotesByClipIdThroughRestores,
+    serializeMidiStateForClips: mocks.serializeMidiStateForClips,
     removeMidiClipData: mocks.removeMidiClipData,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
@@ -222,6 +247,44 @@ const modelTracks = (tracks: Track[]) =>
 
 const clipOnTrack = (trackId: string, clipId: string): Clip | undefined =>
     trackStore.value?.tracks.find((track) => track.id === trackId)?.clips.find((clip) => clip.id === clipId);
+
+// The four registered handlers these dispatch round trips run — a local map
+// rather than the full clipHandlers registry, so this spec's import graph (and
+// its barrel-mock surface) stays limited to what the tests exercise.
+const dispatchedHandlers = {
+    duplicateClipAt: handleDuplicateClipAt,
+    moveClips: handleMoveClips,
+    restoreClipMoves: handleRestoreClipMoves,
+    discardDuplicatedClip: handleDiscardDuplicatedClip,
+} as const;
+
+const dispatchedActions = (): AppAction[] =>
+    mocks.executeUserAppAction.mock.calls.map(([action]) => action as AppAction);
+
+/**
+ * Applies one captured dispatch through the real registered handler — describe,
+ * execute, and its inverse — mirroring the two kernel calls executeAppAction
+ * would make against these same stores. Redo replays the forward action, the
+ * kernel's `entry.redoAction ?? entry.action` fallback.
+ */
+const applyCapturedAction = (action: AppAction): { label: string; undo: () => void; redo: () => void } => {
+    const handler = dispatchedHandlers[action.type as keyof typeof dispatchedHandlers];
+    const described = handler.describe(action as never);
+    handler.execute(action as never);
+    const inverse = described?.inverseAction ?? null;
+    return {
+        label: described?.label ?? '',
+        undo: () => {
+            if (!inverse) {
+                throw new Error(`No inverse recorded for ${action.type}`);
+            }
+            void dispatchedHandlers[inverse.type as keyof typeof dispatchedHandlers].execute(inverse as never);
+        },
+        redo: () => {
+            void dispatchedHandlers[action.type as keyof typeof dispatchedHandlers].execute(action as never);
+        },
+    };
+};
 
 describe('useTimelineInteractions — selection/drag commit core (real stores)', () => {
     let canvas: HTMLCanvasElement;
@@ -336,6 +399,22 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 200, 20);
             mouseUp(result, 200, 20);
 
+            // The gesture dispatches one moveClips; the registered handler writes.
+            const [action] = dispatchedActions();
+            expect(action).toEqual({
+                type: 'moveClips',
+                payload: {
+                    moves: [
+                        { clipId: 'c1', trackId: 't1', startBeat: 2 },
+                        { clipId: 'c2', trackId: 't2', startBeat: 4 },
+                    ],
+                    ripple: false,
+                },
+            });
+            act(() => {
+                applyCapturedAction(action!);
+            });
+
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(2);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
             expect(clipSelectionStore.value?.selectedClipIds).toEqual(['c1', 'c2']);
@@ -353,7 +432,7 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
     });
 
     describe('fix 2 — multi-clip move undo', () => {
-        it('pushes one history entry whose undo/redo restores every moved clip and its followed automation', () => {
+        it('records one undoable moveClips entry whose undo/redo restores every moved clip and its followed automation', () => {
             setupTwoSelectedClips();
             mocks.getTrackAtY.mockReturnValue({ index: 0, id: 't1' });
             const { result } = renderInteractions();
@@ -361,6 +440,14 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseDown(result, 0, 20);
             mouseMove(result, 200, 20);
             mouseUp(result, 200, 20);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+
+            const [action] = dispatchedActions();
+            let commit: ReturnType<typeof applyCapturedAction>;
+            act(() => {
+                commit = applyCapturedAction(action!);
+            });
+            expect(commit!.label).toBe('Move 2 clips');
 
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(2);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
@@ -368,22 +455,14 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 2, 't1');
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c2', 2, 't2');
 
-            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-            const [label, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [
-                string,
-                () => void,
-                () => void,
-            ];
-            expect(label).toBe('Move 2 clips');
-
-            act(() => undoEntry());
+            act(() => commit.undo());
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(2);
             // Followed automation is restored per clip, not just for the primary.
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', -2, 't1');
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c2', -2, 't2');
 
-            act(() => redoEntry());
+            act(() => commit.redo());
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(2);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
         });
@@ -430,6 +509,11 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
 
             mouseUp(result, 0, 120);
 
+            const [action] = dispatchedActions();
+            act(() => {
+                applyCapturedAction(action!);
+            });
+
             expect(clipOnTrack('t2', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t3', 'c2')?.startBeat).toBe(2);
         });
@@ -443,6 +527,11 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseDown(result, 0, 20);
             mouseMove(result, 0, 220);
             mouseUp(result, 0, 220);
+
+            const [action] = dispatchedActions();
+            act(() => {
+                applyCapturedAction(action!);
+            });
 
             expect(clipOnTrack('t3', 'c1')).toBeDefined();
             // Clamped to the last track rather than rejecting or wrapping.
@@ -480,6 +569,22 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 800, 120);
             mouseUp(result, 800, 120);
 
+            // The gesture dispatches per-clip duplicateClipAt with a shared
+            // group id; the registered handler performs the copy.
+            const [action] = dispatchedActions();
+            expect(action).toEqual({
+                type: 'duplicateClipAt',
+                payload: {
+                    clipId: 'c1',
+                    destinationTrackId: 't2',
+                    startBeat: 8,
+                    targetClipId: expect.any(String),
+                },
+            });
+            act(() => {
+                applyCapturedAction(action!);
+            });
+
             // Original untouched on the source track.
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips).toHaveLength(1);
@@ -488,12 +593,6 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             const t2Clips = trackStore.value?.tracks.find((track) => track.id === 't2')?.clips ?? [];
             expect(t2Clips).toHaveLength(1);
             expect(t2Clips[0]).toMatchObject({ trackId: 't2', startBeat: 8, endBeat: 12, name: 'c1 (copy)' });
-
-            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
-                'Duplicate 1 clip',
-                expect.any(Function),
-                expect.any(Function)
-            );
         });
 
         it('undo removes exactly the created copy — a pre-existing destination clip survives; redo recreates it', () => {
@@ -505,24 +604,28 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 1200, 120);
             mouseUp(result, 1200, 120);
 
+            const [action] = dispatchedActions();
+            let commit: ReturnType<typeof applyCapturedAction>;
+            act(() => {
+                commit = applyCapturedAction(action!);
+            });
+
             const t2AfterDrop = trackStore.value?.tracks.find((track) => track.id === 't2')?.clips ?? [];
-            const copy = t2AfterDrop.find((clip) => clip.id !== 'c9');
-            expect(copy).toBeDefined();
+            const copyId = (action!.payload as { targetClipId: string }).targetClipId;
+            expect(t2AfterDrop.find((clip) => clip.id === copyId)).toBeDefined();
             expect(clipOnTrack('t2', 'c9')).toBeDefined();
 
-            const [, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [string, () => void, () => void];
-
-            act(() => undoEntry());
+            act(() => commit!.undo());
             // The innocent destination-track clip survives; only the copy goes.
             expect(clipOnTrack('t2', 'c9')).toBeDefined();
             expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(1);
             expect(clipOnTrack('t1', 'c1')).toBeDefined();
 
-            act(() => redoEntry());
+            act(() => commit!.redo());
             const t2AfterRedo = trackStore.value?.tracks.find((track) => track.id === 't2')?.clips ?? [];
             expect(t2AfterRedo).toHaveLength(2);
             // Redo recreates the very same copy (same id, same position).
-            expect(t2AfterRedo.find((clip) => clip.id === copy!.id)).toMatchObject({
+            expect(t2AfterRedo.find((clip) => clip.id === copyId)).toMatchObject({
                 trackId: 't2',
                 startBeat: 12,
             });
@@ -629,6 +732,11 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 400, 120);
             mouseUp(result, 400, 120);
 
+            const [action] = dispatchedActions();
+            act(() => {
+                applyCapturedAction(action!);
+            });
+
             // The locked clip never left its track; the unlocked one moved.
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
@@ -668,13 +776,20 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 0, 120);
             mouseUp(result, 0, 120);
 
-            // The locked primary stays; the unlocked follower commits.
+            // The locked primary stays; the unlocked follower commits through
+            // the dispatched action (its own no-op move is skipped by the
+            // handler's release-in-place rule).
+            const [action] = dispatchedActions();
+            act(() => {
+                applyCapturedAction(action!);
+            });
+
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t2', 'c2')?.startBeat).toBe(4);
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/[Ll]ock/), 'warning');
             // A real drag happened: no click-collapse of the multi-selection.
             expect(clipSelectionStore.value?.selectedClipIds).toEqual(['c1', 'c2']);
-            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
 
         it('commits followers when the pressed clip is kind-rejected, surfaces the reason, keeps the selection', () => {
@@ -709,6 +824,11 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseDown(result, 0, 20);
             mouseMove(result, 0, 120);
             mouseUp(result, 0, 120);
+
+            const [action] = dispatchedActions();
+            act(() => {
+                applyCapturedAction(action!);
+            });
 
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t3', 'c2')?.startBeat).toBe(2);
@@ -824,27 +944,27 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 100, 20);
             mouseUp(result, 100, 20);
 
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+            const [action] = dispatchedActions();
+            let commit: ReturnType<typeof applyCapturedAction>;
+            act(() => {
+                commit = applyCapturedAction(action!);
+            });
+            expect(commit!.label).toBe('Move clip (ripple)');
+
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(1);
             expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(5);
             expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(9);
             expect(clipOnTrack('t1', 'c4')?.startBeat).toBe(13);
 
-            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-            const [label, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [
-                string,
-                () => void,
-                () => void,
-            ];
-            expect(label).toBe('Move clip (ripple)');
-
-            act(() => undoEntry());
             // Both moved clips AND both ripple-shifted neighbors return.
+            act(() => commit!.undo());
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(4);
             expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(8);
             expect(clipOnTrack('t1', 'c4')?.startBeat).toBe(12);
 
-            act(() => redoEntry());
+            act(() => commit!.redo());
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(1);
             expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(5);
             expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(9);
@@ -919,20 +1039,24 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 200, 20);
             mouseUp(result, 200, 20);
 
+            const [action] = dispatchedActions();
+            let commit: ReturnType<typeof applyCapturedAction>;
+            act(() => {
+                commit = applyCapturedAction(action!);
+            });
+
             // Sequential application: c3 shifts 8 → 10 → 12.
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(2);
             expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(6);
             expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(12);
 
-            const [, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [string, () => void, () => void];
-
-            act(() => undoEntry());
+            act(() => commit!.undo());
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(0);
             expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(4);
             // First-wins: c1's plan holds the true pre-drag original.
             expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(8);
 
-            act(() => redoEntry());
+            act(() => commit!.redo());
             expect(clipOnTrack('t1', 'c1')?.startBeat).toBe(2);
             expect(clipOnTrack('t1', 'c2')?.startBeat).toBe(6);
             expect(clipOnTrack('t1', 'c3')?.startBeat).toBe(12);
@@ -969,7 +1093,7 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/MIDI/i), 'warning');
         });
 
-        it('multi-clip Alt+drag duplicate pushes one entry; undo removes exactly the pre-allocated copies', () => {
+        it('multi-clip Alt+drag duplicate dispatches one grouped entry; undo removes exactly the pre-allocated copies', () => {
             const tracks = [
                 makeTrack('t1', 'audio', [makeClip({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 })]),
                 makeTrack('t2', 'audio', [makeClip({ id: 'c2', trackId: 't2', startBeat: 2, endBeat: 6 })]),
@@ -998,34 +1122,49 @@ describe('useTimelineInteractions — selection/drag commit core (real stores)',
             mouseMove(result, 200, 20);
             mouseUp(result, 200, 20);
 
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+
+            // One fresh group id shared by the per-clip dispatches (#3622 shape).
+            const actions = dispatchedActions();
+            expect(actions).toHaveLength(2);
+            const groupIds = mocks.executeUserAppAction.mock.calls.map(
+                (call) => (call[1] as { groupId?: string } | undefined)?.groupId
+            );
+            expect(new Set(groupIds).size).toBe(1);
+            expect(mocks.executeUserAppAction.mock.calls[0]![1]).toMatchObject({ groupLabel: 'Duplicate 2 clips' });
+
+            const commits = actions.map((action) => applyCapturedAction(action));
             const t1Clips = trackStore.value?.tracks.find((track) => track.id === 't1')?.clips ?? [];
             const t2Clips = trackStore.value?.tracks.find((track) => track.id === 't2')?.clips ?? [];
-            const copy1 = t1Clips.find((clip) => clip.id !== 'c1');
-            const copy2 = t2Clips.find((clip) => clip.id !== 'c2');
-            expect(copy1?.startBeat).toBe(2);
-            expect(copy2?.startBeat).toBe(4);
+            const copyIds = actions.map((action) => (action.payload as { targetClipId: string }).targetClipId);
+            expect(t1Clips.find((clip) => clip.id === copyIds[0])?.startBeat).toBe(2);
+            expect(t2Clips.find((clip) => clip.id === copyIds[1])?.startBeat).toBe(4);
 
-            expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-            const [label, undoEntry, redoEntry] = mocks.pushUndoEntry.mock.calls[0]! as [
-                string,
-                () => void,
-                () => void,
-            ];
-            expect(label).toBe('Duplicate 2 clips');
-
-            act(() => undoEntry());
+            act(() => {
+                for (const commit of commits) {
+                    commit.undo();
+                }
+            });
             // Exactly the two copies go; both originals survive.
             expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips).toHaveLength(1);
             expect(trackStore.value?.tracks.find((track) => track.id === 't2')?.clips).toHaveLength(1);
             expect(clipOnTrack('t1', 'c1')).toBeDefined();
             expect(clipOnTrack('t2', 'c2')).toBeDefined();
 
-            act(() => redoEntry());
+            act(() => {
+                for (const commit of commits) {
+                    commit.redo();
+                }
+            });
             expect(
-                trackStore.value?.tracks.find((track) => track.id === 't1')?.clips.find((clip) => clip.id === copy1!.id)
+                trackStore.value?.tracks
+                    .find((track) => track.id === 't1')
+                    ?.clips.find((clip) => clip.id === copyIds[0])
             ).toMatchObject({ startBeat: 2 });
             expect(
-                trackStore.value?.tracks.find((track) => track.id === 't2')?.clips.find((clip) => clip.id === copy2!.id)
+                trackStore.value?.tracks
+                    .find((track) => track.id === 't2')
+                    ?.clips.find((clip) => clip.id === copyIds[1])
             ).toMatchObject({ startBeat: 4 });
         });
 

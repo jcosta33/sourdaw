@@ -6,8 +6,11 @@ import { handleCopyClip } from './handleCopyClip';
 import { handleCrossfadeClips } from './handleCrossfadeClips';
 import { handleCutClip } from './handleCutClip';
 import { handleDeleteTime } from './handleDeleteTime';
+import { handleDiscardDrawnClip } from './handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from './handleDiscardDuplicatedClip';
+import { handleDrawClip } from './handleDrawClip';
 import { handleDuplicateClip } from './handleDuplicateClip';
+import { handleDuplicateClipAt } from './handleDuplicateClipAt';
 import { handleDuplicateClipToNextBar } from './handleDuplicateClipToNextBar';
 import { handleDuplicateTimeRange } from './handleDuplicateTimeRange';
 import { handleExportMidi } from './handleExportMidi';
@@ -15,6 +18,7 @@ import { handleGlueClips } from './handleGlueClips';
 import { handleInsertTime } from './handleInsertTime';
 import { handleLockClip } from './handleLockClip';
 import { handleMoveClip } from './handleMoveClip';
+import { handleMoveClips } from './handleMoveClips';
 import { handleMuteClip } from './handleMuteClip';
 import { handleNormalizeClip } from './handleNormalizeClip';
 import { handleNudgeClip } from './handleNudgeClip';
@@ -24,9 +28,11 @@ import { handleRenameClip } from './handleRenameClip';
 import { handleRestoreClipGlueState } from './handleRestoreClipGlueState';
 import { handleRestoreClipLoop } from './handleRestoreClipLoop';
 import { handleRestoreClipLoopLength } from './handleRestoreClipLoopLength';
+import { handleRestoreClipMoves } from './handleRestoreClipMoves';
 import { handleRestoreClipPlacement } from './handleRestoreClipPlacement';
 import { handleRestoreClipSplitState } from './handleRestoreClipSplitState';
 import { handleRestoreCrossfadeClips } from './handleRestoreCrossfadeClips';
+import { handleRestoreDrawnClip } from './handleRestoreDrawnClip';
 import { handleRestoreReversedClip } from './handleRestoreReversedClip';
 import { handleRestoreStripSilenceState } from './handleRestoreStripSilenceState';
 import { handleReverseClip } from './handleReverseClip';
@@ -43,6 +49,12 @@ import { handleTrimClipStart } from './handleTrimClipStart';
 
 export const clipHandlers = {
     addClip: handleAddClip,
+    drawClip: handleDrawClip,
+    discardDrawnClip: handleDiscardDrawnClip,
+    restoreDrawnClip: handleRestoreDrawnClip,
+    duplicateClipAt: handleDuplicateClipAt,
+    moveClips: handleMoveClips,
+    restoreClipMoves: handleRestoreClipMoves,
     moveClip: handleMoveClip,
     restoreClipPlacement: handleRestoreClipPlacement,
     discardDuplicatedClip: handleDiscardDuplicatedClip,
