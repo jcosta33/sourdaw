@@ -3,15 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const saveProjectSpy = vi.hoisted(() => vi.fn<() => Promise<boolean>>());
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getAudioContext: vi.fn(() => ({})),
     initializeAudioEngine: vi.fn().mockResolvedValue(undefined),
     resumeEngine: vi.fn().mockResolvedValue(undefined),
     setMasterGainValue: vi.fn(),
     syncNativeTimelineSamples: vi.fn(() => vi.fn()),
 }));
-vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn(() => vi.fn()) }));
-vi.mock('#/modules/MIDI/useCases', () => ({ initWebMidi: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Knead/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Knead/useCases')>()),
+    syncKneadToEngine: vi.fn(() => vi.fn()),
+}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    initWebMidi: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     loadProject: vi.fn().mockResolvedValue(undefined),
@@ -19,7 +26,8 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     saveProject: saveProjectSpy,
     whenProjectIdentityTransitionDependenciesConfigured: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('#/modules/SampleLibrary/useCases', () => ({
+vi.mock('#/modules/SampleLibrary/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/SampleLibrary/useCases')>()),
     restoreLibrary: vi.fn().mockResolvedValue(undefined),
     seedFactoryLibrary: vi.fn().mockResolvedValue(undefined),
 }));
