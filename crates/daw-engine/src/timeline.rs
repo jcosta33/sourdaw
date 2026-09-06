@@ -139,6 +139,21 @@ pub enum AutomationTarget {
     MasterGain,
 }
 
+/// Automation parameters the Fermenter answers to, addressed by ordinal.
+///
+/// The instrument owns that table, not the engine: naming its entries here
+/// would be a second copy of a vocabulary `daw-dsp` is free to extend, and the
+/// two would drift. So the wire carries the ordinal and this is the only fact
+/// about the table the engine holds.
+///
+/// It is a ceiling rather than a hint, because
+/// `FermenterInstance::set_param_by_id` answers an ordinal past the table by
+/// doing nothing at all: without a refusal control-side, a mistyped address
+/// would be a parameter write that silently vanished. Pinned against the
+/// instrument itself by `the_last_fermenter_ordinal_moves_a_render_and_the_
+/// first_past_it_does_not`.
+pub const FERMENTER_AUTOMATION_PARAM_COUNT: u32 = 104;
+
 /// A parameter of a built-in device, addressed without a name for the reason
 /// given on [`AutomationTarget`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,16 +161,28 @@ pub enum DeviceParam {
     ShiftSemitones,
     RetuneSpeedMs,
     FormantPreserve,
+    /// One entry of the Fermenter's own automation table, by ordinal.
+    ///
+    /// Numeric rather than named for the reason on
+    /// [`FERMENTER_AUTOMATION_PARAM_COUNT`]. The mapper refuses an ordinal at
+    /// or past that count control-side, so no address the instrument would
+    /// drop ever crosses the ring.
+    FermenterOrdinal(u32),
 }
 
 impl DeviceParam {
     /// The `SetParam` name this parameter corresponds to, so the named and the
     /// addressed paths cannot drift into meaning different things.
-    pub const fn name(self) -> &'static str {
+    ///
+    /// `None` for an address that has no name to drift from: a Fermenter
+    /// ordinal arrives as a number, and [`Self::from_name`] is the inverse of
+    /// the named vocabulary alone.
+    pub const fn name(self) -> Option<&'static str> {
         match self {
-            Self::ShiftSemitones => "shift_semitones",
-            Self::RetuneSpeedMs => "retune_speed_ms",
-            Self::FormantPreserve => "formant_preserve",
+            Self::ShiftSemitones => Some("shift_semitones"),
+            Self::RetuneSpeedMs => Some("retune_speed_ms"),
+            Self::FormantPreserve => Some("formant_preserve"),
+            Self::FermenterOrdinal(_) => None,
         }
     }
 
@@ -3295,9 +3322,15 @@ mod tests {
             DeviceParam::RetuneSpeedMs,
             DeviceParam::FormantPreserve,
         ] {
-            assert_eq!(DeviceParam::from_name(param.name()), Some(param));
+            let name = param.name().expect("a named built-in parameter has a name");
+            assert_eq!(DeviceParam::from_name(name), Some(param));
         }
         assert_eq!(DeviceParam::from_name("not_a_real_param"), None);
+        assert_eq!(
+            DeviceParam::FermenterOrdinal(7).name(),
+            None,
+            "an ordinal address has no name for the wire to drift from"
+        );
     }
 
     #[test]

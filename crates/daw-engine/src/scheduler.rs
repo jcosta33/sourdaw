@@ -22,6 +22,7 @@ use crate::timeline::{
     MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
+use daw_dsp::fermenter::FermenterInstance;
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
@@ -239,6 +240,7 @@ fn knead_instance() -> PluginCore {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BuiltinEffectType {
     Knead,
+    Fermenter,
 }
 
 impl BuiltinEffectType {
@@ -248,6 +250,7 @@ impl BuiltinEffectType {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Knead => "knead",
+            Self::Fermenter => "fermenter",
         }
     }
 
@@ -257,7 +260,22 @@ impl BuiltinEffectType {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "knead" => Some(Self::Knead),
+            "fermenter" => Some(Self::Fermenter),
             _ => None,
+        }
+    }
+
+    /// Whether this built-in turns notes into audio, and so is a body a note
+    /// store belongs on.
+    ///
+    /// The enum is the registry for it, so every route that registers a
+    /// built-in — the engine handle's own, and the graph mapper's — decides
+    /// the store from the type alone and cannot disagree with the other about
+    /// what an instrument is.
+    pub const fn sounds_notes(self) -> bool {
+        match self {
+            Self::Knead => false,
+            Self::Fermenter => true,
         }
     }
 }
@@ -272,7 +290,12 @@ pub enum GraphCommand {
     /// The command owns the instance from the push to the apply, on the same
     /// contract as [`GraphCommand::AddPlugin`]: the audio thread installs it
     /// or retires it, and never constructs or frees one (ADR 0020).
-    AddEffect(usize, PluginCore),
+    ///
+    /// The note store travels with it, `Some` exactly for a built-in that
+    /// sounds notes ([`BuiltinEffectType::sounds_notes`]). A built-in
+    /// instrument is scheduled against like any hosted one, and a store built
+    /// anywhere but the control thread would be an allocation on the callback.
+    AddEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     /// Register a built-in effect, already built control-side, detached from
     /// every chain.
     ///
@@ -282,7 +305,10 @@ pub enum GraphCommand {
     /// the two. An effect registered onto the master chain in that window
     /// would render one block of the *entire mix* through a device the user
     /// put on one strip; a detached one renders nowhere until it is placed.
-    AddDetachedEffect(usize, PluginCore),
+    ///
+    /// Its note store travels with it on the same terms as
+    /// [`GraphCommand::AddEffect`]'s.
+    AddDetachedEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     SetParam(usize, DeviceParam, f32),
     SetBypass(usize, bool),
     /// State how many frames a device delays its own output by, so the graph
@@ -858,6 +884,7 @@ impl GraphCommand {
 /// table, or hands it back over the retirement channel, and nothing else.
 pub enum PluginCore {
     Knead(KneadEngine),
+    Fermenter(Box<FermenterBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -871,21 +898,231 @@ impl PluginCore {
     pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
         match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
+            BuiltinEffectType::Fermenter => {
+                Self::Fermenter(Box::new(FermenterBody::new(sample_rate)))
+            }
         }
     }
 }
 
-/// Map an addressed device parameter onto the matching `KneadEngine` setter.
+/// Frames a [`FermenterInstance`] renders per `process` call.
 ///
-/// The mapping is total: the parameter arrives as a [`DeviceParam`] address,
-/// and the name-to-address resolution happened control-side
-/// ([`DeviceParam::from_name`]), where an unmapped name is refused rather
-/// than counted on the audio thread after the fact.
-fn apply_knead_param(engine: &mut KneadEngine, param: DeviceParam, value: f32) {
-    match param {
-        DeviceParam::ShiftSemitones => engine.set_shift_semitones(value),
-        DeviceParam::RetuneSpeedMs => engine.set_retune_speed_ms(value),
-        DeviceParam::FormantPreserve => engine.set_formant_preserve(value != 0.0),
+/// Its channel buffers are exactly this long and `process` clamps its argument
+/// to them without saying so, so a longer ask renders this many frames and
+/// leaves the rest of the block silent. The host is what splits a callback
+/// into runs this size; the number is the instrument's, not a choice made
+/// here.
+const FERMENTER_BLOCK_FRAMES: usize = 128;
+
+/// Note-voices one hosted Fermenter can sound at once.
+///
+/// The figure the web runtime builds its own instance with
+/// (`fermenterProcessor.ts`), so a strip that moves between the two runtimes
+/// steals voices at the same point rather than sounding different under load.
+const FERMENTER_MAX_VOICES: u32 = 32;
+
+/// MIDI channels a note can sound on — the sixteen addresses
+/// [`NoteAddressSet`] holds a bit per.
+const MIDI_CHANNELS: i16 = 16;
+
+/// The Fermenter synthesizer, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] because a `GraphCommand` is moved through a
+/// fixed-size ring: inline, this body's voice pool would set the size of every
+/// command the engine sends.
+pub struct FermenterBody {
+    instance: FermenterInstance,
+}
+
+impl FermenterBody {
+    /// Build the instrument on the control thread — it allocates its voice
+    /// pool and its channel buffers, neither of which the audio thread may do
+    /// (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: FermenterInstance::new(sample_rate, FERMENTER_MAX_VOICES),
+        }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, delivering each queued note on the sample it was stamped for.
+    ///
+    /// Summed rather than written because an instrument is a generator: what
+    /// it produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`FERMENTER_BLOCK_FRAMES`],
+    /// each one a whole `process` call with its own events rebased onto the
+    /// run's first frame. A single call for a longer block would render one
+    /// run's worth and leave the remainder of the callback silent, and every
+    /// event stamped past that run would sound at the wrong time or not at
+    /// all.
+    ///
+    /// A run shorter than a full [`FERMENTER_BLOCK_FRAMES`] is still a whole
+    /// block to the instrument, which advances its per-block smoothers —
+    /// cutoff, resonance, LFO rate, the effect smoothers — one exponential
+    /// step per call, at a coefficient that assumes a full run. So a callback
+    /// the run size does not divide, and a loop seam splitting one callback at
+    /// a frame that is not a multiple of the run, each cost one extra step: a
+    /// smoothed parameter settles slightly faster across a seam, or on a
+    /// device buffer that is not a multiple of 128, than it does under the
+    /// worklet's fixed quantum. Note timing is unaffected — every scheduled
+    /// note lands on the sample it was stamped for either way — and parity
+    /// with the worklet is exact for a callback of whole runs with no seam in
+    /// it.
+    ///
+    /// Holding a short run's frames back to fill the next call would buy that
+    /// parity at a price a DAW does not pay: those frames would render ahead
+    /// of the events belonging to them, which moves a note off the sample it
+    /// was written for to save a parameter a few milliseconds of settling.
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and the events are pushed into its fixed block list.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run = (frames - rendered).min(FERMENTER_BLOCK_FRAMES);
+            let run_end = rendered + run;
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                // Non-decreasing by the block's own contract; saturating so a
+                // producer that broke it lands its event on the first frame of
+                // the run that reaches it — late by up to one run — rather
+                // than panicking on the callback.
+                self.push_event(event, at.saturating_sub(rendered) as u32, diagnostics);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(frames as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `FermenterInstance::new`
+        // sizes at FERMENTER_BLOCK_FRAMES and no method resizes; `frames` is
+        // bounded by that size in `process` above, so each slice is inside
+        // the allocation it names. The two buffers are separate heap
+        // allocations, so the pair of slices aliases nothing. Nothing mutates
+        // the instrument between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, frames),
+                std::slice::from_raw_parts(rendered_right, frames),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Queue one note on the instrument at `offset` samples into the next run.
+    ///
+    /// A note-off narrows to the member channel its note-on sounded on, so
+    /// releasing one key cannot silence a different note holding the same
+    /// pitch on another channel. A channel MIDI has no address for narrows to
+    /// nothing, and the note-off then releases every voice at that pitch: the
+    /// live path deliberately does not check the channel it is handed
+    /// ([`GraphCommand::SendMidiNote`]), and a key nothing can ever lift is
+    /// the one outcome worse than releasing more than was asked.
+    fn push_event(
+        &mut self,
+        event: &MidiNoteEvent,
+        offset: u32,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        let channel = member_channel(event.channel);
+        let queued = match (event.is_note_on, channel) {
+            // An unaddressable channel still sounds: the key went down, and
+            // the base member channel is where a note with no channel of its
+            // own belongs.
+            (true, channel) => {
+                self.instance
+                    .push_note_on(event.note, event.velocity, channel.unwrap_or(0), offset)
+            }
+            (false, Some(channel)) => self
+                .instance
+                .push_note_off_on_channel(event.note, channel, offset),
+            (false, None) => self.instance.push_note_off(event.note, offset),
+        };
+        // Unreachable as the two capacities stand: a block carries at most
+        // `MIDI_EVENT_BUFFER_CAPACITY` events and the instrument's own list
+        // takes twice that per run, emptying on every `process`. The count is
+        // kept as a guard against either capacity moving, not because a
+        // refusal can happen today.
+        if !queued {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
+        }
+    }
+
+    /// Write one of the instrument's automation parameters.
+    fn set_param(&mut self, ordinal: u32, value: f32) {
+        self.instance.set_param_by_id(ordinal, value);
+    }
+}
+
+/// The Fermenter member channel a note's `i16` channel names, or `None` for a
+/// channel MIDI itself has no address for — the same addresses
+/// [`NoteAddressSet`] refuses, and the same ones the note store will not take.
+fn member_channel(channel: i16) -> Option<u8> {
+    if !(0..MIDI_CHANNELS).contains(&channel) {
+        return None;
+    }
+    Some(channel as u8)
+}
+
+/// Apply an addressed device parameter to the built-in body it names,
+/// answering whether the address and the body agreed.
+///
+/// The name-to-address resolution happened control-side — [`DeviceParam`] for
+/// knead's closed vocabulary, an ordinal bound for the Fermenter's own table —
+/// so `false` here is not an unknown parameter but a producer that lost track
+/// of what an effect id holds. The caller counts it rather than the engine
+/// guessing which body the value was meant for.
+fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32) -> bool {
+    match (instance, param) {
+        (PluginCore::Knead(engine), DeviceParam::ShiftSemitones) => {
+            engine.set_shift_semitones(value);
+            true
+        }
+        (PluginCore::Knead(engine), DeviceParam::RetuneSpeedMs) => {
+            engine.set_retune_speed_ms(value);
+            true
+        }
+        (PluginCore::Knead(engine), DeviceParam::FormantPreserve) => {
+            engine.set_formant_preserve(value != 0.0);
+            true
+        }
+        (PluginCore::Fermenter(body), DeviceParam::FermenterOrdinal(ordinal)) => {
+            body.set_param(ordinal, value);
+            true
+        }
+        _ => false,
     }
 }
 
@@ -2356,11 +2593,11 @@ impl AudioScheduler {
     fn apply_command(&mut self, cmd: GraphCommand) -> Option<RetiredGraphObjects> {
         {
             let retired = match cmd {
-                GraphCommand::AddEffect(id, instance) => {
-                    self.add_builtin_effect(id, instance, EffectPlacement::MasterChain)
+                GraphCommand::AddEffect(id, instance, notes) => {
+                    self.add_builtin_effect(id, instance, notes, EffectPlacement::MasterChain)
                 }
-                GraphCommand::AddDetachedEffect(id, instance) => {
-                    self.add_builtin_effect(id, instance, EffectPlacement::Detached)
+                GraphCommand::AddDetachedEffect(id, instance, notes) => {
+                    self.add_builtin_effect(id, instance, notes, EffectPlacement::Detached)
                 }
                 GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
@@ -2368,17 +2605,13 @@ impl AudioScheduler {
                 GraphCommand::SetParam(id, param, value) => {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         if let Some(effect) = self.effects.get_mut(slot) {
-                            match &mut effect.instance {
-                                PluginCore::Knead(engine) => {
-                                    apply_knead_param(engine, param, value)
-                                }
-                                PluginCore::Native(_) => {
-                                    // `SetParam` only has a mapped target for
-                                    // the built-in Knead effect today; a
-                                    // native plugin's parameters are not
-                                    // routed here.
-                                    self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
-                                }
+                            // `SetParam` addresses a built-in body only. A
+                            // native plugin's parameters are its own and
+                            // travel on its control path, and a built-in
+                            // address aimed at the other built-in is a
+                            // producer that lost track of what this id holds.
+                            if !apply_builtin_param(&mut effect.instance, param, value) {
+                                self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                             }
                         }
                     }
@@ -2951,21 +3184,23 @@ impl AudioScheduler {
         &mut self,
         id: usize,
         instance: PluginCore,
+        notes: Option<Box<MidiNoteStore>>,
         placement: EffectPlacement,
     ) -> Option<RetiredGraphObjects> {
+        // Built holding the store on every path, refusals included, so a
+        // refused registration retires the whole effect rather than freeing
+        // the box the command carried.
+        let effect =
+            ActiveEffect::with_placement(id, instance, placement).holding_midi_notes(notes);
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return Some(RetiredGraphObjects::effect(effect));
         }
         if self.effects.len() == EFFECT_TABLE_CAPACITY {
             self.timeline.record_capacity_refusal();
-            return Some(RetiredGraphObjects::effect(ActiveEffect::with_placement(
-                id, instance, placement,
-            )));
+            return Some(RetiredGraphObjects::effect(effect));
         }
-        self.push_effect(ActiveEffect::with_placement(id, instance, placement));
+        self.push_effect(effect);
         None
     }
 
@@ -3339,9 +3574,6 @@ impl AudioScheduler {
             let receives_no_block = effect.receives_no_block();
             while let Some(event) = effect.pending_params.pop_due(last_frame) {
                 match (&mut effect.instance, event.param) {
-                    (PluginCore::Knead(engine), DeviceParamTarget::Builtin(param)) => {
-                        apply_knead_param(engine, param, event.value as f32);
-                    }
                     // A hosted plugin only ever receives a write through a
                     // process call, so a stamp queued on one no block reaches
                     // is never drained: it holds the plugin's
@@ -3357,17 +3589,22 @@ impl AudioScheduler {
                     // arms and in the detached sweep: queued where nothing
                     // consumes it is discarded, never banked.
                     //
-                    // A `Builtin` stamp is deliberately not dropped. The knead
-                    // engine holds its parameters in its own struct, written
-                    // here and needing no process call to receive them, so the
-                    // value has to be current the moment the effect is
-                    // un-bypassed or placed on a chain again. A hosted plugin
-                    // cannot be written to at all until it is handed a block —
-                    // that is the whole of the asymmetry.
+                    // A `Builtin` stamp is deliberately not dropped. A built-in
+                    // holds its parameters in its own body, written here and
+                    // needing no process call to receive them, so the value has
+                    // to be current the moment the effect is un-bypassed or
+                    // placed on a chain again. A hosted plugin cannot be
+                    // written to at all until it is handed a block — that is
+                    // the whole of the asymmetry.
                     (PluginCore::Native(_), DeviceParamTarget::Hosted { .. })
                         if receives_no_block => {}
                     (PluginCore::Native(plugin), DeviceParamTarget::Hosted { id }) => {
                         if !plugin.apply_parameter_on_audio_thread(id, event.value) {
+                            self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
+                        }
+                    }
+                    (instance, DeviceParamTarget::Builtin(param)) => {
+                        if !apply_builtin_param(instance, param, event.value as f32) {
                             self.midi_rt_diagnostics.record_unmapped_set_param_call(1);
                         }
                     }
@@ -3602,6 +3839,10 @@ impl AudioScheduler {
     /// unchanged across a stopped transport.
     #[inline]
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        // The caller's ask is a request; the pair it handed is the truth. Every
+        // stage below indexes that pair by the count it is given, so the
+        // clamped figure is what all of them are handed — an unclamped ask
+        // would slice past the buffers.
         let frames = num_samples
             .min(left.len())
             .min(right.len())
@@ -3634,51 +3875,22 @@ impl AudioScheduler {
             }
 
             if effect.bypassed {
-                run_dry_delay(effect, left, right, num_samples);
+                run_dry_delay(effect, left, right, frames);
                 effect.pending_midi.clear();
                 continue;
             }
 
-            feed_dry_delay(effect, left, right, num_samples);
+            feed_dry_delay(effect, left, right, frames);
 
-            effect.probability_evaluator.process_midi_with_diagnostics(
-                &mut effect.pending_midi,
+            process_device(
+                effect,
                 &self.transport,
                 self.sample_rate,
-                num_samples,
                 &mut self.midi_rt_diagnostics,
+                left,
+                right,
+                frames,
             );
-
-            // Apply the mutable user MIDI FX chain only after authored probability.
-            for fx in effect.midi_fx.iter_mut() {
-                fx.process_midi_with_diagnostics(
-                    &mut effect.pending_midi,
-                    &self.transport,
-                    self.sample_rate,
-                    num_samples,
-                    &mut self.midi_rt_diagnostics,
-                );
-            }
-
-            match &mut effect.instance {
-                PluginCore::Knead(engine) => {
-                    engine.process_block(left, right);
-                }
-                PluginCore::Native(plugin) => {
-                    if effect.pending_midi.is_empty() {
-                        plugin.process_audio(left, right, num_samples);
-                    } else {
-                        plugin.process_with_events(
-                            left,
-                            right,
-                            num_samples,
-                            effect.pending_midi.as_slice(),
-                            &self.transport,
-                        );
-                        effect.pending_midi.clear();
-                    }
-                }
-            }
         }
 
         // The master list intentionally contains only master members. Detached
@@ -3841,6 +4053,19 @@ fn process_device(
     match &mut effect.instance {
         PluginCore::Knead(engine) => {
             engine.process_block(left, right);
+        }
+        // Always processed, and its MIDI always cleared: an instrument sounds
+        // the tail of what it was already holding on a block that queues
+        // nothing new, and events left queued would sound again next block.
+        PluginCore::Fermenter(body) => {
+            body.process(
+                left,
+                right,
+                frames,
+                effect.pending_midi.as_slice(),
+                midi_rt_diagnostics,
+            );
+            effect.pending_midi.clear();
         }
         PluginCore::Native(plugin) => {
             if effect.pending_midi.is_empty() {
@@ -4299,7 +4524,7 @@ mod tests {
         let (retired_tx, _retired_rx) = RingBuffer::new(population + 8);
         let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
         command_tx
-            .push(GraphCommand::AddEffect(0, knead_instance()))
+            .push(GraphCommand::AddEffect(0, knead_instance(), None))
             .unwrap();
         for id in 1..population {
             command_tx
@@ -4635,7 +4860,7 @@ mod tests {
     fn add_plugin_with_a_colliding_id_is_rejected_and_does_not_duplicate_the_effect() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
@@ -4650,7 +4875,7 @@ mod tests {
         assert_eq!(scheduler.effects.len(), 1);
         match &scheduler.effects[0].instance {
             PluginCore::Knead(_) => {}
-            PluginCore::Native(_) => panic!("existing effect must not be displaced"),
+            _ => panic!("existing effect must not be displaced"),
         }
         assert_eq!(
             scheduler
@@ -4665,7 +4890,7 @@ mod tests {
     fn add_hosted_plugin_with_a_colliding_id_retires_the_instance_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
 
@@ -4694,7 +4919,7 @@ mod tests {
     fn set_param_maps_addresses_onto_the_knead_engine_and_counts_unrouted_native_targets() {
         let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
 
@@ -4705,7 +4930,7 @@ mod tests {
 
         match &scheduler.effects[0].instance {
             PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 3.0),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
 
         // A name with no address is refused control-side now, so the one
@@ -5082,6 +5307,7 @@ mod tests {
             .push(GraphCommand::AddEffect(
                 EFFECT_TABLE_CAPACITY,
                 knead_instance(),
+                None,
             ))
             .unwrap();
         scheduler.update_graph();
@@ -5124,13 +5350,13 @@ mod tests {
     fn a_colliding_builtin_add_retires_its_carried_instance_without_inserting() {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         command_tx
-            .push(GraphCommand::AddEffect(7, knead_instance()))
+            .push(GraphCommand::AddEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
         assert_eq!(scheduler.effects.len(), 1);
 
         command_tx
-            .push(GraphCommand::AddDetachedEffect(7, knead_instance()))
+            .push(GraphCommand::AddDetachedEffect(7, knead_instance(), None))
             .unwrap();
         scheduler.update_graph();
 
@@ -5563,7 +5789,7 @@ mod tests {
         // One id the graph does not hold, one held by a built-in device: a
         // built-in has no input tap, so neither takes the block.
         command_tx
-            .push(GraphCommand::AddEffect(2, knead_instance()))
+            .push(GraphCommand::AddEffect(2, knead_instance(), None))
             .unwrap();
         command_tx
             .push(GraphCommand::RegisterCaptureConsumer(1))
@@ -5812,7 +6038,7 @@ mod tests {
             let received_event_count = Arc::new(AtomicUsize::new(0));
             let received_channel_sum = Arc::new(AtomicUsize::new(0));
             command_tx
-                .push(GraphCommand::AddEffect(1, knead_instance()))
+                .push(GraphCommand::AddEffect(1, knead_instance(), None))
                 .unwrap();
             command_tx
                 .push(GraphCommand::AddPlugin(
@@ -5891,10 +6117,10 @@ mod tests {
             // Built and pushed control-side: these allocations are the ones
             // the issue moved off the callback.
             command_tx
-                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .push(GraphCommand::AddEffect(7, knead_instance(), None))
                 .unwrap();
             command_tx
-                .push(GraphCommand::AddDetachedEffect(8, knead_instance()))
+                .push(GraphCommand::AddDetachedEffect(8, knead_instance(), None))
                 .unwrap();
 
             assert_no_alloc(|| {
@@ -5925,11 +6151,11 @@ mod tests {
             // free the engine's buffers inside the deadline.
             let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
             command_tx
-                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .push(GraphCommand::AddEffect(7, knead_instance(), None))
                 .unwrap();
             scheduler.update_graph();
             command_tx
-                .push(GraphCommand::AddEffect(7, knead_instance()))
+                .push(GraphCommand::AddEffect(7, knead_instance(), None))
                 .unwrap();
 
             assert_no_alloc(|| {
@@ -5976,6 +6202,7 @@ mod tests {
                 .push(GraphCommand::AddEffect(
                     EFFECT_TABLE_CAPACITY,
                     knead_instance(),
+                    None,
                 ))
                 .unwrap();
 
@@ -6363,7 +6590,10 @@ mod tests {
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
-    use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
+    use crate::timeline::{
+        AutomationEvent, DeviceKind, RampShape, FERMENTER_AUTOMATION_PARAM_COUNT,
+        MAX_TIMELINE_TRACKS,
+    };
     use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
     use std::any::Any;
@@ -7828,7 +8058,7 @@ mod timeline_tests {
     fn a_stamped_device_parameter_lands_on_the_block_that_reaches_it() {
         let mut harness = Harness::new(16);
         harness.playing();
-        harness.send(GraphCommand::AddEffect(7, knead_instance()));
+        harness.send(GraphCommand::AddEffect(7, knead_instance(), None));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 7,
             param: DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones),
@@ -7842,13 +8072,13 @@ mod timeline_tests {
                 engine.shift_semitones, 0.0,
                 "a change stamped ahead of the playhead must not land early"
             ),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
 
         harness.render(4);
         match &harness.scheduler.effects[0].instance {
             PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 5.0),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
     }
 
@@ -7957,7 +8187,7 @@ mod timeline_tests {
     fn a_stamp_addressed_at_the_wrong_body_is_counted_unmapped() {
         let mut harness = Harness::new(16);
         harness.playing();
-        harness.send(GraphCommand::AddEffect(1, knead_instance()));
+        harness.send(GraphCommand::AddEffect(1, knead_instance(), None));
         let (plugin, queued) = parameter_recording_plugin(true);
         harness.send(GraphCommand::AddPlugin(2, plugin, None));
         harness.send(GraphCommand::AutomateDeviceParam {
@@ -7984,7 +8214,7 @@ mod timeline_tests {
                 engine.shift_semitones, 0.0,
                 "a hosted id must not move a built-in parameter"
             ),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
         assert_eq!(
             harness
@@ -8096,7 +8326,7 @@ mod timeline_tests {
     fn a_builtin_stamp_still_applies_while_the_effect_is_bypassed() {
         let mut harness = Harness::new(16);
         harness.playing();
-        harness.send(GraphCommand::AddEffect(7, knead_instance()));
+        harness.send(GraphCommand::AddEffect(7, knead_instance(), None));
         harness.send(GraphCommand::SetBypass(7, true));
         harness.send(GraphCommand::AutomateDeviceParam {
             effect_id: 7,
@@ -8112,7 +8342,7 @@ mod timeline_tests {
                 "a change stamped ahead of the playhead must not land early, \
                  bypassed or not"
             ),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
 
         harness.render(4);
@@ -8122,7 +8352,7 @@ mod timeline_tests {
                 "a built-in takes its stamp while bypassed: the value must be \
                  current the moment the effect is un-bypassed"
             ),
-            PluginCore::Native(_) => panic!("expected the knead effect"),
+            _ => panic!("expected the knead effect"),
         }
         assert_eq!(
             harness
@@ -8467,7 +8697,7 @@ mod timeline_tests {
         // master chain, the knead engine would run over the whole mix here
         // (its latency alone replaces the 0.5 constant); detached, it runs
         // nowhere.
-        harness.send(GraphCommand::AddDetachedEffect(7, knead_instance()));
+        harness.send(GraphCommand::AddDetachedEffect(7, knead_instance(), None));
         assert_eq!(
             harness.scheduler.effects[0].placement,
             EffectPlacement::Detached
@@ -9671,6 +9901,7 @@ mod timeline_tests {
                 declared,
                 LATENT_PLUGIN_CAPACITY,
             ))),
+            None,
         ));
         harness.send(set_latency(900, LATENCY));
 
@@ -12190,6 +12421,555 @@ mod timeline_tests {
             ],
             "the second pass is stamped from the callback's start, past the seam, and the \
              whole block reads in non-decreasing time"
+        );
+    }
+
+    /// The rate every Fermenter spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate renders a different signal and the parity spec below
+    /// would be comparing two different synthesisers.
+    const FERMENTER_RATE: f32 = 48_000.0;
+
+    /// A track carrying a Fermenter spliced as a generator, the way
+    /// `commands/graph.rs` places a built-in instrument: registered detached
+    /// with its own note store, then spliced at the head of the chain.
+    ///
+    /// The track holds no clip, so every non-zero sample the master carries
+    /// came out of the instrument.
+    fn track_with_fermenter(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
+        harness.send(GraphCommand::AddDetachedEffect(
+            effect_id,
+            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(insert_track_device(track_id, generator(effect_id), 0));
+    }
+
+    /// Render `callbacks` blocks of `frames` and return the master pair
+    /// concatenated, so a spec can read across a block boundary.
+    fn render_master(
+        harness: &mut Harness,
+        frames: usize,
+        callbacks: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut left = Vec::with_capacity(frames * callbacks);
+        let mut right = Vec::with_capacity(frames * callbacks);
+        for _ in 0..callbacks {
+            let (block_left, block_right) = harness.render(frames);
+            left.extend(block_left);
+            right.extend(block_right);
+        }
+        (left, right)
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        let sum: f32 = samples.iter().map(|sample| sample * sample).sum();
+        (sum / samples.len() as f32).sqrt()
+    }
+
+    /// A note scheduled for a Fermenter sounds from the frame it was written
+    /// for, and the master is silent ahead of it.
+    ///
+    /// The onset sits mid-block, three block boundaries into the render, so a
+    /// body that quantised the note to the head of the block it arrived in —
+    /// or to the head of the callback — would put the first non-zero sample
+    /// where the leading assertion reads silence.
+    #[test]
+    fn a_fermenter_note_on_sounds_from_the_frame_it_was_scheduled_for() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 300;
+        const ONSET: usize = NOTE_ON as usize;
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true)]));
+
+        let (left, _right) = render_master(&mut harness, BLOCK, 4);
+
+        assert!(
+            left[..ONSET].iter().all(|sample| *sample == 0.0),
+            "the master carried signal before the note was written for"
+        );
+        assert!(
+            left[ONSET..ONSET + BLOCK]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the note never sounded in the block that renders its frame"
+        );
+    }
+
+    /// A note-off reaches the Fermenter and its voice decays: the tail is
+    /// quieter than the held note, and nothing in the render is NaN.
+    ///
+    /// A release that never reached the instrument leaves the key down, so the
+    /// tail would read at the held note's level rather than under it.
+    #[test]
+    fn a_fermenter_note_off_lets_the_voice_decay_below_the_held_level() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 300;
+        const NOTE_OFF: u64 = 700;
+        const RENDERED: usize = 2_000;
+
+        /// A one-millisecond amplitude attack and a five-millisecond release,
+        /// so the note is at full level across the held window and its release
+        /// has run out well inside the tail window. At the shipped envelope
+        /// both windows sit on the attack ramp, where a release that arrived
+        /// and one that never did read the same.
+        const FAST_ENVELOPE: [(u32, f32); 2] = [(54, 0.001), (57, 0.005)];
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        for (ordinal, value) in FAST_ENVELOPE {
+            harness.send(GraphCommand::SetParam(
+                7,
+                DeviceParam::FermenterOrdinal(ordinal),
+                value,
+            ));
+        }
+        harness.send(schedule_phrase(
+            7,
+            &[(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
+        ));
+
+        let (left, _right) = render_master(&mut harness, BLOCK, RENDERED.div_ceil(BLOCK));
+
+        let held = rms(&left[NOTE_ON as usize..NOTE_OFF as usize]);
+        let tail = rms(&left[1_500..RENDERED]);
+        assert!(
+            held > 0.0,
+            "the held note never sounded, so the tail proves nothing"
+        );
+        assert!(
+            tail < held,
+            "the tail ({tail}) is not quieter than the held note ({held}): the release \
+             never reached the instrument"
+        );
+        assert!(
+            left.iter().all(|sample| sample.is_finite()),
+            "the render carried a non-finite sample"
+        );
+    }
+
+    /// A note-off releases the voice on its own MIDI channel and leaves a
+    /// note holding the same pitch on another channel sounding.
+    ///
+    /// Two keys at one pitch on two channels is what an MPE part or two
+    /// layered parts on one instrument produce, and the store addresses them
+    /// separately — one bit per (channel, note). A release that dropped the
+    /// channel would silence both, cutting a note the producer never asked to
+    /// end. The two renders here differ only in whether the second channel's
+    /// note is released too, so a body that ignores the channel makes them the
+    /// same signal.
+    #[test]
+    fn a_fermenter_note_off_releases_only_the_channel_its_note_sounded_on() {
+        const BLOCK: usize = 128;
+        const CALLBACKS: usize = 16;
+        const NOTE: u8 = 60;
+        const RELEASE: u64 = 400;
+        const TAIL: usize = 1_200;
+        /// A one-millisecond attack and a five-millisecond release, so a voice
+        /// that was released is gone well inside the tail window and one that
+        /// was not is still at full level there.
+        const FAST_ENVELOPE: [(u32, f32); 2] = [(54, 0.001), (57, 0.005)];
+
+        fn render_releasing(channels: &[i16]) -> Vec<f32> {
+            let mut harness = Harness::new(32);
+            track_with_fermenter(&mut harness, 1, 7);
+            harness.playing();
+            for (ordinal, value) in FAST_ENVELOPE {
+                harness.send(GraphCommand::SetParam(
+                    7,
+                    DeviceParam::FermenterOrdinal(ordinal),
+                    value,
+                ));
+            }
+            let mut notes = vec![
+                channel_note(0, NOTE, 0, true),
+                channel_note(0, NOTE, 1, true),
+            ];
+            notes.extend(
+                channels
+                    .iter()
+                    .map(|channel| channel_note(RELEASE, NOTE, *channel, false)),
+            );
+            harness.send(GraphCommand::ScheduleMidiNotes {
+                plugin_id: 7,
+                notes: notes.into(),
+            });
+            render_master(&mut harness, BLOCK, CALLBACKS).0
+        }
+
+        let one_released = render_releasing(&[0]);
+        let both_released = render_releasing(&[0, 1]);
+
+        assert!(
+            rms(&one_released[TAIL..]) > 0.0,
+            "releasing one channel silenced the note held on the other"
+        );
+        assert!(
+            rms(&both_released[TAIL..]) < rms(&one_released[TAIL..]),
+            "releasing both channels left as much sound as releasing one, so neither \
+             release narrowed to a channel"
+        );
+    }
+
+    /// One note stamped for a frame, a pitch and a MIDI channel — the shape a
+    /// producer writes for a part that is not on the base channel.
+    fn channel_note(at_frame: u64, note: u8, channel: i16, is_note_on: bool) -> TimedMidiNote {
+        let mut timed = timed_note(at_frame, note);
+        timed.event.channel = channel;
+        timed.event.is_note_on = is_note_on;
+        timed
+    }
+
+    /// The hosted body renders exactly what the worklet's own driving of
+    /// [`FermenterInstance`] renders for the same programme.
+    ///
+    /// The worklet hands the instance 128 frames at a time with each event's
+    /// offset measured inside that 128, because the instance's buffers are 128
+    /// frames long and `process` silently clamps anything larger. The scheduler
+    /// hands the body a 256-frame callback, so a body that passed the callback
+    /// straight through would render the first 128 frames of every pair and
+    /// leave the rest as it found them.
+    #[test]
+    fn a_hosted_fermenter_renders_the_worklet_samples_for_the_same_programme() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 2;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        /// `(frame, note, is_note_on)`, two of them off a block boundary.
+        const PROGRAMME: [(u64, u8, bool); 4] = [
+            (0, 48, true),
+            (37, 60, true),
+            (141, 67, true),
+            (300, 60, false),
+        ];
+
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(7, &PROGRAMME));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let mut instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        let mut worklet_left = Vec::with_capacity(RENDERED);
+        let mut worklet_right = Vec::with_capacity(RENDERED);
+        for block in 0..RENDERED / FERMENTER_BLOCK_FRAMES {
+            let start = (block * FERMENTER_BLOCK_FRAMES) as u64;
+            let end = start + FERMENTER_BLOCK_FRAMES as u64;
+            for (frame, note, is_note_on) in PROGRAMME {
+                if !(start..end).contains(&frame) {
+                    continue;
+                }
+                let offset = (frame - start) as u32;
+                let queued = if is_note_on {
+                    instance.push_note_on(note, 100, 0, offset)
+                } else {
+                    instance.push_note_off_on_channel(note, 0, offset)
+                };
+                assert!(queued, "the reference instance refused an event");
+            }
+            let rendered_left = instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
+            // frames into the instance's own pair of buffers, which are exactly
+            // that long and are never resized.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+                worklet_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            worklet_left.iter().any(|sample| *sample != 0.0),
+            "the reference render is silent, so an equality against it proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders"
+        );
+    }
+
+    /// A master-chain Fermenter renders no further than the pair it was
+    /// handed, whatever frame count the caller asks for.
+    ///
+    /// `process_block` is public, and its frame count is the caller's ask
+    /// while the buffers are the truth — which is why it clamps the two
+    /// together at its head. Every stage the master chain runs indexes the
+    /// pair by the count it is given, so an ask past the buffers slices past
+    /// them and panics on the callback unless that clamped count is what
+    /// reaches all of them. The declared latency below puts the dry line's
+    /// own pass over the pair on that same path, ahead of the body.
+    #[test]
+    fn a_master_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
+        /// Shorter than the ask and not a whole number of runs, so the second
+        /// run is the one that would reach past the buffer.
+        const BUFFER: usize = 192;
+        const OVER_ASK: usize = 512;
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddEffect(
+            7,
+            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(set_latency(7, 64));
+        harness.playing();
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let mut left = vec![0.0_f32; BUFFER];
+        let mut right = vec![0.0_f32; BUFFER];
+        harness
+            .scheduler
+            .process_block(&mut left, &mut right, OVER_ASK);
+
+        assert!(
+            left.iter().any(|sample| *sample != 0.0),
+            "the instrument never sounded, so the over-ask reached nothing to bound"
+        );
+        assert!(
+            left[FERMENTER_BLOCK_FRAMES..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the render stopped at the first run: the ask was clamped to one run rather \
+             than to the buffer"
+        );
+    }
+
+    /// A partial run costs the instrument one extra step of its per-block
+    /// smoothers, and costs the note nothing.
+    ///
+    /// The body hands the instrument whole blocks of at most
+    /// [`FERMENTER_BLOCK_FRAMES`], and the instrument advances cutoff,
+    /// resonance, LFO rate and its effect smoothers one exponential step per
+    /// call whatever the run length. A 512-frame callback cut at frame 300 —
+    /// what a loop seam does to one — therefore runs 128, 128, 44, 128, 84
+    /// where the worklet's fixed quantum runs four 128s, and that fifth step
+    /// is what this reads.
+    ///
+    /// The split is driven straight at the body rather than through a loop
+    /// region on the harness because a region also re-fires the programme at
+    /// the seam: the divergence below would then be a re-triggered note rather
+    /// than the smoother, and the spec would pass with the contract broken.
+    ///
+    /// Ordinal 1 is the filter cutoff, set far from its default so the
+    /// smoother is still travelling across the whole render. Frames ahead of
+    /// the seam sit under the same step in both renders; only frames past it
+    /// may differ.
+    #[test]
+    fn a_partial_fermenter_run_advances_the_block_smoothers_one_extra_step() {
+        const CALLBACK: usize = 512;
+        const SEAM: usize = 300;
+        const NOTE_ON: u32 = 40;
+        const CUTOFF_ORDINAL: u32 = 1;
+        const CUTOFF_HZ: f32 = 400.0;
+        /// The measured ceiling on the per-frame difference ahead of the seam.
+        /// Every frame before it renders under the same block-parameter step
+        /// in both, and the per-sample state either side of a run boundary is
+        /// the same state, so the widest difference measured there is 0.0
+        /// exactly: the bound is an equality with a name, not a tolerance this
+        /// render needs.
+        const AHEAD_OF_SEAM: f32 = 0.0;
+
+        let mut body = FermenterBody::new(FERMENTER_RATE);
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
+        body.set_param(CUTOFF_ORDINAL, CUTOFF_HZ);
+        let mut event = note_on(60);
+        event.frame_offset = NOTE_ON;
+
+        let mut hosted_left = vec![0.0_f32; CALLBACK];
+        let mut hosted_right = vec![0.0_f32; CALLBACK];
+        let (head_left, tail_left) = hosted_left.split_at_mut(SEAM);
+        let (head_right, tail_right) = hosted_right.split_at_mut(SEAM);
+        body.process(head_left, head_right, SEAM, &[event], &mut diagnostics);
+        body.process(
+            tail_left,
+            tail_right,
+            CALLBACK - SEAM,
+            &[],
+            &mut diagnostics,
+        );
+
+        let mut instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
+        instance.set_param_by_id(CUTOFF_ORDINAL, CUTOFF_HZ);
+        let mut worklet_left = Vec::with_capacity(CALLBACK);
+        for block in 0..CALLBACK / FERMENTER_BLOCK_FRAMES {
+            if block == 0 {
+                assert!(
+                    instance.push_note_on(60, 100, 0, NOTE_ON),
+                    "the reference instance refused the note"
+                );
+            }
+            let rendered = instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            // SAFETY: `process` has just rendered `FERMENTER_BLOCK_FRAMES`
+            // frames into the instance's own left buffer, which is exactly
+            // that long and is never resized.
+            unsafe {
+                worklet_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered,
+                    FERMENTER_BLOCK_FRAMES,
+                ));
+            }
+        }
+
+        let first_sounding = |samples: &[f32]| samples.iter().position(|sample| *sample != 0.0);
+        assert_eq!(
+            first_sounding(&worklet_left),
+            Some(NOTE_ON as usize),
+            "the reference never sounded on the frame the note was stamped for, so the \
+             comparison below proves nothing"
+        );
+        assert_eq!(
+            first_sounding(&hosted_left),
+            first_sounding(&worklet_left),
+            "the split runs moved the note off the frame it was stamped for"
+        );
+
+        let widest_difference = |range: std::ops::Range<usize>| {
+            range
+                .map(|frame| (hosted_left[frame] - worklet_left[frame]).abs())
+                .fold(0.0_f32, f32::max)
+        };
+        let ahead_of_seam = widest_difference(0..SEAM);
+        let past_seam = widest_difference(SEAM..CALLBACK);
+
+        assert!(
+            ahead_of_seam <= AHEAD_OF_SEAM,
+            "the runs ahead of the seam diverged by {ahead_of_seam}: every frame before it \
+             renders under the same block-parameter step in both, so a note or a run \
+             boundary moved"
+        );
+        assert!(
+            worklet_left[SEAM..].iter().any(|sample| *sample != 0.0),
+            "the reference is silent past the seam, so the divergence below would read \
+             equality it never earned"
+        );
+        assert!(
+            past_seam > 0.0,
+            "the renders agree past the seam: the partial run cost no extra smoother \
+             step, so this spec no longer observes the contract it names"
+        );
+    }
+
+    /// A `SetParam` carrying a Fermenter ordinal reaches the instrument, and
+    /// one carrying a Knead name aimed at a Fermenter is counted unrouted
+    /// rather than guessed at.
+    ///
+    /// Ordinal 1 is the filter cutoff, so a write that reached nothing renders
+    /// the same samples as the untouched instance.
+    #[test]
+    fn a_fermenter_ordinal_write_changes_the_render_and_a_knead_name_counts_unrouted() {
+        const BLOCK: usize = 128;
+        const NOTE_ON: u64 = 0;
+        const CUTOFF: DeviceParam = DeviceParam::FermenterOrdinal(1);
+
+        fn render_with(
+            param: Option<(DeviceParam, f32)>,
+        ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
+            let mut harness = Harness::new(32);
+            track_with_fermenter(&mut harness, 1, 7);
+            harness.playing();
+            if let Some((param, value)) = param {
+                harness.send(GraphCommand::SetParam(7, param, value));
+            }
+            harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true)]));
+            let (left, _right) = render_master(&mut harness, BLOCK, 4);
+            let diagnostics = midi_diagnostics(&harness);
+            (left, diagnostics)
+        }
+
+        let (untouched, untouched_diagnostics) = render_with(None);
+        let (with_cutoff, cutoff_diagnostics) = render_with(Some((CUTOFF, 0.2)));
+        let (_, knead_name_diagnostics) = render_with(Some((DeviceParam::ShiftSemitones, 3.0)));
+
+        assert!(
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the untouched render is silent, so a difference against it proves nothing"
+        );
+        assert_ne!(
+            with_cutoff, untouched,
+            "the ordinal write never reached the instrument"
+        );
+        assert_eq!(
+            (
+                untouched_diagnostics.unmapped_set_param_calls,
+                cutoff_diagnostics.unmapped_set_param_calls,
+            ),
+            (0, 0),
+            "a routed write was counted unrouted"
+        );
+        assert_eq!(
+            knead_name_diagnostics.unmapped_set_param_calls, 1,
+            "a knead parameter name aimed at a Fermenter must be counted, not guessed at"
+        );
+    }
+
+    /// The last automation ordinal the Fermenter publishes is routed, and the
+    /// first one past the end is not.
+    ///
+    /// `FERMENTER_AUTOMATION_PARAM_COUNT` is the length of the instrument's own
+    /// ordinal table, so the two writes here sit either side of its last entry.
+    /// A count that drifted one either way is exactly what this reads: too
+    /// small and the first write goes nowhere, too large and the second one
+    /// lands on a parameter this test says the instrument does not have.
+    #[test]
+    fn the_last_fermenter_ordinal_is_routed_and_the_one_past_it_is_not() {
+        const BLOCK: usize = 128;
+        /// The granular engine, its density and its grain size — the state the
+        /// last ordinal, a grain pan spread, has any effect in at all.
+        const GRANULAR: [(u32, f32); 3] = [(16, 4.0), (12, 60.0), (13, 200.0)];
+        const LAST: u32 = FERMENTER_AUTOMATION_PARAM_COUNT - 1;
+
+        fn render_with_ordinal(ordinal: u32, value: f32) -> Vec<f32> {
+            let mut harness = Harness::new(32);
+            track_with_fermenter(&mut harness, 1, 7);
+            harness.playing();
+            for (granular_ordinal, granular_value) in GRANULAR {
+                harness.send(GraphCommand::SetParam(
+                    7,
+                    DeviceParam::FermenterOrdinal(granular_ordinal),
+                    granular_value,
+                ));
+            }
+            harness.send(GraphCommand::SetParam(
+                7,
+                DeviceParam::FermenterOrdinal(ordinal),
+                value,
+            ));
+            harness.send(schedule_phrase(7, &[(0, 60, true)]));
+            render_master(&mut harness, BLOCK, 8).0
+        }
+
+        let last_low = render_with_ordinal(LAST, 0.0);
+        let last_high = render_with_ordinal(LAST, 1.0);
+        let past_low = render_with_ordinal(FERMENTER_AUTOMATION_PARAM_COUNT, 0.0);
+        let past_high = render_with_ordinal(FERMENTER_AUTOMATION_PARAM_COUNT, 1.0);
+
+        assert!(
+            last_low.iter().any(|sample| *sample != 0.0),
+            "the render is silent, so neither assertion below means anything"
+        );
+        assert_ne!(
+            last_low, last_high,
+            "ordinal {LAST} reached nothing: the published ordinal count is past the \
+             instrument's last parameter"
+        );
+        assert_eq!(
+            past_low, past_high,
+            "ordinal {FERMENTER_AUTOMATION_PARAM_COUNT} reached a parameter: the published \
+             ordinal count is short of the instrument's last parameter"
         );
     }
 }

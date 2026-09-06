@@ -147,7 +147,7 @@
 
 use crate::commands::crumbs::{self, CrumbsState};
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
-use daw_engine::midi::note_store::{TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
+use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::MidiNoteEvent;
@@ -158,8 +158,8 @@ use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
     ClipPlayback, DeviceKind, DeviceParam, DeviceParamTarget, RampShape, RouteTarget, TimelineBus,
     TimelineClip, TimelineRtDiagnosticsSnapshot, TimelineTrack, AUTOMATION_QUEUE_CAPACITY,
-    DEVICE_PARAM_QUEUE_CAPACITY, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS,
-    MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
+    DEVICE_PARAM_QUEUE_CAPACITY, FERMENTER_AUTOMATION_PARAM_COUNT, MAX_BUS_DEVICES,
+    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_CLIPS, MAX_TRACK_DEVICES, MAX_TRACK_SENDS,
 };
 use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
@@ -791,15 +791,44 @@ struct StripEntry {
 struct DeviceEntry {
     native_effect_id: usize,
     strip_id: String,
-    /// True when the effect id is a hosted plugin instance the engine already
-    /// owns rather than one this registry allocated.
+    /// The built-in body this device is, or `None` when its effect is a hosted
+    /// plugin instance the engine already owned rather than one this registry
+    /// allocated.
+    ///
+    /// Written at registration from what [`map_device`] actually built, and it
+    /// is the only such fact the entry keeps: ownership, note-store presence
+    /// and parameter vocabulary all follow from it, so none of the three can
+    /// drift out of step with the others or with the body the engine holds.
+    builtin: Option<BuiltinEffectType>,
+}
+
+impl DeviceEntry {
+    /// Whether the effect id is a hosted plugin instance the engine already
+    /// owns.
     ///
     /// It decides how the device leaves a chain: an effect this registry built
     /// is retired with its removal, while an engine-owned one is only released,
     /// because its lifetime belongs to the load that registered it and
     /// `unload_plugin` is what frees it. Retiring one here would take a live
     /// plugin's effect out from under the panel still driving it.
-    engine_owned: bool,
+    fn engine_owned(&self) -> bool {
+        self.builtin.is_none()
+    }
+
+    /// Whether this device holds a note store, and so can be scheduled at.
+    ///
+    /// Store presence is decided at registration, by the command that built
+    /// the device, so this reads what was registered rather than guessing from
+    /// what the device might do with what lands in it. Every engine-owned
+    /// device is registered through `EngineHandle::add_hosted_plugin`, which
+    /// attaches a store unconditionally; a built-in is registered with one
+    /// exactly when its type sounds notes.
+    fn note_sink(&self) -> bool {
+        match self.builtin {
+            None => true,
+            Some(builtin) => builtin.sounds_notes(),
+        }
+    }
 }
 
 /// Resolves the app's string ids onto engine node ids and holds the strip
@@ -1038,7 +1067,7 @@ impl GraphRegistry {
             .devices
             .iter()
             .filter(|(_, device)| {
-                device.engine_owned && device.native_effect_id == engine_plugin_id
+                device.engine_owned() && device.native_effect_id == engine_plugin_id
             })
             .map(|(device_id, _)| device_id.clone())
             .collect();
@@ -1383,9 +1412,9 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 /// and one held on a different strip than the command claims. Then a third that
 /// command has no need of: a device holding no note store.
 ///
-/// That third one reads the registry's ownership fact because *store presence
-/// is decided at registration*, not what the device does with what lands in
-/// it. Every engine-owned device is registered through
+/// That third one reads [`DeviceEntry::note_sink`], because *store presence is
+/// decided at registration* rather than by what the device does with what
+/// lands in it. Every engine-owned device is registered through
 /// `EngineHandle::add_hosted_plugin`, which attaches a note store
 /// unconditionally — a hosted reverb or a CLAP note effect gets one
 /// exactly as an instrument does. The drain reaches every hosted slot, and
@@ -1393,16 +1422,15 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 /// reverb ignores them and a note effect reads them while its note output
 /// has no route in this host; VST3 withholds them from a plugin with no
 /// event input bus (`stage_midi`). Neither is a refusal the mapping makes.
-/// A built-in is an `AddDetachedEffect` and never gets one, and the crumbs
-/// capture slot is not in `registry.devices` at all. So
-/// `engine_owned == false` is exactly "holds no note store" today, and
-/// scheduling at one spends a whole batch the store side can answer only as
-/// a count on the audio thread.
+/// A built-in is an `AddDetachedEffect`, which carries a store exactly when
+/// the type sounds notes, and the crumbs capture slot is not in
+/// `registry.devices` at all.
 ///
-/// A built-in with a store (#3124) parts those two facts the moment it
-/// exists, flipping this test through an explicit note-sink flag on
-/// [`DeviceEntry`] written at registration, never by relaxing the ownership
-/// test into a guess about what a device can hold.
+/// So ownership no longer stands in for store presence: a built-in instrument
+/// holds one while a built-in effect does not, and the registered type is what
+/// parts them. Scheduling at a device with no store spends a whole batch the
+/// store side can answer only as a count on the audio thread, which is why the
+/// refusal is taken here.
 fn midi_device_plugin_id(
     registry: &GraphRegistry,
     track_id: &str,
@@ -1418,7 +1446,7 @@ fn midi_device_plugin_id(
             "{command}: device '{device_id}' is not on strip '{track_id}'"
         ));
     }
-    if !device.engine_owned {
+    if !device.note_sink() {
         return Err(format!(
             "{command}: device '{device_id}' holds no note store"
         ));
@@ -1565,13 +1593,66 @@ fn no_native_body(device: &DevicePayload) -> Option<String> {
             device.id
         ));
     }
-    if !device.device_type.eq_ignore_ascii_case("knead") {
+    if builtin_device_type(&device.device_type).is_none() {
         return Some(format!(
             "device '{}' of type '{}' has no native realisation",
             device.id, device.device_type
         ));
     }
     None
+}
+
+/// The built-in body a project device type names, or `None` when the scheduler
+/// has none under that name.
+///
+/// Resolved through [`BuiltinEffectType::from_name`] rather than a list here,
+/// so the vocabulary the engine can build and the vocabulary the mapper admits
+/// are one fact. Case-folded because a project's device type is authored on
+/// the web side, where the same body is spelled as a display name as often as
+/// a key.
+fn builtin_device_type(device_type: &str) -> Option<BuiltinEffectType> {
+    BuiltinEffectType::from_name(&device_type.to_ascii_lowercase())
+}
+
+/// Resolve a fermenter parameter key onto the automation ordinal it names.
+///
+/// The key *is* the ordinal, in decimal: the instrument owns that table and
+/// the engine names none of it, so there is no word here to resolve. An
+/// ordinal the instrument has no parameter for is refused control-side rather
+/// than crossing the ring, because `set_param_by_id` answers one by doing
+/// nothing at all — a parameter write that silently vanished.
+fn fermenter_ordinal(key: &str) -> Result<u32, String> {
+    let ordinal: u32 = key
+        .parse()
+        .map_err(|_| format!("parameter '{key}' is not a fermenter automation ordinal"))?;
+    if ordinal >= FERMENTER_AUTOMATION_PARAM_COUNT {
+        return Err(format!(
+            "parameter '{key}' is past the fermenter's {FERMENTER_AUTOMATION_PARAM_COUNT} \
+             automation ordinals"
+        ));
+    }
+    Ok(ordinal)
+}
+
+/// Resolve one built-in device's parameter key onto the address the engine
+/// routes it by, or refuse by name.
+///
+/// Which vocabulary applies is decided by the body, not by the name the key
+/// was written under: knead answers a closed set of names the engine owns, and
+/// the fermenter answers its own automation ordinals.
+fn builtin_parameter(
+    builtin: BuiltinEffectType,
+    key: &str,
+    device_id: &str,
+) -> Result<DeviceParam, String> {
+    match builtin {
+        BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
+            format!("device '{device_id}' carries parameter '{key}', which knead does not map")
+        }),
+        BuiltinEffectType::Fermenter => fermenter_ordinal(key)
+            .map(DeviceParam::FermenterOrdinal)
+            .map_err(|reason| format!("device '{device_id}': {reason}")),
+    }
 }
 
 /// One instance the engine already owns, as a device may bind to it: the
@@ -1588,30 +1669,37 @@ struct EngineOwnedDevice {
 
 /// What one device maps onto natively, and who owns the effect it names.
 ///
-/// Two populations reach a strip chain. A built-in Knead device is *built*
-/// here, on the mapping (control) thread, against the stream's `sample_rate`:
-/// the audio thread that applies the command installs or retires it and never
-/// constructs one (ADR 0020). A hosted plugin the engine already owns is
-/// *borrowed*: `load_plugin` registered it and reserved its effect-table slot
-/// at that moment, so this maps the device onto that instance's existing engine
-/// plugin id and allocates nothing. Everything else in the project's
-/// native-DSP vocabulary is a WASM device the web runtime realises, with no
-/// `daw-engine` body yet.
+/// Two populations reach a strip chain. A built-in device is *built* here, on
+/// the mapping (control) thread, against the stream's `sample_rate`: the audio
+/// thread that applies the command installs or retires it and never constructs
+/// one (ADR 0020). A hosted plugin the engine already owns is *borrowed*:
+/// `load_plugin` registered it and reserved its effect-table slot at that
+/// moment, so this maps the device onto that instance's existing engine plugin
+/// id and allocates nothing. Everything else in the project's native-DSP
+/// vocabulary is a WASM device the web runtime realises, with no `daw-engine`
+/// body yet.
+///
+/// `builtin` names which of the two this is, and is the one fact every later
+/// question about the device reads: `None` is the borrowed instance, so it
+/// answers ownership; and which of them holds a note store, and which
+/// parameter vocabulary a stamp at the device resolves through, follow from
+/// the built-in type rather than from a second flag that could disagree with
+/// it.
 ///
 /// An engine-owned device carries no `SetParam`: an external plugin's
 /// parameters are its own, addressed over the plugin's control path rather than
 /// through the engine's fixed built-in vocabulary, so its `parameterValues` are
-/// carried by the panel and never validated against `DeviceParam::from_name`
-/// here.
+/// carried by the panel and never validated against a built-in vocabulary here.
 ///
 /// `chain_kind` is what the three `ChainEntry` insert sites splice with: an
 /// engine-owned device carries the instance's own scanned category
-/// (`PluginRegistryEntry::chain_kind`), and a built-in Knead device is always
-/// `Effect` — knead has no generator form.
+/// (`PluginRegistryEntry::chain_kind`), and a built-in carries the kind its
+/// body is — an instrument is a `Generator`, whose output the chain sums in,
+/// and everything else an `Effect` that processes the signal in place.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct MappedDevice {
     effect_id: usize,
-    engine_owned: bool,
+    builtin: Option<BuiltinEffectType>,
     chain_kind: DeviceKind,
 }
 
@@ -1653,7 +1741,7 @@ fn map_device(
         }
         return Ok(Some(MappedDevice {
             effect_id,
-            engine_owned: true,
+            builtin: None,
             chain_kind,
         }));
     }
@@ -1669,17 +1757,15 @@ fn map_device(
         return Ok(None);
     }
 
-    // The built-in's parameters resolve through `DeviceParam::from_name`, the
-    // same single mapping the engine's addressed `SetParam` applies. A knead
-    // device carrying any other parameter name refuses control-side rather
-    // than being counted as an unmapped call after the fact.
+    let builtin = builtin_device_type(&device.device_type)
+        .expect("no_native_body refused every type with no built-in body");
+
+    // The built-in's parameters resolve control-side, through the same single
+    // mapping the engine's addressed `SetParam` applies. A key the body's own
+    // vocabulary does not map refuses here rather than being counted as an
+    // unmapped call on the audio thread after the fact.
     for name in device.parameter_values.keys() {
-        if DeviceParam::from_name(name).is_none() {
-            return Err(format!(
-                "device '{}' carries parameter '{}', which knead does not map",
-                device.id, name
-            ));
-        }
+        builtin_parameter(builtin, name, &device.id)?;
     }
 
     charge_chain_slot(registry, &device.id)?;
@@ -1689,13 +1775,18 @@ fn map_device(
     // that follows it. An effect registered onto the master chain in that
     // window would render one block of the entire mix through a device the
     // batch put on one strip.
+    //
+    // A built-in that sounds notes is registered holding its note store, built
+    // here because the audio thread may not build one — without it the device
+    // exists but nothing could ever be scheduled at it.
     ops.push(GraphCommand::AddDetachedEffect(
         effect_id,
-        PluginCore::builtin(BuiltinEffectType::Knead, sample_rate),
+        PluginCore::builtin(builtin, sample_rate),
+        builtin.sounds_notes().then(MidiNoteStore::new),
     ));
     for (name, value) in &device.parameter_values {
-        let param = DeviceParam::from_name(name)
-            .expect("the validation above refused every name knead does not map");
+        let param = builtin_parameter(builtin, name, &device.id)
+            .expect("the validation above refused every key this built-in does not map");
         ops.push(GraphCommand::SetParam(
             effect_id,
             param,
@@ -1707,9 +1798,22 @@ fn map_device(
     }
     Ok(Some(MappedDevice {
         effect_id,
-        engine_owned: false,
-        chain_kind: DeviceKind::Effect,
+        builtin: Some(builtin),
+        chain_kind: builtin_chain_kind(builtin),
     }))
+}
+
+/// How a built-in body splices into a strip chain.
+///
+/// An instrument produces material of its own, which the chain sums in at the
+/// device's place ([`DeviceKind::Generator`]); everything else processes the
+/// signal it is handed in place.
+fn builtin_chain_kind(builtin: BuiltinEffectType) -> DeviceKind {
+    if builtin.sounds_notes() {
+        DeviceKind::Generator
+    } else {
+        DeviceKind::Effect
+    }
 }
 
 /// Take one of the project's chain slots for `device_id`, or refuse by name.
@@ -1762,7 +1866,7 @@ fn charge_chain_slot(registry: &GraphRegistry, device_id: &str) -> Result<(), St
 /// already shut for it from the other end: the engine homes a hosted plugin
 /// detached, so releasing one puts it nowhere rather than on the master mix.
 fn remove_device_op(kind: StripKind, native_id: usize, device: &DeviceEntry) -> GraphCommand {
-    match (kind, device.engine_owned) {
+    match (kind, device.engine_owned()) {
         (StripKind::Track, false) => GraphCommand::RemoveTrackDeviceRetired {
             track_id: native_id,
             effect_id: device.native_effect_id,
@@ -2042,7 +2146,7 @@ fn map_command(
                     DeviceEntry {
                         native_effect_id: mapped.effect_id,
                         strip_id: track_id.clone(),
-                        engine_owned: mapped.engine_owned,
+                        builtin: mapped.builtin,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -2148,7 +2252,7 @@ fn map_command(
                     DeviceEntry {
                         native_effect_id: mapped.effect_id,
                         strip_id: bus_id.clone(),
-                        engine_owned: mapped.engine_owned,
+                        builtin: mapped.builtin,
                     },
                 );
                 built_device_ids.push(device.id.clone());
@@ -2341,7 +2445,7 @@ fn map_command(
                 DeviceEntry {
                     native_effect_id: mapped.effect_id,
                     strip_id: track_id.clone(),
-                    engine_owned: mapped.engine_owned,
+                    builtin: mapped.builtin,
                 },
             );
             registry
@@ -2423,21 +2527,20 @@ fn map_command(
             }
             // The address a stamp carries is decided by what the device is, not
             // by the name it was written under: a built-in's parameters are the
-            // engine's closed vocabulary, and a hosted plugin's are the
+            // vocabulary its own body answers to, and a hosted plugin's are the
             // plugin's own numeric ids, which only the plugin can resolve.
-            let param = if device.engine_owned {
-                DeviceParamTarget::Hosted {
+            let param = match device.builtin {
+                None => DeviceParamTarget::Hosted {
                     id: hosted_parameter_id(parameter_id)?,
-                }
-            } else {
-                DeviceParamTarget::Builtin(
-                    DeviceParam::from_name(parameter_id.as_str()).ok_or_else(|| {
+                },
+                Some(builtin) => DeviceParamTarget::Builtin(
+                    builtin_parameter(builtin, parameter_id, device_id).map_err(|_| {
                         format!(
                             "write-device-parameter: parameter '{parameter_id}' has no native \
                              address"
                         )
                     })?,
-                )
+                ),
             };
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
@@ -4919,7 +5022,7 @@ mod tests {
                 DeviceEntry {
                     native_effect_id: FIRST_GRAPH_EFFECT_ID + index,
                     strip_id: "t1".to_string(),
-                    engine_owned: false,
+                    builtin: Some(BuiltinEffectType::Knead),
                 },
             );
         }
@@ -6941,7 +7044,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: 1,
                 strip_id: track_id.clone(),
-                engine_owned: false,
+                builtin: Some(BuiltinEffectType::Knead),
             },
         );
 
@@ -7031,7 +7134,7 @@ mod tests {
             DeviceEntry {
                 native_effect_id: MIDI_DEVICE_EFFECT_ID,
                 strip_id: track_id.to_string(),
-                engine_owned: true,
+                builtin: None,
             },
         );
         registry
@@ -8465,6 +8568,247 @@ mod tests {
         assert_eq!(
             *slot.lock().expect("the slot is not poisoned"),
             Some("already running")
+        );
+    }
+
+    /// A contributing strip carrying one device of the named type, spelled the
+    /// way a project spells a built-in.
+    fn strip_with_device(device_id: &str, device_type: &str, parameter_values: Value) -> Value {
+        json!([{
+            "kind": "create-track-strip",
+            "trackId": "t1",
+            "name": "Lead",
+            "state": strip_state(1.0),
+            "devices": [ { "id": device_id, "type": device_type, "bypassed": false,
+                           "parameterValues": parameter_values } ],
+            "honorMuted": true,
+            "contributesAudio": true
+        }])
+    }
+
+    fn builtin_param_writes(ops: &[GraphCommand]) -> Vec<(DeviceParam, f32)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::SetParam(_, param, value) => Some((*param, *value)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A fermenter device is registered as a built-in instrument: it carries a
+    /// note store of its own, and it splices onto the chain as a `Generator`.
+    ///
+    /// Both halves are what make it an instrument rather than an insert. A
+    /// registration with no store leaves a device nothing can ever be
+    /// scheduled at, and an `Effect` splice runs the instrument over the
+    /// strip's signal in place instead of summing its output into the chain.
+    #[test]
+    fn a_fermenter_device_registers_holding_a_note_store_and_splices_as_a_generator() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device("d-ferm", "fermenter", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a fermenter device has a native body");
+
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(_, PluginCore::Fermenter(_), Some(_))
+            )),
+            "the fermenter is not registered as a built-in body holding a note store"
+        );
+        assert_eq!(
+            inserted_chain_kinds(&mapped.ops),
+            vec![DeviceKind::Generator],
+            "an instrument spliced as an effect processes the strip instead of feeding it"
+        );
+    }
+
+    /// A device type the engine can build nothing for refuses a contributing
+    /// strip, and the refusal names both the device and the type it read.
+    ///
+    /// A strip that contributes audio is one the mix is short of if a device
+    /// goes missing from it, so the batch refuses whole rather than degrading.
+    /// The reason has to name the device and its type or the caller cannot
+    /// tell which of a chain's devices the engine could not build.
+    #[test]
+    fn an_unbuildable_device_type_refuses_a_contributing_strip_naming_the_device_and_type() {
+        let refusal = map_unbound_batch(
+            &batch(strip_with_device("d-toaster", "toaster", json!({}))),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a type with no native body must refuse a contributing strip");
+
+        assert!(
+            refusal.contains("d-toaster") && refusal.contains("toaster"),
+            "the refusal must name the device and the type it read, got: {refusal}"
+        );
+    }
+
+    /// A fermenter parameter key is its automation ordinal in decimal, and a
+    /// key that is not one refuses naming itself.
+    ///
+    /// The instrument owns its parameter table and the engine names none of
+    /// it, so there is no word to resolve here: `cutoff` is a name the
+    /// fermenter's own vocabulary knows and this address does not, and `104`
+    /// is one past the published table. Either reaching the audio thread would
+    /// be a write the producer believes landed and the mix never heard.
+    #[test]
+    fn a_fermenter_parameter_key_maps_onto_its_automation_ordinal() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-ferm",
+                "fermenter",
+                json!({ "7": 0.5 }),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a decimal ordinal is a fermenter parameter address");
+
+        assert_eq!(
+            builtin_param_writes(&mapped.ops),
+            vec![(DeviceParam::FermenterOrdinal(7), 0.5)]
+        );
+
+        for key in ["cutoff", "104"] {
+            let refusal = map_unbound_batch(
+                &batch(strip_with_device(
+                    "d-ferm",
+                    "fermenter",
+                    json!({ key.to_string(): 0.5 }),
+                )),
+                &mut GraphRegistry::default(),
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect_err("a key that is not a published ordinal must refuse");
+
+            assert!(
+                refusal.contains(key) && refusal.contains("d-ferm"),
+                "the refusal must name the key and the device, got: {refusal}"
+            );
+        }
+    }
+
+    /// `schedule-midi` reaches a fermenter, which holds a note store, and still
+    /// refuses a knead, which holds none.
+    ///
+    /// The note sink is the built-in's own property — whether it sounds notes —
+    /// not whether the engine owns the device. Reading it off ownership alone
+    /// would refuse every built-in instrument the mapper builds.
+    #[test]
+    fn schedule_midi_maps_at_a_fermenter_and_still_refuses_a_knead() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [
+                    { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                      "parameterValues": {} },
+                    { "id": "d-knead", "type": "knead", "bypassed": false,
+                      "parameterValues": {} }
+                ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("a strip carrying both built-ins maps");
+
+        let mut working = registry.clone();
+        let mapped = map_unbound_batch(
+            &schedule_midi_batch("t1", "d-ferm", json!([note_at(0.0, 60, 0)])),
+            &mut working,
+            &samples,
+            48_000.0,
+        )
+        .expect("a fermenter holds a note store to schedule into");
+        assert!(
+            mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::ScheduleMidiNotes { .. })),
+            "the schedule never reached the engine as a note command"
+        );
+
+        let mut working = registry.clone();
+        let refusal = map_unbound_batch(
+            &schedule_midi_batch("t1", "d-knead", json!([note_at(0.0, 60, 0)])),
+            &mut working,
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a knead has no note store to schedule into");
+        assert!(
+            refusal.contains("schedule-midi: device 'd-knead' holds no note store"),
+            "refusal must name the device holding no note store: {refusal}"
+        );
+    }
+
+    /// An offline render of a fermenter sounds the note it was handed, on the
+    /// frame that note was scheduled for.
+    ///
+    /// This is the whole slice end to end on the mapper's own oracle: the
+    /// device is built, spliced as a generator, handed a store, given a note in
+    /// seconds, and the returned PCM is silent until the frame that note
+    /// converts to and carries signal after it.
+    #[test]
+    fn an_offline_fermenter_render_sounds_from_the_frame_its_note_was_scheduled_for() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const ONSET_SECONDS: f64 = 0.01;
+        const ONSET_FRAME: usize = 480;
+        const FRAMES: usize = 1_440;
+
+        let rendered = render_offline_batch(
+            &midi_batch(json!([
+                {
+                    "kind": "create-track-strip",
+                    "trackId": "t1",
+                    "name": "Lead",
+                    "state": strip_state(1.0),
+                    "devices": [ { "id": "d-ferm", "type": "fermenter", "bypassed": false,
+                                   "parameterValues": {} } ],
+                    "honorMuted": true,
+                    "contributesAudio": true
+                },
+                {
+                    "kind": "schedule-midi",
+                    "trackId": "t1",
+                    "deviceId": "d-ferm",
+                    "probabilitySeed": MIDI_PROBABILITY_SEED,
+                    "notes": [ note_at(ONSET_SECONDS, 60, 0) ],
+                }
+            ])),
+            &sample_pool(),
+            FRAMES,
+            SAMPLE_RATE,
+        )
+        .expect("a fermenter renders offline");
+
+        // Interleaved stereo, so a frame is a pair.
+        assert!(
+            rendered[..ONSET_FRAME * 2]
+                .iter()
+                .all(|sample| *sample == 0.0),
+            "the render carried signal before the note was scheduled for"
+        );
+        assert!(
+            rendered[ONSET_FRAME * 2..]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the note never sounded in the offline render"
         );
     }
 }
