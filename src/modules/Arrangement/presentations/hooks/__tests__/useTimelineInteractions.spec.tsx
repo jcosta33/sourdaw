@@ -32,12 +32,11 @@ const mocks = vi.hoisted(
         commitInlineAutomationPaint: ReturnType<typeof vi.fn>;
         commitInlineMidiNoteMove: ReturnType<typeof vi.fn>;
         pushUndoEntry: ReturnType<typeof vi.fn>;
+        executeUserAppAction: ReturnType<typeof vi.fn>;
         selectTrack: ReturnType<typeof vi.fn>;
         addClip: ReturnType<typeof vi.fn>;
         removeClip: ReturnType<typeof vi.fn>;
         moveClip: ReturnType<typeof vi.fn>;
-        trimClipStart: ReturnType<typeof vi.fn>;
-        trimClipEnd: ReturnType<typeof vi.fn>;
         buildTimelineRenderModel: ReturnType<typeof vi.fn>;
         getTrackAtY: ReturnType<typeof vi.fn>;
         canvasXToBeat: ReturnType<typeof vi.fn>;
@@ -91,12 +90,11 @@ const mocks = vi.hoisted(
         commitInlineAutomationPaint: vi.fn(),
         commitInlineMidiNoteMove: vi.fn(),
         pushUndoEntry: vi.fn(),
+        executeUserAppAction: vi.fn(),
         selectTrack: vi.fn(),
         addClip: vi.fn(),
         removeClip: vi.fn(),
         moveClip: vi.fn(),
-        trimClipStart: vi.fn(),
-        trimClipEnd: vi.fn(),
         buildTimelineRenderModel: vi.fn(),
         getTrackAtY: vi.fn(),
         canvasXToBeat: vi.fn((x) => x / 100),
@@ -223,7 +221,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/MIDI/stores', async () => {
@@ -250,8 +248,6 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: 
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
 vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: mocks.removeClip }));
 vi.mock('../../../useCases/clip/moveClip', () => ({ moveClip: mocks.moveClip }));
-vi.mock('../../../useCases/clipEditing/trimClipStart', () => ({ trimClipStart: mocks.trimClipStart }));
-vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({ trimClipEnd: mocks.trimClipEnd }));
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: mocks.buildTimelineRenderModel,
 }));
@@ -466,19 +462,30 @@ describe('useTimelineInteractions', () => {
             name: 'trim start',
             mode: 'trim-start',
             edge: 'left',
-            lowerUseCase: mocks.trimClipStart,
-            expectedLabel: 'Trim clip start',
+            // Release back at the grab point: previewed start 0 == original 0.
+            unmovedReleaseClientX: 0,
+            expectedAction: { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
         },
         {
             name: 'trim end',
             mode: 'stretch',
             edge: 'right',
-            lowerUseCase: mocks.trimClipEnd,
-            expectedLabel: 'Trim clip end',
+            // Release at the original end (x=400 → beat 4): the 0.25 minimum keeps
+            // x=0 a real move, so only the true no-op position proves the guard.
+            unmovedReleaseClientX: 400,
+            expectedAction: { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 2 } },
         },
     ] as const;
 
-    const commitTrimPreview = ({ mode, edge }: Pick<(typeof trimCases)[number], 'mode' | 'edge'>) => {
+    const commitTrimPreview = ({
+        mode,
+        edge,
+        releaseClientX = 200,
+    }: {
+        mode: (typeof trimCases)[number]['mode'];
+        edge: (typeof trimCases)[number]['edge'];
+        releaseClientX?: number;
+    }) => {
         mocks.trackStoreValue.value = {
             tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }] }],
         };
@@ -498,33 +505,31 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
         });
         act(() => {
-            result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+            result.current.handleMouseMove({ clientX: releaseClientX, clientY: 20 } as any);
         });
         act(() => {
-            result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
+            result.current.handleMouseUp({ clientX: releaseClientX, clientY: 20 } as any);
         });
     };
 
     it.each(trimCases)(
-        '$name publishes no callback undo entry after a rejected write',
-        ({ mode, edge, lowerUseCase }) => {
-            lowerUseCase.mockReturnValue(false);
+        '$name dispatches the registered trim action with the previewed beat',
+        ({ mode, edge, expectedAction }) => {
             commitTrimPreview({ mode, edge });
 
-            expect(lowerUseCase).toHaveBeenCalledWith('clip-1', 2);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(expectedAction);
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         }
     );
 
     it.each(trimCases)(
-        '$name preserves callback undo publication after a committed write',
-        ({ mode, edge, lowerUseCase, expectedLabel }) => {
-            lowerUseCase.mockReturnValue(true);
-            commitTrimPreview({ mode, edge });
+        '$name dispatches nothing when the trim gesture releases without movement',
+        ({ mode, edge, unmovedReleaseClientX }) => {
+            commitTrimPreview({ mode, edge, releaseClientX: unmovedReleaseClientX });
 
-            expect(lowerUseCase).toHaveBeenCalledWith('clip-1', 2);
-            expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
-            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(expectedLabel, expect.any(Function), expect.any(Function));
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         }
     );
 

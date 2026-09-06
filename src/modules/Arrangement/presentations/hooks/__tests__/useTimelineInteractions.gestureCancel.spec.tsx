@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => {
         getTransportState: vi.fn(),
         setLoopRegion: vi.fn(),
         pushUndoEntry: vi.fn(),
+        executeUserAppAction: vi.fn(),
         shiftClipAutomation: vi.fn(),
         duplicateClipAutomation: vi.fn(),
         duplicateClipNotes: vi.fn(),
@@ -104,7 +105,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
     },
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -451,7 +452,7 @@ describe('useTimelineInteractions — gesture cancellation', () => {
         act(() => {
             result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
         });
-        expect(mocks.trimClipStart).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.clips[0]?.startBeat).toBe(0);
     });
