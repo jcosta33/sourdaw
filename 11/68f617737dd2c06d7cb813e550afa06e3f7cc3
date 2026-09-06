@@ -1,0 +1,47 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_9b530f08172a54::t_d4db0d65161bad 30-31
+src/modules/MIDI/useCases/webMidiInput/midiMessageHandlerDependencies.ts
+  s_9b530f08172a54::t_31057d0b8e2a1c 64
+  s_9b530f08172a54::t_a3c5f8c84398a8 2-7
+  s_9b530f08172a54::t_e20aef9d65effb 57
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_9b530f08172a54::t_10dc25558d48c9 26-27
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_9b530f08172a54::t_645e00861d62e7 82-83
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_9b530f08172a54::t_57dce7eaa2694d 36-37
+  s_9b530f08172a54::t_7d6ae77fc1e57a 64-65
+  s_9b530f08172a54::t_ccccaca5b23ba5 597-702
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_9b530f08172a54::t_5a33131017f363 127-137
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_9b530f08172a54::t_9eaa1caac53c10 25-26
+  s_9b530f08172a54::t_72dc72e85047c9 69-70
+  s_9b530f08172a54::t_601c1c4b673cf7 758-812
+src/modules/MIDI/useCases/webMidiInput/resolveNativeNoteSink.ts
+  s_9b530f08172a54::t_77f57508ac15ca 1-16
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_9b530f08172a54::t_7a3302bcc9c961 31-32
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_9b530f08172a54::t_977a27ee8420b4 199-202,204-211
+  s_9b530f08172a54::t_29c9d0518f7cd3 203
+  s_9b530f08172a54::t_3b204699c8be6e 17
+  s_9b530f08172a54::t_836c6ea4187056 196-198,212-213
+  s_9b530f08172a54::t_479c0ce563c7de 195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1168f617737dd2c06d7cb813e550afa06e3f7cc3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
