@@ -81,7 +81,7 @@ Masked text supports intent discovery and segmentation; it never proves literal 
 
 Build project-reference masks from immutable original-text spans and render them once; a generated intent marker must never become evidence for a later reference match. When one command grammar permits an optional connector, classify source and value from one quote-aware original-text parse, and keep semantic whitespace inside a protection reference without joining separate punctuation-bounded clauses.
 
-When a free-form value can contain the same connector that separates a target from that value, enumerate whitespace-delimited, quote-aware source boundaries and ground each source prefix through the canonical reference resolver. Admit only one uniquely grounded source-and-value interpretation; never let a provider target choose between competing boundaries.
+When a free-form value can contain the same connector that separates a target from that value, enumerate whitespace-delimited, quote-aware source boundaries and ground each source prefix through the canonical reference resolver. Reference evidence must consume the complete source prefix, including a complete known owner qualifier; a contained name is insufficient. Admit only one uniquely grounded source-and-value interpretation, and never let a provider target choose between competing boundaries.
 
 **Why:** a project-name placeholder can resemble executable grammar, while a qualifier split away from an action still limits what the whole request authorizes.
 

@@ -6580,6 +6580,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'rename Verse on Vocals to Lead Verse',
             context
         );
+        const qualifiedAfterCarrier = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } }],
+            'rename clip Verse on Vocals to Lead Verse',
+            context
+        );
         const ambiguous = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } }],
             'rename Verse to Lead Verse',
@@ -6587,6 +6592,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(qualified.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } },
+        ]);
+        expect(qualifiedAfterCarrier.actions).toEqual([
             { type: 'renameClip', payload: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } },
         ]);
         expect(ambiguous.actions).toEqual([]);

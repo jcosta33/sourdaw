@@ -75,6 +75,7 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { resolveAgentReference } from './resolveAgentReference';
+import { resolveCompleteClipReference } from './resolveCompleteClipReference';
 
 type BridgeGroundedLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
@@ -2100,11 +2101,12 @@ function getWhitespaceDelimitedConnectorIndexes(maskedText: string, connector: s
     return indexes;
 }
 
-function getGroundedEditableClipIds(prompt: string, context: ProjectContext): string[] {
+function getGroundedEditableClipIds(prompt: string, referenceText: string, context: ProjectContext): string[] {
     const groundedIds = new Set<string>();
     for (const clip of context.tracks.flatMap((track) => track.clips)) {
-        const result = resolveAgentReference({
+        const result = resolveCompleteClipReference({
             prompt,
+            referenceText,
             assertedId: clip.id,
             capability: 'editable-clip',
             context,
@@ -2155,7 +2157,11 @@ function getClipRenameCarrier(actionScope: ActionPromptScope, context: ProjectCo
             return [];
         }
         const sourcePrompt = `${sourceScope.slice(0, prefix[0].length)}${explicitSource}`.trim();
-        return getGroundedEditableClipIds(sourcePrompt, context).map((clipId) => ({ clipId, sourcePrompt, value }));
+        return getGroundedEditableClipIds(sourcePrompt, explicitSource, context).map((clipId) => ({
+            clipId,
+            sourcePrompt,
+            value,
+        }));
     });
     if (interpretations.length !== 1) {
         return { kind: 'invalid' };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { resolveAgentReference } from '../resolveAgentReference';
+import { resolveCompleteClipReference } from '../resolveCompleteClipReference';
 
 function createProjectState(): ProjectContext {
     const tracks = [
@@ -95,6 +96,16 @@ function resolveClip(prompt: string, assertedId: string, project = createClipPro
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-clip', context: project });
 }
 
+function resolveCompleteClip(referenceText: string, assertedId: string, project = createClipProjectState()) {
+    return resolveCompleteClipReference({
+        prompt: `rename clip ${referenceText}`,
+        referenceText,
+        assertedId,
+        capability: 'editable-clip',
+        context: project,
+    });
+}
+
 function resolveMidiClip(prompt: string, assertedId: string, project = createClipProjectState()) {
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-midi-clip', context: project });
 }
@@ -150,6 +161,77 @@ function resolveAutomationLane(prompt: string, assertedId: string, project = cre
 }
 
 describe('resolveAgentReference', () => {
+    it('requires a rename source reference to consume its complete text', () => {
+        const project = createClipProjectState();
+        const vocals = project.tracks[0]!;
+        const roadToNowhere = {
+            ...vocals.clips[0]!,
+            id: 'clip-road-to-nowhere',
+            name: 'Road to Nowhere',
+            startBeat: 48,
+            endBeat: 56,
+        };
+        const context = {
+            ...project,
+            tracks: [
+                { ...vocals, clipCount: vocals.clipCount + 1, clips: [...vocals.clips, roadToNowhere] },
+                ...project.tracks.slice(1),
+            ],
+        };
+
+        expect(resolveCompleteClip('Intro', 'clip-intro', context)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('clip-intro', 'clip-intro', context)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'literal-id',
+        });
+        expect(resolveCompleteClip('Intro to Road', 'clip-intro', context)).toEqual({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveCompleteClip('Road to Nowhere', roadToNowhere.id, context)).toEqual({
+            status: 'resolved',
+            id: roadToNowhere.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('"Road to Nowhere"', roadToNowhere.id, context)).toEqual({
+            status: 'resolved',
+            id: roadToNowhere.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('selected clip', 'clip-intro', context)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'selection',
+        });
+    });
+
+    it('consumes an exact owner qualification while retaining duplicate-name ambiguity', () => {
+        expect(resolveCompleteClip('Verse on Vocals', 'clip-vocals-verse')).toEqual({
+            status: 'resolved',
+            id: 'clip-vocals-verse',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('Verse on Bass', 'clip-bass-verse')).toEqual({
+            status: 'resolved',
+            id: 'clip-bass-verse',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('Verse on track-vocals', 'clip-vocals-verse')).toEqual({
+            status: 'resolved',
+            id: 'clip-vocals-verse',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('Verse', 'clip-vocals-verse')).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('grounds devices from canonical descriptors instead of mutable display names', () => {
         const project = createProjectState();
         const bass = project.tracks.find((track) => track.id === 'track-bass');

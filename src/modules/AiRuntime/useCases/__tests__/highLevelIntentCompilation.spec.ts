@@ -582,6 +582,35 @@ describe('high-level intent compilation', () => {
 
     it.each([
         {
+            label: 'direct',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Nowhere to Ending' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Road to Nowhere', 'Nowhere to Ending')]),
+        },
+    ])(
+        'rejects a wrong destination after grounding the complete source through a $label proposal',
+        async ({ proposal }) => {
+            const prompt = 'rename clip Road to Nowhere to Ending';
+            const context = withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere');
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(prompt, context, undefined, 'revision-wrong-connector-value');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('value name');
+        }
+    );
+
+    it.each([
+        {
             label: 'direct with an unquoted destination',
             prompt: 'rename clip Lead to Road to Nowhere',
             proposal: proposeCommandsTurn([
@@ -659,6 +688,25 @@ describe('high-level intent compilation', () => {
             expect(result.actions).toEqual([]);
         }
     );
+
+    it('rejects a full-name compiler proposal when two complete source interpretations compete', async () => {
+        const prompt = 'rename clip Road to Nowhere to Ending';
+        const context = withLiteralClipName(
+            withLiteralClipName(selectedClipProject, 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposeTurn([renameClipListItem('Road to Nowhere', 'Ending')]));
+
+        const result = await parsePromptToActions(prompt, context, undefined, 'revision-overlap-full-source');
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('not grounded or ambiguous');
+    });
 
     it.each([
         {
