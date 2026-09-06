@@ -5,7 +5,13 @@ import { useStore } from '#/infra/store/useStore';
 import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { DEFAULT_PARAMS, expandSpacePreset, type ProofChamberEngineState } from '../../../models/ProofChamberState';
+import {
+    ALGORITHM_MAP,
+    DEFAULT_PARAMS,
+    PARAM_MAP,
+    expandSpacePreset,
+    type ProofChamberEngineState,
+} from '../../../models/ProofChamberState';
 import { hydrateChamberStateFromProject } from '../../../useCases/proofChamber/hydrateChamberStateFromProject';
 import { updateChamberEngine } from '../../../useCases/proofChamber/updateChamberEngine';
 import { ProofChamberPanel } from '../ProofChamberPanel';
@@ -144,6 +150,35 @@ describe('ProofChamberPanel', () => {
     }
 
     /**
+     * Seed the project truth the panel's hydrate effect and rollback read:
+     * `parameterValues` in the stored form the device persists — numbers for
+     * the numeric fields, 0/1 for the switches, the `ALGORITHM_MAP` wire value
+     * for the algorithm — on a track the panel finds by device id.
+     */
+    function seedProjectTruth(engineState: ProofChamberEngineState): void {
+        const parameterValues: Record<string, number> = {
+            algorithm: ALGORITHM_MAP[engineState.algorithm],
+        };
+        for (const [field, paramId] of Object.entries(PARAM_MAP)) {
+            const value = engineState[field as keyof ProofChamberEngineState];
+            if (typeof value === 'number') {
+                parameterValues[paramId] = value;
+            } else if (typeof value === 'boolean') {
+                parameterValues[paramId] = value ? 1 : 0;
+            }
+        }
+        vi.mocked(useStore).mockImplementation((_store, defaultValue) => {
+            if (typeof defaultValue === 'object' && defaultValue !== null && 'tracks' in defaultValue) {
+                return {
+                    ...defaultValue,
+                    tracks: [{ devices: [{ id: 'test-device', parameterValues }] }],
+                };
+            }
+            return defaultValue;
+        });
+    }
+
+    /**
      * The space tiles are the panel's one `executeAppActionBatch` gesture, and
      * the batch resolves rather than rejecting when the project refuses the
      * write, so a call site that drops the result makes the click silently do
@@ -279,6 +314,11 @@ describe('ProofChamberPanel', () => {
         });
         render(<ProofChamberPanel deviceId="test-device" />);
 
+        // The mount effect hydrates once; drop that call so the assertion below
+        // can only be satisfied by the ambiguous branch's own re-hydrate, never
+        // by the one the panel makes on mount.
+        vi.mocked(hydrateChamberStateFromProject).mockClear();
+
         fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
 
         await waitFor(() => {
@@ -329,6 +369,56 @@ describe('ProofChamberPanel', () => {
         // refusal statuses (issue #3860).
         expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(2);
         expect(engine.current()).toEqual(preClickEngineState);
+    });
+
+    /**
+     * Two optimistic clicks whose batches both refuse: by the time the second
+     * click captures its snapshot, the live engine store holds the FIRST
+     * click's optimistic preset, so a snapshot read back from the store would
+     * restore that preset as "the pre-click state" and re-create the very
+     * defect the rollback prevents. The snapshot must come from project truth,
+     * which an optimistic write never moves.
+     */
+    it('restores project truth, not the earlier optimistic preset, when overlapping space loads both refuse', async () => {
+        const preClickEngineState = { ...DEFAULT_PARAMS, mix: 0.37 };
+        const engine = seedChamberEngine(preClickEngineState);
+        seedProjectTruth(preClickEngineState);
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
+            status: 'conflicted',
+            reason: 'Project repair is required before project actions can execute',
+            actions: [],
+        });
+        render(<ProofChamberPanel deviceId="test-device" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Cathedral Huge tail' }));
+
+        // Two optimistic writes, then two rollbacks once both refusals settle.
+        await waitFor(() => {
+            expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(4);
+        });
+        // Project truth holds every persisted field, and both presets retune
+        // all six of these — plate to (0.5, 0.6, 0.15, 0.85, 0.5, 0) and
+        // cathedral to (1.0, 0.85, 0.2, 0.9, 0.4, 40) — so the engine ending
+        // on the seeded truth's values means neither preset survived. The
+        // session-only `space` is the one field truth does not hold and the
+        // one field an unresolved earlier click can still own, so it is
+        // deliberately not pinned here.
+        expect(engine.current()).toEqual(
+            expect.objectContaining({
+                size: preClickEngineState.size,
+                decay: preClickEngineState.decay,
+                damping: preClickEngineState.damping,
+                diffusion: preClickEngineState.diffusion,
+                modDepth: preClickEngineState.modDepth,
+                predelay: preClickEngineState.predelay,
+            })
+        );
     });
 
     /**

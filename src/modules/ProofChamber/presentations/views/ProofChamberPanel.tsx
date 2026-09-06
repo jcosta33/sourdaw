@@ -31,11 +31,14 @@ import {
 import {
     type ProofChamberAlgorithm,
     ALGORITHM_MAP,
+    BOOLEAN_ENGINE_FIELDS,
     DEFAULT_PARAMS,
+    NUMERIC_ENGINE_FIELDS,
     PARAM_MAP,
     type ProofChamberEngineState,
     PROOF_CHAMBER_ALGORITHMS,
     PROOF_CHAMBER_DECAY_EQ_BANDS,
+    proofChamberAlgorithmFromWireValue,
     expandSpacePreset,
     type SpaceType,
     usesRt60DecayLaw,
@@ -299,6 +302,54 @@ function KnobCell({
     );
 }
 
+/**
+ * The engine state project truth describes, overlaid on `base`.
+ *
+ * The space-load rollback must not snapshot the live engine store: an earlier
+ * optimistic click may still own it, and a snapshot read back from there would
+ * restore that click's preset as if it were the pre-click state. Project truth
+ * never moves on an optimistic write, so every persisted field is read from
+ * `parameterValues` — the same projection `hydrateChamberStateFromProject`
+ * applies on project open — while the fields truth does not hold (the
+ * session-only `space`) stay as `base` has them. `base` is the updater's own
+ * pre-write state, so a device with nothing stored yet still rolls back to
+ * what the click actually replaced.
+ */
+function engineStateFromProjectParameters(
+    parameterValues: Record<string, number> | undefined,
+    base: ProofChamberEngineState
+): ProofChamberEngineState {
+    if (parameterValues === undefined) {
+        return base;
+    }
+    const restored: ProofChamberEngineState = { ...base };
+    for (const field of NUMERIC_ENGINE_FIELDS) {
+        const paramId = PARAM_MAP[field];
+        if (paramId === undefined) {
+            continue;
+        }
+        const stored = parameterValues[paramId];
+        if (typeof stored === 'number' && Number.isFinite(stored)) {
+            restored[field] = stored;
+        }
+    }
+    for (const field of BOOLEAN_ENGINE_FIELDS) {
+        const paramId = PARAM_MAP[field];
+        if (paramId === undefined) {
+            continue;
+        }
+        const stored = parameterValues[paramId];
+        if (typeof stored === 'number' && Number.isFinite(stored)) {
+            restored[field] = stored > 0.5;
+        }
+    }
+    const storedAlgorithm = parameterValues.algorithm;
+    if (typeof storedAlgorithm === 'number' && Number.isFinite(storedAlgorithm)) {
+        restored.algorithm = proofChamberAlgorithmFromWireValue(storedAlgorithm);
+    }
+    return restored;
+}
+
 export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const storeState = useStore(chamberStore, { activeInstanceId: null, instances: {} });
     const trackState = useStore(trackStore, defaultTrackState);
@@ -398,12 +449,15 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         // The optimistic preset must not survive a refused load (issue #3860):
         // project truth never moved, so the panel would keep showing the new
         // space and its preset while the refusal below says nothing changed.
-        // `ambiguous` is the one outcome that may have landed, so instead of
-        // restoring this snapshot over a landed write it re-hydrates from
-        // project truth below.
+        // The snapshot is derived through `engineStateFromProjectParameters`
+        // rather than read back from the live store, because an earlier
+        // unresolved optimistic click may already own that store — its preset
+        // must never become this click's "previous" state. `ambiguous` is the
+        // one outcome that may have landed, so instead of restoring a snapshot
+        // over a landed write it re-hydrates from project truth below.
         let previousEngineState: ProofChamberEngineState | null = null;
         updateChamberEngine(deviceId, (current) => {
-            previousEngineState = current;
+            previousEngineState = engineStateFromProjectParameters(projectParameterValues, current);
             return nextParams;
         });
         const restorePreviousEngineState = (): void => {
