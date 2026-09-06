@@ -202,6 +202,18 @@ export type AudioGraphDeviceParameterTarget = Readonly<{
 export type AudioGraphParameterTarget = AudioGraphStripParameterTarget | AudioGraphDeviceParameterTarget;
 
 /**
+ * A device on a strip, addressed as itself rather than through one of its
+ * parameters.
+ *
+ * Carries no `kind`, unlike {@link AudioGraphDeviceParameterTarget}: it belongs
+ * to no union, so there is nothing for a discriminant to tell it apart from.
+ */
+export type AudioGraphDeviceTarget = Readonly<{
+    trackId: AudioGraphStripId;
+    deviceId: string;
+}>;
+
+/**
  * Land `value` at `landTime`, replacing whatever was already scheduled.
  *
  * This is the lane-playback primitive, and the replacement half is the part a
@@ -458,6 +470,84 @@ export type AudioGraphScheduleClipCommand = Readonly<{
 }>;
 
 /**
+ * One note and the position on the backend's clock it sounds at.
+ *
+ * No block offset: the backend places the note inside whichever block renders
+ * `time`, from `time` itself, so a producer stating an offset would be stating a
+ * number the backend overwrites. A note therefore survives a locate and every
+ * pass a loop makes over it, because it names a position in the arrangement
+ * rather than a moment in a queue.
+ */
+export type AudioGraphMidiNoteEvent = Readonly<{
+    /** Absolute position on the backend's clock. */
+    time: number;
+    note: number;
+    velocity: number;
+    /** `0` through `15`. */
+    channel: number;
+    isNoteOn: boolean;
+    /**
+     * The chance this note sounds, `0` through `1`. Absent means it always
+     * plays, which is what a producer writing plain notes wants and what the
+     * backend's live note path already answers.
+     */
+    probability?: number;
+    clipIdHash?: number;
+    eventIdHash?: number;
+    absoluteOccurrenceIndex?: number;
+}>;
+
+/**
+ * Write notes into the note store a device holds.
+ *
+ * A rewrite is an {@link AudioGraphClearMidiCommand} and this together, in one
+ * {@link AudioGraphCommandBatch}: a batch is one visibility, so the clear
+ * settles against the store the whole batch left and reads a note-off it
+ * stripped as *moved* rather than deleted. Split across two batches the clear
+ * lands first and releases a note the rewrite only meant to lengthen — which is
+ * why this is a command in the batch rather than a call of its own.
+ *
+ * Visible together is not the same as succeeding together. A backend refuses a
+ * device holding no note store, and a batch past what its store can hold,
+ * while the clear stays applied either way.
+ */
+export type AudioGraphScheduleMidiCommand = Readonly<{
+    kind: 'schedule-midi';
+    target: AudioGraphDeviceTarget;
+    /**
+     * The project's probability seed — `midiStore`'s `probabilitySeed`, minted
+     * once per project — which every carrier rolls a chance note with.
+     *
+     * A project value rather than a note's, so it is stated once for the whole
+     * command. It is required rather than defaulted because the roll mixes it
+     * first: a stand-in is itself a seed, and it would decide a chance note
+     * differently from the live and offline Web Audio carriers, so one
+     * arrangement would voice one way in the browser and another way through a
+     * backend that supplied its own.
+     */
+    probabilitySeed: number;
+    notes: readonly AudioGraphMidiNoteEvent[];
+}>;
+
+/**
+ * Drop the device's scheduled notes between `fromTime` and `toTime`.
+ *
+ * Half-open, so a producer rewriting one bar clears exactly its span and the
+ * note starting the next bar borders the window without being inside it.
+ * `toTime` of `null` is the end of the store, so `0` with a null end clears it.
+ *
+ * A clear naming a device holding no note store is refused by name, on the
+ * same terms as `schedule-midi`, so a producer clears only devices it could
+ * have scheduled.
+ */
+export type AudioGraphClearMidiCommand = Readonly<{
+    kind: 'clear-midi';
+    target: AudioGraphDeviceTarget;
+    fromTime: number;
+    toTime: number | null;
+}>;
+
+/**
  * Where the playhead is and whether it is moving.
  *
  * A backend whose transport is fixed for the lifetime of the render — an
@@ -545,6 +635,8 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphScheduleClipCommand
+    | AudioGraphScheduleMidiCommand
+    | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
     | AudioGraphSetMonitorShadowCommand
     | AudioGraphSetMasterGainCommand;
