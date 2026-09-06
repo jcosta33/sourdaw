@@ -464,6 +464,37 @@ export type AudioGraphWriteDeviceParameterCommand = Readonly<{
     write: AudioGraphStepWrite;
 }>;
 
+/**
+ * Land a whole record of a device's own parameters at the next audio callback,
+ * replacing each parameter's current value and leaving whatever the device's
+ * stamp queue is holding untouched.
+ *
+ * The immediate counterpart of {@link AudioGraphWriteDeviceParameterCommand},
+ * and a record rather than one write, because what reaches here is a patch: a
+ * Fermenter's is around a hundred keys, and a morph or a macro drag reloads the
+ * whole record at animation-frame rate. A stamped write cannot carry that — a
+ * backend's per-device queue holds a few dozen pending stamps in total, so one
+ * patch overruns it several times over — while a value applied on the next
+ * callback queues nothing.
+ *
+ * It addresses a **native built-in** only. An externally hosted plugin's
+ * parameters are the plugin's own, addressed over the plugin host's control
+ * path, and a backend refuses one aimed there rather than mapping it through a
+ * built-in vocabulary that cannot name it.
+ *
+ * Keys are the built-in's own native parameter names — for a Fermenter, the
+ * instrument's snake_case vocabulary, not the camelCase descriptor ids a panel
+ * authors. A key the device has no address for refuses the whole batch, naming
+ * the device and the key, exactly as {@link
+ * AudioGraphWriteDeviceParameterCommand} does: a batch reported applied while
+ * some of its values went nowhere is worse than one refused.
+ */
+export type AudioGraphSetDeviceParametersCommand = Readonly<{
+    kind: 'set-device-parameters';
+    target: AudioGraphDeviceTarget;
+    values: Readonly<Record<string, number>>;
+}>;
+
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
     playback: AudioGraphClipPlayback;
@@ -527,6 +558,32 @@ export type AudioGraphScheduleMidiCommand = Readonly<{
      */
     probabilitySeed: number;
     notes: readonly AudioGraphMidiNoteEvent[];
+}>;
+
+/**
+ * Play one note now on a device that sinks notes.
+ *
+ * The note is handed to the device at the head of the first block the backend
+ * renders after this batch is applied, and it sounds whether or not the
+ * transport is playing: a key struck on a keyboard names no timeline position,
+ * so there is none for a stopped playhead to withhold it from. A note that
+ * *does* have one travels as {@link AudioGraphScheduleMidiCommand} instead.
+ *
+ * A backend releases it on a stop or a locate exactly as it releases a stored
+ * note, so a note whose note-off never arrives cannot hold an instrument down
+ * for the rest of the session. A loop wrap does not: it lifts a stored key,
+ * whose note-off lies past the seam and will never render, and leaves a key the
+ * player is holding down — no DAW takes a musician's hands off the keyboard
+ * where a region starts again.
+ */
+export type AudioGraphSendMidiNoteCommand = Readonly<{
+    kind: 'send-midi-note';
+    target: AudioGraphDeviceTarget;
+    note: number;
+    velocity: number;
+    /** `0` through `15`. */
+    channel: number;
+    isNoteOn: boolean;
 }>;
 
 /**
@@ -634,8 +691,10 @@ export type AudioGraphCommand =
     | AudioGraphRemoveDeviceCommand
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
+    | AudioGraphSetDeviceParametersCommand
     | AudioGraphScheduleClipCommand
     | AudioGraphScheduleMidiCommand
+    | AudioGraphSendMidiNoteCommand
     | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
     | AudioGraphSetMonitorShadowCommand

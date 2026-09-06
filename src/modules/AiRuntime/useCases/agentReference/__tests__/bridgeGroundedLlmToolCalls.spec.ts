@@ -942,6 +942,94 @@ function createClipContext(): ProjectContext {
     };
 }
 
+function createNamedClipSourceContext(): ProjectContext {
+    const context = createClipContext();
+    const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
+    const lead = {
+        ...sourceTrack.clips[0]!,
+        id: 'clip-lead',
+        name: 'Lead',
+        startBeat: 48,
+        endBeat: 56,
+    };
+    return {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === sourceTrack.id
+                ? { ...track, clipCount: sourceTrack.clipCount + 1, clips: [...sourceTrack.clips, lead] }
+                : track
+        ),
+    };
+}
+
+function withNamedClip(context: ProjectContext, id: string, name: string): ProjectContext {
+    const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
+    const clip = {
+        ...sourceTrack.clips[0]!,
+        id,
+        name,
+        startBeat: sourceTrack.clips.length * 8,
+        endBeat: sourceTrack.clips.length * 8 + 8,
+    };
+    return {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === sourceTrack.id
+                ? { ...track, clipCount: sourceTrack.clipCount + 1, clips: [...sourceTrack.clips, clip] }
+                : track
+        ),
+    };
+}
+
+function withSelectedMidiClip(context: ProjectContext): ProjectContext {
+    const midiClip = {
+        id: 'clip-selected-midi',
+        name: 'MIDI Take',
+        type: 'midi' as const,
+        startBeat: 0,
+        endBeat: 8,
+        gain: 1,
+        locked: false,
+        noteCount: 4,
+    };
+    const midiTrack = {
+        ...createTrack({ id: 'track-midi', name: 'MIDI', kind: 'midi' }),
+        clipCount: 1,
+        clips: [midiClip],
+    };
+    return {
+        ...context,
+        tracks: [midiTrack, ...context.tracks],
+        selectedTrackId: midiTrack.id,
+        selectedClipId: midiClip.id,
+        selectedClipIds: [midiClip.id],
+    };
+}
+
+function createLiteralSelectedClipContext(): ProjectContext {
+    const context = createNamedClipSourceContext();
+    const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
+    const literalSelectedClip = {
+        ...sourceTrack.clips[0]!,
+        id: 'clip-literal-selected',
+        name: 'Selected Clip',
+        startBeat: 56,
+        endBeat: 64,
+    };
+    return {
+        ...context,
+        tracks: context.tracks.map((track) =>
+            track.id === sourceTrack.id
+                ? {
+                      ...track,
+                      clipCount: sourceTrack.clipCount + 1,
+                      clips: [...sourceTrack.clips, literalSelectedClip],
+                  }
+                : track
+        ),
+    };
+}
+
 function crossfadeCall(argumentsPayload: Record<string, unknown>) {
     return { name: 'crossfadeClips', arguments: argumentsPayload };
 }
@@ -6082,11 +6170,546 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('grounds a bare clip rename source to the unique selected clip', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+                'rename clip Bridge Solo',
+                createClipContext()
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+    });
+
+    it('does not ground a bare clip rename without exactly one selected clip', () => {
+        const context = createClipContext();
+        const withoutSelection = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            { ...context, selectedClipId: null, selectedClipIds: [] }
+        );
+        const withMultipleSelections = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            { ...context, selectedClipIds: ['clip-intro', 'clip-chorus'] }
+        );
+
+        expect(withoutSelection.actions).toEqual([]);
+        expect(withMultipleSelections.actions).toEqual([]);
+    });
+
+    it('rejects a provider clip that differs from the bare rename selection', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-chorus', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo',
+            createClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('does not match');
+    });
+
+    it('does not mistake the new bare rename value for the source clip', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Chorus' } }],
+            'rename clip to Chorus',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Chorus' } }],
+            rejections: [],
+        });
+    });
+
+    it('does not apply bare rename selection grounding to another clip operation', () => {
+        const result = bridge(
+            [{ name: 'removeClip', arguments: { clipId: 'clip-intro' } }],
+            'rename clip to Bridge Solo',
+            createClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it.each([
+        ['rename Lead to Bridge Solo', 'clip-lead'],
+        ['rename "Lead" to Bridge Solo', 'clip-lead'],
+        ['rename clip-lead to Bridge Solo', 'clip-lead'],
+    ])('keeps the explicit rename source authoritative for %s', (prompt, clipId) => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId, name: 'Bridge Solo' } }],
+            prompt,
+            createNamedClipSourceContext()
+        );
+
+        expect(result).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId, name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+    });
+
+    it('does not replace an explicit rename source with the selected clip', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename Lead to Bridge Solo',
+            createNamedClipSourceContext()
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('keeps an explicit source after the clip carrier ahead of the selected clip', () => {
+        const context = createNamedClipSourceContext();
+        const prompt = 'rename clip Lead to Bridge Solo';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }], prompt, context)
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Lead to Bridge Solo' } }],
+                prompt,
+                context
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('does not fall back to selection for an unknown source after the clip carrier', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Missing to Bridge Solo' } }],
+            'rename clip Missing to Bridge Solo',
+            createNamedClipSourceContext()
+        );
+
+        expect(result.actions).toEqual([]);
+    });
+
+    it('keeps optional-to bare destinations and quoted connector text literal', () => {
+        const context = createNamedClipSourceContext();
+        const cases = [
+            ['rename clip Bridge Solo', 'Bridge Solo'],
+            ['rename clip to Bridge Solo', 'Bridge Solo'],
+            ['rename clip "Road to Nowhere"', 'Road to Nowhere'],
+        ] as const;
+
+        for (const [prompt, name] of cases) {
+            expect(
+                bridge([{ name: 'renameClip', arguments: { clipId: 'clip-intro', name } }], prompt, context)
+            ).toEqual({
+                actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name } }],
+                rejections: [],
+            });
+        }
+    });
+
+    it('accepts a complete selected MIDI source', () => {
+        const context = createNamedClipSourceContext();
+        const selectedMidi = withSelectedMidiClip(context);
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-selected-midi', name: 'Ending' } }],
+                'rename clip selected midi clip to Ending',
+                selectedMidi
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-selected-midi', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
+    it('accepts a complete selected audio source', () => {
+        const context = createNamedClipSourceContext();
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Ending' } }],
+                'rename clip selected audio clip to Ending',
+                context
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
+    it.each([
+        {
+            prompt: 'rename clip selected midi clip to Ending',
+            context: createNamedClipSourceContext(),
+            selectedId: 'clip-intro',
+            selectedType: 'audio',
+        },
+        {
+            prompt: 'rename clip selected audio clip to Ending',
+            context: withSelectedMidiClip(createNamedClipSourceContext()),
+            selectedId: 'clip-selected-midi',
+            selectedType: 'midi',
+        },
+    ])('rejects $prompt with a selected $selectedType clip', ({ prompt, context, selectedId, selectedType }) => {
+        const selectedClip = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selectedId);
+        expect(context.selectedClipId).toBe(selectedId);
+        expect(context.selectedClipIds).toEqual([selectedId]);
+        expect(selectedClip?.type).toBe(selectedType);
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: selectedId, name: 'Ending' } }], prompt, context).actions
+        ).toEqual([]);
+    });
+
+    it('renames an audio clip whose quoted exact name is a media-selection phrase', () => {
+        const context = withNamedClip(createNamedClipSourceContext(), 'clip-literal-midi', 'selected midi clip');
+        const literalClip = context.tracks
+            .flatMap((track) => track.clips)
+            .find((clip) => clip.id === 'clip-literal-midi');
+        expect(literalClip?.type).toBe('audio');
+        expect(context.selectedClipIds).toEqual(['clip-intro']);
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-literal-midi', name: 'Ending' } }],
+                'rename clip "selected midi clip" to Ending',
+                context
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-literal-midi', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
+    it('rejects a significant quoted suffix after a selected source', () => {
+        const context = createNamedClipSourceContext();
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Ending' } }],
+                'rename clip selected clip "Lead" to Ending',
+                context
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('accepts a complete quoted clip name', () => {
+        const context = createNamedClipSourceContext();
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Ending' } }],
+                'rename clip "Lead" to Ending',
+                context
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
+    it('resolves a whitespace-delimited rename connector after the complete known source', () => {
+        const context = withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere');
+        const prompt = 'rename clip Road to Nowhere to Ending';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } }], prompt, context)
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Nowhere to Ending' } }],
+                prompt,
+                context
+            ).actions
+        ).toEqual([]);
+    });
+
+    it.each(['rename clip Intro to Road to Nowhere', 'rename clip Intro to "Road to Nowhere"'])(
+        'keeps a connector-bearing destination attached to one known source for %s',
+        (prompt) => {
+            const context = createNamedClipSourceContext();
+            expect(context.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Intro to Road')).toBe(
+                false
+            );
+
+            expect(
+                bridge(
+                    [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Road to Nowhere' } }],
+                    prompt,
+                    context
+                )
+            ).toEqual({
+                actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Road to Nowhere' } }],
+                rejections: [],
+            });
+        }
+    );
+
+    it('rejects competing rename source interpretations before provider target selection', () => {
+        const context = withNamedClip(
+            withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        const prompt = 'rename clip Road to Nowhere to Ending';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } }], prompt, context)
+                .actions
+        ).toEqual([]);
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-road-short', name: 'Nowhere to Ending' } }],
+                prompt,
+                context
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('keeps a quoted connector-bearing source opaque when a shorter name exists', () => {
+        const context = withNamedClip(
+            withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere'),
+            'clip-road-short',
+            'Road'
+        );
+        const prompt = 'rename clip "Road to Nowhere" to Ending';
+
+        expect(
+            bridge([{ name: 'renameClip', arguments: { clipId: 'clip-road-long', name: 'Ending' } }], prompt, context)
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-road-long', name: 'Ending' } }],
+            rejections: [],
+        });
+    });
+
+    it('keeps hyphenated optional-to destinations opaque and rejects unresolved explicit sources', () => {
+        const context = createNamedClipSourceContext();
+        const hyphenated = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Intro-to-Outro' } }],
+            'rename clip Intro-to-Outro; leave Lead unchanged',
+            context
+        );
+        const unresolved = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Missing to Ending' } }],
+            'rename clip Missing to Ending',
+            context
+        );
+
+        expect(hyphenated).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Intro-to-Outro' } }],
+            rejections: [],
+        });
+        expect(unresolved.actions).toEqual([]);
+    });
+
+    it('keeps an explicitly quoted clip name as the source', () => {
+        const context = createNamedClipSourceContext();
+        const track = context.tracks.find((candidate) => candidate.id === 'track-vocals')!;
+        const literalClip = {
+            ...track.clips[0]!,
+            id: 'clip-literal-clip',
+            name: 'clip',
+            startBeat: 56,
+            endBeat: 64,
+        };
+        const literalContext = {
+            ...context,
+            tracks: context.tracks.map((candidate) =>
+                candidate.id === track.id
+                    ? { ...candidate, clipCount: candidate.clipCount + 1, clips: [...candidate.clips, literalClip] }
+                    : candidate
+            ),
+        };
+        const prompt = 'rename clip "clip" to Bridge Solo';
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: literalClip.id, name: 'Bridge Solo' } }],
+                prompt,
+                literalContext
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: literalClip.id, name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+                prompt,
+                literalContext
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('keeps a curly-apostrophe quoted rename source literal', () => {
+        const context = createNamedClipSourceContext();
+        const track = context.tracks[0]!;
+        const literalClip = {
+            ...track.clips[0]!,
+            id: 'clip-curly-selected',
+            name: 'Drummer’s Selected Clip',
+            startBeat: 24,
+            endBeat: 32,
+        };
+        const literalContext = {
+            ...context,
+            tracks: [{ ...track, clipCount: track.clipCount + 1, clips: [...track.clips, literalClip] }],
+        };
+        const prompt = 'rename ‘Drummer’s Selected Clip’ to Bridge Solo';
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: literalClip.id, name: 'Bridge Solo' } }],
+                prompt,
+                literalContext
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: literalClip.id, name: 'Bridge Solo' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+                prompt,
+                literalContext
+            ).actions
+        ).toEqual([]);
+    });
+
+    it('rejects renaming a clip the whole request explicitly protects', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'rename clip to Bridge Solo; leave Intro unchanged',
+            createClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('rejects combined and malformed clip protections before rename admission', () => {
+        const context = createNamedClipSourceContext();
+        const selectedContext = { ...context, selectedClipIds: ['clip-intro'] };
+        const combined = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } }],
+            'rename Intro to Opening; leave selected clips and Lead unchanged',
+            selectedContext
+        );
+        const malformed = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } }],
+            'rename Intro to Opening; leave "Lead unchanged',
+            selectedContext
+        );
+
+        expect(combined.actions).toEqual([]);
+        expect(combined.rejections[0]?.reason).toContain('protected');
+        expect(malformed.actions).toEqual([]);
+        expect(malformed.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
+    it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],
+            'rename clip-literal-selected to Bridge Solo; leave "Selected Clip" unchanged',
+            createLiteralSelectedClipContext()
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('rejects renaming an explicitly named member of a protected clip selection', () => {
+        const context = createNamedClipSourceContext();
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }],
+            'rename Lead to Bridge Solo; leave selected clips unchanged',
+            { ...context, selectedClipIds: ['clip-intro', 'clip-lead'] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('rejects renaming a selected clip protected across a newline', () => {
+        const context = createNamedClipSourceContext();
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } }],
+            'rename Intro to Opening; leave selected\nclips unchanged',
+            { ...context, selectedClipIds: ['clip-intro'] }
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('keeps an unchanged phrase inside the quoted new name literal', () => {
+        const result = bridge(
+            [
+                {
+                    name: 'renameClip',
+                    arguments: { clipId: 'clip-intro', name: 'leave Intro unchanged' },
+                },
+            ],
+            'rename clip to "leave Intro unchanged"',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [
+                {
+                    type: 'renameClip',
+                    payload: { clipId: 'clip-intro', name: 'leave Intro unchanged' },
+                },
+            ],
+            rejections: [],
+        });
+    });
+
+    it('preserves multiple ordinary rename sources in prompt order', () => {
+        const result = bridge(
+            [
+                { name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Opening' } },
+                { name: 'renameClip', arguments: { clipId: 'clip-chorus', name: 'Hook' } },
+            ],
+            'rename Intro to Opening, then rename Chorus to Hook',
+            createClipContext()
+        );
+
+        expect(result).toEqual({
+            actions: [
+                { type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Opening' } },
+                { type: 'renameClip', payload: { clipId: 'clip-chorus', name: 'Hook' } },
+            ],
+            rejections: [],
+        });
+    });
+
     it('grounds duplicate clip names only with an exact track qualifier', () => {
         const context = createClipContext();
         const qualified = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } }],
             'rename Verse on Vocals to Lead Verse',
+            context
+        );
+        const qualifiedAfterCarrier = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } }],
+            'rename clip Verse on Vocals to Lead Verse',
             context
         );
         const ambiguous = bridge(
@@ -6096,6 +6719,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(qualified.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } },
+        ]);
+        expect(qualifiedAfterCarrier.actions).toEqual([
             { type: 'renameClip', payload: { clipId: 'clip-vocals-verse', name: 'Lead Verse' } },
         ]);
         expect(ambiguous.actions).toEqual([]);

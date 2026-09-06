@@ -152,7 +152,8 @@ use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANG
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::{
-    BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore, TIMELINE_CHAIN_SLOT_BUDGET,
+    layer_routing_first, BuiltinEffectType, GraphCommand, GraphProgressSnapshot, PluginCore,
+    TIMELINE_CHAIN_SLOT_BUDGET,
 };
 use daw_engine::timeline::{
     AutomationEvent, AutomationTarget, AutomationWrite, ChainEntry, ClipFade, ClipPlacement,
@@ -242,18 +243,60 @@ const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_
 /// plus a full `write-parameter` and `write-device-parameter` queue fill per
 /// mixer and device target — so it can refuse a hostile batch without ever
 /// meeting an honest one.
+///
+/// The op count that sizes the two rings is not one op per command. A
+/// replacing batch tears every existing strip and device down before the
+/// first command runs ([`GraphRegistry::take_topology_down`]), and a device
+/// command ([`map_device`]) always expands into several ops of its own —
+/// `AddDetachedEffect`, one `SetParam` per resolved parameter, an optional
+/// `SetBypass`, and the caller's own insert op.
+/// [`GraphCommandPayload::SetDeviceParameters`] is the one command whose own
+/// expansion is data-driven rather than fixed, and `map_batch` bounds that
+/// expansion across the whole batch by charging every record's key count
+/// against [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`] before any of that
+/// record's keys are parsed. The op count is therefore a bounded multiple of
+/// `MAX_BATCH_COMMANDS`, plus that ceiling — not an exact sum of the two.
 const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
     * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
 
-/// MIDI channels a scheduled note can sound on.
+/// The most parameters one `set-device-parameters` record may carry.
 ///
-/// Mirrors the note store's own address space, which is where the ceiling comes
-/// from: the store keeps one bit per note per channel for the notes it has
+/// Sized from the wire producer, not any claimed instrument vocabulary:
+/// `mapFermenterPatchToDspPatch` (`src/modules/Fermenter/useCases/
+/// fermenterParamBridge/`) emits one key per patch field plus one per
+/// `macros` slot, and 128 holds one full patch with headroom; the
+/// TypeScript mirror of this ceiling is what pins that fit. Whether the
+/// instrument honours a key is its own affair; a well-shaped name it does
+/// not recognize is simply a silent no-op there. The ceiling is charged
+/// against the record's length before any key is resolved, so a hostile
+/// record is refused without ever parsing a single name.
+const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
+
+/// The most immediate device parameters one whole batch may carry, summed
+/// across every [`GraphCommandPayload::SetDeviceParameters`] record in it.
+///
+/// This ceiling bounds the sum of every record's key count in one batch.
+/// The honest maximum is one full patch written to every device slot of
+/// one strip in one animation frame, since the producer batches one frame
+/// of gestures at a time.
+/// `map_batch` charges each record's key count against a running total
+/// before that record's keys are parsed, refusing the batch whole — naming
+/// the running count and this ceiling — the moment it would be crossed.
+const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
+    MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
+
+/// MIDI channels a note can sound on.
+///
+/// Mirrors the engine's own address space, which is where the ceiling comes
+/// from: it keeps one bit per note per channel for the notes a device has
 /// sounded, so a note past either bound is one nothing could ever release.
 const MIDI_CHANNELS: u8 = 16;
 
 /// Notes one MIDI channel can carry, for the reason above.
 const NOTES_PER_CHANNEL: u8 = 128;
+
+/// The hardest a MIDI note can be struck.
+const MAX_MIDI_VELOCITY: u8 = 127;
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -337,6 +380,41 @@ pub enum GraphCommandPayload {
         target: DeviceParameterTargetPayload,
         write: StepWritePayload,
     },
+    /// Land every named value on a built-in body at the next audio callback,
+    /// replacing the value the body currently holds and leaving whatever the
+    /// device's stamp queue is holding untouched.
+    ///
+    /// The immediate counterpart of [`GraphCommandPayload::WriteDeviceParameter`],
+    /// and a whole record rather than one write, because what reaches here is a
+    /// patch: a fermenter's is about a hundred keys, and a morph or a macro drag
+    /// reloads the whole record at animation-frame rate. Stamped writes cannot
+    /// carry that — a device's queue holds `DEVICE_PARAM_QUEUE_CAPACITY` pending
+    /// stamps in total, so one patch overruns it several times over — while
+    /// [`GraphCommand::SetParam`] is applied on the next drain and parks nothing.
+    ///
+    /// A native built-in only. An externally hosted plugin's parameters are the
+    /// plugin's own, addressed over the plugin host's control path, so one aimed
+    /// at a borrowed instance is refused rather than mapped through a built-in
+    /// vocabulary that cannot address it.
+    ///
+    /// `values` is charged against [`MAX_IMMEDIATE_DEVICE_PARAMETERS`], and
+    /// this record's count together with every earlier
+    /// `SetDeviceParameters` record in the same batch is charged against
+    /// [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`], before any key is
+    /// resolved — because each entry becomes one `SetParam` op, and a batch
+    /// of records at the per-record ceiling would otherwise carry no bound
+    /// of its own.
+    #[serde(rename_all = "camelCase")]
+    SetDeviceParameters {
+        track_id: String,
+        device_id: String,
+        /// Keyed by the built-in's own native parameter names — for a
+        /// fermenter, the instrument's snake_case vocabulary rather than the
+        /// camelCase descriptor ids a project panel authors. A key with no
+        /// native address refuses the whole batch, naming the device and the
+        /// key, exactly as a stamped write does.
+        values: HashMap<String, f64>,
+    },
     /// Write timeline-addressed notes into the note store a device holds.
     ///
     /// A batch variant rather than a command of its own, because a producer
@@ -369,6 +447,31 @@ pub enum GraphCommandPayload {
         /// browser and another way through this wire.
         probability_seed: u32,
         notes: Vec<MidiNotePayload>,
+    },
+    /// Play one note now at a device that sinks notes.
+    ///
+    /// The note is handed to the device at the head of the first block the
+    /// engine renders after this batch is applied, and it sounds whether or
+    /// not the transport is playing: a key struck on a keyboard names no
+    /// timeline position, so there is no position for a stopped playhead to
+    /// withhold it from. A note that *does* have one travels as
+    /// [`GraphCommandPayload::ScheduleMidi`] instead.
+    ///
+    /// The engine releases it on a stop or a locate exactly as it releases a
+    /// stored note ([`GraphCommand::SendMidiNote`]), so a note whose note-off
+    /// never arrives cannot hold an instrument down for the rest of the
+    /// session. A loop wrap does not: it lifts a stored key, whose note-off
+    /// lies past the seam and will never render, and leaves a key the player is
+    /// holding down — no DAW takes a musician's hands off the keyboard where a
+    /// region starts again.
+    #[serde(rename_all = "camelCase")]
+    SendMidiNote {
+        track_id: String,
+        device_id: String,
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
     },
     /// Drop a device's scheduled notes in the half-open seconds window
     /// `fromTime..toTime`; an absent or null `toTime` means the end of the
@@ -1284,6 +1387,13 @@ struct QueueBudgets {
     /// drains it — what [`GraphRegistry::release_landed`] later holds each
     /// stamp's proof against.
     charging_batch: u64,
+    /// Immediate device-parameter keys charged so far by every
+    /// `SetDeviceParameters` record this batch has mapped. Unlike the two
+    /// queue ledgers above, this counts only within one batch — it starts at
+    /// zero on every [`Self::seeded_from`] rather than carrying state across
+    /// batches, because the cost it bounds (ring size for the batch being
+    /// built) resets with the batch, not with the engine's queues.
+    immediate_device_parameters: usize,
 }
 
 impl QueueBudgets {
@@ -1292,7 +1402,33 @@ impl QueueBudgets {
             automation: registry.automation_pending.clone(),
             device_params: registry.device_param_pending.clone(),
             charging_batch: registry.batches_sent + 1,
+            immediate_device_parameters: 0,
         }
+    }
+
+    /// Charges one `SetDeviceParameters` record's key count against both the
+    /// per-record ceiling and the running total for the whole batch, before
+    /// any of the record's keys are resolved. A refusal here leaves this
+    /// record's ops unpushed — the caller (`map_command`) returns before
+    /// building any — and `map_batch` refuses the whole batch on any
+    /// record's refusal, so nothing built for an earlier record in the same
+    /// batch is ever applied either.
+    fn charge_immediate_device_parameters(&mut self, record_len: usize) -> Result<(), String> {
+        if record_len > MAX_IMMEDIATE_DEVICE_PARAMETERS {
+            return Err(format!(
+                "record carries {record_len} parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS}"
+            ));
+        }
+        let running_total = self.immediate_device_parameters + record_len;
+        if running_total > MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH {
+            return Err(format!(
+                "batch carries {running_total} immediate parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH}"
+            ));
+        }
+        self.immediate_device_parameters = running_total;
+        Ok(())
     }
 
     fn charge_automation(
@@ -1473,30 +1609,35 @@ fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String>
     Ok(probability_percent_to_cutoff(probability * 100.0))
 }
 
-/// Map one wire note onto the event the store holds.
+/// Refuse a note address the engine's sounding set cannot hold, naming the
+/// field, the value and the command that carried it.
 ///
-/// The addresses are checked here rather than left to the store, which refuses
-/// the whole batch on the audio thread and can only report that as a count. A
-/// note the store cannot address could never be tracked as sounding, so nothing
-/// would ever release it — which is why the store refuses it and why this
-/// refuses it by name first.
+/// Checked here rather than left to the engine, which answers on the audio
+/// thread and can only report a refusal as a count. A note the set cannot
+/// address is never tracked as sounding, so nothing would ever release it —
+/// which is the same reason a stored note and a live one both come through
+/// here.
+fn check_note_address(note: u8, channel: i16, command: &str) -> Result<(), String> {
+    if !(0..i16::from(MIDI_CHANNELS)).contains(&channel) {
+        return Err(format!(
+            "{command}: channel {channel} has no address in the note store"
+        ));
+    }
+    if note >= NOTES_PER_CHANNEL {
+        return Err(format!(
+            "{command}: note {note} has no address in the note store"
+        ));
+    }
+    Ok(())
+}
+
+/// Map one wire note onto the event the store holds.
 fn map_midi_note(
     note: &MidiNotePayload,
     probability_seed: u32,
     sample_rate: f32,
 ) -> Result<TimedMidiNote, String> {
-    if note.channel >= MIDI_CHANNELS {
-        return Err(format!(
-            "schedule-midi: channel {} has no address in the note store",
-            note.channel
-        ));
-    }
-    if note.note >= NOTES_PER_CHANNEL {
-        return Err(format!(
-            "schedule-midi: note {} has no address in the note store",
-            note.note
-        ));
-    }
+    check_note_address(note.note, i16::from(note.channel), "schedule-midi")?;
     Ok(TimedMidiNote {
         at_frame: seconds_to_frames(note.time, sample_rate, "schedule-midi time")?,
         event: MidiNoteEvent {
@@ -1673,6 +1814,50 @@ fn builtin_parameter(
             fermenter_parameter(key, device_id).map(DeviceParam::FermenterNamed)
         }
     }
+}
+
+/// The instrument-vocabulary spelling of a resolved address, for the one
+/// comparison the layer-routing law makes.
+///
+/// An address the engine names itself belongs to no instrument's vocabulary,
+/// and [`FermenterParamName::parse`] admits no empty name, so the empty string
+/// can never be read as a routing key.
+fn addressed_parameter_name(param: &DeviceParam) -> &str {
+    match param {
+        DeviceParam::FermenterNamed(name) => name.as_str(),
+        _ => "",
+    }
+}
+
+/// One device's immediate parameter record, resolved onto engine addresses and
+/// ordered as the body has to apply them.
+///
+/// The record arrives unordered — a `HashMap` off the wire — and two things
+/// have to hold of what leaves here. A fermenter's layer-routing entry selects
+/// the layer every write behind it lands on, so it is emitted first; that law
+/// belongs to `FermenterBody::load_patch`, and this reuses the engine's own
+/// [`layer_routing_first`] rather than restating it. Everything else follows in
+/// name order, so one record maps onto one command sequence whichever order the
+/// map happens to draw.
+fn immediate_device_parameters(
+    builtin: BuiltinEffectType,
+    values: &HashMap<String, f64>,
+    device_id: &str,
+) -> Result<Vec<(DeviceParam, f32)>, String> {
+    let mut keys: Vec<&str> = values.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+
+    let resolved = keys
+        .into_iter()
+        .map(|key| {
+            let param = builtin_parameter(builtin, key, device_id)
+                .map_err(|reason| format!("set-device-parameters: {reason}"))?;
+            let value = finite(values[key], &format!("set-device-parameters value '{key}'"))?;
+            Ok((param, value as f32))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(layer_routing_first(&resolved, addressed_parameter_name).collect())
 }
 
 /// One instance the engine already owns, as a device may bind to it: the
@@ -2615,6 +2800,49 @@ fn map_command(
             Ok(())
         }
 
+        GraphCommandPayload::SetDeviceParameters {
+            track_id,
+            device_id,
+            values,
+        } => {
+            let device = registry
+                .devices
+                .get(device_id)
+                .ok_or_else(|| format!("set-device-parameters: unknown device '{device_id}'"))?;
+            if device.strip_id != *track_id {
+                return Err(format!(
+                    "set-device-parameters: device '{device_id}' is not on strip '{track_id}'"
+                ));
+            }
+            let Some(builtin) = device.builtin else {
+                return Err(format!(
+                    "set-device-parameters: device '{device_id}' is an externally hosted plugin, \
+                     whose parameters take the plugin host's own control path"
+                ));
+            };
+            // Charged against both the per-record ceiling and the running
+            // batch total before any key is resolved: a batch admits many
+            // such records, and the per-record ceiling alone does not bound
+            // how many of them one batch may carry (see
+            // `MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`).
+            budgets
+                .charge_immediate_device_parameters(values.len())
+                .map_err(|reason| format!("set-device-parameters: {reason}"))?;
+            let effect_id = device.native_effect_id;
+            // No queue charge, unlike the stamped write above: these land on
+            // the next drain rather than waiting in the device's
+            // `DeviceParamQueue`, so there is no pending window for the ledger
+            // to hold open and nothing for the progress echo to release. The
+            // command ring is the only capacity they spend, and
+            // `EngineHandle::send_graph_batch_with_headroom` sizes it to the
+            // batch it is handed, one `SetParam` op per entry up to the
+            // ceilings charged above.
+            for (param, value) in immediate_device_parameters(builtin, values, device_id)? {
+                ops.push(GraphCommand::SetParam(effect_id, param, value));
+            }
+            Ok(())
+        }
+
         GraphCommandPayload::ScheduleMidi {
             track_id,
             device_id,
@@ -2649,6 +2877,47 @@ fn map_command(
                 plugin_id,
                 notes: mapped.into_boxed_slice(),
             });
+            Ok(())
+        }
+
+        GraphCommandPayload::SendMidiNote {
+            track_id,
+            device_id,
+            note,
+            velocity,
+            channel,
+            is_note_on,
+        } => {
+            let plugin_id = midi_device_plugin_id(registry, track_id, device_id, "send-midi-note")?;
+            if *velocity > MAX_MIDI_VELOCITY {
+                return Err(format!(
+                    "send-midi-note: velocity {velocity} is outside 0..={MAX_MIDI_VELOCITY}"
+                ));
+            }
+            check_note_address(*note, *channel, "send-midi-note")?;
+            // No budget charge: budgets bound the parameter stamps a queue
+            // holds, and a live note waits in no queue. Its only capacity is
+            // the block-local MIDI buffer the engine drains every callback,
+            // whose overflow the engine counts itself.
+            ops.push(GraphCommand::SendMidiNote(
+                plugin_id,
+                MidiNoteEvent {
+                    note: *note,
+                    velocity: *velocity,
+                    channel: *channel,
+                    is_note_on: *is_note_on,
+                    // The head of the next block: a live note names no frame to
+                    // be stamped against.
+                    frame_offset: 0,
+                    // A live note always plays. Chance is arrangement material,
+                    // and belongs to the notes a producer wrote.
+                    probability_cutoff: PROBABILITY_CUTOFF_RANGE,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ));
             Ok(())
         }
 
@@ -4043,7 +4312,9 @@ mod tests {
                 "state": { "gain": 0.8, "pan": -25, "muted": true, "soloGated": true, "vcaMultiplier": 0.5 },
                 "devices": [
                     { "id": "d-knead", "name": "Knead", "type": "knead", "bypassed": false,
-                      "parameterValues": { "shift_semitones": 3.0 } }
+                      "parameterValues": { "shift_semitones": 3.0 } },
+                    { "id": "d-ferm", "name": "Fermenter", "type": "fermenter", "bypassed": false,
+                      "parameterValues": {} }
                 ],
                 "honorMuted": true,
                 "contributesAudio": true
@@ -4078,6 +4349,8 @@ mod tests {
               "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d-knead",
                           "parameterId": "retune_speed_ms" },
               "write": { "shape": "step", "value": 20, "time": 1.5 } },
+            { "kind": "set-device-parameters", "trackId": "t1", "deviceId": "d-knead",
+              "values": { "formant_preserve": 1 } },
             { "kind": "schedule-clip",
               "playback": {
                   "trackId": "t1",
@@ -4093,7 +4366,10 @@ mod tests {
                       "microFadeSeconds": 0.005
                   }
               } },
+            { "kind": "send-midi-note", "trackId": "t1", "deviceId": "d-ferm",
+              "note": 60, "velocity": 100, "channel": 0, "isNoteOn": true },
             { "kind": "remove-device", "trackId": "t1", "deviceId": "d-knead" },
+            { "kind": "remove-device", "trackId": "t1", "deviceId": "d-ferm" },
             { "kind": "remove-send", "trackId": "t1", "busId": "b1" },
             { "kind": "set-transport", "playing": true, "positionSeconds": 4.0 }
         ]));
@@ -4152,6 +4428,24 @@ mod tests {
                 GraphCommand::SetParam(_, DeviceParam::ShiftSemitones, value) if *value == 3.0
             )),
             "the knead device's parameter never crossed the ring as a command"
+        );
+        // The immediate write is the same primitive under a different command:
+        // no stamp, no frame, applied on the next drain.
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::SetParam(_, DeviceParam::FormantPreserve, value) if *value == 1.0
+            )),
+            "the immediate parameter batch never crossed the ring as a command"
+        );
+        // A live note is its own op, addressed at the device that sinks notes.
+        assert!(
+            mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::SendMidiNote(_, event)
+                    if event.note == 60 && event.is_note_on && event.frame_offset == 0
+            )),
+            "the live note never crossed the ring as a command"
         );
     }
 
@@ -7265,6 +7559,414 @@ mod tests {
         );
     }
 
+    // ── Immediate device parameters ────────────────────────────
+
+    /// The effect id every built-in device below is registered under.
+    const IMMEDIATE_PARAM_EFFECT_ID: usize = 7;
+
+    /// A registry holding one contributing track strip carrying one built-in.
+    fn registry_with_builtin_device(
+        track_id: &str,
+        device_id: &str,
+        builtin: BuiltinEffectType,
+    ) -> GraphRegistry {
+        let mut registry = GraphRegistry::default();
+        registry.strips.insert(
+            track_id.to_string(),
+            StripEntry {
+                native_id: 1,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: vec![device_id.to_string()],
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        registry.devices.insert(
+            device_id.to_string(),
+            DeviceEntry {
+                native_effect_id: IMMEDIATE_PARAM_EFFECT_ID,
+                strip_id: track_id.to_string(),
+                builtin: Some(builtin),
+            },
+        );
+        registry
+    }
+
+    /// One `set-device-parameters` batch, deserialized from the wire spelling
+    /// so each call draws a fresh `HashMap` for `values`.
+    fn set_device_parameters_batch(
+        track_id: &str,
+        device_id: &str,
+        values: Value,
+    ) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "set-device-parameters", "trackId": track_id, "deviceId": device_id,
+              "values": values }
+        ]))
+    }
+
+    /// One batch carrying several `set-device-parameters` records, each
+    /// aimed at `device_id` on `track_id` — the shape a batch-wide ceiling
+    /// has to see across records rather than within one.
+    fn set_device_parameters_records_batch(
+        track_id: &str,
+        device_id: &str,
+        records: Vec<Value>,
+    ) -> GraphBatchPayload {
+        let commands: Vec<Value> = records
+            .into_iter()
+            .map(|values| {
+                json!({ "kind": "set-device-parameters", "trackId": track_id,
+                        "deviceId": device_id, "values": values })
+            })
+            .collect();
+        batch(Value::Array(commands))
+    }
+
+    /// A record of `count` distinct well-shaped fermenter keys, each named so
+    /// records from different calls never collide.
+    fn fermenter_keys_record(prefix: &str, count: usize) -> Value {
+        let values: serde_json::Map<String, Value> = (0..count)
+            .map(|index| (format!("{prefix}_{index:03}"), json!(index as f64 / 1000.0)))
+            .collect();
+        Value::Object(values)
+    }
+
+    /// Every immediate device-parameter write a mapping emitted, in order.
+    fn immediate_writes(ops: &[GraphCommand]) -> Vec<(usize, DeviceParam, f32)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                GraphCommand::SetParam(effect_id, param, value) => {
+                    Some((*effect_id, *param, *value))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn fermenter_write(key: &str, value: f32) -> (usize, DeviceParam, f32) {
+        let name = FermenterParamName::parse(key).expect("the fixture keys are well-shaped names");
+        (
+            IMMEDIATE_PARAM_EFFECT_ID,
+            DeviceParam::FermenterNamed(name),
+            value,
+        )
+    }
+
+    fn map_immediate(
+        batch: &GraphBatchPayload,
+        registry: &mut GraphRegistry,
+    ) -> Result<MappedBatch, String> {
+        map_unbound_batch(batch, registry, &sample_pool(), 48_000.0)
+    }
+
+    /// A patch load crosses as immediate writes: one `SetParam` per entry,
+    /// applied on the next callback drain, and nothing parked in the device's
+    /// stamp queue.
+    ///
+    /// The queue is why this command exists at all. It holds
+    /// `DEVICE_PARAM_QUEUE_CAPACITY` pending stamps for the whole device, and a
+    /// fermenter patch is an order of magnitude more keys than that, reloaded
+    /// on every frame of a morph — so a patch expressed as stamped writes
+    /// refuses itself.
+    #[test]
+    fn set_device_parameters_at_a_fermenter_emits_one_immediate_set_param_per_entry() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let mapped = map_immediate(
+            &set_device_parameters_batch(
+                "t1",
+                "d-ferm",
+                json!({ "cutoff": 0.3, "resonance": 0.6 }),
+            ),
+            &mut registry,
+        )
+        .expect("a fermenter answers to its own names");
+
+        assert_eq!(
+            immediate_writes(&mapped.ops),
+            vec![
+                fermenter_write("cutoff", 0.3),
+                fermenter_write("resonance", 0.6),
+            ],
+            "every entry must reach the engine as an immediate write at this device"
+        );
+        assert!(
+            !mapped
+                .ops
+                .iter()
+                .any(|op| matches!(op, GraphCommand::AutomateDeviceParam { .. })),
+            "an immediate write must not be stamped into the device's parameter queue"
+        );
+    }
+
+    /// `active_layer` selects the layer every write behind it lands on, so a
+    /// batch carrying it emits it first whatever order the wire record draws,
+    /// and the rest follow in one fixed order.
+    ///
+    /// The second record is what separates the two laws. Every name the
+    /// instrument actually has sorts after `active_layer`, so on the first
+    /// record name order alone would put the selection in front by accident; a
+    /// well-shaped name that sorts before it — which the wire admits, and which
+    /// the instrument answers by doing nothing — is only led by the selection if
+    /// the routing law is applied.
+    #[test]
+    fn set_device_parameters_routes_a_fermenter_batch_through_active_layer_first() {
+        /// Fresh draws of the same record. A `HashMap` seeds its iteration
+        /// order per instance, so a mapper emitting in arrival order would pass
+        /// a share of its runs.
+        const DRAWS: usize = 16;
+
+        let records = [
+            (
+                json!({ "cutoff": 0.3, "active_layer": 1, "num_layers": 2 }),
+                vec![
+                    fermenter_write("active_layer", 1.0),
+                    fermenter_write("cutoff", 0.3),
+                    fermenter_write("num_layers", 2.0),
+                ],
+            ),
+            (
+                json!({ "absent_from_the_vocabulary": 0.1, "active_layer": 1, "cutoff": 0.3 }),
+                vec![
+                    fermenter_write("active_layer", 1.0),
+                    fermenter_write("absent_from_the_vocabulary", 0.1),
+                    fermenter_write("cutoff", 0.3),
+                ],
+            ),
+        ];
+
+        for (record, expected) in records {
+            for draw in 0..DRAWS {
+                let mut registry =
+                    registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+                let mapped = map_immediate(
+                    &set_device_parameters_batch("t1", "d-ferm", record.clone()),
+                    &mut registry,
+                )
+                .expect("a fermenter answers to its own names");
+
+                assert_eq!(
+                    immediate_writes(&mapped.ops),
+                    expected,
+                    "draw {draw}: the layer selection must lead, and the rest must follow in one \
+                     fixed order"
+                );
+            }
+        }
+    }
+
+    /// An externally hosted plugin's parameters are the plugin's own, resolved
+    /// by the plugin over the plugin host's control path. Mapping one through a
+    /// built-in vocabulary would address a parameter that vocabulary cannot
+    /// name, so the batch is refused by device.
+    #[test]
+    fn set_device_parameters_at_a_hosted_plugin_is_refused() {
+        let mut registry = registry_with_hosted_device("t1", "d-plugin");
+
+        let refusal = map_immediate(
+            &set_device_parameters_batch("t1", "d-plugin", json!({ "cutoff": 0.3 })),
+            &mut registry,
+        )
+        .expect_err("a hosted plugin takes its parameters on the plugin host's path");
+
+        assert!(
+            refusal.contains("d-plugin") && refusal.contains("plugin host"),
+            "the refusal must name the device and the path its parameters take, got: {refusal}"
+        );
+    }
+
+    /// A key with no native address refuses the whole batch, naming the device
+    /// and the key: a project panel authors a fermenter's camelCase descriptor
+    /// ids, and a mapper that skipped what it could not resolve would report a
+    /// patch applied while the values the producer sent went nowhere.
+    #[test]
+    fn set_device_parameters_naming_no_parameter_of_the_device_refuses_naming_device_and_key() {
+        let unmappable = [
+            (BuiltinEffectType::Fermenter, "filterCutoff"),
+            (BuiltinEffectType::Knead, "shiftSemitones"),
+        ];
+
+        for (builtin, key) in unmappable {
+            let mut registry = registry_with_builtin_device("t1", "d-1", builtin);
+            let refusal = map_immediate(
+                &set_device_parameters_batch("t1", "d-1", json!({ key: 0.5 })),
+                &mut registry,
+            )
+            .expect_err("a key with no native address must refuse the batch");
+
+            assert!(
+                refusal.contains("d-1") && refusal.contains(key),
+                "the refusal must name the device and the key, got: {refusal}"
+            );
+        }
+    }
+
+    /// The same two address refusals every device-addressed command makes: a
+    /// device the registry does not hold, and one held on a different strip
+    /// than the batch claims.
+    #[test]
+    fn set_device_parameters_at_a_device_on_another_strip_is_refused() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let unknown = map_immediate(
+            &set_device_parameters_batch("t1", "d-missing", json!({ "cutoff": 0.3 })),
+            &mut registry.clone(),
+        )
+        .expect_err("a device the registry does not hold must refuse the batch");
+        assert!(
+            unknown.contains("unknown device 'd-missing'"),
+            "the refusal must name the device it could not resolve, got: {unknown}"
+        );
+
+        let wrong_strip = map_immediate(
+            &set_device_parameters_batch("t2", "d-ferm", json!({ "cutoff": 0.3 })),
+            &mut registry,
+        )
+        .expect_err("a device held on another strip must refuse the batch");
+        assert!(
+            wrong_strip.contains("is not on strip 't2'"),
+            "the refusal must name the strip the batch claimed, got: {wrong_strip}"
+        );
+    }
+
+    /// A record of exactly `MAX_IMMEDIATE_DEVICE_PARAMETERS` distinct
+    /// well-shaped keys is the largest honest patch, and it must map to
+    /// exactly that many immediate writes rather than being refused early.
+    #[test]
+    fn set_device_parameters_at_the_ceiling_is_accepted() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let values = fermenter_keys_record("param", MAX_IMMEDIATE_DEVICE_PARAMETERS);
+
+        let mapped = map_immediate(
+            &set_device_parameters_batch("t1", "d-ferm", values),
+            &mut registry,
+        )
+        .expect("a record at the ceiling must be accepted");
+
+        assert_eq!(
+            immediate_writes(&mapped.ops).len(),
+            MAX_IMMEDIATE_DEVICE_PARAMETERS,
+            "a record at the ceiling must map to exactly that many immediate writes"
+        );
+    }
+
+    /// One key past the ceiling refuses the whole record before any key is
+    /// resolved. One of the keys is shaped unlike a fermenter parameter name
+    /// and would sort before the well-shaped keys, so it would be the first
+    /// key `immediate_device_parameters` resolved and would fail with the
+    /// name refusal instead — proving the ceiling is charged first, the
+    /// refusal here must be the ceiling's own message naming the count and
+    /// the ceiling, not that name refusal.
+    #[test]
+    fn set_device_parameters_past_the_ceiling_is_refused_naming_count_and_ceiling() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let Value::Object(mut values) =
+            fermenter_keys_record("param", MAX_IMMEDIATE_DEVICE_PARAMETERS)
+        else {
+            panic!("fermenter_keys_record must build a JSON object");
+        };
+        values.insert("filterCutoff".to_string(), json!(0.5));
+        assert_eq!(values.len(), MAX_IMMEDIATE_DEVICE_PARAMETERS + 1);
+
+        let refusal = map_immediate(
+            &set_device_parameters_batch("t1", "d-ferm", Value::Object(values)),
+            &mut registry,
+        )
+        .expect_err("a record past the ceiling must be refused");
+
+        assert!(
+            refusal.contains(&format!(
+                "record carries {} parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS}",
+                MAX_IMMEDIATE_DEVICE_PARAMETERS + 1
+            )),
+            "refusal must name the count and the ceiling, got: {refusal}"
+        );
+        assert!(
+            !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
+            "the ceiling must be charged before any key is resolved, got: {refusal}"
+        );
+    }
+
+    /// A per-record ceiling alone does not bound a batch of many records: a
+    /// batch of `MAX_TRACK_DEVICES` records, each at the per-record ceiling,
+    /// is the largest honest batch — one full patch write to every device
+    /// slot of one strip in one animation frame — and must map to exactly
+    /// `MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH` immediate writes rather
+    /// than being refused early.
+    #[test]
+    fn set_device_parameters_records_at_the_batch_ceiling_are_accepted() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let records: Vec<Value> = (0..MAX_TRACK_DEVICES)
+            .map(|record_index| {
+                fermenter_keys_record(&format!("r{record_index}"), MAX_IMMEDIATE_DEVICE_PARAMETERS)
+            })
+            .collect();
+
+        let mapped = map_immediate(
+            &set_device_parameters_records_batch("t1", "d-ferm", records),
+            &mut registry,
+        )
+        .expect("a batch at the batch ceiling must be accepted");
+
+        assert_eq!(
+            immediate_writes(&mapped.ops).len(),
+            MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH,
+            "a batch at the batch ceiling must map to exactly that many immediate writes"
+        );
+    }
+
+    /// One key past the batch ceiling refuses the whole batch before any of
+    /// the offending record's keys are resolved. The extra record's one key
+    /// is shaped unlike a fermenter parameter name, so if the batch charge
+    /// ran after key resolution the refusal would instead name that key —
+    /// proving the batch charge precedes parsing, the refusal here must be
+    /// the batch ceiling's own message naming the running count and the
+    /// batch ceiling, not the name refusal.
+    #[test]
+    fn set_device_parameters_records_past_the_batch_ceiling_are_refused_naming_count_and_ceiling() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let mut records: Vec<Value> = (0..MAX_TRACK_DEVICES)
+            .map(|record_index| {
+                fermenter_keys_record(&format!("r{record_index}"), MAX_IMMEDIATE_DEVICE_PARAMETERS)
+            })
+            .collect();
+        records.push(json!({ "filterCutoff": 0.5 }));
+
+        let refusal = map_immediate(
+            &set_device_parameters_records_batch("t1", "d-ferm", records),
+            &mut registry,
+        )
+        .expect_err("a batch past the batch ceiling must be refused");
+
+        assert!(
+            refusal.contains(&format!(
+                "batch carries {} immediate parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH}",
+                MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH + 1
+            )),
+            "refusal must name the running count and the batch ceiling, got: {refusal}"
+        );
+        assert!(
+            !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
+            "the batch charge must precede parsing, got: {refusal}"
+        );
+    }
+
     // ── Scheduled MIDI ─────────────────────────────────────────────────────
 
     /// The engine plugin id the hosted device below is registered under.
@@ -7625,6 +8327,208 @@ mod tests {
             refusal.contains("schedule-midi: device 'd1' is not on strip 't2'"),
             "refusal must name the strip the device is not on: {refusal}"
         );
+    }
+
+    // ── Live MIDI ──────────────────────────────────────────────────────────
+
+    /// One `send-midi-note` batch, spelled the way a producer spells one.
+    fn send_midi_note_batch(
+        track_id: &str,
+        device_id: &str,
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
+    ) -> GraphBatchPayload {
+        midi_batch(json!([{
+            "kind": "send-midi-note",
+            "trackId": track_id,
+            "deviceId": device_id,
+            "note": note,
+            "velocity": velocity,
+            "channel": channel,
+            "isNoteOn": is_note_on,
+        }]))
+    }
+
+    /// The one op a `send-midi-note` batch maps to, or a panic naming what it
+    /// mapped to instead.
+    fn only_note_op(ops: &[GraphCommand]) -> (usize, MidiNoteEvent) {
+        assert_eq!(ops.len(), 1, "a live note is one op and nothing else");
+        match &ops[0] {
+            GraphCommand::SendMidiNote(plugin_id, event) => (*plugin_id, *event),
+            _ => panic!("a live note must map onto SendMidiNote"),
+        }
+    }
+
+    /// A live note reaches the engine as an immediate note op at the device's
+    /// own plugin id, carrying the values the live path has always written:
+    /// the always-plays cutoff, no arrangement identity, and no frame offset,
+    /// because a key struck on a keyboard names no timeline position.
+    #[test]
+    fn send_midi_note_at_a_hosted_instrument_emits_one_immediate_note_op() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let batch = send_midi_note_batch("t1", "d1", 60, 100, 5, true);
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("a live note at a registered hosted device maps");
+
+        let (plugin_id, event) = only_note_op(&mapped.ops);
+        assert_eq!(plugin_id, MIDI_DEVICE_EFFECT_ID);
+        assert_eq!(event.note, 60);
+        assert_eq!(event.velocity, 100);
+        assert_eq!(event.channel, 5);
+        assert!(event.is_note_on);
+        assert_eq!(event.frame_offset, 0);
+        assert_eq!(event.probability_cutoff, PROBABILITY_CUTOFF_RANGE);
+        assert_eq!(event.project_probability_seed, 0);
+        assert_eq!(event.clip_id_hash, 0);
+        assert_eq!(event.event_id_hash, 0);
+        assert_eq!(event.absolute_occurrence_index, 0);
+    }
+
+    /// A built-in that sounds notes takes a live note on the same terms: the
+    /// fermenter is registered holding a note store, which is what the mapping
+    /// reads, and it is the one built-in a musician can play from a keyboard.
+    #[test]
+    fn send_midi_note_at_a_fermenter_emits_one_immediate_note_op() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+        let batch = send_midi_note_batch("t1", "d-ferm", 48, 0, 0, false);
+
+        let mapped = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("a live note at a built-in instrument maps");
+
+        let (plugin_id, event) = only_note_op(&mapped.ops);
+        assert_eq!(plugin_id, IMMEDIATE_PARAM_EFFECT_ID);
+        assert_eq!(event.note, 48);
+        assert_eq!(event.velocity, 0);
+        assert_eq!(event.channel, 0);
+        assert!(!event.is_note_on, "the release travels as itself");
+        assert_eq!(event.frame_offset, 0);
+        assert_eq!(event.probability_cutoff, PROBABILITY_CUTOFF_RANGE);
+    }
+
+    /// A built-in effect sounds no notes and is registered with no store, so a
+    /// live note aimed at one names a device that could never voice it.
+    #[test]
+    fn send_midi_note_at_a_knead_is_refused_holding_no_note_store() {
+        let mut registry = registry_with_builtin_device("t1", "d-knead", BuiltinEffectType::Knead);
+        let batch = send_midi_note_batch("t1", "d-knead", 60, 100, 0, true);
+
+        let refusal = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect_err("a built-in effect has no note store to sound a note through");
+
+        assert!(
+            refusal.contains("send-midi-note: device 'd-knead' holds no note store"),
+            "refusal must name the device holding no note store: {refusal}"
+        );
+    }
+
+    /// A live note names the strip its device is on, and a producer that lost
+    /// track of which strip that is is told rather than played on the wrong one.
+    #[test]
+    fn send_midi_note_at_a_device_on_another_strip_is_refused() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        registry.strips.insert(
+            "t2".to_string(),
+            StripEntry {
+                native_id: 2,
+                kind: StripKind::Track,
+                vca_multiplier: 1.0,
+                contributes_audio: true,
+                device_ids: Vec::new(),
+                clip_count: 0,
+                send_bus_ids: Vec::new(),
+                output: StripOutput::Master,
+            },
+        );
+        let batch = send_midi_note_batch("t2", "d1", 60, 100, 0, true);
+
+        let refusal = map_unbound_batch(
+            &batch,
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect_err("a device held on another strip is refused");
+
+        assert!(
+            refusal.contains("send-midi-note: device 'd1' is not on strip 't2'"),
+            "refusal must name the strip the device is not on: {refusal}"
+        );
+    }
+
+    /// A live note past MIDI's own range is refused control-side, naming the
+    /// field and the value. The engine could only answer such a note as a count
+    /// on the audio thread, and an unaddressable one is never tracked as
+    /// sounding — so nothing would ever release the key it pressed.
+    ///
+    /// The top of every range maps first, because it is what tells a bound from
+    /// an off-by-one: a check that refused `>=` its own maximum would refuse
+    /// the loudest note on the highest key of the last channel, and no refusal
+    /// drawn from past that range would ever say so.
+    #[test]
+    fn send_midi_note_past_the_midi_range_is_refused_naming_field_and_value() {
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let mapped = map_unbound_batch(
+            &send_midi_note_batch("t1", "d1", 127, 127, 15, true),
+            &mut registry,
+            &TimelineSamplePool::default(),
+            48_000.0,
+        )
+        .expect("the top of MIDI's own range is inside it");
+
+        let (_, event) = only_note_op(&mapped.ops);
+        assert_eq!(event.note, 127, "note 127 is a key, not an overflow");
+        assert_eq!(
+            event.velocity, 127,
+            "velocity 127 is full scale, not past it"
+        );
+        assert_eq!(
+            event.channel, 15,
+            "channel 15 is the sixteenth, not past it"
+        );
+
+        for (note, velocity, expected) in [
+            (
+                128,
+                100,
+                "send-midi-note: note 128 has no address in the note store",
+            ),
+            (60, 128, "send-midi-note: velocity 128 is outside 0..=127"),
+        ] {
+            let mut registry = registry_with_hosted_device("t1", "d1");
+            let batch = send_midi_note_batch("t1", "d1", note, velocity, 0, true);
+
+            let refusal = map_unbound_batch(
+                &batch,
+                &mut registry,
+                &TimelineSamplePool::default(),
+                48_000.0,
+            )
+            .expect_err("a note past MIDI's range is refused");
+
+            assert!(
+                refusal.contains(expected),
+                "refusal must name the field and the value: {refusal}"
+            );
+        }
     }
 
     #[test]

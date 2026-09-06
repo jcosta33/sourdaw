@@ -342,6 +342,11 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'write-device-parameter':
                 writeDeviceParameter(command.target, command.write);
                 return null;
+            case 'set-device-parameters':
+                // An immediate patch load addresses a native built-in, and only
+                // a strip the native engine carries holds one — so a producer
+                // never aims one here.
+                return null;
             case 'schedule-clip':
                 scheduleClip(command.playback);
                 return null;
@@ -350,6 +355,11 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 // This carrier voices MIDI through its own device scheduler, and
                 // only a strip the native engine carries stores notes on an
                 // engine instrument — so a producer never aims one here.
+                return null;
+            case 'send-midi-note':
+                // An offline render has no live keys: there is no player, and a
+                // note with no timeline position has no frame this carrier
+                // could place it on.
                 return null;
             case 'insert-device':
             case 'remove-device':

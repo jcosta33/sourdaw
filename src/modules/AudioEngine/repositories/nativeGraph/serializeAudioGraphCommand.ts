@@ -123,6 +123,12 @@ export type NativeGraphWireCommand =
     | Readonly<{ kind: 'remove-device'; trackId: string; deviceId: string }>
     | Readonly<{ kind: 'write-parameter'; target: AudioGraphStripParameterTarget; write: AudioGraphParameterWrite }>
     | Readonly<{ kind: 'write-device-parameter'; target: AudioGraphDeviceParameterTarget; write: AudioGraphStepWrite }>
+    | Readonly<{
+          kind: 'set-device-parameters';
+          trackId: string;
+          deviceId: string;
+          values: Readonly<Record<string, number>>;
+      }>
     | Readonly<{ kind: 'schedule-clip'; playback: NativeGraphWireClipPlayback }>
     // The contract's device target is flattened here, because `graph.rs` reads
     // the strip and the device as the variant's own fields rather than as a
@@ -134,6 +140,15 @@ export type NativeGraphWireCommand =
           deviceId: string;
           probabilitySeed: number;
           notes: readonly NativeGraphWireMidiNote[];
+      }>
+    | Readonly<{
+          kind: 'send-midi-note';
+          trackId: string;
+          deviceId: string;
+          note: number;
+          velocity: number;
+          channel: number;
+          isNoteOn: boolean;
       }>
     | Readonly<{ kind: 'clear-midi'; trackId: string; deviceId: string; fromTime: number; toTime: number | null }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
@@ -252,6 +267,13 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             return { kind: 'write-parameter', target: { ...command.target }, write: { ...command.write } };
         case 'write-device-parameter':
             return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
+        case 'set-device-parameters':
+            return {
+                kind: 'set-device-parameters',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                values: { ...command.values },
+            };
         case 'schedule-clip':
             return { kind: 'schedule-clip', playback: serializePlayback(command.playback) };
         case 'schedule-midi':
@@ -263,6 +285,16 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
                 // by the mirror; the roll mixes it first, so it has no default.
                 probabilitySeed: command.probabilitySeed,
                 notes: command.notes.map(serializeMidiNote),
+            };
+        case 'send-midi-note':
+            return {
+                kind: 'send-midi-note',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                note: command.note,
+                velocity: command.velocity,
+                channel: command.channel,
+                isNoteOn: command.isNoteOn,
             };
         case 'clear-midi':
             return {

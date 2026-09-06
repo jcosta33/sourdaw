@@ -324,40 +324,133 @@ describe('handleSetClipLoopLength atomic integration', () => {
         }
     });
 
-    it('rejects singleton loop-length macro companions in both orders before any action dispatches', async () => {
+    it('plays singleton loop-length macro companions as individually dispatched, individually undoable actions', async () => {
+        // The macro replay deliberately dropped its singleton-companion refusal:
+        // the draw and move gestures became action-recordable, so macros can now
+        // contain singleton actions and must still play. Singleton handlers
+        // replay through the same sequential per-action dispatch as every other
+        // action — each as its own undo unit, because the kernel drops the group
+        // id for them — and the composition hazard the refusal guarded against
+        // (batch co-execution) never arises in a per-action loop.
         type BatchAction = Parameters<typeof executeAppActionBatch>[0][number];
         const loopLengthAction = {
             type: 'setClipLoopLength',
             payload: { clipId: 'clip-1', loopLength: 2 },
         } satisfies BatchAction;
         const companions = [
-            { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } },
-            { type: 'setClipStretchRatio', payload: { clipId: 'clip-1', ratio: 2 } },
-            { type: 'removeClip', payload: { clipId: 'clip-1' } },
-            { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
-        ] satisfies BatchAction[];
+            {
+                action: { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } },
+                expectLoopFirst: () => expect(currentClip()).toMatchObject({ endBeat: 6, loopLength: 2 }),
+                expectCompanionFirst: () => expect(currentClip()).toMatchObject({ endBeat: 6, loopLength: 2 }),
+            },
+            {
+                action: { type: 'setClipStretchRatio', payload: { clipId: 'clip-1', ratio: 2 } },
+                expectLoopFirst: () => expect(currentClip()).toMatchObject({ stretchRatio: 2, loopLength: 2 }),
+                expectCompanionFirst: () => expect(currentClip()).toMatchObject({ stretchRatio: 2, loopLength: 2 }),
+            },
+            {
+                action: { type: 'removeClip', payload: { clipId: 'clip-1' } },
+                expectLoopFirst: () => expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0),
+                // Loop length last conflicts on the removed clip, and a per-action
+                // loop has no batch to half-apply: the remove stays committed as
+                // its own undo unit and the conflicting action lands nowhere.
+                expectCompanionFirst: () => expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0),
+                companionFirstRejects: 'Action conflicts with current project state: setClipLoopLength',
+                companionFirstPastLength: 1,
+            },
+            {
+                action: { type: 'setClipLoop', payload: { clipId: 'clip-1', enabled: true } },
+                expectLoopFirst: () => expect(currentClip()).toMatchObject({ loopEnabled: true, loopLength: 2 }),
+                expectCompanionFirst: () => expect(currentClip()).toMatchObject({ loopEnabled: true, loopLength: 2 }),
+            },
+        ] satisfies {
+            action: BatchAction;
+            expectLoopFirst: () => void;
+            expectCompanionFirst: () => void;
+            companionFirstRejects?: string;
+            companionFirstPastLength?: number;
+        }[];
 
-        for (const companion of companions) {
-            for (const actions of [
-                [loopLengthAction, companion],
-                [companion, loopLengthAction],
-            ]) {
-                seedClipFixture();
-                clearUndoHistory();
-                macroStore.set({
-                    macros: [{ id: 'macro-1', name: 'Unsafe pair', actions, createdAt: 0 }],
-                    recording: false,
-                    currentRecording: [],
-                });
+        for (const { action: companion, expectLoopFirst } of companions) {
+            seedClipFixture();
+            clearUndoHistory();
+            macroStore.set({
+                macros: [
+                    {
+                        id: 'macro-1',
+                        name: 'Loop then companion',
+                        actions: [loopLengthAction, companion],
+                        createdAt: 0,
+                    },
+                ],
+                recording: false,
+                currentRecording: [],
+            });
 
-                await expect(executeAppAction({ type: 'playMacro', payload: { macroId: 'macro-1' } })).rejects.toThrow(
-                    'Action must execute as a singleton batch: setClipLoopLength'
-                );
-                expect.soft(currentClip()).toMatchObject({ startBeat: 0, endBeat: 8, loopEnabled: false });
-                expect.soft(Object.hasOwn(currentClip(), 'loopLength')).toBe(false);
-                expect.soft(undoStore.value?.past).toHaveLength(0);
-            }
+            await expect(
+                executeAppAction({ type: 'playMacro', payload: { macroId: 'macro-1' } })
+            ).resolves.toBeUndefined();
+            expectLoopFirst();
+            // Both writes landed, each as its own undo entry.
+            expect(undoStore.value?.past).toHaveLength(2);
         }
+
+        for (const {
+            action: companion,
+            expectCompanionFirst,
+            companionFirstRejects,
+            companionFirstPastLength,
+        } of companions) {
+            seedClipFixture();
+            clearUndoHistory();
+            macroStore.set({
+                macros: [
+                    {
+                        id: 'macro-1',
+                        name: 'Companion then loop',
+                        actions: [companion, loopLengthAction],
+                        createdAt: 0,
+                    },
+                ],
+                recording: false,
+                currentRecording: [],
+            });
+
+            if (companionFirstRejects) {
+                await expect(executeAppAction({ type: 'playMacro', payload: { macroId: 'macro-1' } })).rejects.toThrow(
+                    companionFirstRejects
+                );
+            } else {
+                await expect(
+                    executeAppAction({ type: 'playMacro', payload: { macroId: 'macro-1' } })
+                ).resolves.toBeUndefined();
+            }
+            expectCompanionFirst();
+            expect(undoStore.value?.past).toHaveLength(companionFirstPastLength ?? 2);
+        }
+
+        // Individually undoable: with both entries on the stack, one undo
+        // reverts only the newest action (the trim) and leaves the recorded
+        // loop length — the loop-length entry is its own unit, not a batch.
+        seedClipFixture();
+        clearUndoHistory();
+        macroStore.set({
+            macros: [
+                {
+                    id: 'macro-1',
+                    name: 'Loop then trim',
+                    actions: [loopLengthAction, { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } }],
+                    createdAt: 0,
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'macro-1' } });
+        await undo();
+
+        expect(currentClip()).toMatchObject({ endBeat: 8, loopLength: 2 });
+        expect(undoStore.value?.future).toHaveLength(1);
     });
 
     it('does not attach singleton loop-length history to a caller-supplied group', async () => {

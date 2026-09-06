@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { playheadPositionRef } from './playheadPositionRef';
+export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 
 export type { TempoMapStoreState } from './tempoMapStore';
 export { tempoMapStore, MIN_TEMPO_MAP_TEMPO } from './tempoMapStore';

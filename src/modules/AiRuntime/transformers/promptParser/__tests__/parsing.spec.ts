@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
-
 import { type ProjectContext } from '../../../models/ProjectContext';
 import {
     isComplexPrompt,
@@ -9,8 +7,7 @@ import {
     tryPresetMatch,
     tryParameterizedPath,
     tryCompoundFastPath,
-    matchSoundDesignRecipe,
-    findTrack,
+    resolveTrackReference,
 } from '../parsing';
 
 describe('promptParser parsing', () => {
@@ -85,6 +82,35 @@ describe('promptParser parsing', () => {
     });
 
     describe('tryPresetMatch', () => {
+        it('does not execute a colliding exact alias by registry order', () => {
+            const context = {
+                selectedTrackId: 'track-1',
+                selectedClipId: 'clip-1',
+                selectedClipType: 'audio' as const,
+                trackCount: 1,
+            };
+
+            expect(tryPresetMatch('copy clip', context)).toEqual([]);
+        });
+
+        it('executes only a unique complete label or declared imperative alias', () => {
+            const context = {
+                selectedTrackId: 'track-1',
+                selectedClipId: undefined,
+                selectedClipType: undefined,
+                trackCount: 1,
+            };
+
+            expect(tryPresetMatch('start playback', context)).toEqual([
+                { type: 'setPlayback', payload: { playing: true } },
+            ]);
+            expect(tryPresetMatch('add eq', context)).toEqual([
+                { type: 'addDevice', payload: { trackId: 'track-1', deviceType: 'builtin-eq' } },
+            ]);
+            expect(tryPresetMatch('eq', context)).toEqual([]);
+            expect(tryPresetMatch('warm', context)).toEqual([]);
+        });
+
         it('leaves add-automation-lane prompts for the grounded provider path', () => {
             const actions = tryPresetMatch('add automation lane', {
                 selectedTrackId: 'track-1',
@@ -143,9 +169,9 @@ describe('promptParser parsing', () => {
                     gain: 1,
                     pan: 0,
                     automationMode: 'read',
-                    clipCount: 0,
+                    clipCount: 1,
                     deviceCount: 0,
-                    clips: [],
+                    clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 }],
                     devices: [],
                 },
             ],
@@ -173,9 +199,212 @@ describe('promptParser parsing', () => {
             expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: 1.5 } }]);
         });
 
-        it('still clamps a volume past the fader ceiling, at the real reachable maximum', () => {
+        it('preserves a volume past the fader ceiling for runtime validation', () => {
             const actions = tryParameterizedPath('set volume to 500%', context);
-            expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: FADER_MAX_GAIN } }]);
+            expect(actions).toEqual([{ type: 'setTrackGain', payload: { trackId: 't1', gain: 5 } }]);
+        });
+
+        it('preserves out-of-range pan values for runtime validation', () => {
+            expect(tryParameterizedPath('set pan to 100', context)).toEqual([
+                { type: 'setTrackPan', payload: { trackId: 't1', pan: 100 } },
+            ]);
+        });
+
+        it.each(['mute bass', 'solo bass', 'add eq to bass', 'delete bass'])(
+            'does not guess a duplicate or partial target for %s',
+            (prompt) => {
+                const bass = { ...context.tracks[0]!, id: 'bass-1', name: 'Bass' };
+                const duplicateBass = { ...context.tracks[0]!, id: 'bass-2', name: 'Bass' };
+                const bassDi = { ...context.tracks[0]!, id: 'bass-di', name: 'Bass DI' };
+                const bassAmp = { ...context.tracks[0]!, id: 'bass-amp', name: 'Bass Amp' };
+                const duplicateContext = { ...context, tracks: [bass, duplicateBass] };
+                const partialContext = { ...context, tracks: [bassDi, bassAmp] };
+
+                expect(tryParameterizedPath(prompt, duplicateContext)).toEqual([]);
+                expect(tryParameterizedPath(prompt, partialContext)).toEqual([]);
+            }
+        );
+
+        it.each([
+            ['mute Bass', { type: 'muteTrack', payload: { trackId: 'track-bass', muted: true } }],
+            ['unsolo track-bass', { type: 'soloTrack', payload: { trackId: 'track-bass', soloed: false } }],
+            [
+                'add compressor to Bass track',
+                { type: 'addDevice', payload: { trackId: 'track-bass', deviceType: 'Compressor' } },
+            ],
+            ['remove track-bass', { type: 'removeTrack', payload: { trackId: 'track-bass' } }],
+        ])('resolves the unique full name or literal ID for %s', (prompt, action) => {
+            const bass = { ...context.tracks[0]!, id: 'track-bass', name: 'Bass' };
+            const exactContext = { ...context, tracks: [bass] };
+
+            expect(tryParameterizedPath(prompt, exactContext)).toEqual([action]);
+        });
+
+        it('keeps connectors inside quoted names and rejects them outside quotes', () => {
+            const namedTrack = { ...context.tracks[0]!, id: 'track-guitar', name: 'Guitar and track-guitar' };
+            const namedContext = { ...context, tracks: [namedTrack] };
+
+            expect(tryParameterizedPath('mute "Guitar and track-guitar"', namedContext)).toEqual([
+                { type: 'muteTrack', payload: { trackId: 'track-guitar', muted: true } },
+            ]);
+            expect(tryParameterizedPath('mute Guitar and track-guitar', namedContext)).toEqual([]);
+        });
+
+        it('does not discard a real display-name candidate when "track" could be syntax', () => {
+            const bass = { ...context.tracks[0]!, id: 'bass', name: 'Bass' };
+            const bassTrack = { ...context.tracks[0]!, id: 'bass-track', name: 'Bass Track' };
+
+            expect(tryParameterizedPath('mute Bass track', { ...context, tracks: [bass, bassTrack] })).toEqual([]);
+            expect(tryParameterizedPath('mute "Bass Track"', { ...context, tracks: [bass, bassTrack] })).toEqual([
+                { type: 'muteTrack', payload: { trackId: 'bass-track', muted: true } },
+            ]);
+        });
+
+        it('admits only quoted or bounded single-token rename and join values', () => {
+            expect(tryParameterizedPath('rename clip to Bridge Solo', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to match the track name', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to something warmer', context)).toEqual([]);
+            expect(tryParameterizedPath('join session using the invitation in the chat', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to Verse', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Verse' } },
+            ]);
+            expect(tryParameterizedPath('rename clip to "Verse and Chorus"', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Verse and Chorus' } },
+            ]);
+            expect(tryParameterizedPath('rename clip to Verse then mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('join session "invite and band"', context)).toEqual([
+                { type: 'joinCollabSession', payload: { inviteString: 'invite and band', peerName: 'Peer' } },
+            ]);
+            expect(tryParameterizedPath('join session invite then mute Bass', context)).toEqual([]);
+        });
+
+        it('consumes structural optional words without backtracking them into missing values', () => {
+            const namedThe = { ...context.tracks[0]!, id: 'the-track', name: 'The' };
+            const namedTrack = { ...context.tracks[0]!, id: 'named-track', name: 'Track' };
+            const prefixContext = { ...context, tracks: [namedThe, namedTrack] };
+
+            expect(tryParameterizedPath('rename clip to', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('RENAME THE CLIP TO   ', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to "to"', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
+            ]);
+            expect(tryParameterizedPath('rename clip "to"', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
+            ]);
+            expect(tryParameterizedPath('rename clip to to', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
+            ]);
+            expect(tryParameterizedPath('rename clip Opening', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Opening' } },
+            ]);
+            expect(tryParameterizedPath('rename the clip "Bridge Solo"', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Bridge Solo' } },
+            ]);
+            expect(tryParameterizedPath('mute the', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('solo the', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('add eq to the', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('delete track', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('delete the track', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('mute "The"', prefixContext)).toEqual([
+                { type: 'muteTrack', payload: { trackId: 'the-track', muted: true } },
+            ]);
+            expect(tryParameterizedPath('delete "Track"', prefixContext)).toEqual([
+                { type: 'removeTrack', payload: { trackId: 'named-track' } },
+            ]);
+        });
+
+        it('requires one existing clip across the complete selection union for deterministic rename', () => {
+            const expected = [{ type: 'renameClip', payload: { clipId: 'c1', name: 'Opening' } }];
+
+            expect(
+                tryParameterizedPath('rename clip Opening', {
+                    ...context,
+                    selectedClipId: null,
+                    selectedClipIds: ['c1'],
+                })
+            ).toEqual(expected);
+            expect(
+                tryParameterizedPath('rename clip to Opening', {
+                    ...context,
+                    selectedClipId: 'c1',
+                    selectedClipIds: [],
+                })
+            ).toEqual(expected);
+            expect(
+                tryParameterizedPath('rename clip Opening', {
+                    ...context,
+                    selectedClipId: 'c1',
+                    selectedClipIds: ['c1'],
+                })
+            ).toEqual(expected);
+
+            for (const selection of [
+                { selectedClipId: null, selectedClipIds: [] },
+                { selectedClipId: 'c1', selectedClipIds: ['c1', 'missing-clip'] },
+                { selectedClipId: 'missing-clip', selectedClipIds: [] },
+            ]) {
+                expect(tryParameterizedPath('rename clip Opening', { ...context, ...selection })).toEqual([]);
+                expect(tryParameterizedPath('rename clip to "Bridge Solo"', { ...context, ...selection })).toEqual([]);
+            }
+        });
+
+        it('rejects unquoted sentence continuations while preserving literal punctuation', () => {
+            expect(tryParameterizedPath('rename clip to Verse. Mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to Verse: mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('join session invite-ABC. Mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to "Verse. Mute Bass"', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Verse. Mute Bass' } },
+            ]);
+            expect(tryParameterizedPath('join session "invite-ABC. Mute Bass"', context)).toEqual([
+                {
+                    type: 'joinCollabSession',
+                    payload: { inviteString: 'invite-ABC. Mute Bass', peerName: 'Peer' },
+                },
+            ]);
+            expect(tryParameterizedPath('rename clip to Lead 2.0', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to "Lead 2.0"', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Lead 2.0' } },
+            ]);
+            expect(tryParameterizedPath('rename clip to Dr.Dre', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Dr.Dre' } },
+            ]);
+        });
+
+        it.each([
+            ['mute', { type: 'muteTrack', payload: { trackId: 'literal-all', muted: true } }],
+            ['unmute', { type: 'muteTrack', payload: { trackId: 'literal-all', muted: false } }],
+            ['solo', { type: 'soloTrack', payload: { trackId: 'literal-all', soloed: true } }],
+            ['unsolo', { type: 'soloTrack', payload: { trackId: 'literal-all', soloed: false } }],
+        ])('reserves %s all tracks for bulk scope before a colliding display name', (verb, quotedAction) => {
+            const allTracks = { ...context.tracks[0]!, id: 'literal-all', name: 'All Tracks' };
+            const bass = { ...context.tracks[0]!, id: 'bass', name: 'Bass' };
+            const collisionContext = { ...context, tracks: [allTracks, bass] };
+            const stateKey = verb.includes('solo') ? 'soloed' : 'muted';
+            const stateValue = verb === 'mute' || verb === 'solo';
+            const actionType = verb.includes('solo') ? 'soloTrack' : 'muteTrack';
+
+            expect(tryParameterizedPath(`${verb} all tracks`, collisionContext)).toEqual([
+                { type: actionType, payload: { trackId: 'literal-all', [stateKey]: stateValue } },
+                { type: actionType, payload: { trackId: 'bass', [stateKey]: stateValue } },
+            ]);
+            expect(tryParameterizedPath(`${verb} "All Tracks"`, collisionContext)).toEqual([quotedAction]);
+        });
+
+        it.each([
+            ['mute literal-target', { type: 'muteTrack', payload: { trackId: 'literal-target', muted: true } }],
+            ['solo literal-target', { type: 'soloTrack', payload: { trackId: 'literal-target', soloed: true } }],
+            [
+                'add eq to literal-target',
+                { type: 'addDevice', payload: { trackId: 'literal-target', deviceType: 'EQ' } },
+            ],
+            ['delete literal-target', { type: 'removeTrack', payload: { trackId: 'literal-target' } }],
+        ])('preserves exact literal-ID authority over a colliding display name for %s', (prompt, action) => {
+            const literalTarget = { ...context.tracks[0]!, id: 'literal-target', name: 'Actual ID Target' };
+            const nameCollision = { ...context.tracks[0]!, id: 'name-target', name: 'literal-target' };
+
+            expect(tryParameterizedPath(prompt, { ...context, tracks: [literalTarget, nameCollision] })).toEqual([
+                action,
+            ]);
         });
 
         it('leaves quantize and transpose for the grounded provider path', () => {
@@ -296,6 +525,50 @@ describe('promptParser parsing', () => {
             ]);
         });
 
+        it('rejects a count above the deterministic creation ceiling without truncating it', () => {
+            expect(tryCompoundFastPath('add 33 midi tracks', context)).toBeNull();
+        });
+
+        it('rejects a zero track count before allocation', () => {
+            expect(tryCompoundFastPath('create 0 audio tracks', context)).toBeNull();
+        });
+
+        it('rejects a names clause with a trailing instruction', () => {
+            expect(tryCompoundFastPath('create 2 tracks named Bass, Keys then mute Drums', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass, Keys. Mute Bass', context)).toBeNull();
+            expect(tryCompoundFastPath('create 3 tracks named Bass, Keys and mute Drums', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass and brighten guitar', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass and play', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass, "Keys. Mute Bass"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Keys. Mute Bass', kind: 'audio' } },
+            ]);
+            expect(tryCompoundFastPath('create 3 tracks named Bass, Keys and "mute Drums"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Keys', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'mute Drums', kind: 'audio' } },
+            ]);
+            expect(tryCompoundFastPath('create 2 tracks named Bass and "Play"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Play', kind: 'audio' } },
+            ]);
+        });
+
+        it('requires the explicit name count and preserves quoted delimiters', () => {
+            expect(tryCompoundFastPath('create 2 tracks named Bass', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass, Keys, Drums', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass,', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named "Bass, DI", "Keys and Pads"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass, DI', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Keys and Pads', kind: 'audio' } },
+            ]);
+            expect(tryCompoundFastPath('create 2 bus tracks called FX and Drums', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'FX', kind: 'bus' } },
+                { type: 'addTrack', payload: { name: 'Drums', kind: 'bus' } },
+            ]);
+            expect(tryCompoundFastPath('create 2 tracks named "Bass, DI, Keys', context)).toBeNull();
+        });
+
         it('parses multiple track creation with names', () => {
             const actions = tryCompoundFastPath('create 2 tracks named bass, keys', context);
             expect(actions).toEqual([
@@ -304,15 +577,17 @@ describe('promptParser parsing', () => {
             ]);
         });
 
-        it('preserves casing of track names specified in compound multi-track creation', () => {
-            const actions = tryCompoundFastPath('create 2 audio tracks named Lead Vocals, Backing Vocals', context);
+        it('requires quotes for ambiguous multiword names and preserves explicitly quoted casing', () => {
+            expect(tryCompoundFastPath('create 2 audio tracks named Lead Vocals, Backing Vocals', context)).toBeNull();
+
+            const actions = tryCompoundFastPath('create 2 audio tracks named "Lead Vocals", "Backing Vocals"', context);
             expect(actions).toEqual([
                 { type: 'addTrack', payload: { name: 'Lead Vocals', kind: 'audio' } },
                 { type: 'addTrack', payload: { name: 'Backing Vocals', kind: 'audio' } },
             ]);
 
             const upperActions = tryCompoundFastPath(
-                'CREATE 2 AUDIO TRACKS NAMED Lead Vocals, Backing Vocals',
+                'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
                 context
             );
             expect(upperActions).toEqual([
@@ -343,37 +618,25 @@ describe('promptParser parsing', () => {
                 { type: 'addDevice', payload: { trackId: 't1', deviceType: 'Delay' } },
             ]);
         });
-    });
 
-    describe('matchSoundDesignRecipe', () => {
-        it('matches warmth', () => {
-            expect(matchSoundDesignRecipe('make it warmer', 't1')).toEqual([
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'EQ' } },
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'Compressor' } },
-            ]);
+        it('rejects malformed or partially known device lists', () => {
+            expect(tryCompoundFastPath('add eqcompressor', context)).toBeNull();
+            expect(tryCompoundFastPath('add eq compressor', context)).toBeNull();
+            expect(tryCompoundFastPath('add eq, mystery and delay', context)).toBeNull();
+            expect(tryCompoundFastPath('add constructor and eq', context)).toBeNull();
+            expect(tryCompoundFastPath('add __proto__ and eq', context)).toBeNull();
+            expect(tryParameterizedPath('add constructor to t1', context)).toEqual([]);
+            expect(tryParameterizedPath('add __proto__ to t1', context)).toEqual([]);
         });
 
-        it('matches lofi', () => {
-            expect(matchSoundDesignRecipe('give it a lofi vibe', 't1')).toEqual([
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'EQ' } },
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'BitCrusher' } },
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'Compressor' } },
-            ]);
-        });
-
-        it('matches width', () => {
-            expect(matchSoundDesignRecipe('make it sound wider', 't1')).toEqual([
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'Chorus' } },
-                { type: 'addDevice', payload: { trackId: 't1', deviceType: 'Delay' } },
-            ]);
-        });
-
-        it('returns null if no recipe matches', () => {
-            expect(matchSoundDesignRecipe('make it completely weird', 't1')).toBeNull();
+        it('leaves creative and partially matched sound-design requests for whole-request planning', () => {
+            expect(tryCompoundFastPath('make it warmer', context)).toBeNull();
+            expect(tryCompoundFastPath('make it warm then mute Bass', context)).toBeNull();
+            expect(tryCompoundFastPath('make it warm without adding devices', context)).toBeNull();
         });
     });
 
-    describe('findTrack', () => {
+    describe('resolveTrackReference', () => {
         const context = {
             tracks: [
                 { id: 't1', name: 'Lead Vocals' },
@@ -382,20 +645,20 @@ describe('promptParser parsing', () => {
         } as ProjectContext;
 
         it('finds track by exact lower case name', () => {
-            expect(findTrack(context, 'lead vocals')?.id).toBe('t1');
-            expect(findTrack(context, 'bass')?.id).toBe('t2');
+            expect(resolveTrackReference(context, 'lead vocals')?.id).toBe('t1');
+            expect(resolveTrackReference(context, 'bass')?.id).toBe('t2');
         });
 
         it('finds track by ignoring "track" suffix', () => {
-            expect(findTrack(context, 'bass track')?.id).toBe('t2');
+            expect(resolveTrackReference(context, 'bass track')?.id).toBe('t2');
         });
 
-        it('finds track by partial inclusion', () => {
-            expect(findTrack(context, 'vocals')?.id).toBe('t1');
+        it('rejects partial inclusion', () => {
+            expect(resolveTrackReference(context, 'vocals')).toBeUndefined();
         });
 
         it('returns undefined if not found', () => {
-            expect(findTrack(context, 'drums')).toBeUndefined();
+            expect(resolveTrackReference(context, 'drums')).toBeUndefined();
         });
     });
 });

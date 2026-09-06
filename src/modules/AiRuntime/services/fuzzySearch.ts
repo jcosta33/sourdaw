@@ -56,23 +56,6 @@ export function searchPresets(query: string, context: PresetContext, limit = 12)
 }
 
 /**
- * Try to find an exact or near-exact match for execution.
- * Returns the best matching preset if confidence is high enough.
- */
-export function findBestMatch(query: string, context: PresetContext): PresetAction | null {
-    const results = searchPresets(query, context, 1);
-    if (results.length === 0) {
-        return null;
-    }
-    const best = results[0]!;
-    // Require a meaningful score threshold for auto-execution
-    if (best.score >= 50) {
-        return best.preset;
-    }
-    return null;
-}
-
-/**
  * Get all available presets for the current context, grouped by category.
  */
 export function getAvailablePresets(context: PresetContext): PresetAction[] {

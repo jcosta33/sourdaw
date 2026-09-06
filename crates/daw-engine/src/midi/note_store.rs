@@ -191,12 +191,12 @@ const NOTES_PER_CHANNEL: u8 = 128;
 /// and walks a whole set on a stop, a locate and a loop wrap, so a set that
 /// allocated or hashed would put that work inside the deadline (ADR 0020).
 ///
-/// The scheduler keeps one per device for the notes its store has sounded and
-/// not yet released, one for the releases a clear stripped, and builds them on
-/// the stack to answer questions about a store. Only what the store delivered
-/// ever reaches the sounding one: a note played live has no timeline position
-/// and no scheduled release, so a key the player is holding stays held across
-/// a stop exactly as it does on hardware.
+/// The scheduler keeps two per device — the notes its store has sounded and
+/// not yet released, and the keys a player is holding live — plus one for the
+/// releases a clear stripped, and builds them on the stack to answer questions
+/// about a store. The live notes are held apart because the triggers differ: a
+/// loop wrap strands a scheduled note-off past the seam and strands nothing a
+/// player's hands are on, so it releases the stored set alone.
 ///
 /// One bit per (channel, note) means the sounding set admits at most one
 /// sounding note per key at a time; a store that overlaps two notes on one

@@ -651,6 +651,105 @@ function bridgeToolCall({
         };
     }
 
+    if (call.name === 'duplicateClipAt') {
+        const source = findEditableClip(context, args.clipId);
+        const destination = findTrack(context, args.destinationTrackId);
+        if (
+            !hasExactKeys(args, ['clipId', 'destinationTrackId', 'startBeat']) ||
+            !source ||
+            !destination ||
+            destination.kind === 'vca' ||
+            !isFiniteNumber(args.startBeat) ||
+            args.startBeat < 0
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one unlocked clip, one existing clip-host destination track, and a finite non-negative startBeat'
+            );
+        }
+        return {
+            type: 'duplicateClipAt',
+            payload: { clipId: source.clip.id, destinationTrackId: destination.id, startBeat: args.startBeat },
+        };
+    }
+
+    if (call.name === 'drawClip') {
+        const destination = findTrack(context, args.trackId);
+        const name = normalizeSafeProjectName(args.name);
+        if (
+            !hasExactKeys(args, ['trackId', 'startBeat', 'endBeat', 'name', 'type']) ||
+            !destination ||
+            (destination.kind !== 'audio' && destination.kind !== 'midi') ||
+            (args.type !== 'audio' && args.type !== 'midi') ||
+            args.type !== destination.kind ||
+            !isFiniteNumber(args.startBeat) ||
+            args.startBeat < 0 ||
+            !isFiniteNumber(args.endBeat) ||
+            args.endBeat <= args.startBeat ||
+            !name
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected one existing audio or midi track, a clip type matching the track kind, one safe explicit name, and a finite non-negative beat range'
+            );
+        }
+        return {
+            type: 'drawClip',
+            payload: {
+                trackId: destination.id,
+                startBeat: args.startBeat,
+                endBeat: args.endBeat,
+                name,
+                type: args.type,
+                ripple: false,
+            },
+        };
+    }
+
+    if (call.name === 'moveClips') {
+        const moves: unknown = args.moves;
+        if (
+            !hasExactKeys(args, ['moves']) ||
+            !Array.isArray(moves) ||
+            moves.length === 0 ||
+            !moves.every(
+                (move: unknown) =>
+                    typeof move === 'object' &&
+                    move !== null &&
+                    hasExactKeys(move as Record<string, unknown>, ['clipId', 'trackId', 'startBeat'])
+            )
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected a non-empty array of { clipId, trackId, startBeat } placements'
+            );
+        }
+        const placements: { clipId: string; trackId: string; startBeat: number }[] = [];
+        for (const move of moves) {
+            const candidate = move as { clipId?: unknown; trackId?: unknown; startBeat?: unknown };
+            const source = findEditableClip(context, candidate.clipId);
+            const destination = findTrack(context, candidate.trackId);
+            if (
+                !source ||
+                !destination ||
+                destination.kind === 'vca' ||
+                !isFiniteNumber(candidate.startBeat) ||
+                candidate.startBeat < 0
+            ) {
+                return rejection(
+                    index,
+                    call.name,
+                    'Expected every move to name an unlocked clip, an existing clip-host track, and a finite non-negative startBeat'
+                );
+            }
+            placements.push({ clipId: source.clip.id, trackId: destination.id, startBeat: candidate.startBeat });
+        }
+        return { type: 'moveClips', payload: { moves: placements, ripple: false } };
+    }
+
     if (call.name === 'splitClip') {
         const target = findEditableClip(context, args.clipId);
         if (
@@ -1735,9 +1834,13 @@ function getClipTargetIds(action: RuntimeAction): string[] {
     if (action.type === 'crossfadeClips') {
         return [action.payload.clipAId, action.payload.clipBId];
     }
+    if (action.type === 'moveClips') {
+        return action.payload.moves.map((move) => move.clipId);
+    }
     if (
         action.type === 'duplicateClip' ||
         action.type === 'duplicateClipToNextBar' ||
+        action.type === 'duplicateClipAt' ||
         action.type === 'moveClip' ||
         action.type === 'splitClip' ||
         action.type === 'removeClip' ||
@@ -1811,7 +1914,9 @@ function getMutationKeys(
         action.type === 'createBus' ||
         action.type === 'duplicateTrack' ||
         action.type === 'duplicateClip' ||
-        action.type === 'duplicateClipToNextBar'
+        action.type === 'duplicateClipToNextBar' ||
+        action.type === 'duplicateClipAt' ||
+        action.type === 'drawClip'
     ) {
         return [];
     }
@@ -2009,6 +2114,9 @@ function getMutationKeys(
     }
     if (action.type === 'trimClipStart' || action.type === 'trimClipEnd' || action.type === 'nudgeClip') {
         return [`clip:${action.payload.clipId}:geometry`];
+    }
+    if (action.type === 'moveClips') {
+        return action.payload.moves.map((move) => `clip:${move.clipId}:geometry`);
     }
     if (action.type === 'slipClipContent') {
         return [`clip:${action.payload.clipId}:offset`];
@@ -2398,6 +2506,9 @@ export function bridgeLlmToolCalls({
                         return trackId ? [trackId] : [];
                     }),
                     ...(result.type === 'moveClip' || result.type === 'addClip' ? [result.payload.trackId] : []),
+                    ...(result.type === 'drawClip' ? [result.payload.trackId] : []),
+                    ...(result.type === 'duplicateClipAt' ? [result.payload.destinationTrackId] : []),
+                    ...(result.type === 'moveClips' ? result.payload.moves.map((move) => move.trackId) : []),
                 ]),
             ];
             const deviceTarget = getDeviceBatchTarget(result, context);
@@ -2405,8 +2516,14 @@ export function bridgeLlmToolCalls({
             const automationPointLaneId = result.type === 'addAutomationPoint' ? result.payload.laneId : null;
             const automationTransformLaneId = getAutomationTransformLaneId(result);
             const automationMutationLaneId = automationPointLaneId ?? automationTransformLaneId;
-            const movedAutomationLaneIds =
-                result.type === 'moveClip' ? getClipAutomationLaneIds(context, result.payload.clipId) : [];
+            let movedAutomationLaneIds: string[] = [];
+            if (result.type === 'moveClip') {
+                movedAutomationLaneIds = getClipAutomationLaneIds(context, result.payload.clipId);
+            } else if (result.type === 'moveClips') {
+                movedAutomationLaneIds = result.payload.moves.flatMap((move) =>
+                    getClipAutomationLaneIds(context, move.clipId)
+                );
+            }
             const hasMoveAutomationConflict =
                 movedAutomationLaneIds.some(
                     (laneId) => automationPointWriteLaneIds.has(laneId) || automationTransformLaneIds.has(laneId)

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
+import { tempoProjectRevisionStore } from '../../../stores/tempoProjectRevisionStore';
 import { stopPlayback } from '../../../useCases/transportControls/stopPlayback';
 import { handleSetTempo } from '../handleSetTempo';
 import { handleStopPlayback } from '../handleStopPlayback';
@@ -77,6 +78,20 @@ describe('transport handlers', () => {
         expect(transportRef.value!.tempo).toBe(120);
     });
 
+    it('publishes a tempo revision only when a commit effect is invoked', async () => {
+        const initialRevision = tempoProjectRevisionStore.value ?? 0;
+        const result = await handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 120 } });
+
+        expect(tempoProjectRevisionStore.value).toBe(initialRevision);
+        if (!result || result.status !== 'written' || !result.afterCommit || !result.afterAmbiguousCommit) {
+            throw new Error('Expected paired tempo commit notifications');
+        }
+        await result.afterCommit();
+        expect(tempoProjectRevisionStore.value).toBe(initialRevision + 1);
+        await result.afterAmbiguousCommit();
+        expect(tempoProjectRevisionStore.value).toBe(initialRevision + 2);
+    });
+
     it('handleSetTempo captures the transport base tempo when there is no tempo map', () => {
         expect(handleSetTempo.describe({ type: 'setTempo', payload: { bpm: 128 } })).toEqual({
             label: 'Set tempo to 128 BPM',
@@ -93,7 +108,11 @@ describe('transport handlers', () => {
             throw new Error('Expected a guarded base-tempo inverse');
         }
 
-        expect(handleSetTempo.execute(described.inverseAction)).toBeUndefined();
+        expect(handleSetTempo.execute(described.inverseAction)).toMatchObject({
+            status: 'written',
+            afterCommit: expect.any(Function),
+            afterAmbiguousCommit: expect.any(Function),
+        });
         expect(transportRef.value!.tempo).toBe(110);
         expect(tempoOf('tc-new')).toBe(95);
     });

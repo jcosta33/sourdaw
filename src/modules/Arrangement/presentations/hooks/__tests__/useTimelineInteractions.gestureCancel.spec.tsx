@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => {
         setLoopRegion: vi.fn(),
         pushUndoEntry: vi.fn(),
         executeUserAppAction: vi.fn(),
+        generateGroupId: vi.fn((label: string) => ({ groupId: 'group-cancel', groupLabel: label })),
         shiftClipAutomation: vi.fn(),
         duplicateClipAutomation: vi.fn(),
         duplicateClipNotes: vi.fn(),
@@ -106,6 +107,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: mocks.executeUserAppAction,
+    generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({

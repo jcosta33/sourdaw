@@ -6,19 +6,14 @@ import { playMacro } from '../playback';
 
 const STORAGE_KEY = 'sourdaw:macros';
 
-const { executeAppActionMock, findSingletonBatchActionMock } = vi.hoisted(() => ({
+const { executeAppActionMock } = vi.hoisted(() => ({
     executeAppActionMock: vi
         .fn<typeof import('../../executeAppAction').executeAppAction>()
         .mockResolvedValue(undefined),
-    findSingletonBatchActionMock: vi.fn<typeof import('../../findSingletonBatchAction').findSingletonBatchAction>(),
 }));
 
 vi.mock('../../executeAppAction', () => ({
     executeAppAction: executeAppActionMock,
-}));
-
-vi.mock('../../findSingletonBatchAction', () => ({
-    findSingletonBatchAction: findSingletonBatchActionMock,
 }));
 
 describe('playMacro', () => {
@@ -33,8 +28,6 @@ describe('playMacro', () => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [macro], recording: false, currentRecording: [] });
         executeAppActionMock.mockClear();
-        findSingletonBatchActionMock.mockReset();
-        findSingletonBatchActionMock.mockReturnValue(null);
     });
 
     afterEach(() => {
@@ -59,21 +52,64 @@ describe('playMacro', () => {
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
     });
 
-    it('rejects a singleton macro companion before dispatching either action', async () => {
-        const singletonAction = { type: 'setClipLoopLength' as const, payload: { clipId: 'clip-1', loopLength: 2 } };
-        const unsafeMacro: Macro = {
-            id: 'unsafe-1',
-            name: 'Unsafe pair',
-            actions: [singletonAction, { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } }],
+    it('plays a macro holding a singleton action alongside a batch-capable action without throwing', async () => {
+        // drawClip and moveClips are domain-singleton handlers: playback runs
+        // them through the same sequential per-action dispatch as everything
+        // else instead of refusing the macro outright.
+        const mixedMacro: Macro = {
+            id: 'mixed-1',
+            name: 'Draw then trim',
+            actions: [
+                {
+                    type: 'drawClip',
+                    payload: { trackId: 't1', startBeat: 0, endBeat: 4, name: 'Clip 0', type: 'audio', ripple: false },
+                },
+                { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 6 } },
+            ],
             createdAt: 0,
         };
-        macroStore.set({ macros: [unsafeMacro], recording: false, currentRecording: [] });
-        findSingletonBatchActionMock.mockReturnValue(singletonAction);
+        macroStore.set({ macros: [mixedMacro], recording: false, currentRecording: [] });
 
-        await expect(playMacro('unsafe-1')).rejects.toThrow(
-            'Action must execute as a singleton batch: setClipLoopLength'
-        );
-        expect(executeAppActionMock).not.toHaveBeenCalled();
+        await expect(playMacro('mixed-1')).resolves.toBeUndefined();
+
+        expect(executeAppActionMock).toHaveBeenCalledTimes(2);
+        expect(executeAppActionMock.mock.calls.map(([action]) => action.type)).toEqual(['drawClip', 'trimClipEnd']);
+        // The singleton keeps its individual dispatch; the batch-capable
+        // companion still rides the macro's shared group.
+        const firstOptions = executeAppActionMock.mock.calls[0]![1];
+        const secondOptions = executeAppActionMock.mock.calls[1]![1];
+        expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
+        expect(secondOptions?.groupLabel).toBe('Macro: Draw then trim');
+    });
+
+    it('clears the recorded duplicateClipAt copy id so replay mints a fresh copy, not a no-op', async () => {
+        // The recorded gesture's undo consumed the recorded copy id: replaying
+        // with the id pinned would find the copy still present and silently
+        // no-write. The clone must lose targetClipId; the stored macro keeps it.
+        const duplicateMacro: Macro = {
+            id: 'duplicate-1',
+            name: 'Duplicate then trim',
+            actions: [
+                {
+                    type: 'duplicateClipAt',
+                    payload: { clipId: 'c1', destinationTrackId: 't2', startBeat: 8, targetClipId: 'recorded-copy' },
+                },
+                { type: 'trimClipEnd', payload: { clipId: 'c1', newEndBeat: 6 } },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [duplicateMacro], recording: false, currentRecording: [] });
+
+        await playMacro('duplicate-1');
+
+        expect(executeAppActionMock.mock.calls[0]![0]).toEqual({
+            type: 'duplicateClipAt',
+            payload: { clipId: 'c1', destinationTrackId: 't2', startBeat: 8 },
+        });
+        expect(macroStore.value?.macros[0]?.actions[0]).toEqual({
+            type: 'duplicateClipAt',
+            payload: { clipId: 'c1', destinationTrackId: 't2', startBeat: 8, targetClipId: 'recorded-copy' },
+        });
     });
 
     it('should no-op when macro id is missing', async () => {

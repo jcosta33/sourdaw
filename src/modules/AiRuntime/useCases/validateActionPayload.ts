@@ -195,6 +195,16 @@ function isStemImportAssignment(value: unknown): boolean {
     );
 }
 
+function isClipMoveTarget(value: unknown): boolean {
+    return (
+        isObj(value) &&
+        hasExactKeys(value, ['clipId', 'trackId', 'startBeat']) &&
+        isNonEmptyString(value.clipId) &&
+        isNonEmptyString(value.trackId) &&
+        isNonNegativeNumber(value.startBeat)
+    );
+}
+
 const validators = {
     // Track lifecycle
     importStemSet: (param): param is PayloadOf<'importStemSet'> =>
@@ -277,6 +287,27 @@ const validators = {
         isNonEmptyString(param.trackId) &&
         isNonNegativeNumber(param.startBeat),
     duplicateClip: hasClipId,
+    drawClip: (param): param is PayloadOf<'drawClip'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['trackId', 'startBeat', 'endBeat', 'name', 'type']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isNumber(param.endBeat) &&
+        param.endBeat > param.startBeat &&
+        normalizeSafeProjectName(param.name) !== null &&
+        (param.type === 'audio' || param.type === 'midi'),
+    duplicateClipAt: (param): param is PayloadOf<'duplicateClipAt'> =>
+        isObj(param) &&
+        hasOnlyKeys(param, ['clipId', 'destinationTrackId', 'startBeat']) &&
+        isNonEmptyString(param.clipId) &&
+        isNonEmptyString(param.destinationTrackId) &&
+        isNonNegativeNumber(param.startBeat),
+    moveClips: (param): param is PayloadOf<'moveClips'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['moves']) &&
+        Array.isArray(param.moves) &&
+        param.moves.length > 0 &&
+        param.moves.every(isClipMoveTarget),
 
     // Device lifecycle
     addDevice: (param): param is PayloadOf<'addDevice'> =>
