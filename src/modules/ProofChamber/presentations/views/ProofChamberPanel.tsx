@@ -395,7 +395,24 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     async function selectSpace(space: SpaceType): Promise<void> {
         const nextParams = expandSpacePreset(space);
 
-        updateChamberEngine(deviceId, () => nextParams);
+        // The optimistic preset must not survive a refused load (issue #3860):
+        // project truth never moved, so the panel would keep showing the new
+        // space and its preset while the refusal below says nothing changed.
+        // `ambiguous` is the one outcome that may have landed, so instead of
+        // restoring this snapshot over a landed write it re-hydrates from
+        // project truth below.
+        let previousEngineState: ProofChamberEngineState | null = null;
+        updateChamberEngine(deviceId, (current) => {
+            previousEngineState = current;
+            return nextParams;
+        });
+        const restorePreviousEngineState = (): void => {
+            const engineState = previousEngineState;
+            if (engineState === null) {
+                return;
+            }
+            updateChamberEngine(deviceId, () => engineState);
+        };
 
         const actions: AppAction[] = [
             {
@@ -444,12 +461,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         if (result.status === 'ambiguous') {
             // The write may or may not have persisted — the storage transaction's
             // commit state is unknown — so the toast hedges instead of naming an
-            // outcome the batch never reported. The hedge points at reloading the
-            // project because that is the one truth-derived view: the Space tray
-            // renders the optimistic engine store written before the batch and
-            // never resynced, so it shows the load as active even when nothing
-            // persisted.
+            // outcome the batch never reported. The store is re-hydrated from
+            // project truth, but which truth that is depends on the unknown
+            // commit, so the hedge still points at reloading the project as the
+            // one way to confirm what the engine is actually running.
             logger.warn(`Load "${space}" space batch ${result.status}: ${result.reason}`);
+            hydrateChamberStateFromProject(deviceId);
             notifyUser(
                 `The "${space}" space load may not have persisted — reload the project to confirm before retrying.`,
                 'warning'
@@ -457,6 +474,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             return;
         }
         if (result.status === 'failed') {
+            restorePreviousEngineState();
             // A handler or storage throw, not a project refusal: the refusal
             // message here would name a false cause, so the toast stays
             // cause-neutral and the durable log keeps the reason diagnosable.
@@ -465,6 +483,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             return;
         }
         if (result.status === 'rejected' || result.status === 'conflicted') {
+            restorePreviousEngineState();
             // The batch resolves rather than rejecting when it is turned away,
             // so the click used to leave no trace at all. The toast names the
             // outcome; the durable log keeps the reason diagnosable.

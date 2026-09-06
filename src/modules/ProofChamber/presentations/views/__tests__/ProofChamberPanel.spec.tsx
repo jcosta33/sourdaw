@@ -5,7 +5,9 @@ import { useStore } from '#/infra/store/useStore';
 import { executeAppActionBatch, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
+import { DEFAULT_PARAMS, expandSpacePreset, type ProofChamberEngineState } from '../../../models/ProofChamberState';
+import { hydrateChamberStateFromProject } from '../../../useCases/proofChamber/hydrateChamberStateFromProject';
+import { updateChamberEngine } from '../../../useCases/proofChamber/updateChamberEngine';
 import { ProofChamberPanel } from '../ProofChamberPanel';
 
 // Mock dependencies
@@ -76,6 +78,10 @@ describe('ProofChamberPanel', () => {
         // `mockReturnValue` from one test would otherwise decide what every
         // later test's panel renders.
         vi.mocked(useStore).mockImplementation((_store, defaultValue) => defaultValue);
+        // The engine-write harness below replaces `updateChamberEngine` with a
+        // store simulation; drop it so a later test never writes into an
+        // earlier test's seeded state.
+        vi.mocked(updateChamberEngine).mockReset();
     });
 
     it('should render without crashing', () => {
@@ -121,6 +127,23 @@ describe('ProofChamberPanel', () => {
     }
 
     /**
+     * Stand-in for the engine store behind `updateChamberEngine`: the seed is
+     * the pre-click engine state, and every write applies the updater the way
+     * the real store does, so the state the click leaves behind can be read
+     * back out. A bare `vi.fn()` never invokes the panel's updater, so the
+     * previous state could neither be captured nor observed.
+     */
+    function seedChamberEngine(initialEngineState: ProofChamberEngineState): {
+        current: () => ProofChamberEngineState;
+    } {
+        let engineState = initialEngineState;
+        vi.mocked(updateChamberEngine).mockImplementation((_deviceId, updater) => {
+            engineState = updater({ ...engineState });
+        });
+        return { current: () => engineState };
+    }
+
+    /**
      * The space tiles are the panel's one `executeAppActionBatch` gesture, and
      * the batch resolves rather than rejecting when the project refuses the
      * write, so a call site that drops the result makes the click silently do
@@ -130,7 +153,9 @@ describe('ProofChamberPanel', () => {
      * once/space-name/'warning' probe just as well, so the wording is asserted
      * against those outcomes rather than left to whichever branch answers.
      */
-    it('warns once with the refusal wording when the space-load batch is conflicted', async () => {
+    it('warns once with the refusal wording and restores the engine when the space-load batch is conflicted', async () => {
+        const preClickEngineState = { ...DEFAULT_PARAMS, mix: 0.37 };
+        const engine = seedChamberEngine(preClickEngineState);
         vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
             status: 'conflicted',
             reason: 'Project repair is required before project actions can execute',
@@ -149,6 +174,13 @@ describe('ProofChamberPanel', () => {
         const [conflictedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
         expectRefusalWording(conflictedMessage);
         expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+        // Two engine writes — the optimistic preset, then the pre-click state
+        // back over it. One write would mean the restore never ran; the seeded
+        // state (mix 0.37) differs from the plate preset in seven fields, so
+        // the read-back only matches when the preset did not survive (issue
+        // #3860).
+        expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(2);
+        expect(engine.current()).toEqual(preClickEngineState);
     });
 
     /**
@@ -157,7 +189,9 @@ describe('ProofChamberPanel', () => {
      * exercising only `conflicted` would leave `rejected` an untested promise
      * that the shared branch keeps them worded alike.
      */
-    it('warns once with the same refusal wording when the space-load batch is rejected', async () => {
+    it('warns once with the same refusal wording and restores the engine when the space-load batch is rejected', async () => {
+        const preClickEngineState = { ...DEFAULT_PARAMS, mix: 0.37 };
+        const engine = seedChamberEngine(preClickEngineState);
         vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
             status: 'rejected',
             reason: 'Project repair is required before project actions can execute',
@@ -174,9 +208,14 @@ describe('ProofChamberPanel', () => {
         const [rejectedMessage] = vi.mocked(notifyUser).mock.calls[0] ?? [];
         expectRefusalWording(rejectedMessage);
         expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+        // The same engine restore the conflicted fixture pins: the refusal
+        // branch is shared, so the restore must hold on both of its statuses.
+        expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(2);
+        expect(engine.current()).toEqual(preClickEngineState);
     });
 
-    it('stays silent when the space-load batch commits', async () => {
+    it('stays silent and keeps the preset engine state when the space-load batch commits', async () => {
+        const engine = seedChamberEngine({ ...DEFAULT_PARAMS, mix: 0.37 });
         render(<ProofChamberPanel deviceId="test-device" />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Plate Bright sheet' }));
@@ -187,6 +226,10 @@ describe('ProofChamberPanel', () => {
             expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
         });
         expect(notifyUser).not.toHaveBeenCalled();
+        // The committed load stands: the optimistic preset is what the engine
+        // keeps, and the single write is that preset and nothing else.
+        expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(1);
+        expect(engine.current()).toEqual(expandSpacePreset('plate'));
     });
 
     /**
@@ -222,12 +265,13 @@ describe('ProofChamberPanel', () => {
      * storage transaction's commit state is unknown — so the warning hedges
      * rather than claiming the refusal the batch never issued. The hedge points
      * at a project reload, the one truth-derived view that distinguishes the
-     * outcomes: the Space tray renders the optimistic engine store written
-     * before the batch and never resynced, so it shows the load as active even
-     * when nothing persisted. A silent branch would leave the click's outcome
-     * unknowable; a refusal toast would name a false cause.
+     * outcomes: the tray re-hydrates from project truth on this path, but which
+     * truth that is depends on the unknown commit, so only the reload confirms
+     * what the engine is running. A silent branch would leave the click's
+     * outcome unknowable; a refusal toast would name a false cause.
      */
     it('hedges with one warning pointing at a project reload when the space-load batch is ambiguous', async () => {
+        seedChamberEngine({ ...DEFAULT_PARAMS, mix: 0.37 });
         vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
             status: 'ambiguous',
             reason: 'unknown commit state',
@@ -247,6 +291,11 @@ describe('ProofChamberPanel', () => {
         expect(ambiguousMessage).not.toContain("can't be changed");
         expect(ambiguousMessage).not.toContain('Space tray');
         expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'error');
+        // The commit state is unknown, so the pre-click snapshot must not be
+        // restored over a write that may have landed: the only engine write is
+        // the optimistic one, and the resync goes through the project hydrate.
+        expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(1);
+        expect(hydrateChamberStateFromProject).toHaveBeenCalledWith('test-device');
     });
 
     /**
@@ -255,7 +304,9 @@ describe('ProofChamberPanel', () => {
      * "project can't be changed" refusal text, which would launder the real
      * failure into a false cause.
      */
-    it('errors once with a cause-neutral message when the space-load batch fails', async () => {
+    it('errors once with a cause-neutral message and restores the engine when the space-load batch fails', async () => {
+        const preClickEngineState = { ...DEFAULT_PARAMS, mix: 0.37 };
+        const engine = seedChamberEngine(preClickEngineState);
         vi.mocked(executeAppActionBatch).mockResolvedValueOnce({
             status: 'failed',
             reason: 'handler threw',
@@ -273,6 +324,11 @@ describe('ProofChamberPanel', () => {
         expect(failedMessage).toContain('plate');
         expect(failedMessage).not.toContain("can't be changed");
         expect(notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'warning');
+        // A failed batch is not an applied one: the optimistic preset went out
+        // first and the pre-click state came back over it, exactly as on the
+        // refusal statuses (issue #3860).
+        expect(vi.mocked(updateChamberEngine).mock.calls).toHaveLength(2);
+        expect(engine.current()).toEqual(preClickEngineState);
     });
 
     /**
