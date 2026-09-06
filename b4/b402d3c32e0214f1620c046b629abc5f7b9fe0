@@ -1,0 +1,57 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_87ab0a2f60ccf8::t_5129d54e898f41 40,58,116-123
+  s_9b530f08172a54::t_14907c14295697 124
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_87ab0a2f60ccf8::t_b72af9deeb224b 3705-3712,4219
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_87ab0a2f60ccf8::t_ad874ff4898c59 3,12
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_63fb16ba4bb647 965-988,6231-6241,6277-6291
+  s_87ab0a2f60ccf8::t_8f4065c83adf15 6292-6294
+  s_7f4fd22bea43b5::t_f410787818ded9 6295
+src/modules/AiRuntime/useCases/agentReference/maskQuotedTextContents.ts
+  s_87ab0a2f60ccf8::t_ad874ff4898c59 1-8
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_87ab0a2f60ccf8::t_23b2d167fff418 472-478,480,482-489,500-506,508-513,515-519
+  s_87ab0a2f60ccf8::t_919778fc83d983 289-323,456-471,479,481,490-499,507,514,520-542,620-646,649
+  s_9b530f08172a54::t_ebb09494b46221 647-648
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_87ab0a2f60ccf8::t_de32f8b671d2b7 819-864
+  s_87ab0a2f60ccf8::t_7ef79cc1cc17b9 262-286
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_87ab0a2f60ccf8::t_ad874ff4898c59 7,151,156
+.agents/skills/llm-action-bridge/SKILL.md
+  s_87ab0a2f60ccf8::t_b56f4778fdc56f 80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b4b402d3c32e0214f1620c046b629abc5f7b9fe0",
+  "prompts": {},
+  "sessions": {
+    "s_7f4fd22bea43b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a074fb-b444-7fa2-ba5e-ca5d99e84bc2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
