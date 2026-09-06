@@ -1,0 +1,57 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_74273f01847662 945-964,6169-6206,6219-6239
+  s_87ab0a2f60ccf8::t_d12a5c47ad8dc2 6207-6218,6240
+  s_9b530f08172a54::t_592b684a63fff4 6241
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetScopeAdmissionStrategy.spec.ts
+  s_87ab0a2f60ccf8::t_74273f01847662 101-145
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_87ab0a2f60ccf8::t_349a5ad9000d88 4,322-327
+  s_87ab0a2f60ccf8::t_8ad05df04970b7 328
+.agents/skills/llm-action-bridge/SKILL.md
+  s_87ab0a2f60ccf8::t_bee3c0e64dde8c 78-83
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_87ab0a2f60ccf8::t_349a5ad9000d88 2028-2029
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_87ab0a2f60ccf8::t_349a5ad9000d88 15,128
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/createPostTargetScopeAdmissionStrategyRegistry.ts
+  s_87ab0a2f60ccf8::t_349a5ad9000d88 6
+src/modules/AiRuntime/useCases/agentReference/__tests__/getApplicationProtectedObjects.spec.ts
+  s_87ab0a2f60ccf8::t_74273f01847662 56-80
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_87ab0a2f60ccf8::t_d12a5c47ad8dc2 408,465,475-497
+  s_87ab0a2f60ccf8::t_5ddd2d1d6c00a7 71,82-89,275-288,291-299,402-407,409-462
+  s_87ab0a2f60ccf8::t_52bd9cda0ea111 463-464
+  s_87ab0a2f60ccf8::t_bee3c0e64dde8c 467-474,498-501
+  s_87ab0a2f60ccf8::t_074ae5ca8aee9e 466
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_87ab0a2f60ccf8::t_3935979f8330d9 6,9,25,30-32,34-50,52-75,79-80
+  s_87ab0a2f60ccf8::t_a420a61e1c2fe8 1-5,7-8,10-24,26-29,33,51,76-78,81-85
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_87ab0a2f60ccf8::t_d12a5c47ad8dc2 39,57,99-113
+  s_87ab0a2f60ccf8::t_cb8ca768ef3fe4 70-77,79-80
+  s_87ab0a2f60ccf8::t_a420a61e1c2fe8 1-38,40-56,58-69,78,81-98,114-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f0b4a150d8badb08065a5030b8b0bf989fbdb3b1",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
