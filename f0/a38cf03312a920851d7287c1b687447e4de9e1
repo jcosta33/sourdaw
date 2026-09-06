@@ -1,0 +1,32 @@
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.dirty.integration.spec.ts
+  s_87ab0a2f60ccf8::t_155c0c16a78355 70,74,92-98,102
+  s_87ab0a2f60ccf8::t_f37eb82a621e29 1-36,43-52,61-69,71-73,75-91,99-101,103-110
+  s_87ab0a2f60ccf8::t_52ba10d88843c0 37-42,53-60
+src/modules/Transport/handlers/transport/handleSetTempo.ts
+  s_87ab0a2f60ccf8::t_37f3abb84fccd4 1
+  s_87ab0a2f60ccf8::t_cc7547f9d2b7e2 51-55
+src/modules/WorkspaceShell/presentations/hooks/__tests__/tempoAutosaveAfterSetTempo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_2b404831b71fbe 26-29
+  s_87ab0a2f60ccf8::t_8692b74145e882 1-25,30-96
+  s_87ab0a2f60ccf8::t_5532eb48ef0b9c 97-101
+.agents/skills/state-and-write-paths/SKILL.md
+  s_87ab0a2f60ccf8::t_37f3abb84fccd4 59-62
+src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts
+  s_87ab0a2f60ccf8::t_7b59f4cd1a1073 96-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f0a38cf03312a920851d7287c1b687447e4de9e1",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
