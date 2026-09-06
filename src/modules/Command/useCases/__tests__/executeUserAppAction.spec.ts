@@ -42,6 +42,21 @@ describe('executeUserAppAction', () => {
         );
     });
 
+    it('humanizes the label of an action type missing from ACTION_LABELS', async () => {
+        vi.mocked(executeAppAction).mockRejectedValueOnce(new AppActionConflictError('addSidechainRoute'));
+
+        await executeUserAppAction({
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'source', targetTrackId: 'target' },
+        });
+
+        expect(notifyUser).toHaveBeenCalledWith(
+            "Add sidechain route was refused because the project can't be changed right now.",
+            'warning'
+        );
+        expect(vi.mocked(notifyUser).mock.calls[0]?.[0]).not.toContain('addSidechainRoute');
+    });
+
     it('reports the repair requirement when that is what closed the gate', async () => {
         agentProjectRepairStateStore.set({
             audioGraphValid: false,
