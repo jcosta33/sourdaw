@@ -38,6 +38,7 @@ import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
 
 import { isHostedPluginDevice } from './isHostedPluginDevice';
+import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { nativeInsertIndex } from './nativeChainIndex';
 import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
@@ -150,15 +151,18 @@ function passWritesDevice(trackId: string, deviceId: string): boolean {
 }
 
 /**
- * Whether this batch changes what the automation pass in flight can carry.
+ * Whether this batch changes what the passes in flight can carry.
  *
  * Two shapes of command do, and the rule names exactly those two because
  * re-arming costs a whole lookahead of admitted stamps.
  *
- * An insert, only of a hosted plugin: the engine stamps a hosted plugin's
- * parameters and nothing else's, so the pass was projected without parameters
- * it can now carry, while a built-in insert leaves it describing exactly the
- * same writes.
+ * An insert, only of a hosted plugin or of a built-in with a native body: the
+ * engine stamps a hosted plugin's parameters and a native-bodied built-in's
+ * parameters, and nothing else's — so the automation pass was projected
+ * without parameters it can now carry. And a native body that takes notes
+ * gives the strip its sink the moment it joins the chain, so the note pass was
+ * projected against a strip that had none. An insert of a device with no
+ * native body still leaves both passes describing exactly the same work.
  *
  * A removal, only of a device the pass still targets: the next pump would name
  * a device the graph no longer has, which `graph.rs` refuses whole as `unknown
@@ -169,7 +173,8 @@ function passWritesDevice(trackId: string, deviceId: string): boolean {
 function changesWhatThePassCarries(commands: readonly AudioGraphCommand[]): boolean {
     return commands.some(
         (command) =>
-            (command.kind === 'insert-device' && isHostedPluginDevice(command.device)) ||
+            (command.kind === 'insert-device' &&
+                (isHostedPluginDevice(command.device) || nativeBuiltinBody(command.device.type) !== null)) ||
             (command.kind === 'remove-device' && passWritesDevice(command.trackId, command.deviceId))
     );
 }

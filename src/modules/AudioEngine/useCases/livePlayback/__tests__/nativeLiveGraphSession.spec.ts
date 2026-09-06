@@ -1601,6 +1601,43 @@ describe('startNativeLiveGraphSession', () => {
 
         expect(scheduledMidiTargets()).toEqual([]);
     });
+
+    // The note pass is armed from the batch the engine actually rebuilt
+    // contributing, never from the session's own claimed set — and a shadowed
+    // monitor claims nothing on Web Audio while the engine still builds every
+    // contributing strip. A carried Fermenter strip's notes are therefore owed
+    // to the engine whether or not the monitor is open: shadowing mutes the
+    // output, not the note store.
+    it('still schedules notes to a carried Fermenter strip under a shadowed monitor', async () => {
+        offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'midi-1',
+                    kind: 'midi',
+                    devices: [
+                        { id: 'ferm-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                    ],
+                    clips: [midiClip('clip-1', 'midi-1')],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            monitor: 'shadowed',
+        });
+
+        expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'ferm-1' }]);
+        // The shadowed half of the same rule: nothing is claimed on Web Audio,
+        // because the note store is not what a monitor gates.
+        expect(mocks.carriedClaims.map((claim) => claim.ids)).toEqual([[]]);
+    });
 });
 
 describe('updateNativeLiveGraphSessionTransportMaps', () => {
@@ -2040,6 +2077,35 @@ describe('repositionNativeLiveGraphSession', () => {
         await Promise.all([4, 8, 12].map((positionSeconds) => repositionNativeLiveGraphSession({ positionSeconds })));
 
         expect(reached).toEqual([4, 8, 12]);
+    });
+
+    // The locate drops the sounding notes (`RampedParam::cancel_from` for
+    // automation, the analogous clear on the note store), so a carried
+    // strip's instrument has to be re-addressed from the position the engine
+    // just moved to — not left silent until the next full session start.
+    it('schedules the carried Fermenter strip again after a locate', async () => {
+        offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'midi-1',
+                    kind: 'midi',
+                    devices: [
+                        { id: 'ferm-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+                    ],
+                    clips: [midiClip('clip-1', 'midi-1')],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockClear();
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'ferm-1' }]);
     });
 });
 
