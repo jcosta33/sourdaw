@@ -1,0 +1,29 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_87ab0a2f60ccf8::t_38a8b57f1526b2 215-226,1425-1430
+src/modules/Arrangement/handlers/clip/__tests__/clipHandlers.spec.ts
+  s_4d92dfe1c13d8f::t_9792fac5ef6e38 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5dc9b4ad138292eac672c3f0f12be4fe34518703",
+  "prompts": {},
+  "sessions": {
+    "s_4d92dfe1c13d8f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa9c4dd4cd57f574a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
