@@ -141,6 +141,15 @@ export type NativeGraphWireCommand =
           probabilitySeed: number;
           notes: readonly NativeGraphWireMidiNote[];
       }>
+    | Readonly<{
+          kind: 'send-midi-note';
+          trackId: string;
+          deviceId: string;
+          note: number;
+          velocity: number;
+          channel: number;
+          isNoteOn: boolean;
+      }>
     | Readonly<{ kind: 'clear-midi'; trackId: string; deviceId: string; fromTime: number; toTime: number | null }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
     | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>
@@ -276,6 +285,16 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
                 // by the mirror; the roll mixes it first, so it has no default.
                 probabilitySeed: command.probabilitySeed,
                 notes: command.notes.map(serializeMidiNote),
+            };
+        case 'send-midi-note':
+            return {
+                kind: 'send-midi-note',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                note: command.note,
+                velocity: command.velocity,
+                channel: command.channel,
+                isNoteOn: command.isNoteOn,
             };
         case 'clear-midi':
             return {
