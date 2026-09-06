@@ -1013,11 +1013,10 @@ impl FermenterBody {
     /// Render one run into the instrument's own buffers and sum them out.
     fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len();
-        // The right pointer is taken before the render, not after: it comes
-        // from a shared borrow of the instrument, and asking for it once the
-        // left pointer is in hand would reborrow the instrument between
-        // deriving that pointer and reading through it. Order alone keeps
-        // every borrow ahead of every read.
+        // Either order is sound: each pointer names a separate heap allocation
+        // the instance owns, sized once in `FermenterInstance::new` and never
+        // resized, so a render cannot move the buffer the other pointer names.
+        // Taking the right pointer first is tidiness, not safety.
         let rendered_right = self.instance.get_right_ptr();
         let rendered_left = self.instance.process(frames as u32);
         // SAFETY: both pointers name the instrument's own channel buffers,
@@ -3840,6 +3839,10 @@ impl AudioScheduler {
     /// unchanged across a stopped transport.
     #[inline]
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        // The caller's ask is a request; the pair it handed is the truth. Every
+        // stage below indexes that pair by the count it is given, so the
+        // clamped figure is what all of them are handed — an unclamped ask
+        // would slice past the buffers.
         let frames = num_samples
             .min(left.len())
             .min(right.len())
@@ -3872,65 +3875,22 @@ impl AudioScheduler {
             }
 
             if effect.bypassed {
-                run_dry_delay(effect, left, right, num_samples);
+                run_dry_delay(effect, left, right, frames);
                 effect.pending_midi.clear();
                 continue;
             }
 
-            feed_dry_delay(effect, left, right, num_samples);
+            feed_dry_delay(effect, left, right, frames);
 
-            effect.probability_evaluator.process_midi_with_diagnostics(
-                &mut effect.pending_midi,
+            process_device(
+                effect,
                 &self.transport,
                 self.sample_rate,
-                num_samples,
                 &mut self.midi_rt_diagnostics,
+                left,
+                right,
+                frames,
             );
-
-            // Apply the mutable user MIDI FX chain only after authored probability.
-            for fx in effect.midi_fx.iter_mut() {
-                fx.process_midi_with_diagnostics(
-                    &mut effect.pending_midi,
-                    &self.transport,
-                    self.sample_rate,
-                    num_samples,
-                    &mut self.midi_rt_diagnostics,
-                );
-            }
-
-            match &mut effect.instance {
-                PluginCore::Knead(engine) => {
-                    engine.process_block(left, right);
-                }
-                PluginCore::Fermenter(body) => {
-                    // `frames`, not `num_samples`: the body indexes the pair by
-                    // the count it is handed, so the caller's raw ask — which
-                    // this function has already clamped to the buffers — would
-                    // slice past them.
-                    body.process(
-                        left,
-                        right,
-                        frames,
-                        effect.pending_midi.as_slice(),
-                        &mut self.midi_rt_diagnostics,
-                    );
-                    effect.pending_midi.clear();
-                }
-                PluginCore::Native(plugin) => {
-                    if effect.pending_midi.is_empty() {
-                        plugin.process_audio(left, right, num_samples);
-                    } else {
-                        plugin.process_with_events(
-                            left,
-                            right,
-                            num_samples,
-                            effect.pending_midi.as_slice(),
-                            &self.transport,
-                        );
-                        effect.pending_midi.clear();
-                    }
-                }
-            }
         }
 
         // The master list intentionally contains only master members. Detached
@@ -12747,9 +12707,11 @@ mod timeline_tests {
     ///
     /// `process_block` is public, and its frame count is the caller's ask
     /// while the buffers are the truth — which is why it clamps the two
-    /// together at its head. The body indexes the pair by the count it is
-    /// given, so an ask past the buffers slices past them and panics on the
-    /// callback unless that clamped count is what reaches it.
+    /// together at its head. Every stage the master chain runs indexes the
+    /// pair by the count it is given, so an ask past the buffers slices past
+    /// them and panics on the callback unless that clamped count is what
+    /// reaches all of them. The declared latency below puts the dry line's
+    /// own pass over the pair on that same path, ahead of the body.
     #[test]
     fn a_master_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
         /// Shorter than the ask and not a whole number of runs, so the second
@@ -12763,6 +12725,7 @@ mod timeline_tests {
             PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
             Some(MidiNoteStore::new()),
         ));
+        harness.send(set_latency(7, 64));
         harness.playing();
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
 
