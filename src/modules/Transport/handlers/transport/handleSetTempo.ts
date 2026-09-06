@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
+import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { setTempo } from '../../useCases/setTempo';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
 
@@ -47,7 +48,11 @@ export const handleSetTempo = createHandler<'setTempo'>({
             // caller rather than vanishing into the same silent abort.
             return { status: 'no-write' };
         }
-        return undefined;
+        return {
+            status: 'written',
+            afterCommit: markTempoProjectWrite,
+            afterAmbiguousCommit: markTempoProjectWrite,
+        };
     },
     // Compare against the governing tempo, not `transport.tempo`: with a tempo
     // map the base tempo is inert, so comparing against it would call a real
