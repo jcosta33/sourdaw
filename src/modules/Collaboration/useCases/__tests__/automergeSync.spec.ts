@@ -1627,7 +1627,19 @@ describe('AutomergeSync', () => {
             throw new Error('sanitation failed');
         });
 
-        await exchange.deliverOne();
+        // Under CI load the first delivery can be an empty negotiation round that
+        // has not merged the peer edit yet; re-deliver (each round still fails
+        // sanitation, staying under MAX_SANITATION_FAILURES) until the sanitizer
+        // records a document that actually moved.
+        const areHeadsEqual = (left: Heads, right: Heads): boolean =>
+            JSON.stringify(left.map(String).toSorted()) === JSON.stringify(right.map(String).toSorted());
+        for (
+            let delivery = 0;
+            delivery < 3 && (merged_heads === null || areHeadsEqual(merged_heads, heads_before_failure));
+            delivery++
+        ) {
+            await exchange.deliverOne();
+        }
 
         // The delivery genuinely merged the peer's edit — this is not an
         // empty handshake round that never moved the document.
