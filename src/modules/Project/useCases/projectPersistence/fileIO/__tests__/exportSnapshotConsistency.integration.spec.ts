@@ -134,9 +134,15 @@ function createBrowserFileHandle(writable: FileSystemWritableFileStream): FileSy
     const handle: FileSystemFileHandle = {
         kind: 'file',
         name,
+        createSyncAccessHandle: (): Promise<FileSystemSyncAccessHandle> =>
+            Promise.reject(new Error('Synchronous access is not supported by this test fixture')),
         createWritable: () => Promise.resolve(writable),
         getFile: () => Promise.resolve(new File([], name)),
         isSameEntry: (other) => Promise.resolve(other === handle),
+        queryPermission: (_descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState> =>
+            Promise.resolve<PermissionState>('denied'),
+        requestPermission: (_descriptor?: FileSystemHandlePermissionDescriptor): Promise<PermissionState> =>
+            Promise.resolve<PermissionState>('denied'),
     };
     return handle;
 }
