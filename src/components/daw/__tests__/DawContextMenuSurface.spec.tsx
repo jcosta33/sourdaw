@@ -50,6 +50,38 @@ describe('DawContextMenuSurface', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
+    it('closes the menu when focus leaves the surface', () => {
+        const handle_close = vi.fn();
+
+        render(
+            <DawContextMenuSurface onClose={handle_close} role="menu" x={10} y={20}>
+                <button type="button">Item</button>
+            </DawContextMenuSurface>
+        );
+
+        const menu = screen.getByRole('menu');
+        menu.focus();
+        fireEvent.focusOut(menu, { relatedTarget: document.createElement('button') });
+
+        expect(handle_close).toHaveBeenCalledOnce();
+    });
+
+    it('stays open when focus moves within the surface to one of its items', () => {
+        const handle_close = vi.fn();
+
+        render(
+            <DawContextMenuSurface onClose={handle_close} role="menu" x={10} y={20}>
+                <button type="button">Item</button>
+            </DawContextMenuSurface>
+        );
+
+        const menu = screen.getByRole('menu');
+        menu.focus();
+        fireEvent.focusOut(menu, { relatedTarget: screen.getByRole('button', { name: 'Item' }) });
+
+        expect(handle_close).not.toHaveBeenCalled();
+    });
+
     it('should render children without portal', () => {
         const { container } = render(
             <DawContextMenuSurface x={10} y={20} portal={false}>

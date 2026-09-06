@@ -1,6 +1,7 @@
 import {
     type ComponentPropsWithRef,
     type CSSProperties,
+    type FocusEvent,
     type ReactElement,
     type ReactNode,
     useEffect,
@@ -69,6 +70,15 @@ export const DawContextMenuSurface = ({
         }
     };
 
+    // Focus leaving a focused menu surface closes it — the WAI-ARIA menu
+    // convention, and it keeps keydowns from falling through to the global
+    // shortcut layer ungated once the menu no longer owns the keyboard.
+    const handleSurfaceBlur = (event: FocusEvent<HTMLDivElement>): void => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+            onClose?.();
+        }
+    };
+
     const farEdgeInset = 8;
     const availableAbove = Math.max(0, y - farEdgeInset);
     const availableBelow = Math.max(0, window.innerHeight - y - farEdgeInset);
@@ -96,6 +106,7 @@ export const DawContextMenuSurface = ({
             <div
                 ref={setSurfaceRef}
                 tabIndex={-1}
+                onBlur={handleSurfaceBlur}
                 className={cn('daw-floating-surface fixed z-50 rounded-md py-1', className)}
                 style={{ ...positionStyle, ...style }}
                 {...props}
