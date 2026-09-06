@@ -345,6 +345,33 @@ function withLiteralClipName(context: ProjectContext, id: string, name: string):
     };
 }
 
+function withSelectedMidiClip(context: ProjectContext): ProjectContext {
+    const baseTrack = context.tracks[0]!;
+    const midiClip = {
+        id: 'clip-selected-midi',
+        name: 'MIDI Take',
+        type: 'midi' as const,
+        startBeat: 0,
+        endBeat: 8,
+        noteCount: 4,
+    };
+    const midiTrack = {
+        ...baseTrack,
+        id: 'track-midi',
+        name: 'MIDI',
+        kind: 'midi' as const,
+        clipCount: 1,
+        clips: [midiClip],
+    };
+    return {
+        ...context,
+        tracks: [...context.tracks, midiTrack],
+        selectedTrackId: midiTrack.id,
+        selectedClipId: midiClip.id,
+        selectedClipIds: [midiClip.id],
+    };
+}
+
 function withCurlyApostropheClip(context: ProjectContext): ProjectContext {
     const track = context.tracks[0]!;
     return {
@@ -893,6 +920,95 @@ describe('high-level intent compilation', () => {
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toEqual([{ type: 'renameClip', payload: { clipId: 'clip-bass', name: 'Bridge Solo' } }]);
+    });
+
+    it.each([
+        {
+            label: 'direct selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected midi clip to Ending',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-selected-midi', name: 'Ending' } },
+            ]),
+            expectedClipId: 'clip-selected-midi',
+            expectedType: 'midi',
+        },
+        {
+            label: 'compiler-backed selected MIDI',
+            context: withSelectedMidiClip(selectedClipProject),
+            prompt: 'rename clip selected midi clip to Ending',
+            proposal: proposeTurn([renameClipListItem('MIDI Take', 'Ending')]),
+            expectedClipId: 'clip-selected-midi',
+            expectedType: 'midi',
+        },
+        {
+            label: 'direct selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected audio clip to Ending',
+            proposal: proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Ending' } }]),
+            expectedClipId: 'clip-bass',
+            expectedType: 'audio',
+        },
+        {
+            label: 'compiler-backed selected audio',
+            context: selectedClipProject,
+            prompt: 'rename clip selected audio clip to Ending',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Ending')]),
+            expectedClipId: 'clip-bass',
+            expectedType: 'audio',
+        },
+    ])(
+        'diagnoses a complete media-qualified selection through $label',
+        async ({ context, expectedClipId, expectedType, prompt, proposal }) => {
+            const selectedClip = context.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.id === expectedClipId);
+            expect(context.selectedClipId).toBe(expectedClipId);
+            expect(context.selectedClipIds).toEqual([expectedClipId]);
+            expect(selectedClip?.type).toBe(expectedType);
+            vi.mocked(generateToolPlanningOutcome)
+                .mockResolvedValueOnce(renameSearchTurn)
+                .mockResolvedValueOnce(renameDiscoverTurn)
+                .mockResolvedValueOnce(proposal);
+
+            const result = await parsePromptToActions(prompt, context, undefined, 'revision-selected-media-qualifier');
+
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions).toEqual([
+                { type: 'renameClip', payload: { clipId: expectedClipId, name: 'Ending' } },
+            ]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'direct',
+            proposal: proposeCommandsTurn([{ name: 'renameClip', arguments: { clipId: 'clip-bass', name: 'Ending' } }]),
+        },
+        {
+            label: 'compiler-backed',
+            proposal: proposeTurn([renameClipListItem('Bass Verse', 'Ending')]),
+        },
+    ])('rejects a quoted suffix after a selected source through a $label proposal', async ({ proposal }) => {
+        const prompt = 'rename clip selected clip "Lead" to Ending';
+        expect(selectedClipProject.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Lead')).toBe(
+            true
+        );
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-quoted-source-suffix'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.actions).toEqual([]);
     });
 
     it.each([

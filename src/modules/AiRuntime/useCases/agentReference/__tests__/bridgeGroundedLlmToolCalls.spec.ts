@@ -981,6 +981,31 @@ function withNamedClip(context: ProjectContext, id: string, name: string): Proje
     };
 }
 
+function withSelectedMidiClip(context: ProjectContext): ProjectContext {
+    const midiClip = {
+        id: 'clip-selected-midi',
+        name: 'MIDI Take',
+        type: 'midi' as const,
+        startBeat: 0,
+        endBeat: 8,
+        gain: 1,
+        locked: false,
+        noteCount: 4,
+    };
+    const midiTrack = {
+        ...createTrack({ id: 'track-midi', name: 'MIDI', kind: 'midi' }),
+        clipCount: 1,
+        clips: [midiClip],
+    };
+    return {
+        ...context,
+        tracks: [midiTrack, ...context.tracks],
+        selectedTrackId: midiTrack.id,
+        selectedClipId: midiClip.id,
+        selectedClipIds: [midiClip.id],
+    };
+}
+
 function createLiteralSelectedClipContext(): ProjectContext {
     const context = createNamedClipSourceContext();
     const sourceTrack = context.tracks.find((track) => track.id === 'track-vocals')!;
@@ -6292,6 +6317,49 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 rejections: [],
             });
         }
+    });
+
+    it('diagnoses selected media qualifiers and significant quoted source suffixes', () => {
+        const context = createNamedClipSourceContext();
+        const selectedMidi = withSelectedMidiClip(context);
+
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-selected-midi', name: 'Ending' } }],
+                'rename clip selected midi clip to Ending',
+                selectedMidi
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-selected-midi', name: 'Ending' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Ending' } }],
+                'rename clip selected audio clip to Ending',
+                context
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Ending' } }],
+            rejections: [],
+        });
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Ending' } }],
+                'rename clip selected clip "Lead" to Ending',
+                context
+            ).actions
+        ).toEqual([]);
+        expect(
+            bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Ending' } }],
+                'rename clip "Lead" to Ending',
+                context
+            )
+        ).toEqual({
+            actions: [{ type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Ending' } }],
+            rejections: [],
+        });
     });
 
     it('resolves a whitespace-delimited rename connector after the complete known source', () => {

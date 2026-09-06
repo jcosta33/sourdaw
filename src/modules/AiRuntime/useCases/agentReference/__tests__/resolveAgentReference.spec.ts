@@ -232,6 +232,50 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('diagnoses complete selected-media references without erasing a quoted suffix', () => {
+        const project = createClipProjectState();
+        const vocals = project.tracks[0]!;
+        const lead = {
+            ...vocals.clips[0]!,
+            id: 'clip-lead',
+            name: 'Lead',
+            startBeat: 48,
+            endBeat: 56,
+        };
+        const withLead = {
+            ...project,
+            tracks: [
+                { ...vocals, clipCount: vocals.clipCount + 1, clips: [...vocals.clips, lead] },
+                ...project.tracks.slice(1),
+            ],
+        };
+        const selectedMidi = {
+            ...withLead,
+            selectedClipId: 'clip-midi',
+            selectedClipIds: ['clip-midi'],
+        };
+
+        expect(resolveCompleteClip('selected midi clip', 'clip-midi', selectedMidi)).toEqual({
+            status: 'resolved',
+            id: 'clip-midi',
+            evidence: 'selection',
+        });
+        expect(resolveCompleteClip('selected audio clip', 'clip-intro', withLead)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'selection',
+        });
+        expect(resolveCompleteClip('selected clip "Lead"', 'clip-intro', withLead)).toEqual({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveCompleteClip('"Lead"', lead.id, withLead)).toEqual({
+            status: 'resolved',
+            id: lead.id,
+            evidence: 'exact-name',
+        });
+    });
+
     it('grounds devices from canonical descriptors instead of mutable display names', () => {
         const project = createProjectState();
         const bass = project.tracks.find((track) => track.id === 'track-bass');
