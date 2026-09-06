@@ -2025,8 +2025,8 @@ function getTargetPromptScope(
 }
 
 function getBareClipRenameTargetPrompt(actionScope: ActionPromptScope, targetPrompt: string): string {
-    const maskedScope = actionScope.masked.trim();
-    return /^rename\s+(?:the\s+)?clip\s+to\s+\S[\s\S]*$/iu.test(maskedScope) ? 'selected clip' : targetPrompt;
+    const sourceScope = actionScope.text.trim();
+    return /^rename\s+(?:the\s+)?clip\s+to\s+\S[\s\S]*$/iu.test(sourceScope) ? 'selected clip' : targetPrompt;
 }
 
 function collectPromptClearSolosRestrictionClauses(

@@ -1,6 +1,7 @@
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
+import { getExplicitlyProtectedClips } from '../getExplicitlyProtectedClips';
 import { resolveAgentReference } from '../resolveAgentReference';
 
 import { collectClearSolosRestrictionClauses } from './collectClearSolosRestrictionClauses';
@@ -317,6 +318,13 @@ export const postTargetScopeAdmissionStrategyDefinitions = [
             isExplicitClipDeletionScope({ context, text: actionScope.text, clipId: groundedArguments.clipId })
                 ? null
                 : 'Provider clip deletion is not explicit in the user request',
+    },
+    {
+        name: 'renameClip',
+        transform: ({ context, groundedArguments, prompt }) =>
+            getExplicitlyProtectedClips(prompt, context).some((clip) => clip.id === groundedArguments.clipId)
+                ? 'Provider clip rename target is explicitly protected'
+                : null,
     },
     {
         name: 'clearSolos',

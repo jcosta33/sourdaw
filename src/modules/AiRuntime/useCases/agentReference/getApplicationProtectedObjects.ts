@@ -12,6 +12,7 @@ import { getDeviceParameterPromptScope } from './getDeviceParameterPromptScope';
 import { getDrumPreviewBranchesPromptScope } from './getDrumPreviewBranchesPromptScope';
 import { getDrumRenderComparisonPromptScope } from './getDrumRenderComparisonPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
+import { getExplicitlyProtectedClips } from './getExplicitlyProtectedClips';
 import { getMidiOverlapTransformPromptScope } from './getMidiOverlapTransformPromptScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getSharedVocalFxBusesPromptScope } from './getSharedVocalFxBusesPromptScope';
@@ -124,6 +125,7 @@ export function getApplicationProtectedObjects(input: {
             ? context.tracks.map(({ id, name }) => ({ id, name }))
             : []),
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
+        ...getExplicitlyProtectedClips(prompt, context),
         ...protectedParameters,
         ...planProtections,
         ...drumRoutingProtections,

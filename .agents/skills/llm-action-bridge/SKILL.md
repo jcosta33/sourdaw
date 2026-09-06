@@ -75,6 +75,12 @@ Deterministic execution requires a grammar that consumes the whole request and r
 
 **Why:** once a partial proposal reaches validation, approval, and receipts, the omitted intent cannot be reconstructed and an ambiguity can look like a deliberate edit.
 
+### 11. Keep source authority and protections on original request text
+
+Masked text supports intent discovery and segmentation; it never proves literal source syntax or target authority. Extract preservation clauses quote-aware from the original whole request, enforce them after final target resolution including compiler overrides, and carry protected objects into the application-owned proposal scope.
+
+**Why:** a project-name placeholder can resemble executable grammar, while a qualifier split away from an action still limits what the whole request authorizes.
+
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — use cases and command surfaces actions must hit.
