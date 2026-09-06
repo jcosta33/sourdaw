@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ProjectVersion, type VersionBranch, type VersionControlState } from '../../models/ProjectVersion';
 
 const VC_STORAGE_KEY = 'sourdaw-version-control';
+const OWNER_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
 
 function makeVersion(overrides: Partial<ProjectVersion> = {}): ProjectVersion {
     return {
@@ -11,7 +12,11 @@ function makeVersion(overrides: Partial<ProjectVersion> = {}): ProjectVersion {
         createdAt: '2024-01-01T00:00:00.000Z',
         parentId: null,
         description: 'first',
-        snapshot: { data: JSON.stringify({ tracks: { tracks: [] } }), size: 1234 },
+        snapshot: {
+            ownerProjectId: OWNER_PROJECT_ID,
+            data: JSON.stringify({ tracks: { tracks: [] } }),
+            size: 1234,
+        },
         tags: [],
         ...overrides,
     };
@@ -124,7 +129,7 @@ describe('versionControlStore persistence', () => {
                     parentId: null,
                     description: 'created root',
                     tags: ['root', 'approved'],
-                    snapshot: { data: '{"stale":"payload"}', size: 4096 },
+                    snapshot: { ownerProjectId: OWNER_PROJECT_ID, data: '{"stale":"payload"}', size: 4096 },
                 }),
                 makeVersion({
                     id: 'ver-child',
@@ -133,7 +138,7 @@ describe('versionControlStore persistence', () => {
                     createdAt: '2024-01-02T00:00:00.000Z',
                     description: 'balanced drums',
                     tags: ['mix'],
-                    snapshot: { data: '{"stale":"child"}', size: 8192 },
+                    snapshot: { ownerProjectId: OWNER_PROJECT_ID, data: '{"stale":"child"}', size: 8192 },
                 }),
             ],
             branches: [
@@ -154,7 +159,7 @@ describe('versionControlStore persistence', () => {
             ...storedState,
             versions: storedState.versions.map((version) => ({
                 ...version,
-                snapshot: { data: '', size: 0 },
+                snapshot: { ownerProjectId: OWNER_PROJECT_ID, data: '', size: 0 },
             })),
         });
     });
@@ -169,6 +174,18 @@ describe('versionControlStore persistence', () => {
         {
             label: 'invalid version entry',
             storedValue: { ...makeState(), versions: [{ ...makeVersion(), tags: ['mix', 42] }] },
+        },
+        {
+            label: 'ownerless version entry',
+            storedValue: {
+                ...makeState(),
+                versions: [
+                    {
+                        ...makeVersion(),
+                        snapshot: { data: '{"legacy":true}', size: 15 },
+                    },
+                ],
+            },
         },
         {
             label: 'invalid branch entry',
@@ -243,7 +260,7 @@ describe('versionControlStore persistence', () => {
             ...state,
             versions: state.versions.map((version) => ({
                 ...version,
-                snapshot: { data: '', size: 0 },
+                snapshot: { ownerProjectId: OWNER_PROJECT_ID, data: '', size: 0 },
             })),
         });
     });

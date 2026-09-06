@@ -2,11 +2,11 @@ import { versionControlStore } from '../../stores/versionControlStore';
 
 import { createProjectVersion } from './createProjectVersion';
 
-export function autoSaveVersion(): void {
+export function autoSaveVersion(): boolean {
     const state = versionControlStore.value;
     if (!state || state.autoSaveInterval <= 0) {
-        return;
+        return false;
     }
 
-    createProjectVersion(`Auto-save ${new Date().toLocaleTimeString()}`, 'Automatic checkpoint', ['auto-save']);
+    return createProjectVersion(`Auto-save ${new Date().toLocaleTimeString()}`, 'Automatic checkpoint', ['auto-save']);
 }

@@ -21,7 +21,9 @@ export function restoreVersion(versionId: string): boolean {
         return false;
     }
 
-    restoreSnapshot(version.snapshot);
+    if (!restoreSnapshot(version.snapshot)) {
+        return false;
+    }
 
     versionControlStore.set({
         ...state,
