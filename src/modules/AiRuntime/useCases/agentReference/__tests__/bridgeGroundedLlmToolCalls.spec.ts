@@ -6319,7 +6319,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
-    it('diagnoses selected media qualifiers and significant quoted source suffixes', () => {
+    it('accepts a complete selected MIDI source', () => {
         const context = createNamedClipSourceContext();
         const selectedMidi = withSelectedMidiClip(context);
 
@@ -6333,6 +6333,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             actions: [{ type: 'renameClip', payload: { clipId: 'clip-selected-midi', name: 'Ending' } }],
             rejections: [],
         });
+    });
+
+    it('accepts a complete selected audio source', () => {
+        const context = createNamedClipSourceContext();
+
         expect(
             bridge(
                 [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Ending' } }],
@@ -6343,6 +6348,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Ending' } }],
             rejections: [],
         });
+    });
+
+    it('rejects a significant quoted suffix after a selected source', () => {
+        const context = createNamedClipSourceContext();
+
         expect(
             bridge(
                 [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Ending' } }],
@@ -6350,6 +6360,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 context
             ).actions
         ).toEqual([]);
+    });
+
+    it('accepts a complete quoted clip name', () => {
+        const context = createNamedClipSourceContext();
+
         expect(
             bridge(
                 [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Ending' } }],

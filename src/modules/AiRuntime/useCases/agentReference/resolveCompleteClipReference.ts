@@ -1,5 +1,4 @@
 import { type ProjectContext } from '../../models/ProjectContext';
-import { maskQuotedTextContents } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
@@ -26,8 +25,7 @@ function fullyAccountsForClipReference(referenceText: string, clipId: string, co
         return true;
     }
 
-    const normalizedUnquotedReference = normalizeAgentReferenceText(maskQuotedTextContents(referenceText));
-    if (/^(?:the )?(?:selected|current|this)(?: audio|midi)? clip$/u.test(normalizedUnquotedReference)) {
+    if (/^(?:the )?(?:selected|current|this)(?: (?:audio|midi))? clip$/u.test(normalizedReference)) {
         return getSelectedClipReferenceIds(context).includes(clipId);
     }
 

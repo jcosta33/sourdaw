@@ -232,7 +232,32 @@ describe('resolveAgentReference', () => {
         });
     });
 
-    it('diagnoses complete selected-media references without erasing a quoted suffix', () => {
+    it.each([
+        {
+            reference: 'selected midi clip',
+            assertedId: 'clip-midi',
+            selectedId: 'clip-midi',
+            expected: { status: 'resolved', id: 'clip-midi', evidence: 'selection' },
+        },
+        {
+            reference: 'selected audio clip',
+            assertedId: 'clip-intro',
+            selectedId: 'clip-intro',
+            expected: { status: 'resolved', id: 'clip-intro', evidence: 'selection' },
+        },
+        {
+            reference: 'selected clip "Lead"',
+            assertedId: 'clip-intro',
+            selectedId: 'clip-intro',
+            expected: { status: 'rejected', reason: 'ungrounded-target' },
+        },
+        {
+            reference: '"Lead"',
+            assertedId: 'clip-lead',
+            selectedId: 'clip-intro',
+            expected: { status: 'resolved', id: 'clip-lead', evidence: 'exact-name' },
+        },
+    ])('accounts for the complete reference $reference', ({ reference, assertedId, selectedId, expected }) => {
         const project = createClipProjectState();
         const vocals = project.tracks[0]!;
         const lead = {
@@ -249,31 +274,13 @@ describe('resolveAgentReference', () => {
                 ...project.tracks.slice(1),
             ],
         };
-        const selectedMidi = {
+        const context = {
             ...withLead,
-            selectedClipId: 'clip-midi',
-            selectedClipIds: ['clip-midi'],
+            selectedClipId: selectedId,
+            selectedClipIds: [selectedId],
         };
 
-        expect(resolveCompleteClip('selected midi clip', 'clip-midi', selectedMidi)).toEqual({
-            status: 'resolved',
-            id: 'clip-midi',
-            evidence: 'selection',
-        });
-        expect(resolveCompleteClip('selected audio clip', 'clip-intro', withLead)).toEqual({
-            status: 'resolved',
-            id: 'clip-intro',
-            evidence: 'selection',
-        });
-        expect(resolveCompleteClip('selected clip "Lead"', 'clip-intro', withLead)).toEqual({
-            status: 'rejected',
-            reason: 'ungrounded-target',
-        });
-        expect(resolveCompleteClip('"Lead"', lead.id, withLead)).toEqual({
-            status: 'resolved',
-            id: lead.id,
-            evidence: 'exact-name',
-        });
+        expect(resolveCompleteClip(reference, assertedId, context)).toEqual(expected);
     });
 
     it('grounds devices from canonical descriptors instead of mutable display names', () => {

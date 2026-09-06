@@ -958,7 +958,7 @@ describe('high-level intent compilation', () => {
             expectedType: 'audio',
         },
     ])(
-        'diagnoses a complete media-qualified selection through $label',
+        'accepts a complete media-qualified selection through $label',
         async ({ context, expectedClipId, expectedType, prompt, proposal }) => {
             const selectedClip = context.tracks
                 .flatMap((track) => track.clips)
