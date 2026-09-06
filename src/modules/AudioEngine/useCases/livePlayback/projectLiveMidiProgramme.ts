@@ -86,6 +86,11 @@ export type LiveMidiProgrammeInput = Readonly<{
     attachedInstanceIds: ReadonlySet<string>;
     /** The strips whose device chain the audio programme replaces with a bake. */
     bakedStripIds: ReadonlySet<string>;
+    /**
+     * The strips the topology batch built with `contributesAudio: true` — the
+     * only strips the engine sounds, so the only strips a note may address.
+     */
+    carriedStripIds: ReadonlySet<string>;
     notesByClipId: MidiStoreState['notesByClipId'];
     /** `midiStore`'s own seed — what every carrier rolls a chance note with. */
     probabilitySeed: number;
@@ -282,7 +287,7 @@ function conformPitch(input: {
 }
 
 export function projectLiveMidiProgramme(input: LiveMidiProgrammeInput): LiveMidiProgramme {
-    const { stripTracks, attachedInstanceIds, bakedStripIds, sampleRate, span } = input;
+    const { stripTracks, attachedInstanceIds, bakedStripIds, carriedStripIds, sampleRate, span } = input;
     const frameSeconds = 1 / sampleRate;
 
     function projectBeatToSeconds(beat: number): number {
@@ -306,6 +311,15 @@ export function projectLiveMidiProgramme(input: LiveMidiProgrammeInput): LiveMid
         }
         if (sink.outcome === 'excluded') {
             exclusions.push({ stripId: track.id, reason: sink.reason });
+            continue;
+        }
+        // A later carrier rule (`stripCarriers.ts`) can leave this strip on Web
+        // Audio even though it holds a voiced sink — an uncarried second device
+        // in its chain, or live input monitoring — and Web Audio already sounds
+        // a built-in there, so sending it notes too would sound the same
+        // generator twice. A hosted instrument on such a strip is already named
+        // by `notifySilentHostedPlugins`.
+        if (!carriedStripIds.has(track.id)) {
             continue;
         }
         nativeVoicedStripIds.add(track.id);

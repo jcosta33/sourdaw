@@ -73,6 +73,14 @@ export type ArmNativeLiveMidiWriterInput = Readonly<{
      * graph has no body for it.
      */
     attachedInstanceIds: ReadonlySet<string>;
+    /**
+     * The strips the topology batch built with `contributesAudio: true`.
+     *
+     * From the batch the standing topology installed, never the session's
+     * claimed set: a shadowed monitor or a roll that never took claims
+     * nothing, while the engine still builds every contributing strip.
+     */
+    carriedStripIds: ReadonlySet<string>;
     /** The frame grid this session's notes are placed on. */
     sampleRate: number;
     /** Where this pass begins, on the engine clock. */
@@ -145,6 +153,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
     const programme = readLiveMidiProgramme({
         stripTracks: input.stripTracks,
         attachedInstanceIds: input.attachedInstanceIds,
+        carriedStripIds: input.carriedStripIds,
         sampleRate: input.sampleRate,
         span,
     });
@@ -158,6 +167,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
     nativeLiveMidiWriter.pendingRearm = false;
     const pass: LiveMidiWriterPass = {
         stripTracks: input.stripTracks,
+        carriedStripIds: input.carriedStripIds,
         sampleRate: input.sampleRate,
         probabilitySeed: programme.probabilitySeed,
         entrySeconds: input.positionSeconds,

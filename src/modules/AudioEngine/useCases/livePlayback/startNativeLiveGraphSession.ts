@@ -602,6 +602,8 @@ async function rollSessionTransport(input: {
     stripTracks: readonly Track[];
     /** The attach state the topology this session installed was built from. */
     attachedInstanceIds: ReadonlySet<string>;
+    /** The strips the batch that installed this topology built contributing. */
+    carriedStripIds: ReadonlySet<string>;
     transportMaps: EngineTransportMaps;
     positionSeconds: number;
     sampleRate: number;
@@ -648,6 +650,9 @@ async function rollSessionTransport(input: {
         // an instrument this session left web-voiced must not also be sent
         // notes, and one it gated Web Audio out of must be.
         attachedInstanceIds: input.attachedInstanceIds,
+        // Same reasoning, same batch: the strips this topology actually built
+        // contributing, not the session's own claimed set.
+        carriedStripIds: input.carriedStripIds,
         sampleRate: input.sampleRate,
         positionSeconds: input.positionSeconds,
     });
@@ -790,7 +795,12 @@ async function installRolledSession(input: {
     nativeLiveGraphSession.lastDeferredChainNotice = null;
     const shadowed = monitor === 'shadowed';
     nativeLiveGraphSession.monitorShadowed = shadowed;
-    nativeLiveGraphSession.audibleCarrier = carriedStripIds(rebound.commands).size > 0 && !shadowed;
+    // The batch the engine actually holds, not the session's own claimed set:
+    // a shadowed monitor claims nothing while the engine still builds every
+    // contributing strip, and the note writer has to agree with the engine
+    // rather than with what Web Audio was told to give up.
+    const reboundStripIds = carriedStripIds(rebound.commands);
+    nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
     nativeLiveGraphSession.rolling = false;
     disarmNativeLiveAutomationWriter();
     disarmNativeLiveMidiWriter();
@@ -798,6 +808,7 @@ async function installRolledSession(input: {
         backend,
         stripTracks: topology.stripTracks,
         attachedInstanceIds: installed.attachedInstanceIds,
+        carriedStripIds: reboundStripIds,
         transportMaps: session.transportMaps,
         positionSeconds: session.positionSeconds,
         sampleRate: session.sampleRate,

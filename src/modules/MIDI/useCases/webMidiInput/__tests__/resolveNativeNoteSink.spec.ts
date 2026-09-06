@@ -37,6 +37,17 @@ describe('resolveNativeNoteSink', () => {
         expect(result).toBeNull();
     });
 
+    it('returns null for a built-in instrument on a strip the session does not carry', () => {
+        const track = make_track([{ id: 'ferm-1', type: 'fermenter' }]);
+
+        const result = resolveNativeNoteSink(
+            track,
+            deps(() => false)
+        );
+
+        expect(result).toBeNull();
+    });
+
     it('skips a hosted device the session does not carry and takes the next carried one', () => {
         const track = make_track([
             { id: 'plug-1', type: 'plugin', externalInstanceId: 'a' },

@@ -143,6 +143,7 @@ function projectProgramme(
     return projectLiveMidiProgramme({
         attachedInstanceIds: new Set(['i1']),
         bakedStripIds: new Set(),
+        carriedStripIds: new Set(overrides.stripTracks.map((track) => track.id)),
         notesByClipId: {},
         probabilitySeed: PROBABILITY_SEED,
         defaultTempo: TEMPO,
@@ -410,5 +411,40 @@ describe('projectLiveMidiProgramme', () => {
 
         const events = programme.targets[0]?.events ?? [];
         expect(events.map((event) => event.time)).toEqual([seconds(1), seconds(5)]);
+    });
+
+    // A later carrier rule can leave a strip with a voiced built-in on Web
+    // Audio all the same, and Web Audio already sounds that generator — so a
+    // strip the batch did not build contributing gets no notes at all, however
+    // voiced its sink would otherwise be.
+    it('sends nothing to a voiced Fermenter strip the batch did not build contributing', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({ id: 'midi-1', devices: [createDevice({ id: 'd1', type: 'fermenter' })], clips: [clip] }),
+            ],
+            attachedInstanceIds: new Set(),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+            carriedStripIds: new Set(),
+        });
+
+        expect(programme.targets).toEqual([]);
+        expect(programme.nativeVoicedStripIds).toEqual(new Set());
+        expect(programme.exclusions).toEqual([]);
+    });
+
+    // Same gate for a hosted instrument: the attach state alone says the engine
+    // holds a body for it, not that this batch built the strip contributing.
+    it('sends nothing to a voiced hosted-instrument strip the batch did not build contributing', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [voicedTrack([clip])],
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+            carriedStripIds: new Set(),
+        });
+
+        expect(programme.targets).toEqual([]);
+        expect(programme.nativeVoicedStripIds).toEqual(new Set());
+        expect(programme.exclusions).toEqual([]);
     });
 });

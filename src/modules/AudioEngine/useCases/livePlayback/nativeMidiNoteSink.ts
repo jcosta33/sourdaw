@@ -12,11 +12,16 @@
  * sound. A built-in is a sink by its type alone, since the engine builds it
  * with the strip rather than attaching it later.
  *
- * One law, two readers. `projectLiveMidiProgramme` reads the device so it can
- * address the notes; `projectLiveGraphProgramme` reads only whether the outcome
- * is `voiced`, and a second copy of the rule there is how the two start
- * disagreeing — a strip left out of `webVoicedStripIds` that the MIDI producer
- * never targets is a track nothing plays at all.
+ * One law, two readers, on the sink alone. `projectLiveMidiProgramme` reads the
+ * device so it can address the notes; `projectLiveGraphProgramme` reads only
+ * whether the outcome is `voiced`, and a second copy of the sink rule there is
+ * how the two start disagreeing about which strip has one at all. Carriage is
+ * a third gate the note producer applies after this one, and it is not the
+ * whole truth by itself: a later carrier rule (`stripCarriers.ts`) can leave a
+ * strip with a voiced sink on Web Audio all the same — an uncarried second
+ * device in its chain, say, or live input monitoring — and Web Audio already
+ * sounds a built-in there, so addressing it too would sound the same generator
+ * twice.
  *
  * ── The instrument is the first such device ───────────────────────────────
  *

@@ -3,7 +3,10 @@ import type { Device, Track } from '#/modules/Arrangement/stores';
 export type NativeNoteSinkDependencies = Readonly<{
     /** Whether the engine holds a body for this device this session — proof it has something to sound. */
     isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) => boolean;
-    /** Whether that body takes notes: true for a hosted device or a built-in instrument. */
+    /**
+     * Whether that body takes notes: true for a built-in whose body takes
+     * notes; a hosted device is admitted by its instance identity instead.
+     */
     soundsNativeNotes: (deviceType: string) => boolean;
 }>;
 
