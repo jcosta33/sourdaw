@@ -1,0 +1,72 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_0573466e116027 3,6,115,123-124,145,171-172
+src/modules/Arrangement/useCases/__tests__/importAudioFile.integration.spec.ts
+  s_87ab0a2f60ccf8::t_5c4d42d198c8a0 133-178,295-299,301-303,306
+src/modules/Arrangement/handlers/track/__tests__/discardCreatedTrack.spec.ts
+  s_87ab0a2f60ccf8::t_5c4d42d198c8a0 86-89,92
+src/modules/Arrangement/handlers/__tests__/isGeneratedMidiStateCurrent.spec.ts
+  s_87ab0a2f60ccf8::t_5c4d42d198c8a0 117-124
+  s_9b530f08172a54::t_1a6bc1a423be7f 116
+src/app/__tests__/main.spec.tsx
+  s_87ab0a2f60ccf8::t_e02acf1e4516fd 144
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  s_87ab0a2f60ccf8::t_713cdcbf7bee73 11
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  s_87ab0a2f60ccf8::t_43b750f86cca30 28
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  s_87ab0a2f60ccf8::t_9707ca9e020fb8 13
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  s_87ab0a2f60ccf8::t_01a8e2d6e4416e 13
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  s_87ab0a2f60ccf8::t_460dc007fe7bf9 13
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_ff150cafe4bf80 104
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_87ab0a2f60ccf8::t_141f6b197569cb 95
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_87ab0a2f60ccf8::t_641bc960dcea7e 146
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_a3dd0ee762e9a5 119
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_87ab0a2f60ccf8::t_ef7fbab2387227 133
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_106a468758d92c 124
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_3ced5a42d0f317 167
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_6bff18da520df3 120
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_87ab0a2f60ccf8::t_cfdfff84bfbe79 122
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_87ab0a2f60ccf8::t_360ccc30b7d6dc 70
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_87ab0a2f60ccf8::t_fc2073f0945c8a 198
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_87ab0a2f60ccf8::t_aec4a2a6add55d 79
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  s_87ab0a2f60ccf8::t_4c7bd2a8ae329b 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7a76a048a86270b53f500bb1fc7c375c91dd7a9c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
