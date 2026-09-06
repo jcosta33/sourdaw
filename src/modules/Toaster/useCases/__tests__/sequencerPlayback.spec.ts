@@ -16,6 +16,7 @@ import { stopSequencer } from '../stopSequencer';
 import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     getAudioTime: vi.fn(() => 0),
     applyNoteExpression: vi.fn(),
     audioEngine: {},

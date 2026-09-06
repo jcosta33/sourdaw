@@ -20,6 +20,7 @@ const setPadParam = vi.fn();
 const scheduleHit = vi.fn();
 const allNotesOff = vi.fn();
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    soundsNativeNotes: vi.fn(() => false),
     getAudioTime: vi.fn(() => 0),
     getAudioSampleRate: vi.fn(() => 48_000),
     getToasterDeviceControls: vi.fn(() => ({

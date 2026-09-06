@@ -35,6 +35,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: () => null,
     isDeviceCarriedByNativeSession: () => false,
     sendNativeLiveMidiNote: async () => true,
+    soundsNativeNotes: (type: string) => type === 'fermenter',
 }));
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
@@ -63,6 +64,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
         handleWebMidiNoteOff: async () => {},
         isDeviceCarriedByNativeSession: () => false,
         sendNativeLiveMidiNote: async () => true,
+        soundsNativeNotes: (type: string) => type === 'fermenter',
         ...overrides,
     };
 }
@@ -631,6 +633,46 @@ describe('handleWebMidiNoteOn', () => {
             });
             expect(schedule_note).not.toHaveBeenCalled();
             expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.nativeDeviceId).toBe('plug-1');
+        });
+
+        it('sends a note-on to a carried built-in instrument instead of voicing it on Web Audio', async () => {
+            const send_native_live_midi_note = vi.fn(async () => true);
+            const fermenter_note_on = vi.fn();
+            const fn = handleWebMidiNoteOn._factory(
+                make_dependencies({
+                    getTrackStoreState: () => ({
+                        tracks: [{ id: 'track-1', devices: [{ id: 'ferm-1', type: 'fermenter' }] }],
+                        selectedTrackId: 'track-1',
+                    }),
+                    isDeviceCarriedByNativeSession: (trackId: string, deviceId: string) =>
+                        trackId === 'track-1' && deviceId === 'ferm-1',
+                    sendNativeLiveMidiNote: send_native_live_midi_note,
+                })
+            );
+            ensure_track_strip.mockReturnValue({
+                gainNode: {},
+                deviceNodes: [
+                    {
+                        type: 'fermenter',
+                        deviceId: 'ferm-1',
+                        fermenterControls: { ready: true, noteOn: fermenter_note_on, noteOff: vi.fn() },
+                    },
+                ],
+            });
+
+            await fn(0, 60, 100);
+
+            expect(send_native_live_midi_note).toHaveBeenCalledTimes(1);
+            expect(send_native_live_midi_note).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                deviceId: 'ferm-1',
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                isNoteOn: true,
+            });
+            expect(fermenter_note_on).not.toHaveBeenCalled();
+            expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.nativeDeviceId).toBe('ferm-1');
         });
 
         it('voices a hosted instrument on Web Audio while no native session carries it', async () => {

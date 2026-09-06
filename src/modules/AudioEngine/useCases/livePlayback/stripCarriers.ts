@@ -18,10 +18,11 @@
  * Web Audio the engine also plays is heard twice.
  *
  * "Everything that reaches the speakers" covers what a strip *sounds*, not only
- * what it processes. A hosted plugin is the one device on a chain that has a
- * native body and only a native body — Web Audio builds nothing for it, and the
- * engine splices an instrument plugin into the chain as a generator (#3826) —
- * so a strip holding an attached plugin can sound with no clip under the
+ * what it processes. A native instrument — a hosted plugin the engine reports
+ * attached, or a built-in whose body sounds notes — is the one kind of device
+ * on a chain that has a native body and only a native body: Web Audio builds
+ * nothing for either, and the engine splices an instrument into the chain as a
+ * generator (#3826) — so a strip holding one can sound with no clip under the
  * playhead at all. That is why rule 1 asks about the chain as well as the
  * programme; {@link firstFailure} states the order the two are weighed in.
  *
@@ -42,6 +43,7 @@ import { admittedSendBusIds } from './admittedSendBusIds';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { nativeBuiltinBody } from './nativeBuiltinBodies';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
+import { soundsNativeNotes } from './soundsNativeNotes';
 
 /**
  * The engine that sounds one track strip. A `web` carrier states why, because a
@@ -124,20 +126,21 @@ function chainOf(track: Track, context: CarrierContext): AudioGraphDeviceChain {
 }
 
 /**
- * Whether this strip's own chain names an externally hosted plugin instance
- * the engine reports attached.
+ * Whether this strip's own chain holds a device something gives a clip-less
+ * strip to sound: an externally hosted plugin instance the engine reports
+ * attached, or a built-in whose body sounds notes.
  *
- * Only an attached plugin counts, never a built-in body. A built-in effect
- * processes an input and generates nothing on its own, so it gives a clip-less
- * strip nothing to sound; a built-in instrument would, but the engine addresses
- * a strip's notes to a plugin instance, so no note reaches one yet and a strip
- * whose only body is a built-in instrument is still a strip nothing sounds
- * (#3893).
+ * Live MIDI input reaches each of them natively — the engine holds a note
+ * store for a hosted plugin unconditionally and for a built-in exactly when
+ * its type sounds notes (`soundsNativeNotes`) — so both count. A built-in
+ * effect still counts for nothing: it processes an input and generates
+ * nothing on its own, so it gives a clip-less strip nothing to sound.
  */
-function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
+function hostsNativeInstrument(track: Track, context: CarrierContext): boolean {
     return chainOf(track, context).some(
         (device) =>
-            device.externalInstanceId !== undefined && context.attachedInstanceIds.has(device.externalInstanceId)
+            (device.externalInstanceId !== undefined && context.attachedInstanceIds.has(device.externalInstanceId)) ||
+            soundsNativeNotes(device.type)
     );
 }
 
@@ -145,19 +148,19 @@ function hostsAttachedPlugin(track: Track, context: CarrierContext): boolean {
  * The rule-1 reason a strip with no native playback stays on Web Audio, or
  * `null` when rule 1 passes it. Read in the order the code checks it:
  *
- * - No attached plugin on the chain: `'nothing scheduled'` — nothing native is
- *   scheduled and no attached plugin gives the strip a native body, so Web
- *   Audio keeps whatever the strip plays and no plugin notice is owed.
+ * - No native instrument on the chain: `'nothing scheduled'` — nothing native
+ *   is scheduled and no native instrument gives the strip a native body, so
+ *   Web Audio keeps whatever the strip plays and no plugin notice is owed.
  * - The strip is in `programme.webVoicedStripIds`: `'its clips play on Web
  *   Audio'` — Web Audio is already voicing this strip's clips, so carrying it
  *   natively would silence them with no notice given. A MIDI strip whose
  *   instrument the engine holds is absent from that set, because the engine
  *   voices its notes through `schedule-midi` (#3892).
- * - Otherwise `null`: the attached plugin is uncontested, so it carries the
+ * - Otherwise `null`: the native instrument is uncontested, so it carries the
  *   strip natively with no clip under the playhead at all.
  */
 function webReasonWithoutNativePlayback(track: Track, context: CarrierContext): string | null {
-    if (!hostsAttachedPlugin(track, context)) {
+    if (!hostsNativeInstrument(track, context)) {
         return 'nothing scheduled';
     }
     return context.programme.webVoicedStripIds.has(track.id) ? 'its clips play on Web Audio' : null;
@@ -232,7 +235,7 @@ function obstructionReason(obstruction: PathObstruction, lead: string): string {
  * programme scheduled native playback for passes rule 1 outright. Only a
  * strip with no native playback falls to
  * {@link webReasonWithoutNativePlayback}, whose guards state the one
- * exception — an attached plugin gives a strip something to sound only when
+ * exception — a native instrument gives a strip something to sound only when
  * nothing on the Web Audio path still voices that strip, which the programme's
  * own `webVoicedStripIds` is the record of.
  */

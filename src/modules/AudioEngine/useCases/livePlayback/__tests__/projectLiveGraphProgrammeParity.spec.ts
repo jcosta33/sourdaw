@@ -65,9 +65,10 @@
  * fade endpoints fall outside their own sound — a clip slipped left of its
  * material, and a clip longer than its material.
  *
- * No devices: no built-in has a native body yet (#3124), and both producers
- * degrade a bodiless chain the same way, so a device here would measure
- * nothing. No automation lanes, and `automationMode: 'off'` — writes during
+ * No devices: the fixtures hold no chains at all, because this suite's parity
+ * question is about clip placement, not chain admission — a device here would
+ * measure the same rule `stripCarriers.spec.ts` and `nativeMidiNoteSink`'s own
+ * suite already pin. No automation lanes, and `automationMode: 'off'` — writes during
  * playback are a later slice, and the export's recorder would otherwise emit
  * `write-parameter` commands the live producer has no counterpart for. Master
  * gain is unity, because the export applies it after the render, outside the

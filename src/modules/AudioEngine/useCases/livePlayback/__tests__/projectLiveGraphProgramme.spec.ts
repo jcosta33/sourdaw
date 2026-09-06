@@ -441,6 +441,41 @@ describe('projectLiveGraphProgramme — the strips Web Audio is left to voice', 
         expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
     });
 
+    // A built-in instrument holds a note store by type alone, so the engine
+    // voices this strip's notes with no attach state in play at all.
+    it('leaves a MIDI strip whose built-in instrument the engine voices out of the set', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [{ id: 'd1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+                    clips: [audioClip({ id: 'notes', trackId: 'audio-1', type: 'midi' })],
+                }),
+            ],
+        });
+
+        expect(programme.playbacksByStripId.get('audio-1')).toBeUndefined();
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
+    });
+
+    // The bound on that: a built-in *effect* is never a sink, so the strip's
+    // notes stay Web Audio's exactly as they would with no body at all.
+    it('keeps a MIDI strip whose only built-in is an effect in the set', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [{ id: 'd1', name: 'Knead', type: 'knead', bypassed: false, parameterValues: {} }],
+                    clips: [audioClip({ id: 'notes', trackId: 'audio-1', type: 'midi' })],
+                }),
+            ],
+        });
+
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
+    });
+
     // The same strip with nothing attached. A device naming an instance the
     // engine does not hold names nothing that could sound, so Web Audio is
     // still the only carrier its notes have.

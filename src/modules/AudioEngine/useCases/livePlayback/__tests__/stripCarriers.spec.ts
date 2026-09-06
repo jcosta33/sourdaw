@@ -353,12 +353,12 @@ describe('projectStripCarriers', () => {
         expect(carrier).toEqual({ carrier: 'native' });
     });
 
-    // The bound on that: a built-in body is not something for a clip-less strip
-    // to sound. The engine addresses a strip's notes to a plugin instance, so a
-    // MIDI strip whose only body is a built-in instrument has no note reaching
-    // it, and carrying it natively would silence the part Web Audio still
-    // voices (#3893).
-    it('leaves a clip-less MIDI track whose only body is a built-in instrument on Web Audio', () => {
+    // The engine addresses notes to any device holding a note store, and a
+    // built-in instrument holds one by type alone — it needs no attach state
+    // the way a hosted plugin does. A clip-less MIDI strip whose only body is
+    // a built-in instrument is therefore the engine's to voice, exactly like
+    // one carrying an attached instrument plugin.
+    it('carries a clip-less MIDI track whose only body is a built-in instrument natively', () => {
         const carriers = projectStripCarriers({
             stripTracks: [createTrack({ id: 'audio-1', kind: 'midi', devices: [nativeInstrumentDevice('d')] })],
             attachedInstanceIds: new Set(),
@@ -366,7 +366,36 @@ describe('projectStripCarriers', () => {
             inputMonitoredTrackIds: new Set(),
         });
 
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
+    });
+
+    // The bound on that: a built-in *effect* is still not something for a
+    // clip-less strip to sound. It processes an input and generates nothing on
+    // its own, so a strip whose only body is one is as unscheduled as a strip
+    // with no body at all.
+    it('leaves a clip-less track whose only body is a built-in effect on Web Audio', () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [createTrack({ id: 'audio-1', kind: 'midi', devices: [nativeDevice('d')] })],
+            attachedInstanceIds: new Set(),
+            programme: programmeFor([]),
+            inputMonitoredTrackIds: new Set(),
+        });
+
         expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'nothing scheduled' });
+    });
+
+    // The MIDI producer's own qualification, not the device kind, decides
+    // which strips stay web-voiced — same bound as the hosted-plugin case
+    // above, now for a built-in instrument.
+    it("leaves a MIDI track whose built-in instrument's clips Web Audio voices on Web Audio", () => {
+        const carriers = projectStripCarriers({
+            stripTracks: [createTrack({ id: 'audio-1', kind: 'midi', devices: [nativeInstrumentDevice('d')] })],
+            attachedInstanceIds: new Set(),
+            programme: programmeFor([], [], ['audio-1']),
+            inputMonitoredTrackIds: new Set(),
+        });
+
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'its clips play on Web Audio' });
     });
 
     // Rule 3, the plugin half: a plugin has a native body exactly when the

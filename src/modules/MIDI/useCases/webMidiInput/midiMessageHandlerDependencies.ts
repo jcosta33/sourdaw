@@ -4,6 +4,7 @@ import {
     getFactoryDrumKitByIndex,
     isDeviceCarriedByNativeSession,
     sendNativeLiveMidiNote,
+    soundsNativeNotes,
 } from '#/modules/AudioEngine/useCases';
 import {
     completeMidiLearn,
@@ -62,6 +63,7 @@ export const midiMessageHandlerDependencies = {
     scheduleKitNote,
     scheduleNote,
     sendNativeLiveMidiNote,
+    soundsNativeNotes,
     stepRecordNoteOff,
     stepRecordNoteOn,
 };
