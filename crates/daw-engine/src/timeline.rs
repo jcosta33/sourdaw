@@ -139,50 +139,107 @@ pub enum AutomationTarget {
     MasterGain,
 }
 
-/// Automation parameters the Fermenter answers to, addressed by ordinal.
-///
-/// The instrument owns that table, not the engine: naming its entries here
-/// would be a second copy of a vocabulary `daw-dsp` is free to extend, and the
-/// two would drift. So the wire carries the ordinal and this is the only fact
-/// about the table the engine holds.
-///
-/// It is a ceiling rather than a hint, because
-/// `FermenterInstance::set_param_by_id` answers an ordinal past the table by
-/// doing nothing at all: without a refusal control-side, a mistyped address
-/// would be a parameter write that silently vanished. Pinned against the
-/// instrument itself by `the_last_fermenter_ordinal_moves_a_render_and_the_
-/// first_past_it_does_not`.
-pub const FERMENTER_AUTOMATION_PARAM_COUNT: u32 = 104;
+/// Bytes a [`FermenterParamName`] holds. The longest name the instrument
+/// spells today is well inside it, and the buffer is sized for that vocabulary
+/// to grow without the wire changing shape.
+pub const FERMENTER_PARAM_NAME_CAPACITY: usize = 32;
 
-/// A parameter of a built-in device, addressed without a name for the reason
-/// given on [`AutomationTarget`].
+/// One of the Fermenter's own parameter names, carried inline.
+///
+/// Named rather than numbered because a Fermenter's patch is a flat record of
+/// the instrument's own snake_case names, and its discrete selectors — the
+/// engine, the waveform, the modes, layer management — are not in the
+/// automation table an ordinal addresses at all. Fixed-size and inline for the
+/// reason given on [`AutomationTarget`]: a command carrying a `String` would
+/// have its allocation freed on the audio thread. Matching a name on that
+/// thread is comparisons alone, so the write itself is real-time safe.
+///
+/// Shape is the only refusal available here. The instrument owns its
+/// vocabulary and answers a name it does not know by doing nothing at all —
+/// exactly as the web worklet does — and naming its parameters here would be a
+/// second copy of a table `daw-dsp` is free to extend. So [`Self::parse`]
+/// refuses what was never one of those names, and a well-shaped name the
+/// instrument happens not to have is the instrument's own silent no-op, on
+/// both runtimes alike.
+///
+/// The buffer is carried by value everywhere the address travels, and that is
+/// what it costs: [`DeviceParam`] is 34 bytes rather than the 8 an ordinal
+/// took, a [`DeviceParamEvent`] 56 rather than 24, and the
+/// [`DeviceParamQueue`] each scheduler effect holds inline 3.5 KiB rather than
+/// 1.5 KiB — roughly 12 MiB more preallocated across a scheduler's whole
+/// effect table. That is a one-off cost at construction, paid for a wire that
+/// never has to enumerate a vocabulary `daw-dsp` owns.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct FermenterParamName {
+    bytes: [u8; FERMENTER_PARAM_NAME_CAPACITY],
+    len: u8,
+}
+
+impl FermenterParamName {
+    /// The name `name` spells, or `None` when it is not shaped like one of the
+    /// instrument's names.
+    ///
+    /// `const` so a caller can pin a name at compile time; the loop is written
+    /// out rather than iterated because a `const fn` has no iterators.
+    pub const fn parse(name: &str) -> Option<Self> {
+        let source = name.as_bytes();
+        if source.is_empty() || source.len() > FERMENTER_PARAM_NAME_CAPACITY {
+            return None;
+        }
+        let mut bytes = [0u8; FERMENTER_PARAM_NAME_CAPACITY];
+        let mut index = 0;
+        while index < source.len() {
+            if !is_fermenter_name_byte(source[index]) {
+                return None;
+            }
+            bytes[index] = source[index];
+            index += 1;
+        }
+        Some(Self {
+            bytes,
+            len: source.len() as u8,
+        })
+    }
+
+    /// The name, spelled as the instrument's own `set_param` takes it.
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.bytes[..self.len as usize])
+            .expect("parse admits ASCII bytes alone, and ASCII is always valid UTF-8")
+    }
+}
+
+/// Whether `byte` belongs to the snake_case ASCII vocabulary the instrument
+/// spells its parameters in.
+const fn is_fermenter_name_byte(byte: u8) -> bool {
+    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+}
+
+/// A parameter of a built-in device, addressed without an owned name for the
+/// reason given on [`AutomationTarget`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeviceParam {
     ShiftSemitones,
     RetuneSpeedMs,
     FormantPreserve,
-    /// One entry of the Fermenter's own automation table, by ordinal.
-    ///
-    /// Numeric rather than named for the reason on
-    /// [`FERMENTER_AUTOMATION_PARAM_COUNT`]. The mapper refuses an ordinal at
-    /// or past that count control-side, so no address the instrument would
-    /// drop ever crosses the ring.
-    FermenterOrdinal(u32),
+    /// One of the Fermenter's own parameters, under the name the instrument
+    /// spells it with, for the reason on [`FermenterParamName`].
+    FermenterNamed(FermenterParamName),
 }
 
 impl DeviceParam {
     /// The `SetParam` name this parameter corresponds to, so the named and the
     /// addressed paths cannot drift into meaning different things.
     ///
-    /// `None` for an address that has no name to drift from: a Fermenter
-    /// ordinal arrives as a number, and [`Self::from_name`] is the inverse of
-    /// the named vocabulary alone.
+    /// `None` for an address with no name of the engine's to drift from: a
+    /// Fermenter parameter arrives in the instrument's own vocabulary, which
+    /// the engine does not name, and [`Self::from_name`] is the inverse of the
+    /// engine's own named vocabulary alone.
     pub const fn name(self) -> Option<&'static str> {
         match self {
             Self::ShiftSemitones => Some("shift_semitones"),
             Self::RetuneSpeedMs => Some("retune_speed_ms"),
             Self::FormantPreserve => Some("formant_preserve"),
-            Self::FermenterOrdinal(_) => None,
+            Self::FermenterNamed(_) => None,
         }
     }
 
@@ -3326,10 +3383,97 @@ mod tests {
             assert_eq!(DeviceParam::from_name(name), Some(param));
         }
         assert_eq!(DeviceParam::from_name("not_a_real_param"), None);
+        let cutoff =
+            FermenterParamName::parse("cutoff").expect("'cutoff' is shaped like a parameter name");
         assert_eq!(
-            DeviceParam::FermenterOrdinal(7).name(),
+            DeviceParam::FermenterNamed(cutoff).name(),
             None,
-            "an ordinal address has no name for the wire to drift from"
+            "a Fermenter parameter carries the instrument's own name, not one of the engine's"
+        );
+    }
+
+    /// A parameter name survives the wire unchanged: what the mapper parsed is
+    /// what the instrument's own `set_param` is handed.
+    ///
+    /// The name is copied into a fixed buffer, so a length or an offset off by
+    /// one reads back as a different word — or as one with the buffer's zero
+    /// padding still on it.
+    #[test]
+    fn a_fermenter_parameter_name_reads_back_as_the_name_it_was_parsed_from() {
+        let parsed = FermenterParamName::parse("cutoff").expect("'cutoff' is a well-shaped name");
+
+        assert_eq!(parsed.as_str(), "cutoff");
+    }
+
+    /// The inline name keeps a parameter address inside the size
+    /// [`FermenterParamName`] documents.
+    ///
+    /// The address sits in every slot of the [`DeviceParamQueue`] each effect
+    /// holds inline, so a byte here is multiplied by the queue's capacity and
+    /// again by the whole effect table. Widening it is a megabyte-scale
+    /// decision, and the documented figure has to move with it.
+    #[test]
+    fn fermenter_param_name_keeps_device_param_within_its_stated_size() {
+        let size = std::mem::size_of::<DeviceParam>();
+
+        assert_eq!(
+            size, 34,
+            "a device parameter address is {size} bytes, not the 34 documented on \
+             `FermenterParamName` — move that figure, the `DeviceParamEvent` and per-queue \
+             byte counts, and the per-scheduler total with it"
+        );
+    }
+
+    /// A name exactly as long as the buffer parses.
+    ///
+    /// The capacity is the wire's whole allowance for the instrument's
+    /// vocabulary to grow, so a bound written as `>=` rather than `>` would
+    /// refuse the longest name that still fits.
+    #[test]
+    fn a_fermenter_parameter_name_filling_the_buffer_parses() {
+        let longest = "a".repeat(FERMENTER_PARAM_NAME_CAPACITY);
+
+        let parsed = FermenterParamName::parse(&longest)
+            .expect("a name the length of the buffer fits the buffer");
+
+        assert_eq!(parsed.as_str(), longest);
+    }
+
+    /// A key that was never one of the instrument's names is refused by shape.
+    ///
+    /// The instrument answers a name it does not know by doing nothing, so a
+    /// misspelled key would otherwise be a parameter write the producer
+    /// believes landed and the mix never heard. Shape is the whole of the
+    /// refusal the engine can make without keeping a copy of the instrument's
+    /// table, and each row here is a different way to miss the vocabulary.
+    #[test]
+    fn a_key_shaped_unlike_a_fermenter_parameter_name_is_refused() {
+        let too_long = "a".repeat(FERMENTER_PARAM_NAME_CAPACITY + 1);
+
+        assert_eq!(
+            FermenterParamName::parse(""),
+            None,
+            "the empty key names no parameter"
+        );
+        assert_eq!(
+            FermenterParamName::parse("Cutoff"),
+            None,
+            "the instrument spells its names in lowercase"
+        );
+        assert_eq!(
+            FermenterParamName::parse("cut off"),
+            None,
+            "a space is not a character of the instrument's vocabulary"
+        );
+        assert_eq!(
+            FermenterParamName::parse("cut-off"),
+            None,
+            "the instrument separates words with underscores, not hyphens"
+        );
+        assert_eq!(
+            FermenterParamName::parse(&too_long),
+            None,
+            "a name past the buffer would be truncated into a different word"
         );
     }
 

@@ -17,9 +17,9 @@ use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, Transpo
 use crate::timeline::{
     timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
     ClipPlayback, CompensationDevices, DeviceChain, DeviceParam, DeviceParamEvent,
-    DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget, SendTap, TimelineBus,
-    TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot, TimelineTrack, MAX_BUS_DEVICES,
-    MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
+    DeviceParamQueue, DeviceParamTarget, FermenterParamName, RetiredTimelineObject, RouteTarget,
+    SendTap, TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot,
+    TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::fermenter::FermenterInstance;
@@ -898,10 +898,20 @@ impl PluginCore {
     pub fn builtin(plugin_type: BuiltinEffectType, sample_rate: f32) -> Self {
         match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
-            BuiltinEffectType::Fermenter => {
-                Self::Fermenter(Box::new(FermenterBody::new(sample_rate)))
-            }
+            BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
         }
+    }
+
+    /// Build a Fermenter carrying `patch`, on the control thread.
+    ///
+    /// A patch is dozens of the instrument's own parameters per strip and the
+    /// command ring is finite, so the initial patch is written into the
+    /// instance before it crosses the ring rather than sent as that many
+    /// commands behind the registration.
+    pub fn fermenter_with_patch(sample_rate: f32, patch: &[(FermenterParamName, f32)]) -> Self {
+        let mut body = FermenterBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::Fermenter(Box::new(body))
     }
 }
 
@@ -1080,10 +1090,59 @@ impl FermenterBody {
         }
     }
 
-    /// Write one of the instrument's automation parameters.
-    fn set_param(&mut self, ordinal: u32, value: f32) {
-        self.instance.set_param_by_id(ordinal, value);
+    /// Write one of the instrument's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`FermenterParamName`]) and the instrument resolves it by comparison,
+    /// allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
     }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// [`LAYER_ROUTING_KEY`] is applied before the writes it routes: a patch
+    /// is an unordered record, so applied anywhere else it could send an
+    /// arbitrary later write to a layer the author never aimed it at. It
+    /// goes first rather than last because the selection outlives the patch
+    /// — the instance keeps it, and every later live `SetParam` is routed by
+    /// it, so a patch written to one layer while the instance selects
+    /// another would put patch-time and live-time writes on different
+    /// layers with the producer believing both landed together.
+    fn load_patch(&mut self, patch: &[(FermenterParamName, f32)]) {
+        for (name, value) in layer_routing_first(patch) {
+            self.set_param(name.as_str(), value);
+        }
+    }
+}
+
+/// The patch key that aims every per-layer parameter write: `active_layer`
+/// selects the layer, so a patch applies it before the writes it routes and
+/// every later live write then addresses the same layer.
+///
+/// The instrument bounds the selection by its own layer capacity, not by
+/// `num_layers` — the two never read each other — so a selection past the
+/// count is a patch defect that the render leaves inaudible, not something
+/// this ordering can repair.
+///
+/// Named here because [`FermenterBody::load_patch`] is what has to order a
+/// patch around it; the instrument's own `set_param` is the only other place
+/// the word means anything.
+const LAYER_ROUTING_KEY: &str = "active_layer";
+
+/// `patch` with its layer-routing entry (if any) brought to the front;
+/// everything else follows in patch order.
+fn layer_routing_first(
+    patch: &[(FermenterParamName, f32)],
+) -> impl Iterator<Item = (FermenterParamName, f32)> + '_ {
+    let routing = patch
+        .iter()
+        .filter(|(name, _)| name.as_str() == LAYER_ROUTING_KEY);
+    let rest = patch
+        .iter()
+        .filter(|(name, _)| name.as_str() != LAYER_ROUTING_KEY);
+    routing.chain(rest).copied()
 }
 
 /// The Fermenter member channel a note's `i16` channel names, or `None` for a
@@ -1100,9 +1159,9 @@ fn member_channel(channel: i16) -> Option<u8> {
 /// answering whether the address and the body agreed.
 ///
 /// The name-to-address resolution happened control-side — [`DeviceParam`] for
-/// knead's closed vocabulary, an ordinal bound for the Fermenter's own table —
-/// so `false` here is not an unknown parameter but a producer that lost track
-/// of what an effect id holds. The caller counts it rather than the engine
+/// knead's closed vocabulary, a shape check for the Fermenter's own — so
+/// `false` here is not an unknown parameter but a producer that lost track of
+/// what an effect id holds. The caller counts it rather than the engine
 /// guessing which body the value was meant for.
 fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32) -> bool {
     match (instance, param) {
@@ -1118,8 +1177,8 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             engine.set_formant_preserve(value != 0.0);
             true
         }
-        (PluginCore::Fermenter(body), DeviceParam::FermenterOrdinal(ordinal)) => {
-            body.set_param(ordinal, value);
+        (PluginCore::Fermenter(body), DeviceParam::FermenterNamed(name)) => {
+            body.set_param(name.as_str(), value);
             true
         }
         _ => false,
@@ -6590,10 +6649,7 @@ mod tests {
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
-    use crate::timeline::{
-        AutomationEvent, DeviceKind, RampShape, FERMENTER_AUTOMATION_PARAM_COUNT,
-        MAX_TIMELINE_TRACKS,
-    };
+    use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
     use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
     use std::any::Any;
@@ -12437,13 +12493,36 @@ mod timeline_tests {
     /// The track holds no clip, so every non-zero sample the master carries
     /// came out of the instrument.
     fn track_with_fermenter(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        track_with_patched_fermenter(harness, track_id, effect_id, &[]);
+    }
+
+    /// The same strip, with `patch` written into the instrument before its
+    /// body crosses the command ring — the shape the mapper builds a fermenter
+    /// device in.
+    fn track_with_patched_fermenter(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(FermenterParamName, f32)],
+    ) {
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
         harness.send(GraphCommand::AddDetachedEffect(
             effect_id,
-            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
+            PluginCore::fermenter_with_patch(FERMENTER_RATE, patch),
             Some(MidiNoteStore::new()),
         ));
         harness.send(insert_track_device(track_id, generator(effect_id), 0));
+    }
+
+    /// One of the instrument's own parameter names, as the mapper resolves it.
+    fn fermenter_name(name: &str) -> FermenterParamName {
+        FermenterParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    }
+
+    /// The address a `SetParam` carries for one of the instrument's own
+    /// parameters.
+    fn fermenter_param(name: &str) -> DeviceParam {
+        DeviceParam::FermenterNamed(fermenter_name(name))
     }
 
     /// Render `callbacks` blocks of `frames` and return the master pair
@@ -12517,17 +12596,13 @@ mod timeline_tests {
         /// has run out well inside the tail window. At the shipped envelope
         /// both windows sit on the attack ramp, where a release that arrived
         /// and one that never did read the same.
-        const FAST_ENVELOPE: [(u32, f32); 2] = [(54, 0.001), (57, 0.005)];
+        const FAST_ENVELOPE: [(&str, f32); 2] = [("amp_attack", 0.001), ("amp_release", 0.005)];
 
         let mut harness = Harness::new(32);
         track_with_fermenter(&mut harness, 1, 7);
         harness.playing();
-        for (ordinal, value) in FAST_ENVELOPE {
-            harness.send(GraphCommand::SetParam(
-                7,
-                DeviceParam::FermenterOrdinal(ordinal),
-                value,
-            ));
+        for (name, value) in FAST_ENVELOPE {
+            harness.send(GraphCommand::SetParam(7, fermenter_param(name), value));
         }
         harness.send(schedule_phrase(
             7,
@@ -12573,18 +12648,14 @@ mod timeline_tests {
         /// A one-millisecond attack and a five-millisecond release, so a voice
         /// that was released is gone well inside the tail window and one that
         /// was not is still at full level there.
-        const FAST_ENVELOPE: [(u32, f32); 2] = [(54, 0.001), (57, 0.005)];
+        const FAST_ENVELOPE: [(&str, f32); 2] = [("amp_attack", 0.001), ("amp_release", 0.005)];
 
         fn render_releasing(channels: &[i16]) -> Vec<f32> {
             let mut harness = Harness::new(32);
             track_with_fermenter(&mut harness, 1, 7);
             harness.playing();
-            for (ordinal, value) in FAST_ENVELOPE {
-                harness.send(GraphCommand::SetParam(
-                    7,
-                    DeviceParam::FermenterOrdinal(ordinal),
-                    value,
-                ));
+            for (name, value) in FAST_ENVELOPE {
+                harness.send(GraphCommand::SetParam(7, fermenter_param(name), value));
             }
             let mut notes = vec![
                 channel_note(0, NOTE, 0, true),
@@ -12764,8 +12835,8 @@ mod timeline_tests {
     /// the seam: the divergence below would then be a re-triggered note rather
     /// than the smoother, and the spec would pass with the contract broken.
     ///
-    /// Ordinal 1 is the filter cutoff, set far from its default so the
-    /// smoother is still travelling across the whole render. Frames ahead of
+    /// The filter cutoff is set far from its default so the smoother is still
+    /// travelling across the whole render. Frames ahead of
     /// the seam sit under the same step in both renders; only frames past it
     /// may differ.
     #[test]
@@ -12773,7 +12844,7 @@ mod timeline_tests {
         const CALLBACK: usize = 512;
         const SEAM: usize = 300;
         const NOTE_ON: u32 = 40;
-        const CUTOFF_ORDINAL: u32 = 1;
+        const CUTOFF: &str = "cutoff";
         const CUTOFF_HZ: f32 = 400.0;
         /// The measured ceiling on the per-frame difference ahead of the seam.
         /// Every frame before it renders under the same block-parameter step
@@ -12785,7 +12856,7 @@ mod timeline_tests {
 
         let mut body = FermenterBody::new(FERMENTER_RATE);
         let mut diagnostics = ActiveMidiRtDiagnostics::new();
-        body.set_param(CUTOFF_ORDINAL, CUTOFF_HZ);
+        body.set_param(CUTOFF, CUTOFF_HZ);
         let mut event = note_on(60);
         event.frame_offset = NOTE_ON;
 
@@ -12803,7 +12874,7 @@ mod timeline_tests {
         );
 
         let mut instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
-        instance.set_param_by_id(CUTOFF_ORDINAL, CUTOFF_HZ);
+        instance.set_param(CUTOFF, CUTOFF_HZ);
         let mut worklet_left = Vec::with_capacity(CALLBACK);
         for block in 0..CALLBACK / FERMENTER_BLOCK_FRAMES {
             if block == 0 {
@@ -12863,36 +12934,39 @@ mod timeline_tests {
         );
     }
 
-    /// A `SetParam` carrying a Fermenter ordinal reaches the instrument, and
-    /// one carrying a Knead name aimed at a Fermenter is counted unrouted
-    /// rather than guessed at.
-    ///
-    /// Ordinal 1 is the filter cutoff, so a write that reached nothing renders
-    /// the same samples as the untouched instance.
-    #[test]
-    fn a_fermenter_ordinal_write_changes_the_render_and_a_knead_name_counts_unrouted() {
+    /// A sounding Fermenter, optionally written to first, and the master it
+    /// renders beside the diagnostics that count the write.
+    fn render_fermenter_write(
+        param: Option<(DeviceParam, f32)>,
+    ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
         const BLOCK: usize = 128;
         const NOTE_ON: u64 = 0;
-        const CUTOFF: DeviceParam = DeviceParam::FermenterOrdinal(1);
 
-        fn render_with(
-            param: Option<(DeviceParam, f32)>,
-        ) -> (Vec<f32>, ActiveMidiRtDiagnosticsSnapshot) {
-            let mut harness = Harness::new(32);
-            track_with_fermenter(&mut harness, 1, 7);
-            harness.playing();
-            if let Some((param, value)) = param {
-                harness.send(GraphCommand::SetParam(7, param, value));
-            }
-            harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true)]));
-            let (left, _right) = render_master(&mut harness, BLOCK, 4);
-            let diagnostics = midi_diagnostics(&harness);
-            (left, diagnostics)
+        let mut harness = Harness::new(32);
+        track_with_fermenter(&mut harness, 1, 7);
+        harness.playing();
+        if let Some((param, value)) = param {
+            harness.send(GraphCommand::SetParam(7, param, value));
         }
+        harness.send(schedule_phrase(7, &[(NOTE_ON, 60, true)]));
+        let (left, _right) = render_master(&mut harness, BLOCK, 4);
+        let diagnostics = midi_diagnostics(&harness);
+        (left, diagnostics)
+    }
 
-        let (untouched, untouched_diagnostics) = render_with(None);
-        let (with_cutoff, cutoff_diagnostics) = render_with(Some((CUTOFF, 0.2)));
-        let (_, knead_name_diagnostics) = render_with(Some((DeviceParam::ShiftSemitones, 3.0)));
+    /// A `SetParam` carrying one of the Fermenter's own parameter names
+    /// reaches the instrument, and one carrying a Knead name aimed at a
+    /// Fermenter is counted unrouted rather than guessed at.
+    ///
+    /// `cutoff` is the filter cutoff, so a write that reached nothing renders
+    /// the same samples as the untouched instance.
+    #[test]
+    fn a_fermenter_named_write_changes_the_render_and_a_knead_name_counts_unrouted() {
+        let (untouched, untouched_diagnostics) = render_fermenter_write(None);
+        let (with_cutoff, cutoff_diagnostics) =
+            render_fermenter_write(Some((fermenter_param("cutoff"), 0.2)));
+        let (_, knead_name_diagnostics) =
+            render_fermenter_write(Some((DeviceParam::ShiftSemitones, 3.0)));
 
         assert!(
             untouched.iter().any(|sample| *sample != 0.0),
@@ -12900,7 +12974,7 @@ mod timeline_tests {
         );
         assert_ne!(
             with_cutoff, untouched,
-            "the ordinal write never reached the instrument"
+            "the named write never reached the instrument"
         );
         assert_eq!(
             (
@@ -12916,60 +12990,178 @@ mod timeline_tests {
         );
     }
 
-    /// The last automation ordinal the Fermenter publishes is routed, and the
-    /// first one past the end is not.
+    /// A well-shaped name the instrument has no parameter for changes nothing
+    /// and is still routed.
     ///
-    /// `FERMENTER_AUTOMATION_PARAM_COUNT` is the length of the instrument's own
-    /// ordinal table, so the two writes here sit either side of its last entry.
-    /// A count that drifted one either way is exactly what this reads: too
-    /// small and the first write goes nowhere, too large and the second one
-    /// lands on a parameter this test says the instrument does not have.
+    /// The engine keeps no copy of the instrument's table, so this is the
+    /// instrument's own silent no-op — the same answer the web worklet gives
+    /// the same key. Counting it unrouted would claim the address reached the
+    /// wrong body, which is a different fault with a different repair.
     #[test]
-    fn the_last_fermenter_ordinal_is_routed_and_the_one_past_it_is_not() {
-        const BLOCK: usize = 128;
-        /// The granular engine, its density and its grain size — the state the
-        /// last ordinal, a grain pan spread, has any effect in at all.
-        const GRANULAR: [(u32, f32); 3] = [(16, 4.0), (12, 60.0), (13, 200.0)];
-        const LAST: u32 = FERMENTER_AUTOMATION_PARAM_COUNT - 1;
-
-        fn render_with_ordinal(ordinal: u32, value: f32) -> Vec<f32> {
-            let mut harness = Harness::new(32);
-            track_with_fermenter(&mut harness, 1, 7);
-            harness.playing();
-            for (granular_ordinal, granular_value) in GRANULAR {
-                harness.send(GraphCommand::SetParam(
-                    7,
-                    DeviceParam::FermenterOrdinal(granular_ordinal),
-                    granular_value,
-                ));
-            }
-            harness.send(GraphCommand::SetParam(
-                7,
-                DeviceParam::FermenterOrdinal(ordinal),
-                value,
-            ));
-            harness.send(schedule_phrase(7, &[(0, 60, true)]));
-            render_master(&mut harness, BLOCK, 8).0
-        }
-
-        let last_low = render_with_ordinal(LAST, 0.0);
-        let last_high = render_with_ordinal(LAST, 1.0);
-        let past_low = render_with_ordinal(FERMENTER_AUTOMATION_PARAM_COUNT, 0.0);
-        let past_high = render_with_ordinal(FERMENTER_AUTOMATION_PARAM_COUNT, 1.0);
+    fn a_fermenter_write_naming_no_parameter_of_the_instrument_is_a_silent_no_op() {
+        let (untouched, untouched_diagnostics) = render_fermenter_write(None);
+        let (unknown, unknown_diagnostics) =
+            render_fermenter_write(Some((fermenter_param("no_such_param"), 0.2)));
 
         assert!(
-            last_low.iter().any(|sample| *sample != 0.0),
-            "the render is silent, so neither assertion below means anything"
-        );
-        assert_ne!(
-            last_low, last_high,
-            "ordinal {LAST} reached nothing: the published ordinal count is past the \
-             instrument's last parameter"
+            untouched.iter().any(|sample| *sample != 0.0),
+            "the untouched render is silent, so an agreement with it proves nothing"
         );
         assert_eq!(
-            past_low, past_high,
-            "ordinal {FERMENTER_AUTOMATION_PARAM_COUNT} reached a parameter: the published \
-             ordinal count is short of the instrument's last parameter"
+            unknown, untouched,
+            "a name the instrument has no parameter for moved the render"
+        );
+        assert_eq!(
+            unknown_diagnostics.unmapped_set_param_calls,
+            untouched_diagnostics.unmapped_set_param_calls,
+            "a write the body accepted was counted as aimed at the wrong body"
+        );
+    }
+
+    /// A cutoff far from the instrument's own default, so a write that landed
+    /// on the wrong layer is a different signal rather than a rounding of the
+    /// same one.
+    const PATCHED_CUTOFF: f32 = 200.0;
+
+    /// The layer count the patches below widen the instrument to, and the
+    /// layer they then select — which is the first one *past* that count.
+    ///
+    /// The selection has to sit outside the rendered set for a spec to
+    /// observe which layer a write reached at all: the instrument builds
+    /// every layer identically, so while two layers both render, writing the
+    /// cutoff to one or to the other sums to the very same signal and no
+    /// ordering could be told apart. Selected outside it, the write is
+    /// inaudible when it is routed and audible when it lands on layer 0
+    /// instead — and the count itself stays observable, because widening to
+    /// two layers is what tells these renders from the unpatched one.
+    const RENDERED_LAYERS: f32 = 2.0;
+    const SELECTED_LAYER: f32 = 2.0;
+
+    /// Render a Fermenter built with `patch`, sounding one note from the top
+    /// of the render.
+    fn render_fermenter_patch(patch: &[(FermenterParamName, f32)]) -> Vec<f32> {
+        render_fermenter_patch_then_write(patch, None)
+    }
+
+    /// The same render, with `write` sent to the instance through the ordinary
+    /// `SetParam` path after the patch and before anything is rendered.
+    fn render_fermenter_patch_then_write(
+        patch: &[(FermenterParamName, f32)],
+        write: Option<(DeviceParam, f32)>,
+    ) -> Vec<f32> {
+        let mut harness = Harness::new(32);
+        track_with_patched_fermenter(&mut harness, 1, 7, patch);
+        harness.playing();
+        if let Some((param, value)) = write {
+            harness.send(GraphCommand::SetParam(7, param, value));
+        }
+        harness.send(schedule_phrase(7, &[(0, 60, true)]));
+        render_master(&mut harness, FERMENTER_PATCH_BLOCK, 4).0
+    }
+
+    const FERMENTER_PATCH_BLOCK: usize = 128;
+
+    /// The same render over an instance the spec wrote itself, one
+    /// `set_param` at a time in the order given — the instrument's own path,
+    /// and so an oracle independent of how a patch is ordered.
+    fn render_fermenter_writes(writes: &[(&str, f32)]) -> Vec<f32> {
+        let mut core = PluginCore::fermenter_with_patch(FERMENTER_RATE, &[]);
+        if let PluginCore::Fermenter(body) = &mut core {
+            for (name, value) in writes {
+                body.set_param(name, *value);
+            }
+        }
+
+        let mut harness = Harness::new(32);
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            core,
+            Some(MidiNoteStore::new()),
+        ));
+        harness.send(insert_track_device(1, generator(7), 0));
+        harness.playing();
+        harness.send(schedule_phrase(7, &[(0, 60, true)]));
+        render_master(&mut harness, FERMENTER_PATCH_BLOCK, 4).0
+    }
+
+    /// A patch routes its own writes to the layer it selects, whatever order
+    /// its entries arrive in.
+    ///
+    /// A patch is an unordered record control-side, so the mapper cannot
+    /// choose where the layer-management keys sit in it — here they sit after
+    /// the write they route. The oracle is the instrument's own `set_param`,
+    /// called in routing-first order; the old order is rendered beside it, so
+    /// a spec that agreed with both would be observing nothing.
+    #[test]
+    fn a_fermenter_patch_routes_its_writes_to_the_layer_it_selects() {
+        let cutoff = fermenter_name("cutoff");
+        let active_layer = fermenter_name("active_layer");
+        let num_layers = fermenter_name("num_layers");
+
+        let patched = render_fermenter_patch(&[
+            (cutoff, PATCHED_CUTOFF),
+            (active_layer, SELECTED_LAYER),
+            (num_layers, RENDERED_LAYERS),
+        ]);
+        let routing_first = render_fermenter_writes(&[
+            ("num_layers", RENDERED_LAYERS),
+            ("active_layer", SELECTED_LAYER),
+            ("cutoff", PATCHED_CUTOFF),
+        ]);
+        let writes_first = render_fermenter_writes(&[
+            ("cutoff", PATCHED_CUTOFF),
+            ("num_layers", RENDERED_LAYERS),
+            ("active_layer", SELECTED_LAYER),
+        ]);
+
+        assert!(
+            routing_first.iter().any(|sample| *sample != 0.0),
+            "the reference render is silent, so an agreement with it proves nothing"
+        );
+        assert_ne!(
+            routing_first, writes_first,
+            "the two orders render the same signal, so this spec cannot tell them apart"
+        );
+        assert_eq!(
+            patched, routing_first,
+            "the patch wrote the cutoff to a different layer from the one it selects"
+        );
+    }
+
+    /// A live `SetParam` after a patch lands on the layer the patch selected.
+    ///
+    /// The instance keeps that selection, and every later write is routed by
+    /// it. A patch that selected its layer after writing would therefore
+    /// leave its own writes on one layer and every live write on another,
+    /// with the producer believing both landed together.
+    #[test]
+    fn a_live_write_after_a_patch_lands_on_the_layer_the_patch_selected() {
+        let cutoff = fermenter_name("cutoff");
+        let active_layer = fermenter_name("active_layer");
+        let num_layers = fermenter_name("num_layers");
+        let selection = [
+            (num_layers, RENDERED_LAYERS),
+            (active_layer, SELECTED_LAYER),
+        ];
+
+        let carried_by_the_patch = render_fermenter_patch(&[
+            (cutoff, PATCHED_CUTOFF),
+            (num_layers, RENDERED_LAYERS),
+            (active_layer, SELECTED_LAYER),
+        ]);
+        let written_live = render_fermenter_patch_then_write(
+            &selection,
+            Some((fermenter_param("cutoff"), PATCHED_CUTOFF)),
+        );
+
+        assert!(
+            carried_by_the_patch.iter().any(|sample| *sample != 0.0),
+            "the patched render is silent, so an agreement with it proves nothing"
+        );
+        assert_eq!(
+            written_live, carried_by_the_patch,
+            "the live write reached a different layer from the one the patch wrote to"
         );
     }
 }
