@@ -59,8 +59,11 @@ import { type EngineTransportPosition } from '../../models/EngineTransportPositi
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
 
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
+import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
 import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
+import { pumpNativeLiveMidiWriter } from './pumpNativeLiveMidiWriter';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
+import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 
 /** The scheduler id this feed registers its per-frame poll under. */
 export const NATIVE_ENGINE_PLAYHEAD_FEED_ID = 'audio-engine/native-engine-playhead';
@@ -104,6 +107,23 @@ function takePendingRearm(writerEpoch: number, positionSeconds: number): number 
     return nativeLiveAutomationWriter.epoch;
 }
 
+/**
+ * The same for the MIDI pass: take a re-read a note edit asked for, and answer
+ * with the epoch the MIDI pump must use.
+ *
+ * Not awaited. The arm installs its pass and claims its epoch before it reaches
+ * the bridge, so the epoch read straight afterwards is the new pass's, and the
+ * pump behind it stands down on the claim the arm is holding rather than
+ * stacking a second batch on the same notes.
+ */
+function takePendingMidiRearm(writerEpoch: number, positionSeconds: number): number {
+    if (!nativeLiveMidiWriter.pendingRearm || nativeLiveMidiWriter.epoch !== writerEpoch) {
+        return writerEpoch;
+    }
+    void rearmNativeLiveMidiWriterInPlace({ positionSeconds });
+    return nativeLiveMidiWriter.epoch;
+}
+
 /** Ask the engine where it is, unless this run's previous ask is unanswered. */
 export function pollNativeEnginePlayheadOnce(): void {
     const epoch = nativeEnginePlayheadFeed.epoch;
@@ -113,6 +133,10 @@ export function pollNativeEnginePlayheadOnce(): void {
     // it replaced — and a reading of the old one would window the new pass at
     // the position the musician just left.
     const writerEpoch = nativeLiveAutomationWriter.epoch;
+    // The MIDI pass keeps its own epoch, for the same reason and against the
+    // same hazard: a locate or a note edit replaces it without touching either
+    // this feed's run or the automation pass.
+    const midiWriterEpoch = nativeLiveMidiWriter.epoch;
     // Only this run's own unanswered request holds the line. A request left
     // behind by an earlier run must not make this run skip its first frame.
     if (nativeEnginePlayheadFeed.inFlightEpoch === epoch) {
@@ -141,6 +165,15 @@ export function pollNativeEnginePlayheadOnce(): void {
                 loopWraps: reading.loopWraps,
                 batchesApplied: reading.batchesApplied,
                 writerEpoch: takePendingRearm(writerEpoch, reading.positionSeconds),
+            });
+            // The same tick is the MIDI writer's clock. Its store is addressed
+            // in absolute frames and the engine never consumes an entry, so
+            // this is where the window ahead of the playhead is extended and
+            // the spent trail behind it is given back.
+            void pumpNativeLiveMidiWriter({
+                positionSeconds: reading.positionSeconds,
+                loopWraps: reading.loopWraps,
+                writerEpoch: takePendingMidiRearm(midiWriterEpoch, reading.positionSeconds),
             });
         })
         .catch((error: unknown) => {

@@ -48,6 +48,7 @@ import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
 export type RepositionNativeLiveGraphSessionInput = Readonly<{
@@ -100,6 +101,13 @@ export function repositionNativeLiveGraphSession(
                 seek: true,
             });
         }
+        // The note pass is re-armed on its own terms, and unconditionally: a
+        // locate moves the playhead out of the window this pass filled, and the
+        // engine drops an entry the playhead has passed rather than delivering
+        // it late. Only now, for the same reason as above — the locate releases
+        // the sounding notes, so notes sent ahead of it would be cut off by the
+        // very command that made re-arming necessary.
+        await rearmNativeLiveMidiWriterInPlace({ positionSeconds: input.positionSeconds });
         return { outcome: 'repositioned' };
     });
 }

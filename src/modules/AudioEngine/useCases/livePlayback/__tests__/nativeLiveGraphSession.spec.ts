@@ -26,7 +26,13 @@ import { type SetEngineTransportMapsResult } from '../../../repositories/engineT
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
+import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import {
+    offlinePpqEndpointProjectorState,
+    type OfflinePpqEndpointProjector,
+} from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { masterGainState } from '../../engineAccess/masterGainState';
+import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
@@ -140,6 +146,36 @@ vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
             actual.readLiveGraphProgramme(input),
     };
 });
+vi.mock('../readLiveMidiProgramme', () => ({
+    /**
+     * The note producer's own laws — placement, overlap, the chance roll — are
+     * proven where they live (`projectLiveMidiProgramme.spec.ts`), and standing
+     * a tempo projector and a note store up here would prove them twice. What
+     * this file owns is which attach state the session hands the writer, so the
+     * double answers one note per strip whose chain names an instance in *that*
+     * set, exactly as `nativeMidiNoteSink` picks the sink.
+     */
+    readLiveMidiProgramme: (input: { stripTracks: readonly Track[]; attachedInstanceIds: ReadonlySet<string> }) => ({
+        targets: input.stripTracks.flatMap((track) => {
+            const sink = track.devices.find(
+                (device) =>
+                    device.externalInstanceId !== undefined && input.attachedInstanceIds.has(device.externalInstanceId)
+            );
+            if (track.kind !== 'midi' || !sink) {
+                return [];
+            }
+            return [
+                {
+                    target: { trackId: track.id, deviceId: sink.id },
+                    events: [{ time: 0, note: 60, velocity: 100, channel: 0, isNoteOn: true }],
+                },
+            ];
+        }),
+        exclusions: [],
+        nativeVoicedStripIds: new Set<string>(),
+        probabilitySeed: 0,
+    }),
+}));
 vi.mock('../../../repositories/nativeGraph/createNativeLiveGraphBackend', async (importOriginal) => {
     const actual =
         await importOriginal<typeof import('../../../repositories/nativeGraph/createNativeLiveGraphBackend')>();
@@ -310,6 +346,41 @@ function createTrack(overrides?: Partial<Track>): Track {
     };
 }
 
+/**
+ * Flat tempo on the sample grid, which is the whole of the clock the programme
+ * needs to place a beat. The real projector's arithmetic is proven where it
+ * lives; what a case here needs is a programme that can be projected at all.
+ */
+const projectPpqEndpoints: OfflinePpqEndpointProjector = ({ startPpq, endPpq, sampleRate }) => {
+    const startSamples = Math.round(startPpq * 0.5 * sampleRate);
+    const endSamples = Math.round(endPpq * 0.5 * sampleRate);
+    return {
+        startSamples,
+        endSamples,
+        durationSamples: endSamples - startSamples,
+        startSeconds: startSamples / sampleRate,
+        endSeconds: endSamples / sampleRate,
+        durationSeconds: (endSamples - startSamples) / sampleRate,
+    };
+};
+
+function midiClip(id: string, trackId: string): Track['clips'][number] {
+    return {
+        id,
+        trackId,
+        name: id,
+        startBeat: 0,
+        endBeat: 4,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#00ff00',
+        locked: false,
+        muted: false,
+    };
+}
+
 /** The batches that actually reached the engine. */
 function appliedBatches(): AudioGraphCommandBatch[] {
     return mocks.applyGraphCommands.mock.calls.map(([input]) => input.batch as AudioGraphCommandBatch);
@@ -318,6 +389,21 @@ function appliedBatches(): AudioGraphCommandBatch[] {
 /** The whole-topology batches, which are the only ones that rebuild strips. */
 function topologyBatches(): AudioGraphCommandBatch[] {
     return appliedBatches().filter((batch) => batch.replaceTopology === true);
+}
+
+/**
+ * Every device the live MIDI writer addressed, across every batch it sent.
+ *
+ * Read in the wire shape rather than the contract's, because that is what the
+ * engine is actually handed: `schedule-midi` flattens its device target into
+ * the command's own fields.
+ */
+function scheduledMidiTargets(): { trackId: string; deviceId: string }[] {
+    return mocks.applyGraphCommands.mock.calls
+        .flatMap(([input]) => (input.batch as NativeGraphWireBatch).commands)
+        .flatMap((command) =>
+            command.kind === 'schedule-midi' ? [{ trackId: command.trackId, deviceId: command.deviceId }] : []
+        );
 }
 
 /** How one batch built the strip for `trackId`, or `undefined` if it built none. */
@@ -446,11 +532,22 @@ beforeEach(() => {
     nativeLiveAutomationWriter.pass = null;
     nativeLiveAutomationWriter.reportedExclusions = null;
     nativeEnginePlayheadFeed.reading = null;
+    // The roll arms the real note writer, whose pass and note-edit
+    // subscriptions are module state like the automation writer's.
+    disarmNativeLiveMidiWriter();
+    // The clock is module state the composition root owns, and a case that
+    // needs a real programme installs its own; left standing, the next case
+    // would read a programme no gesture in it asked for.
+    offlinePpqEndpointProjectorState.project = null;
+    offlinePpqEndpointProjectorState.resolveTempoAtBeat = null;
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
 
 afterEach(() => {
     trackStore.set(null);
+    disarmNativeLiveMidiWriter();
+    offlinePpqEndpointProjectorState.project = null;
+    offlinePpqEndpointProjectorState.resolveTempoAtBeat = null;
 });
 
 describe('startNativeLiveGraphSession', () => {
@@ -565,6 +662,46 @@ describe('startNativeLiveGraphSession', () => {
         // The second batch replaced every strip the first built, so its reports
         // are the only ones describing the graph the engine now holds.
         expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
+    });
+
+    // The programme is half of what a rebind decides, not a constant carried
+    // through it: an instrument the first batch attached moves its strip out of
+    // `webVoicedStripIds`, because the engine voices its notes through
+    // `schedule-midi`. Re-projected against the earlier set, the re-send would
+    // call that strip web-voiced while the writer sent its instrument notes —
+    // a track on no carrier at all.
+    it('projects the rebind against the set it binds, so one attach state decides both carriers', async () => {
+        attachReportedInstancesInStore();
+        offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
+        offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
+        trackStore.set({
+            tracks: [
+                createTrack({
+                    id: 'midi-1',
+                    kind: 'midi',
+                    devices: [externalPluginDevice('i-midi')],
+                    clips: [midiClip('clip-1', 'midi-1')],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValueOnce({ ...APPLIED, attachedPlugins: [{ instanceId: 'i-midi' }] });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        const [first, second] = topologyBatches();
+        // Absent from the attach set the first batch was built against, present
+        // in the one the re-send binds.
+        expect(stripCreation(first, 'midi-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'midi-1')).toMatchObject({ contributesAudio: true });
+        // And the writer answered to that same set: the strip Web Audio has
+        // been gated out of is the one the engine is sent notes for.
+        expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'device-i-midi' }]);
     });
 
     it('sends the topology once when the first batch attached nothing to bind', async () => {

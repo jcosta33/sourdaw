@@ -62,7 +62,9 @@ function projectLiveProgrammeBatch(sampleRate: number): ReturnType<typeof projec
         // carrier law says: this pass registers material and must not miss the
         // clips of a strip Web Audio happens to be carrying today.
         monitor: 'shadowed',
-        programme: readLiveGraphProgramme({ stripTracks, sampleRate }),
+        // No attach state either, for the same reason: a MIDI strip's notes
+        // register no material whichever engine voices them.
+        programme: readLiveGraphProgramme({ stripTracks, attachedInstanceIds: new Set(), sampleRate }),
     });
 }
 

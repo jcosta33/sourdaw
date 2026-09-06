@@ -119,10 +119,12 @@ function projectProgramme(input: {
     stripTracks: readonly Track[];
     buffers?: Record<string, AudioBuffer>;
     compensationDelaySeconds?: (stripId: string) => number;
+    attachedInstanceIds?: ReadonlySet<string>;
 }) {
     const buffers = input.buffers ?? {};
     return projectLiveGraphProgramme({
         stripTracks: input.stripTracks,
+        attachedInstanceIds: input.attachedInstanceIds ?? new Set(),
         sampleRate: SAMPLE_RATE,
         defaultTempo: TEMPO,
         changes: [],
@@ -408,6 +410,63 @@ describe('projectLiveGraphProgramme — the strips Web Audio is left to voice', 
         });
 
         expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
+    });
+
+    // The MIDI producer sends this strip's notes to the engine (#3892), so
+    // naming it here would leave the part playing on both carriers at once.
+    // The two producers share one qualification law for exactly this reason.
+    it('leaves a MIDI strip whose instrument the engine holds out of the set', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [
+                        {
+                            id: 'd1',
+                            name: 'Harness Tone',
+                            type: 'external-plugin',
+                            bypassed: false,
+                            parameterValues: {},
+                            externalInstanceId: 'i1',
+                        },
+                    ],
+                    clips: [audioClip({ id: 'notes', trackId: 'audio-1', type: 'midi' })],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1']),
+        });
+
+        expect(programme.playbacksByStripId.get('audio-1')).toBeUndefined();
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(false);
+    });
+
+    // The same strip with nothing attached. A device naming an instance the
+    // engine does not hold names nothing that could sound, so Web Audio is
+    // still the only carrier its notes have.
+    it('names a MIDI strip whose plugin the engine does not hold', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    kind: 'midi',
+                    devices: [
+                        {
+                            id: 'd1',
+                            name: 'Harness Tone',
+                            type: 'external-plugin',
+                            bypassed: false,
+                            parameterValues: {},
+                            externalInstanceId: 'i1',
+                        },
+                    ],
+                    clips: [audioClip({ id: 'notes', trackId: 'audio-1', type: 'midi' })],
+                }),
+            ],
+            attachedInstanceIds: new Set(),
+        });
+
+        expect(programme.webVoicedStripIds.has('audio-1')).toBe(true);
     });
 });
 

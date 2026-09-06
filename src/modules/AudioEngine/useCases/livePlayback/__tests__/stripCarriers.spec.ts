@@ -188,12 +188,11 @@ describe('projectStripCarriers', () => {
         expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'its clips play on Web Audio' });
     });
 
-    // Rule 1, the same bound reached without any programme entry at all. The
-    // native command vocabulary has no MIDI in it, so a MIDI track's notes are
-    // voiced on Web Audio whether the programme named the strip or not — and a
-    // clip-less instrument track is exactly the case the programme cannot name,
-    // because live keys leave no clip behind to be excluded.
-    it('leaves a clip-less MIDI track on Web Audio, however attached its instrument plugin', () => {
+    // A clip-less MIDI track with an attached instrument is the live-keys case:
+    // no clip is scheduled and none ever will be, but the engine holds the
+    // plugin the notes are addressed to, so the strip is the engine's to voice
+    // (#3892). Leaving it on Web Audio would double a part the engine plays.
+    it('carries a clip-less MIDI track natively when its instrument plugin is attached', () => {
         const carriers = projectStripCarriers({
             stripTracks: [
                 createTrack({
@@ -207,14 +206,14 @@ describe('projectStripCarriers', () => {
             inputMonitoredTrackIds: new Set(),
         });
 
-        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'MIDI plays on Web Audio' });
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'native' });
     });
 
-    // The kind is read before the programme, so a MIDI track is told the reason
-    // that holds for every take rather than one about the clips it happens to
-    // carry now: delete those clips and the native engine still has no route to
-    // its notes.
-    it('names the kind rather than the clips for a web-voiced MIDI track', () => {
+    // The producer, not the kind, decides which MIDI strips stay web-voiced: a
+    // strip it names is one it could not carry, and the reason it is given is
+    // the one every web-voiced strip gets rather than a claim about MIDI as
+    // such, which is no longer true of MIDI as such.
+    it('names the clips for a MIDI strip the MIDI producer could not carry', () => {
         const carriers = projectStripCarriers({
             stripTracks: [
                 createTrack({
@@ -228,7 +227,7 @@ describe('projectStripCarriers', () => {
             inputMonitoredTrackIds: new Set(),
         });
 
-        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'MIDI plays on Web Audio' });
+        expect(carriers.get('audio-1')).toEqual({ carrier: 'web', reason: 'its clips play on Web Audio' });
     });
 
     // The plugin that carries a clip-less strip past rule 1 is the *attached*

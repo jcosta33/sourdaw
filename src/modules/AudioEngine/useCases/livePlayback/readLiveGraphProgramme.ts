@@ -51,6 +51,15 @@ export type ReadLiveGraphProgrammeInput = Readonly<{
     /** The strips this session builds, in project order. */
     stripTracks: LiveGraphProgrammeInput['stripTracks'];
     /**
+     * The external plugin instances the native engine currently owns.
+     *
+     * The caller's, not read here, for the same reason the topology takes it:
+     * a session threads one attach state through every projection it makes, so
+     * the programme and the topology cannot disagree about which instruments
+     * the engine holds.
+     */
+    attachedInstanceIds: LiveGraphProgrammeInput['attachedInstanceIds'];
+    /**
      * The frame grid every beat is placed on. The caller's, because the clock
      * a session is placed on belongs to whoever owns the transport — the same
      * reason `transportMaps` is passed in rather than read here.
@@ -65,6 +74,7 @@ export function readLiveGraphProgramme(input: ReadLiveGraphProgrammeInput): Live
     }
     return projectLiveGraphProgramme({
         stripTracks: input.stripTracks,
+        attachedInstanceIds: input.attachedInstanceIds,
         sampleRate: input.sampleRate,
         defaultTempo: transportStore.value?.tempo ?? 120,
         changes: tempoMapStore.value?.changes ?? [],

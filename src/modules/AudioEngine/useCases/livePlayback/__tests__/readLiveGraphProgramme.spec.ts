@@ -87,6 +87,7 @@ describe('readLiveGraphProgramme', () => {
     it('names the strips Web Audio is left to voice when there is no clock to place them on', () => {
         const programme = readLiveGraphProgramme({
             stripTracks: [createTrack({ id: 'midi-1', clips: [midiClip()] })],
+            attachedInstanceIds: new Set(),
             sampleRate: SAMPLE_RATE,
         });
 
