@@ -75,6 +75,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getDefaultBendRangeSemitones: vi.fn(),
     getFactoryDrumKitByIndex: vi.fn(),
     getLiveEngineSampleRate: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({

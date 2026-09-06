@@ -95,6 +95,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 const persistCrdtProjectMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({

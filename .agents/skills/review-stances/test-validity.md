@@ -15,7 +15,9 @@ dispatch.
 - Exact-count and exact-shape assertions: verify the pinned value derives from the thing it claims
   to observe, not from whatever the code currently produces.
 - A diff that adds an export to a contract barrel, or adds a barrel import to production code,
-  changes what every spec mocking that barrel must supply. Sweep them.
+  changes what every spec mocking that barrel must supply. The sweep is mechanical and read-only:
+  run `pnpm test:barrel-mocks` in the lane (guard-wrapped) and report every `✗` row it prints as
+  the finding, named with the spec, the barrel, and the missing key.
 - A test helper that names a production route in its doc — "one batch", "one drain", "the fenced
   path" — must emit the same fence, ordering, or envelope that production entry emits; trace the
   helper to the branch it actually drives, and a helper that reaches the loose branch while the spec
@@ -145,3 +147,18 @@ Probe that would have caught it: for any assertion on a missing-environment erro
 `process.env` name the code path reads before the asserted one and require the spec to stub each of
 them explicitly; run the spec once with `GITHUB_REPOSITORY`, `GITHUB_ACTIONS`, `CI`, and
 `GITHUB_TOKEN` exported in the shell.
+
+### 2026-09-06 — a barrel consumer broke 28 mock factories (escaped two stances, #3910)
+
+The head added two `#/modules/AudioEngine/useCases` imports to a MIDI dependency object. Twenty-eight
+specs across ten modules mock that barrel with listing factories; the pipeline's Barrel mock
+coverage step failed on the head after two test-validity rounds had cleared it, one of which had
+this file's 2026-08-29 lesson in its dispatch.
+
+Blind spot: the 2026-08-29 probe was phrased as a manual grep-and-judge sweep, so a stance under
+time pressure judged the specs in the diff and the modules the diff touched, never the mocks in
+modules the diff never named. Nothing in the changed lines points at them.
+
+Probe that would have caught it: the checker exists and is cheap, so the probe is to run it, not to
+reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
+dispatch carries the same command whenever the change adds a barrel export or a barrel import.
