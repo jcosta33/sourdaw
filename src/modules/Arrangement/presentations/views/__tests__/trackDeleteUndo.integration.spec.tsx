@@ -79,14 +79,21 @@ vi.mock('#/modules/WorkspaceShell/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        adaptGrooveTemplateForConsumer: vi.fn(),
+        appendMidiNotes: vi.fn(),
         arpeggiate: actual.arpeggiate,
+        canPrepareMidiClipGlueState: vi.fn(),
         downloadMidiFile: actual.downloadMidiFile,
         duplicateClipNotes: actual.duplicateClipNotes,
         duplicateMidiClipData: actual.duplicateMidiClipData,
+        getGrooveTemplate: vi.fn(),
         getMidiInputTrack: actual.getMidiInputTrack,
         getMidiInputTrackOwnerId: actual.getMidiInputTrackOwnerId,
         getMidiInputTrackRevision: actual.getMidiInputTrackRevision,
         getMidiStoreState: actual.getMidiStoreState,
+        getScopedGrooveAssignment: vi.fn(),
+        getScopedGrooveConsumerId: vi.fn(),
+        getStraightGrooveTemplateId: vi.fn(),
         hasActiveStepRecordingDependency: actual.hasActiveStepRecordingDependency,
         mergeImportedMidiClipNotes: actual.mergeImportedMidiClipNotes,
         midiClipGlueStateMatches: actual.midiClipGlueStateMatches,
@@ -97,6 +104,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         projectMidiNotesByClipIdThroughRestores: actual.projectMidiNotesByClipIdThroughRestores,
         readMidiFile: actual.readMidiFile,
         removeMidiClipData: actual.removeMidiClipData,
+        restoreGrooveAssignment: vi.fn(),
         restoreMidiClipData: actual.restoreMidiClipData,
         restoreMidiClipGlueState: actual.restoreMidiClipGlueState,
         restoreMidiClipNotes: actual.restoreMidiClipNotes,
@@ -128,6 +136,10 @@ vi.mock('#/modules/Knead/useCases', async () => {
 });
 vi.mock('#/modules/Project/useCases', () => ({
     captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
+    exportProjectFile: vi.fn(),
+    newProject: vi.fn(),
+    pickFiles: vi.fn(),
+    saveProject: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
@@ -164,6 +176,18 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopInputMonitoring: vi.fn(),
     updateDeviceBypass: vi.fn(),
     updateDeviceParam: vi.fn(),
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    audioEngine: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRoute: vi.fn(),

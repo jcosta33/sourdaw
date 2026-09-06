@@ -144,7 +144,20 @@ vi.mock('#/modules/Command/useCases', async () => {
 });
 // discardPreparedStemImportResources imports releasePreviewAudioBuffer.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    audioEngine: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 // discardPreparedStemImportResources and createStemImportConfirmationResourceLease import getAssetTransfer.
 vi.mock('#/modules/Collaboration/useCases', () => ({
