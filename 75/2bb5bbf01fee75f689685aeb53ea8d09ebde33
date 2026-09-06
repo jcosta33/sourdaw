@@ -1,0 +1,56 @@
+src/modules/AudioEngine/useCases/livePlayback/readLiveMidiProgramme.ts
+  s_9b530f08172a54::t_4d13c0adf5b19b 69
+  s_9b530f08172a54::t_39b3412d103f5d 29-37
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_7eea023b4283e2 349-383
+  s_9b530f08172a54::t_bb523462828e7a 394-406
+  s_9b530f08172a54::t_8af88868b587d2 30-33,35
+  s_9b530f08172a54::t_c36968577fdd80 535-542,548-550
+  s_9b530f08172a54::t_acb985ccef87a5 149-178
+  s_9b530f08172a54::t_dfc6c78779e0b1 29
+  s_9b530f08172a54::t_065f4b1c4c3f24 667-704
+  s_9b530f08172a54::t_1ba5dde8e11b1f 407-408
+  s_9b530f08172a54::t_8cdf6cadab4a60 665-666
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_469d0e872a1349 690-746,930
+  s_9b530f08172a54::t_29c2e5283206c9 312-316
+  s_9b530f08172a54::t_4c349f710f8061 783-796,817
+  s_9b530f08172a54::t_8e77ef58b2271f 769-773
+  s_9b530f08172a54::t_a283f9882b79f8 647-650
+  s_9b530f08172a54::t_b1f11d617e8e16 318-322,324-326
+  s_9b530f08172a54::t_417eab646bcce4 798
+  s_9b530f08172a54::t_79bf6850c3f5c2 857-858
+  s_9b530f08172a54::t_2ed4bea693ca83 603-604
+  s_9b530f08172a54::t_23c92a66c8606e 747-768,774-782,797,799-816,818,841-845,855-856,859-868,870,891-899,929,934-935,937-940
+src/modules/AudioEngine/useCases/livePlayback/rearmNativeLiveMidiWriterInPlace.ts
+  s_9b530f08172a54::t_69cbfda8ede7e5 16-21
+  s_9b530f08172a54::t_e2e948c2a0e1d6 44
+  s_9b530f08172a54::t_dd56739950588f 27
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_9b530f08172a54::t_851927527a2b9e 16-24
+  s_9b530f08172a54::t_647d84b5111cbc 147
+  s_9b530f08172a54::t_d299c7c963a3d1 66-75,87
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_9b530f08172a54::t_458eface01fd7b 264-273,283-292
+  s_9b530f08172a54::t_1eef86ac021331 274-282
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_9b530f08172a54::t_4f7efd3d2adba5 209-228
+  s_9b530f08172a54::t_2ca5799ca85e07 323-339
+  s_9b530f08172a54::t_4fb06c93747430 139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "752bb5bbf01fee75f689685aeb53ea8d09ebde33",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
