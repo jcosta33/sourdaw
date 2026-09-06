@@ -93,7 +93,11 @@ describe('transport handlers', () => {
             throw new Error('Expected a guarded base-tempo inverse');
         }
 
-        expect(handleSetTempo.execute(described.inverseAction)).toBeUndefined();
+        expect(handleSetTempo.execute(described.inverseAction)).toMatchObject({
+            status: 'written',
+            afterCommit: expect.any(Function),
+            afterAmbiguousCommit: expect.any(Function),
+        });
         expect(transportRef.value!.tempo).toBe(110);
         expect(tempoOf('tc-new')).toBe(95);
     });
