@@ -2566,11 +2566,11 @@ mod compensation_render_alloc_guards {
     use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
     use crate::scheduler::{
         graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
-        GraphCommand, RetiredGraphObjects,
+        BuiltinEffectType, GraphCommand, PluginCore, RetiredGraphObjects,
     };
     use crate::timeline::{
         timeline_rt_diagnostics_channel, ChainEntry, ClipPlacement, ClipPlayback, DeviceKind,
-        RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
+        DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
     };
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -3110,6 +3110,83 @@ mod compensation_render_alloc_guards {
             "every scheduled note of both batches reached the instrument on its own frame over \
              two callbacks, in one frame-ordered run, and the stop released each of them at the \
              head of the third"
+        );
+    }
+
+    /// A hosted Fermenter renders its due notes and takes a parameter write on
+    /// the callback without allocating or freeing on it.
+    ///
+    /// Everything the built-in body does is callback code: the command drain
+    /// applies the ordinal write straight into the instrument, the store's due
+    /// entries are copied into the pending buffer, the body chunks the callback
+    /// into the instance's own block length and pushes each event into the
+    /// instance's event list, and the rendered pair is summed into the chain's
+    /// scratch. A body that built a `Vec` of events per block, resized the
+    /// instance's buffers for the callback it was handed, or dropped its
+    /// pending batch here instead of retiring it would allocate or free in one
+    /// of those places.
+    ///
+    /// The guard alone proves only that nothing allocated. Reading the master
+    /// back is what makes this a guard over the Fermenter's own render path:
+    /// silence is what a body that never ran leaves behind.
+    #[test]
+    fn a_hosted_fermenter_renders_due_notes_without_allocating_on_the_callback() {
+        const CALLBACKS: usize = 4;
+        /// The filter cutoff, written while the instrument is already sounding
+        /// so the write lands on a drain the guard wraps.
+        const CUTOFF: DeviceParam = DeviceParam::FermenterOrdinal(1);
+        const WRITE_AT: usize = 2;
+
+        let mut harness = CompensationHarness::new();
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+        harness.send(GraphCommand::AddDetachedEffect(
+            EFFECT_ID,
+            PluginCore::builtin(BuiltinEffectType::Fermenter, SAMPLE_RATE),
+            Some(MidiNoteStore::new()),
+        ));
+        let entry = ChainEntry {
+            effect_id: EFFECT_ID,
+            kind: DeviceKind::Generator,
+        };
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id: 1,
+            entry,
+            index: 0,
+            hold: entry.input_hold(),
+        });
+        // Frames either side of a callback boundary, so the body runs its
+        // chunking with events in more than one of its own blocks.
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: EFFECT_ID,
+            notes: [timed_note(3, 60), timed_note(130, 67)].into(),
+        });
+
+        // Sized outside the guard, the way its siblings size theirs: the
+        // callback is what is under test, not the buffer it is handed. So is
+        // the master the render is read back from.
+        let mut data = vec![0.0f32; CALLBACK_FRAMES * DEVICE_CHANNELS];
+        let mut heard = vec![0.0f32; CALLBACKS * CALLBACK_FRAMES];
+
+        assert_no_alloc(|| {
+            for callback in 0..CALLBACKS {
+                if callback == WRITE_AT {
+                    harness.send(GraphCommand::SetParam(EFFECT_ID, CUTOFF, 0.3));
+                }
+                harness.renderer.render(&mut data, DEVICE_CHANNELS);
+                let block = &mut heard[callback * CALLBACK_FRAMES..][..CALLBACK_FRAMES];
+                for (frame, sample) in block.iter_mut().enumerate() {
+                    *sample = data[frame * DEVICE_CHANNELS];
+                }
+            }
+        });
+
+        assert!(
+            heard.iter().any(|sample| *sample != 0.0),
+            "the master is silent, so the guard wrapped a callback the instrument never ran on"
         );
     }
 }

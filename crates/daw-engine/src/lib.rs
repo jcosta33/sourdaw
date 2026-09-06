@@ -596,9 +596,14 @@ impl EngineHandle {
     pub fn add_effect(&mut self, id: usize, plugin_type: &str) -> Result<(), String> {
         let plugin_type = BuiltinEffectType::from_name(plugin_type)
             .ok_or_else(|| format!("unknown built-in effect type '{plugin_type}'"))?;
+        // A built-in that sounds notes is scheduled against like any hosted
+        // instrument, so it is registered holding a store wherever it is
+        // registered from — built here, because the callback may not.
+        let notes = plugin_type.sounds_notes().then(MidiNoteStore::new);
         self.push(GraphCommand::AddEffect(
             id,
             PluginCore::builtin(plugin_type, self.sample_rate),
+            notes,
         ))
     }
 
@@ -1547,7 +1552,7 @@ mod tests {
             .expect("shift_semitones is a knead parameter");
         assert!(matches!(
             command_rx.pop(),
-            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_))) if id == 7
+            Ok(GraphCommand::AddEffect(id, PluginCore::Knead(_), None)) if id == 7
         ));
         assert!(matches!(
             command_rx.pop(),
@@ -1937,6 +1942,7 @@ mod tests {
             .send_graph_batch(vec![GraphCommand::AddDetachedEffect(
                 2_000_000,
                 knead_instance(),
+                None,
             )])
             .expect_err("a batch that cannot fit the shared table must be refused");
         assert!(
@@ -1987,7 +1993,7 @@ mod tests {
 
         engine
             .send_graph_batch(vec![
-                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance(), None),
                 GraphCommand::RemoveTrackDeviceRetired {
                     track_id: 1,
                     effect_id: 0,
@@ -2002,7 +2008,7 @@ mod tests {
                     track_id: 1,
                     effect_id: 0,
                 },
-                GraphCommand::AddDetachedEffect(2_000_000, knead_instance()),
+                GraphCommand::AddDetachedEffect(2_000_000, knead_instance(), None),
             ])
             .expect("retiring first frees the slot the registration needs");
         assert_eq!(engine.registered_effect_count(), EFFECT_TABLE_CAPACITY);
