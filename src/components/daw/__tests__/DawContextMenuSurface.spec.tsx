@@ -1,10 +1,54 @@
+import { type ReactElement, useState } from 'react';
+
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DawContextMenuSurface } from '../DawContextMenuSurface';
 
+const MenuFocusHarness = (): ReactElement => {
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    return (
+        <>
+            <button onClick={() => setMenuOpen(true)} type="button">
+                Open menu
+            </button>
+            {menuOpen ? (
+                <DawContextMenuSurface backdrop onClose={() => setMenuOpen(false)} role="menu" x={10} y={20}>
+                    <span>Item</span>
+                </DawContextMenuSurface>
+            ) : null}
+        </>
+    );
+};
+
 describe('DawContextMenuSurface', () => {
     afterEach(() => vi.unstubAllGlobals());
+
+    it('receives focus when it opens so keydowns originate inside the gated menu surface', () => {
+        render(
+            <DawContextMenuSurface role="menu" x={10} y={20}>
+                <span>Item</span>
+            </DawContextMenuSurface>
+        );
+
+        expect(screen.getByRole('menu')).toHaveFocus();
+    });
+
+    it('returns focus to the previously focused element when the menu closes', () => {
+        render(<MenuFocusHarness />);
+
+        const opener = screen.getByRole('button', { name: 'Open menu' });
+        opener.focus();
+        fireEvent.click(opener);
+
+        expect(screen.getByRole('menu')).toHaveFocus();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close context menu' }));
+
+        expect(opener).toHaveFocus();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
 
     it('should render children without portal', () => {
         const { container } = render(
