@@ -2402,15 +2402,20 @@ mod tests {
     /// `CrumbsEngine::process_block` measures and publishes only the slice it
     /// was just handed. Splitting a block at each MIDI event's offset calls it
     /// once per segment, so the raw per-segment publish leaves the atomics
-    /// holding only the tail's own peak. Two events put the block's loudest
-    /// audio in a middle segment, which no single segment's own peak can stand
-    /// in for: the meter reads under whether the publish keeps the first
-    /// segment or the last.
+    /// holding only the last-rendered segment's own peak. Three events put
+    /// the block's loudest audio in the second of four segments — neither the
+    /// first loop iteration nor, crucially, the *last* one — which no single
+    /// segment's own peak can stand in for. A publish that merely tracks the
+    /// final segment rendered (whether that segment comes from the in-loop
+    /// render or the unconditional tail) would pass a test whose loudest
+    /// segment happened to be that last one; putting the loudest segment in
+    /// the middle of the loop is what makes the assertion mean something.
     #[test]
     fn a_segmented_crumbs_block_publishes_the_peak_of_the_whole_block() {
         const FRAMES: usize = 512;
         const NOTE_ON_OFFSET: usize = 100;
-        const NOTE_OFF_OFFSET: usize = 400;
+        const NOTE_OFF_OFFSET: usize = 300;
+        const REDUNDANT_NOTE_OFF_OFFSET: usize = 450;
 
         let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
         // Loaded but not pressed, so the first segment is silent and the note
@@ -2426,6 +2431,13 @@ mod tests {
             &[
                 engine_note(60, 100, 0, true, NOTE_ON_OFFSET as u32),
                 engine_note(60, 100, 0, false, NOTE_OFF_OFFSET as u32),
+                // A second note-off on the same note, already releasing:
+                // `CrumbsEnvelope::note_off` only moves a non-idle envelope
+                // into `Release`, so this is a no-op on the audio. Its only
+                // job is to split the decaying tail into two loop segments,
+                // so the loudest segment (the sustain plateau above) sits
+                // before the *last* loop iteration rather than being it.
+                engine_note(60, 100, 0, false, REDUNDANT_NOTE_OFF_OFFSET as u32),
             ],
             &TransportState::default(),
         );
@@ -2433,17 +2445,18 @@ mod tests {
         let peak_of = |slice: &[f32]| slice.iter().fold(0.0f32, |peak, &s| peak.max(s.abs()));
         let block_peak = peak_of(&left);
         let head_peak = peak_of(&left[..NOTE_ON_OFFSET]);
-        let middle_peak = peak_of(&left[NOTE_ON_OFFSET..NOTE_OFF_OFFSET]);
-        let tail_peak = peak_of(&left[NOTE_OFF_OFFSET..]);
+        let sustain_peak = peak_of(&left[NOTE_ON_OFFSET..NOTE_OFF_OFFSET]);
+        let decay_peak = peak_of(&left[NOTE_OFF_OFFSET..REDUNDANT_NOTE_OFF_OFFSET]);
+        let tail_peak = peak_of(&left[REDUNDANT_NOTE_OFF_OFFSET..]);
 
         assert_eq!(
-            middle_peak, block_peak,
-            "the loudest audio must sit in the middle segment, or this test proves nothing"
+            sustain_peak, block_peak,
+            "the loudest audio must sit in the sustain segment, or this test proves nothing"
         );
         assert!(
-            head_peak < block_peak && tail_peak < block_peak,
-            "neither the first segment nor the last may reach the block's peak, or this \
-             test proves nothing"
+            head_peak < block_peak && decay_peak < block_peak && tail_peak < block_peak,
+            "only the sustain segment may reach the block's peak, or this test proves \
+             nothing"
         );
         assert_eq!(
             slot.engine.read_peak_left(),
