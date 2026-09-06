@@ -274,6 +274,64 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('join session invite then mute Bass', context)).toEqual([]);
         });
 
+        it('rejects unquoted sentence continuations while preserving literal punctuation', () => {
+            expect(tryParameterizedPath('rename clip to Verse. Mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to Verse: mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('join session invite-ABC. Mute Bass', context)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to "Verse. Mute Bass"', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Verse. Mute Bass' } },
+            ]);
+            expect(tryParameterizedPath('join session "invite-ABC. Mute Bass"', context)).toEqual([
+                {
+                    type: 'joinCollabSession',
+                    payload: { inviteString: 'invite-ABC. Mute Bass', peerName: 'Peer' },
+                },
+            ]);
+            expect(tryParameterizedPath('rename clip to Lead 2.0', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Lead 2.0' } },
+            ]);
+            expect(tryParameterizedPath('rename clip to Dr.Dre', context)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'Dr.Dre' } },
+            ]);
+        });
+
+        it.each([
+            ['mute', { type: 'muteTrack', payload: { trackId: 'literal-all', muted: true } }],
+            ['unmute', { type: 'muteTrack', payload: { trackId: 'literal-all', muted: false } }],
+            ['solo', { type: 'soloTrack', payload: { trackId: 'literal-all', soloed: true } }],
+            ['unsolo', { type: 'soloTrack', payload: { trackId: 'literal-all', soloed: false } }],
+        ])('reserves %s all tracks for bulk scope before a colliding display name', (verb, quotedAction) => {
+            const allTracks = { ...context.tracks[0]!, id: 'literal-all', name: 'All Tracks' };
+            const bass = { ...context.tracks[0]!, id: 'bass', name: 'Bass' };
+            const collisionContext = { ...context, tracks: [allTracks, bass] };
+            const stateKey = verb.includes('solo') ? 'soloed' : 'muted';
+            const stateValue = verb === 'mute' || verb === 'solo';
+            const actionType = verb.includes('solo') ? 'soloTrack' : 'muteTrack';
+
+            expect(tryParameterizedPath(`${verb} all tracks`, collisionContext)).toEqual([
+                { type: actionType, payload: { trackId: 'literal-all', [stateKey]: stateValue } },
+                { type: actionType, payload: { trackId: 'bass', [stateKey]: stateValue } },
+            ]);
+            expect(tryParameterizedPath(`${verb} "All Tracks"`, collisionContext)).toEqual([quotedAction]);
+        });
+
+        it.each([
+            ['mute literal-target', { type: 'muteTrack', payload: { trackId: 'literal-target', muted: true } }],
+            ['solo literal-target', { type: 'soloTrack', payload: { trackId: 'literal-target', soloed: true } }],
+            [
+                'add eq to literal-target',
+                { type: 'addDevice', payload: { trackId: 'literal-target', deviceType: 'EQ' } },
+            ],
+            ['delete literal-target', { type: 'removeTrack', payload: { trackId: 'literal-target' } }],
+        ])('preserves exact literal-ID authority over a colliding display name for %s', (prompt, action) => {
+            const literalTarget = { ...context.tracks[0]!, id: 'literal-target', name: 'Actual ID Target' };
+            const nameCollision = { ...context.tracks[0]!, id: 'name-target', name: 'literal-target' };
+
+            expect(tryParameterizedPath(prompt, { ...context, tracks: [literalTarget, nameCollision] })).toEqual([
+                action,
+            ]);
+        });
+
         it('leaves quantize and transpose for the grounded provider path', () => {
             expect(tryParameterizedPath('transpose up 2 semitones', context)).toEqual([]);
             expect(tryParameterizedPath('transpose down 5 sts', context)).toEqual([]);
@@ -396,8 +454,23 @@ describe('promptParser parsing', () => {
             expect(tryCompoundFastPath('add 33 midi tracks', context)).toBeNull();
         });
 
+        it('rejects a zero track count before allocation', () => {
+            expect(tryCompoundFastPath('create 0 audio tracks', context)).toBeNull();
+        });
+
         it('rejects a names clause with a trailing instruction', () => {
             expect(tryCompoundFastPath('create 2 tracks named Bass, Keys then mute Drums', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass, Keys. Mute Bass', context)).toBeNull();
+            expect(tryCompoundFastPath('create 3 tracks named Bass, Keys and mute Drums', context)).toBeNull();
+            expect(tryCompoundFastPath('create 2 tracks named Bass, "Keys. Mute Bass"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Keys. Mute Bass', kind: 'audio' } },
+            ]);
+            expect(tryCompoundFastPath('create 3 tracks named Bass, Keys and "mute Drums"', context)).toEqual([
+                { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'Keys', kind: 'audio' } },
+                { type: 'addTrack', payload: { name: 'mute Drums', kind: 'audio' } },
+            ]);
         });
 
         it('requires the explicit name count and preserves quoted delimiters', () => {

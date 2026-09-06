@@ -126,6 +126,11 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
     const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
     const selectedClipId = context.selectedClipId;
 
+    const bulkTrackActions = tryBulkTrackCommand(text, context);
+    if (bulkTrackActions !== null) {
+        return bulkTrackActions;
+    }
+
     const tempoMatch = text.match(/^(?:set\s+)?tempo\s+(?:to\s+)?(\d+)$/i);
     if (tempoMatch) {
         return [{ type: 'setTempo', payload: { bpm: parseInt(tempoMatch[1]!, 10) } }];
@@ -245,6 +250,11 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
 export function tryCompoundFastPath(text: string, context: ProjectContext): RuntimeAction[] | null {
     const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
 
+    const bulkTrackActions = tryBulkTrackCommand(text, context);
+    if (bulkTrackActions !== null) {
+        return bulkTrackActions;
+    }
+
     const multiTrackMatch = text.match(
         /^(?:create|add|make)\s+(\d+)\s+(audio\s+|midi\s+|bus\s+)?tracks?(?:\s+(?:named|called)\s+(.+))?$/i
     );
@@ -265,31 +275,6 @@ export function tryCompoundFastPath(text: string, context: ProjectContext): Runt
             actions.push({ type: 'addTrack', payload: { name, kind } });
         }
         return actions;
-    }
-
-    if (/^mute\s+all\s+tracks$/i.test(text)) {
-        return context.tracks.map((time) => ({
-            type: 'muteTrack' as const,
-            payload: { trackId: time.id, muted: true },
-        }));
-    }
-    if (/^unmute\s+all\s+tracks$/i.test(text)) {
-        return context.tracks.map((time) => ({
-            type: 'muteTrack' as const,
-            payload: { trackId: time.id, muted: false },
-        }));
-    }
-    if (/^solo\s+all\s+tracks$/i.test(text)) {
-        return context.tracks.map((time) => ({
-            type: 'soloTrack' as const,
-            payload: { trackId: time.id, soloed: true },
-        }));
-    }
-    if (/^unsolo\s+all\s+tracks$/i.test(text)) {
-        return context.tracks.map((time) => ({
-            type: 'soloTrack' as const,
-            payload: { trackId: time.id, soloed: false },
-        }));
     }
 
     const selectedTrackDeviceList =
@@ -327,6 +312,20 @@ const DEVICE_TYPES: Readonly<Record<string, string>> = {
 const CLAUSE_CONNECTOR_PATTERN = /(?:[,;]|\b(?:and|or|then|also|plus|without|except|but|while|before|after)\b)/iu;
 const TRACK_NAME_TRAILING_CLAUSE_PATTERN = /\b(?:or|then|also|plus|without|except|but|while|before|after)\b/iu;
 const UNQUOTED_TRACK_NAME_PATTERN = /^[\p{L}\p{N}](?:[\p{L}\p{N}\s'’._/-]*[\p{L}\p{N}])?$/u;
+const SENTENCE_CONTINUATION_PATTERN = /(?:[.!?]|:)\s+\S/u;
+const GRAMMAR_COMMAND_HEADS = new Set([
+    'tempo',
+    'volume',
+    'gain',
+    'pan',
+    'rename',
+    'humanize',
+    'stretch',
+    'set',
+    'join',
+    'create',
+    'make',
+]);
 
 function normalizeCommandText(value: string): string {
     return value.trim().toLocaleLowerCase().replaceAll(/\s+/gu, ' ');
@@ -346,7 +345,12 @@ function parseOpaqueValue(value: string): string | null {
     if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
         return parseQuotedValue(trimmed);
     }
-    if (trimmed.length === 0 || /"/u.test(trimmed) || CLAUSE_CONNECTOR_PATTERN.test(trimmed)) {
+    if (
+        trimmed.length === 0 ||
+        /"/u.test(trimmed) ||
+        CLAUSE_CONNECTOR_PATTERN.test(trimmed) ||
+        SENTENCE_CONTINUATION_PATTERN.test(trimmed)
+    ) {
         return null;
     }
     return trimmed;
@@ -412,6 +416,8 @@ function parseTrackNameList(value: string): string[] | null {
         if (
             /"/u.test(part) ||
             TRACK_NAME_TRAILING_CLAUSE_PATTERN.test(part) ||
+            SENTENCE_CONTINUATION_PATTERN.test(part) ||
+            beginsExecutableCommand(part) ||
             !UNQUOTED_TRACK_NAME_PATTERN.test(part)
         ) {
             return null;
@@ -419,6 +425,39 @@ function parseTrackNameList(value: string): string[] | null {
         names.push(part);
     }
     return names;
+}
+
+function beginsExecutableCommand(value: string): boolean {
+    const head = normalizeCommandText(value).split(' ')[0];
+    if (head === undefined || head.length === 0) {
+        return false;
+    }
+    if (GRAMMAR_COMMAND_HEADS.has(head)) {
+        return true;
+    }
+    return PRESET_ACTIONS.some((preset) =>
+        [preset.label, ...(preset.commandAliases ?? [])].some(
+            (candidate) => normalizeCommandText(candidate).split(' ')[0] === head
+        )
+    );
+}
+
+function tryBulkTrackCommand(text: string, context: ProjectContext): RuntimeAction[] | null {
+    const match = text.match(/^(mute|unmute|solo|unsolo)\s+all\s+tracks$/iu);
+    if (match === null) {
+        return null;
+    }
+    const verb = match[1]!.toLocaleLowerCase();
+    if (verb === 'mute' || verb === 'unmute') {
+        return context.tracks.map((track) => ({
+            type: 'muteTrack' as const,
+            payload: { trackId: track.id, muted: verb === 'mute' },
+        }));
+    }
+    return context.tracks.map((track) => ({
+        type: 'soloTrack' as const,
+        payload: { trackId: track.id, soloed: verb === 'solo' },
+    }));
 }
 
 function parseDeviceList(value: string): string[] | null {

@@ -78,6 +78,23 @@ function createDuplicateBassContext(): ProjectContext {
     };
 }
 
+function createBulkNameCollisionContext(): ProjectContext {
+    const context = createContext();
+    return {
+        ...context,
+        tracks: [
+            {
+                ...context.tracks[0]!,
+                id: 'all-track',
+                name: 'All Tracks',
+                clips: [],
+                clipCount: 0,
+            },
+            context.tracks[0]!,
+        ],
+    };
+}
+
 function providerClarification() {
     return {
         status: 'complete' as const,
@@ -117,9 +134,14 @@ describe('whole-request prompt interpretation routing', () => {
         ['add compressor to Bass track', 'addDevice'],
         ['add eq and compressor to selected track', 'addDevice'],
         ['create 2 midi tracks named "Bass, DI", "Keys and Pads"', 'addTrack'],
+        ['create 2 tracks named Bass, "Keys. Mute Bass"', 'addTrack'],
+        ['create 3 tracks named Bass, Keys and "mute Drums"', 'addTrack'],
         ['rename clip to Bridge Solo', 'renameClip'],
         ['rename clip to "Bridge And Solo"', 'renameClip'],
+        ['rename clip to "Verse. Mute Bass"', 'renameClip'],
+        ['rename clip to "Verse: mute Bass"', 'renameClip'],
         ['join session invite-ABC', 'joinCollabSession'],
+        ['join session "invite-ABC. Mute Bass"', 'joinCollabSession'],
     ])('keeps the complete explicit command %s on the deterministic route', async (prompt, actionType) => {
         const context = createContext();
         const snapshot = structuredClone(context);
@@ -218,6 +240,33 @@ describe('whole-request prompt interpretation routing', () => {
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
+    it('preserves quoted clause-looking values through every real interpreter', async () => {
+        const context = createContext();
+
+        const periodRename = await parsePromptToActions('rename clip to "Verse. Mute Bass"', context);
+        const colonRename = await parsePromptToActions('rename clip to "Verse: mute Bass"', context);
+        const invite = await parsePromptToActions('join session "invite-ABC. Mute Bass"', context);
+        const periodTrackName = await parsePromptToActions('create 2 tracks named Bass, "Keys. Mute Bass"', context);
+        const imperativeTrackName = await parsePromptToActions(
+            'create 3 tracks named Bass, Keys and "mute Drums"',
+            context
+        );
+
+        expect(periodRename.actions[0]?.payload).toMatchObject({ name: 'Verse. Mute Bass' });
+        expect(colonRename.actions[0]?.payload).toMatchObject({ name: 'Verse: mute Bass' });
+        expect(invite.actions[0]?.payload).toMatchObject({ inviteString: 'invite-ABC. Mute Bass' });
+        expect(periodTrackName.actions).toMatchObject([
+            { type: 'addTrack', payload: { name: 'Bass' } },
+            { type: 'addTrack', payload: { name: 'Keys. Mute Bass' } },
+        ]);
+        expect(imperativeTrackName.actions).toMatchObject([
+            { type: 'addTrack', payload: { name: 'Bass' } },
+            { type: 'addTrack', payload: { name: 'Keys' } },
+            { type: 'addTrack', payload: { name: 'mute Drums' } },
+        ]);
+        expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+    });
+
     it('rejects an invalid explicit numeric value truthfully without changing or semantically rerouting it', async () => {
         const context = createContext();
 
@@ -228,12 +277,54 @@ describe('whole-request prompt interpretation routing', () => {
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
+    it('keeps reserved bulk syntax ahead of a colliding track name while quoted text targets the name', async () => {
+        const context = createBulkNameCollisionContext();
+
+        const bulk = await parsePromptToActions('mute all tracks', context);
+        const quoted = await parsePromptToActions('mute "All Tracks"', context);
+
+        expect(bulk.actions).toMatchObject([
+            { type: 'muteTrack', payload: { trackId: 'all-track', muted: true } },
+            { type: 'muteTrack', payload: { trackId: 'track-bass', muted: true } },
+        ]);
+        expect(quoted.actions).toMatchObject([{ type: 'muteTrack', payload: { trackId: 'all-track', muted: true } }]);
+        expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+    });
+
+    it('preserves exact literal-ID authority over a colliding display name through real routing', async () => {
+        const context = createContext();
+        const literalTarget = { ...context.tracks[0]!, id: 'literal-target', name: 'Actual ID Target' };
+        const nameCollision = {
+            ...context.tracks[0]!,
+            id: 'name-target',
+            name: 'literal-target',
+            clips: [],
+            clipCount: 0,
+        };
+
+        const result = await parsePromptToActions('mute literal-target', {
+            ...context,
+            tracks: [literalTarget, nameCollision],
+        });
+
+        expect(result.actions).toMatchObject([
+            { type: 'muteTrack', payload: { trackId: 'literal-target', muted: true } },
+        ]);
+        expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['make it warmer', createContext],
         ['make it warm then mute Bass', createContext],
         ['make it warm without adding devices', createContext],
         ['add a bluesy sounding piano and melody', createContext],
         ['create 2 tracks named Bass, Keys then mute Bass', createContext],
+        ['rename clip to Verse. Mute Bass', createContext],
+        ['rename clip to Verse: mute Bass', createContext],
+        ['join session invite-ABC. Mute Bass', createContext],
+        ['create 2 tracks named Bass, Keys. Mute Bass', createContext],
+        ['create 3 tracks named Bass, Keys and mute Drums', createContext],
+        ['create 0 audio tracks', createContext],
         ['create 33 audio tracks', createContext],
         ['copy clip', createContext],
         ['mute Bass', createDuplicateBassContext],
