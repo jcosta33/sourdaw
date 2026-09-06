@@ -134,10 +134,21 @@ describe('Workspace Project Handlers', () => {
         expect(importAudioFile).not.toHaveBeenCalled();
 
         const successorFile = new File([], 'successor.wav');
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        vi.mocked(importAudioFile).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         vi.mocked(pickFiles).mockResolvedValueOnce([successorFile]);
         await handleImportAudioFile.execute({ type: 'importAudioFile' });
         await vi.waitFor(() => expect(importAudioFile).toHaveBeenCalledTimes(1));
         expect(importAudioFile).toHaveBeenCalledWith(successorFile, { shouldContinue: expect.any(Function) });
+        const successorOptions = vi.mocked(importAudioFile).mock.calls[0]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
+        projectEpoch.advance();
+        expect(successorOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
     });
 
     it('handleImportAudioFile notifies on error when the dialog rejects', async () => {
@@ -194,10 +205,21 @@ describe('Workspace Project Handlers', () => {
         expect(importMidiFile).not.toHaveBeenCalled();
 
         const successorFile = new File([], 'successor.mid');
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        vi.mocked(importMidiFile).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         vi.mocked(pickFiles).mockResolvedValueOnce([successorFile]);
         await handleImportMidiFile.execute({ type: 'importMidiFile' });
         await vi.waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(1));
         expect(importMidiFile).toHaveBeenCalledWith(successorFile, { shouldContinue: expect.any(Function) });
+        const successorOptions = vi.mocked(importMidiFile).mock.calls[0]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
+        projectEpoch.advance();
+        expect(successorOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
     });
 
     it('handleImportMidiFile notifies on error when the dialog rejects', async () => {

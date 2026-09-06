@@ -189,6 +189,7 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     cancelExport: vi.fn(),
     exportStems: mocks.exportStems,
     getAudioContext: mocks.getAudioContext,

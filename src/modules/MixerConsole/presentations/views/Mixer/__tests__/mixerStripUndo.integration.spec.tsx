@@ -118,6 +118,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
 vi.mock('#/modules/Project/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Project/useCases')>('#/modules/Project/useCases');
     return {
+        captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
         exportProjectFile: actual.exportProjectFile,
         newProject: actual.newProject,
         pickFiles: actual.pickFiles,

@@ -50,6 +50,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

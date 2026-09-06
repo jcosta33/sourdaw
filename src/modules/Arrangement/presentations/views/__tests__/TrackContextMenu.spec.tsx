@@ -439,8 +439,13 @@ describe('TrackContextMenu', () => {
         expect(vi.mocked(setInputMonitoring)).toHaveBeenCalledWith('track1', 'on');
     });
 
-    it('imports a selected audio file into the track', async () => {
-        vi.mocked(importAudioClipToTrack).mockResolvedValue('completed');
+    it('keeps a forwarded audio continuation bound to its picker epoch', async () => {
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        vi.mocked(importAudioClipToTrack).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
@@ -458,9 +463,32 @@ describe('TrackContextMenu', () => {
                 shouldContinue: expect.any(Function),
             });
         });
+        const originalOptions = vi.mocked(importAudioClipToTrack).mock.calls[0]?.[2];
+        expect(originalOptions?.shouldContinue()).toBe(true);
+
+        projectEpoch.advance();
+        expect(originalOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
+        await Promise.resolve();
+
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import Audio...'));
+        const successorFile = new File(['data'], 'successor.wav', { type: 'audio/wav' });
+        Object.defineProperty(audioInput, 'files', { value: [successorFile], configurable: true });
+        fireEvent.change(audioInput);
+
+        await vi.waitFor(() => expect(importAudioClipToTrack).toHaveBeenCalledTimes(2));
+        const successorOptions = vi.mocked(importAudioClipToTrack).mock.calls[1]?.[2];
+        expect(successorOptions?.shouldContinue()).toBe(true);
     });
 
-    it('imports a selected MIDI file', async () => {
+    it('keeps a forwarded MIDI continuation bound to its picker epoch', async () => {
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        vi.mocked(importMidiFile).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         renderWithTooltip(
             <TrackContextMenu track={mockTrack}>
                 <div data-testid="track">Track Content</div>
@@ -476,6 +504,22 @@ describe('TrackContextMenu', () => {
         await vi.waitFor(() => {
             expect(vi.mocked(importMidiFile)).toHaveBeenCalledWith(file, { shouldContinue: expect.any(Function) });
         });
+        const originalOptions = vi.mocked(importMidiFile).mock.calls[0]?.[1];
+        expect(originalOptions?.shouldContinue()).toBe(true);
+
+        projectEpoch.advance();
+        expect(originalOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
+
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Import MIDI...'));
+        const successorFile = new File(['data'], 'successor.mid', { type: 'audio/midi' });
+        Object.defineProperty(midiInput, 'files', { value: [successorFile], configurable: true });
+        fireEvent.change(midiInput);
+
+        await vi.waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(2));
+        const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
     });
 
     it('keeps a stale picker out of the successor track while a new picker remains current', async () => {

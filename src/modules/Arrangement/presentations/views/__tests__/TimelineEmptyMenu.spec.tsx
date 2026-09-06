@@ -591,16 +591,26 @@ describe('TimelineEmptyMenu', () => {
         expect(importMidiFileMock).not.toHaveBeenCalled();
         expect(storeValues.track.tracks).toBe(successorTracks);
 
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        importMidiFileMock.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
         fireEvent.click(screen.getByText('Import MIDI…'));
         const successorFile = new File([], 'successor.mid', { type: 'audio/midi' });
         Object.defineProperty(captured!, 'files', { value: [successorFile], configurable: true });
-        await captured!.onchange?.(new Event('change'));
-        createSpy.mockRestore();
+        const successorImport = captured!.onchange?.(new Event('change')) as Promise<void>;
 
         const successorOptions = importMidiFileMock.mock.calls[0]?.[1];
         expect(projectEpoch.latest()?.isCurrent()).toBe(true);
         expect(importMidiFileMock).toHaveBeenCalledWith(successorFile, { shouldContinue: expect.any(Function) });
         expect(successorOptions?.shouldContinue()).toBe(true);
+        projectEpoch.advance();
+        expect(successorOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
+        await successorImport;
+        createSpy.mockRestore();
     });
 
     it('notifies on a failed audio decode and adds nothing', async () => {

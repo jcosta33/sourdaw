@@ -70,6 +70,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     ensureTrackStrip: mocks.ensureTrackStrip,
     setTrackOutput: mocks.setTrackOutput,
     setTrackGain: mocks.setTrackGain,

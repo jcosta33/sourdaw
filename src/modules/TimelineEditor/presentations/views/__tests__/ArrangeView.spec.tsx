@@ -433,17 +433,32 @@ describe('ArrangeView', () => {
         expect(addClip).toHaveBeenCalled();
     });
 
-    it('imports every well-formed MIDI file in a drop without touching notifyUser', async () => {
-        vi.mocked(importMidiFile).mockResolvedValueOnce('completed');
+    it('keeps a forwarded MIDI continuation bound to its drop epoch', async () => {
+        vi.mocked(importMidiFile).mockImplementationOnce(async (_file, options) => {
+            expect(options.shouldContinue()).toBe(true);
+            projectEpoch.advance();
+            expect(options.shouldContinue()).toBe(false);
+            return 'superseded';
+        });
 
         render(<ArrangeView />);
         const goodMidi = new File([new Uint8Array([1, 2, 3])], 'melody.mid', { type: 'audio/midi' });
         dropFiles([goodMidi]);
 
-        await waitFor(() => {
-            expect(importMidiFile).toHaveBeenCalledWith(goodMidi, { shouldContinue: expect.any(Function) });
-        });
+        await waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(1));
+        const originalOptions = vi.mocked(importMidiFile).mock.calls[0]?.[1];
+        expect(originalOptions?.shouldContinue()).toBe(false);
+
+        const successorMidi = new File([new Uint8Array([4, 5, 6])], 'successor.mid', { type: 'audio/midi' });
+        vi.mocked(importMidiFile).mockResolvedValueOnce('completed');
+        dropFiles([successorMidi]);
+
+        await waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(2));
+        const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
         expect(notifyUser).not.toHaveBeenCalled();
+        expect(addTrack).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
     });
 
     it('discards every uncommitted parallel decode when the initiating project is superseded', async () => {
