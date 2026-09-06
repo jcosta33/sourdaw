@@ -246,22 +246,56 @@ const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_
 ///
 /// This law assumes about one op per command, and every command holds to
 /// that except one: [`GraphCommandPayload::SetDeviceParameters`] expands one
-/// command into up to [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] `SetParam` ops, its
-/// own named ceiling charged before that command's keys are ever parsed. The
-/// op count that actually sizes the two rings is therefore bounded by
-/// `MAX_BATCH_COMMANDS * MAX_IMMEDIATE_DEVICE_PARAMETERS`, not by
+/// command into up to [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] `SetParam` ops. A
+/// per-record ceiling alone does not bound a batch of many such records, so
+/// `map_batch` also charges every record's key count against a running total
+/// for the whole batch, refusing before
+/// [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`] is crossed and before that
+/// record's keys are ever parsed. The op count that actually sizes the two
+/// rings is therefore bounded by `MAX_BATCH_COMMANDS +
+/// MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH` — every command one op, plus at
+/// most the batch ceiling of expanded immediate writes — not by
 /// `MAX_BATCH_COMMANDS` alone.
 const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
     * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
 
 /// The most parameters one `set-device-parameters` record may carry.
 ///
-/// The largest honest record is one full Fermenter patch: the descriptor's
-/// 105 parameter ids plus its 8 macro slots (`macro0`..`macro7`), 113 keys
-/// in all. This ceiling rounds that up to 128 for headroom, and is charged
-/// against the record's length before any key is resolved, so a hostile
-/// record is refused without ever parsing a single name.
+/// The largest honest record is one full Fermenter patch, sized from the
+/// wire producer rather than from any claimed instrument vocabulary:
+/// `mapFermenterPatchToDspPatch`
+/// (`src/modules/Fermenter/useCases/fermenterParamBridge/`) emits one key per
+/// entry of the parameter descriptor (`FERMENTER_PARAMS`, 105 entries) plus
+/// one key per macro slot of the patch model (`FermenterPatch.macros`, 8
+/// slots) — 113 keys for a full patch. This ceiling rounds that up to 128
+/// for headroom. Whether the instrument honours any given key is the
+/// instrument's own affair, never this count's claim: `macro0`..`macro7` are
+/// keys the producer emits, not parameters `crates/daw-dsp/src/fermenter/`
+/// defines, and a well-shaped name the instrument does not recognize is
+/// simply a silent no-op there — `FermenterParamName::parse` admits any
+/// well-shaped snake_case name whether or not the DSP crate acts on it. The
+/// ceiling is charged against the record's length before any key is
+/// resolved, so a hostile record is refused without ever parsing a single
+/// name.
 const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
+
+/// The most immediate device parameters one whole batch may carry, summed
+/// across every [`GraphCommandPayload::SetDeviceParameters`] record in it.
+///
+/// [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] bounds one record; nothing stopped a
+/// batch from naming [`MAX_BATCH_COMMANDS`] such records, each at the
+/// per-record ceiling, and expanding into tens of millions of `SetParam`
+/// ops — resident allocation on the very rings `MAX_BATCH_COMMANDS` exists to
+/// bound. The largest honest batch is one full patch write to every device
+/// slot of one strip in one animation frame: the producer batches one frame
+/// of gestures, never more than a strip's own chain, so
+/// `MAX_TRACK_DEVICES` records at the per-record ceiling is the most an
+/// honest producer ever sends in one batch. `map_batch` charges every
+/// record's key count against this running total before that record's own
+/// keys are resolved, refusing the batch whole — naming the running count and
+/// this ceiling — the moment it would be crossed.
+const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
+    MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
 
 /// MIDI channels a scheduled note can sound on.
 ///
@@ -372,8 +406,13 @@ pub enum GraphCommandPayload {
     /// at a borrowed instance is refused rather than mapped through a built-in
     /// vocabulary that cannot address it.
     ///
-    /// `values` is charged against [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] before
-    /// any key is resolved, because each entry becomes one `SetParam` op.
+    /// `values` is charged against [`MAX_IMMEDIATE_DEVICE_PARAMETERS`], and
+    /// this record's count together with every earlier
+    /// `SetDeviceParameters` record in the same batch is charged against
+    /// [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`], before any key is
+    /// resolved — because each entry becomes one `SetParam` op, and a batch
+    /// of records at the per-record ceiling would otherwise carry no bound
+    /// of its own.
     #[serde(rename_all = "camelCase")]
     SetDeviceParameters {
         track_id: String,
@@ -1332,6 +1371,13 @@ struct QueueBudgets {
     /// drains it — what [`GraphRegistry::release_landed`] later holds each
     /// stamp's proof against.
     charging_batch: u64,
+    /// Immediate device-parameter keys charged so far by every
+    /// `SetDeviceParameters` record this batch has mapped. Unlike the two
+    /// queue ledgers above, this counts only within one batch — it starts at
+    /// zero on every [`Self::seeded_from`] rather than carrying state across
+    /// batches, because the cost it bounds (ring size for the batch being
+    /// built) resets with the batch, not with the engine's queues.
+    immediate_device_parameters: usize,
 }
 
 impl QueueBudgets {
@@ -1340,7 +1386,33 @@ impl QueueBudgets {
             automation: registry.automation_pending.clone(),
             device_params: registry.device_param_pending.clone(),
             charging_batch: registry.batches_sent + 1,
+            immediate_device_parameters: 0,
         }
+    }
+
+    /// Charges one `SetDeviceParameters` record's key count against both the
+    /// per-record ceiling and the running total for the whole batch, before
+    /// any of the record's keys are resolved. A refusal here leaves this
+    /// record's ops unpushed — the caller (`map_command`) returns before
+    /// building any — and `map_batch` refuses the whole batch on any
+    /// record's refusal, so nothing built for an earlier record in the same
+    /// batch is ever applied either.
+    fn charge_immediate_device_parameters(&mut self, record_len: usize) -> Result<(), String> {
+        if record_len > MAX_IMMEDIATE_DEVICE_PARAMETERS {
+            return Err(format!(
+                "record carries {record_len} parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS}"
+            ));
+        }
+        let running_total = self.immediate_device_parameters + record_len;
+        if running_total > MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH {
+            return Err(format!(
+                "batch carries {running_total} immediate parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH}"
+            ));
+        }
+        self.immediate_device_parameters = running_total;
+        Ok(())
     }
 
     fn charge_automation(
@@ -2727,13 +2799,14 @@ fn map_command(
                      whose parameters take the plugin host's own control path"
                 ));
             };
-            if values.len() > MAX_IMMEDIATE_DEVICE_PARAMETERS {
-                return Err(format!(
-                    "set-device-parameters: record carries {} parameters, past the ceiling of \
-                     {MAX_IMMEDIATE_DEVICE_PARAMETERS}",
-                    values.len()
-                ));
-            }
+            // Charged against both the per-record ceiling and the running
+            // batch total before any key is resolved: a batch admits many
+            // such records, and the per-record ceiling alone does not bound
+            // how many of them one batch may carry (see
+            // `MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`).
+            budgets
+                .charge_immediate_device_parameters(values.len())
+                .map_err(|reason| format!("set-device-parameters: {reason}"))?;
             let effect_id = device.native_effect_id;
             // No queue charge, unlike the stamped write above: these land on
             // the next drain rather than waiting in the device's
@@ -2742,7 +2815,7 @@ fn map_command(
             // command ring is the only capacity they spend, and
             // `EngineHandle::send_graph_batch_with_headroom` sizes it to the
             // batch it is handed, one `SetParam` op per entry up to the
-            // ceiling charged above.
+            // ceilings charged above.
             for (param, value) in immediate_device_parameters(builtin, values, device_id)? {
                 ops.push(GraphCommand::SetParam(effect_id, param, value));
             }
@@ -7459,6 +7532,33 @@ mod tests {
         ]))
     }
 
+    /// One batch carrying several `set-device-parameters` records, each
+    /// aimed at `device_id` on `track_id` — the shape a batch-wide ceiling
+    /// has to see across records rather than within one.
+    fn set_device_parameters_records_batch(
+        track_id: &str,
+        device_id: &str,
+        records: Vec<Value>,
+    ) -> GraphBatchPayload {
+        let commands: Vec<Value> = records
+            .into_iter()
+            .map(|values| {
+                json!({ "kind": "set-device-parameters", "trackId": track_id,
+                        "deviceId": device_id, "values": values })
+            })
+            .collect();
+        batch(Value::Array(commands))
+    }
+
+    /// A record of `count` distinct well-shaped fermenter keys, each named so
+    /// records from different calls never collide.
+    fn fermenter_keys_record(prefix: &str, count: usize) -> Value {
+        let values: serde_json::Map<String, Value> = (0..count)
+            .map(|index| (format!("{prefix}_{index:03}"), json!(index as f64 / 1000.0)))
+            .collect();
+        Value::Object(values)
+    }
+
     /// Every immediate device-parameter write a mapping emitted, in order.
     fn immediate_writes(ops: &[GraphCommand]) -> Vec<(usize, DeviceParam, f32)> {
         ops.iter()
@@ -7719,6 +7819,75 @@ mod tests {
         assert!(
             !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
             "the ceiling must be charged before any key is resolved, got: {refusal}"
+        );
+    }
+
+    /// A per-record ceiling alone does not bound a batch of many records: a
+    /// batch of `MAX_TRACK_DEVICES` records, each at the per-record ceiling,
+    /// is the largest honest batch — one full patch write to every device
+    /// slot of one strip in one animation frame — and must map to exactly
+    /// `MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH` immediate writes rather
+    /// than being refused early.
+    #[test]
+    fn set_device_parameters_records_at_the_batch_ceiling_are_accepted() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let records: Vec<Value> = (0..MAX_TRACK_DEVICES)
+            .map(|record_index| {
+                fermenter_keys_record(&format!("r{record_index}"), MAX_IMMEDIATE_DEVICE_PARAMETERS)
+            })
+            .collect();
+
+        let mapped = map_immediate(
+            &set_device_parameters_records_batch("t1", "d-ferm", records),
+            &mut registry,
+        )
+        .expect("a batch at the batch ceiling must be accepted");
+
+        assert_eq!(
+            immediate_writes(&mapped.ops).len(),
+            MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH,
+            "a batch at the batch ceiling must map to exactly that many immediate writes"
+        );
+    }
+
+    /// One key past the batch ceiling refuses the whole batch before any of
+    /// the offending record's keys are resolved. The extra record's one key
+    /// is shaped unlike a fermenter parameter name, so if the batch charge
+    /// ran after key resolution the refusal would instead name that key —
+    /// proving the batch charge precedes parsing, the refusal here must be
+    /// the batch ceiling's own message naming the running count and the
+    /// batch ceiling, not the name refusal.
+    #[test]
+    fn set_device_parameters_records_past_the_batch_ceiling_are_refused_naming_count_and_ceiling() {
+        let mut registry =
+            registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
+
+        let mut records: Vec<Value> = (0..MAX_TRACK_DEVICES)
+            .map(|record_index| {
+                fermenter_keys_record(&format!("r{record_index}"), MAX_IMMEDIATE_DEVICE_PARAMETERS)
+            })
+            .collect();
+        records.push(json!({ "filterCutoff": 0.5 }));
+
+        let refusal = map_immediate(
+            &set_device_parameters_records_batch("t1", "d-ferm", records),
+            &mut registry,
+        )
+        .expect_err("a batch past the batch ceiling must be refused");
+
+        assert!(
+            refusal.contains(&format!(
+                "batch carries {} immediate parameters, past the ceiling of \
+                 {MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH}",
+                MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH + 1
+            )),
+            "refusal must name the running count and the batch ceiling, got: {refusal}"
+        );
+        assert!(
+            !refusal.contains("filterCutoff") && !refusal.contains("is not a fermenter parameter"),
+            "the batch charge must precede parsing, got: {refusal}"
         );
     }
 
