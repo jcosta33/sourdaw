@@ -100,6 +100,17 @@ describe('the fermenter body', () => {
             expect(Object.keys(projected).length).toBeLessThanOrEqual(MAX_IMMEDIATE_DEVICE_PARAMETERS);
         }
     });
+
+    // Every authored id resolves; a macro slot does not, because project truth
+    // stores the eight slots as one `macros` array rather than as individually
+    // keyed `parameterValues` entries, so no lane parameter id ever spells one.
+    it('resolves every authored id, and refuses a macro slot or an unknown id', () => {
+        for (const param of FERMENTER_PARAMS) {
+            expect(bodyOf('fermenter').addressesParameter(param.id)).toBe(true);
+        }
+        expect(bodyOf('fermenter').addressesParameter('macro0')).toBe(false);
+        expect(bodyOf('fermenter').addressesParameter('bogus')).toBe(false);
+    });
 });
 
 describe('the knead body', () => {
@@ -112,5 +123,16 @@ describe('the knead body', () => {
         expect(bodyOf('knead').projectPatch({ shift_semitones: 3, label: 'up a third' })).toEqual({
             shift_semitones: 3,
         });
+    });
+
+    // `DeviceParam::from_name` (`crates/daw-engine/src/timeline.rs`) is the
+    // closed set this mirrors. Knead's own descriptor declares no parameters
+    // at all, so this is the only thing that stops the descriptor law from
+    // admitting any id a lane can spell for it (#3893).
+    it('resolves exactly the names the engine parses, and nothing else', () => {
+        expect(bodyOf('knead').addressesParameter('shift_semitones')).toBe(true);
+        expect(bodyOf('knead').addressesParameter('retune_speed_ms')).toBe(true);
+        expect(bodyOf('knead').addressesParameter('formant_preserve')).toBe(true);
+        expect(bodyOf('knead').addressesParameter('pitch')).toBe(false);
     });
 });

@@ -485,4 +485,77 @@ describe('readLiveAutomationWrites — carried built-in devices', () => {
 
         expect(deviceTargets(result)).toEqual([]);
     });
+
+    // The descriptor law fails open on a name its descriptor never declares —
+    // Knead's own descriptor declares no parameters at all — so an accept-all
+    // law is exactly the case that would let a lane the device does not hold
+    // through if the presence check were missing (#3893).
+    it('refuses a carried Knead lane the device does not hold', () => {
+        const KNEAD_WITHOUT_PARAMETERS: Device = { ...KNEAD_DEVICE, parameterValues: {} };
+        fillBuiltinSeam();
+        carry([KNEAD_WITHOUT_PARAMETERS]);
+
+        const result = readStrip([KNEAD_WITHOUT_PARAMETERS]);
+
+        expect(deviceTargets(result)).toEqual([]);
+    });
+
+    // Presence on the device is not enough either: the device can hold a key
+    // the body still cannot resolve into a name the engine parses
+    // (`DeviceParam::from_name`) or expands (`builtin_parameter`), and that
+    // name would refuse the whole `write-device-parameter` batch it travels in.
+    it('refuses a parameter the body does not resolve even when the device holds it', () => {
+        const FERMENTER_WITH_BOGUS: Device = {
+            ...FERMENTER_DEVICE,
+            parameterValues: { filterCutoff: 0.4, bogus: 1 },
+        };
+        const BOGUS_LANE: StoredAutomationLane = {
+            ...HOSTED_LANE,
+            id: 'lane-d1-bogus',
+            parameterId: 'd1:bogus',
+            parameterName: 'd1:bogus',
+        };
+        fillBuiltinSeam();
+        carry([FERMENTER_WITH_BOGUS]);
+        automationStore.set({ lanes: [BOGUS_LANE] });
+
+        const result = readStrip([FERMENTER_WITH_BOGUS]);
+
+        expect(deviceTargets(result)).toEqual([]);
+    });
+
+    /** The hosted half of the seam, accepting one chosen parameter id rather than {@link HOSTED_LANE}'s fixed `'7'`. */
+    function fillHostedSeamAccepting(parameterId: string): void {
+        offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instanceId, candidateId) =>
+            candidateId === parameterId;
+        offlineDeviceParameterLawState.clampExternalPluginValue = ({ value }) => value;
+        offlineDeviceParameterLawState.quantiseValue = ({ value }) => value;
+    }
+
+    // A camelCase hosted id is exactly what the Fermenter translator would
+    // visibly mangle (`driveAmount` -> `drive_amount`) if it were ever applied
+    // to the wrong device on the strip — the regression `addressedNatively`
+    // must resolve each entry's own device for, not the strip's first built-in.
+    it('re-addresses only the built-in when a hosted device shares the strip', () => {
+        const HOSTED_DRIVE_LANE: StoredAutomationLane = {
+            ...HOSTED_LANE,
+            id: 'lane-plugin-driveAmount',
+            parameterId: `${HOSTED_DEVICE.id}:driveAmount`,
+            parameterName: `${HOSTED_DEVICE.id}:driveAmount`,
+        };
+        fillHostedSeamAccepting('driveAmount');
+        fillBuiltinSeam();
+        carry([HOSTED_DEVICE, FERMENTER_DEVICE]);
+        automationStore.set({ lanes: [HOSTED_DRIVE_LANE, FERMENTER_LANE] });
+
+        const result = readStrip([HOSTED_DEVICE, FERMENTER_DEVICE]);
+
+        expect(deviceTargets(result)).toHaveLength(2);
+        expect(deviceTargets(result)).toEqual(
+            expect.arrayContaining([
+                { deviceId: HOSTED_DEVICE.id, parameterId: 'driveAmount' },
+                { deviceId: FERMENTER_DEVICE.id, parameterId: 'cutoff' },
+            ])
+        );
+    });
 });

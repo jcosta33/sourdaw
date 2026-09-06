@@ -52,7 +52,7 @@
  * binding one is exactly what this file is for.
  */
 
-import { deriveVcaMultiplier, getVcaGroupsState, type Track } from '#/modules/Arrangement/stores';
+import { deriveVcaMultiplier, getVcaGroupsState, type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
@@ -103,11 +103,45 @@ function instanceIdByDeviceId(stripTracks: readonly Track[]): ReadonlyMap<string
     return instances;
 }
 
-/** The type project truth records for each device on these strips, by device id. */
-function deviceTypeByDeviceId(stripTracks: readonly Track[]): ReadonlyMap<string, string> {
+/** The device project truth records for each device on these strips, by device id. */
+function deviceByDeviceId(stripTracks: readonly Track[]): ReadonlyMap<string, Device> {
     return new Map(
-        stripTracks.flatMap((track) => track.devices.map((device): [string, string] => [device.id, device.type]))
+        stripTracks.flatMap((track) => track.devices.map((device): [string, Device] => [device.id, device]))
     );
+}
+
+/**
+ * Whether a carried built-in lane may stamp this parameter, given the seam
+ * already answered `builtin !== null`.
+ *
+ * The presence check mirrors `deviceAcceptsAutomationParameter`
+ * (`Transport/useCases/scheduling/applyAutomation/applyAutomation.ts`): a key
+ * must already sit on the device before either law is asked, because the
+ * descriptor law fails open on a name its descriptor never declares — Knead's
+ * own descriptor declares no parameters, so the law alone would admit any id a
+ * lane can spell. The body's own vocabulary
+ * (`nativeBuiltinBody(...).addressesParameter`) is the second gate: it is what
+ * decides whether the engine can resolve the name at all, and one
+ * unresolvable name refuses the whole `write-device-parameter` batch. Only
+ * once both hold is the declared law itself consulted.
+ */
+function builtinResolvesParameter(input: {
+    device: Device | undefined;
+    deviceType: string;
+    parameterId: string;
+    builtin: BuiltinParameterHalf;
+}): boolean {
+    const { device, deviceType, parameterId, builtin } = input;
+    if (!device) {
+        return false;
+    }
+    if (device.parameterValues[parameterId] === undefined) {
+        return false;
+    }
+    if (!nativeBuiltinBody(deviceType)?.addressesParameter(parameterId)) {
+        return false;
+    }
+    return builtin.accepts({ deviceType, paramId: parameterId });
 }
 
 /**
@@ -140,24 +174,26 @@ function liveDeviceParameterLaw(stripTracks: readonly Track[]): {
     }
 
     const instances = instanceIdByDeviceId(stripTracks);
+    const devices = deviceByDeviceId(stripTracks);
     return {
         hosted,
         builtin,
         law: {
             // Which family answers is decided by what the device is, exactly as
             // the engine's own mapper decides it: a device that resolves to an
-            // instance is the plugin's to speak for, and anything else is
-            // admitted only where the engine builds a body for its type.
+            // instance is the plugin's to speak for, and anything else is a
+            // built-in, admitted only where the device already holds the
+            // parameter, the body resolves that id at all, and the declared law
+            // accepts it — see `builtinResolvesParameter`.
             acceptsAutomation: ({ deviceId, deviceType, parameterId }) => {
                 const externalInstanceId = instances.get(deviceId);
                 if (externalInstanceId !== undefined) {
                     return hosted !== null && hosted.accepts(externalInstanceId, parameterId);
                 }
-                return (
-                    builtin !== null &&
-                    nativeBuiltinBody(deviceType) !== null &&
-                    builtin.accepts({ deviceType, paramId: parameterId })
-                );
+                if (builtin === null) {
+                    return false;
+                }
+                return builtinResolvesParameter({ device: devices.get(deviceId), deviceType, parameterId, builtin });
             },
             clampValue: ({ deviceId, deviceType, paramId, value }) => {
                 const externalInstanceId = instances.get(deviceId);
@@ -199,13 +235,13 @@ function carriedBuiltinDevices(track: Track): readonly StripAutomationDeviceEntr
  */
 function addressedNatively(
     entry: LiveAutomationWritesEntry,
-    deviceTypes: ReadonlyMap<string, string>
+    devices: ReadonlyMap<string, Device>
 ): LiveAutomationWritesEntry {
     if (entry.target.kind !== 'device-parameter') {
         return entry;
     }
-    const deviceType = deviceTypes.get(entry.target.deviceId);
-    const body = deviceType === undefined ? null : nativeBuiltinBody(deviceType);
+    const device = devices.get(entry.target.deviceId);
+    const body = device === undefined ? null : nativeBuiltinBody(device.type);
     if (!body) {
         return entry;
     }
@@ -271,6 +307,6 @@ export function readLiveAutomationWrites(input: ReadLiveAutomationWritesInput): 
         deviceParameterLaw: law,
     });
 
-    const deviceTypes = deviceTypeByDeviceId(stripTracks);
-    return { ...projected, entries: projected.entries.map((entry) => addressedNatively(entry, deviceTypes)) };
+    const devices = deviceByDeviceId(stripTracks);
+    return { ...projected, entries: projected.entries.map((entry) => addressedNatively(entry, devices)) };
 }
