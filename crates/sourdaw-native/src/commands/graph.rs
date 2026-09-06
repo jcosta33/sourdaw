@@ -262,15 +262,26 @@ const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
 /// The most parameters one `set-device-parameters` record may carry.
 ///
 /// Sized from the wire producer, not any claimed instrument vocabulary:
-/// `mapFermenterPatchToDspPatch` (`src/modules/Fermenter/useCases/fermenterParamBridge/`) emits one key per patch field plus one per `macros` slot, and its own spec pins that a full patch fits under this ceiling — 128 rounds that up with headroom.
-/// Whether the instrument honours a key is its own affair; a well-shaped name it does not recognize is simply a silent no-op there. The ceiling is charged against the record's length before any key is resolved, so a hostile record is refused without ever parsing a single name.
+/// `mapFermenterPatchToDspPatch` (`src/modules/Fermenter/useCases/
+/// fermenterParamBridge/`) emits one key per patch field plus one per
+/// `macros` slot, and 128 holds one full patch with headroom; the
+/// TypeScript mirror of this ceiling is what pins that fit. Whether the
+/// instrument honours a key is its own affair; a well-shaped name it does
+/// not recognize is simply a silent no-op there. The ceiling is charged
+/// against the record's length before any key is resolved, so a hostile
+/// record is refused without ever parsing a single name.
 const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 
 /// The most immediate device parameters one whole batch may carry, summed
 /// across every [`GraphCommandPayload::SetDeviceParameters`] record in it.
 ///
-/// This ceiling bounds the sum of every record's key count in one batch. The honest maximum is one full patch written to every device slot of one strip in one animation frame, since the producer batches one frame of gestures at a time.
-/// `map_batch` charges each record's key count against a running total before that record's keys are parsed, refusing the batch whole — naming the running count and this ceiling — the moment it would be crossed.
+/// This ceiling bounds the sum of every record's key count in one batch.
+/// The honest maximum is one full patch written to every device slot of
+/// one strip in one animation frame, since the producer batches one frame
+/// of gestures at a time.
+/// `map_batch` charges each record's key count against a running total
+/// before that record's keys are parsed, refusing the batch whole — naming
+/// the running count and this ceiling — the moment it would be crossed.
 const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
     MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
 
