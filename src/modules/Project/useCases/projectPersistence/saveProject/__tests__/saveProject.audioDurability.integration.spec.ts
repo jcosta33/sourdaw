@@ -181,7 +181,7 @@ describe('saveProject audio durability integration', () => {
         });
 
         indexedDb.pauseAudioWriteSettlements();
-        await importAudioFile(makeMonoWave(PCM));
+        await importAudioFile(makeMonoWave(PCM), { shouldContinue: () => true });
 
         const importedClip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
         expect(importedClip).toBeDefined();

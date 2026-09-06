@@ -6,6 +6,7 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Grid } from '#/components/layout';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -50,6 +51,8 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const [showInputMon, setShowInputMon] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const midiInputRef = useRef<HTMLInputElement>(null);
+    const audioImportAuthorityRef = useRef<ReturnType<typeof captureProjectTransitionAuthority> | null>(null);
+    const midiImportAuthorityRef = useRef<ReturnType<typeof captureProjectTransitionAuthority> | null>(null);
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -83,8 +86,8 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         close();
     };
 
-    const handleImportAudio = async (file: File) => {
-        await importAudioClipToTrack(track.id, file);
+    const handleImportAudio = async (file: File, shouldContinue: () => boolean) => {
+        await importAudioClipToTrack(track.id, file, { shouldContinue });
         close();
     };
 
@@ -114,8 +117,20 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 close();
             },
         },
-        { label: 'Import Audio...', action: () => fileInputRef.current?.click() },
-        { label: 'Import MIDI...', action: () => midiInputRef.current?.click() },
+        {
+            label: 'Import Audio...',
+            action: () => {
+                audioImportAuthorityRef.current = captureProjectTransitionAuthority();
+                fileInputRef.current?.click();
+            },
+        },
+        {
+            label: 'Import MIDI...',
+            action: () => {
+                midiImportAuthorityRef.current = captureProjectTransitionAuthority();
+                midiInputRef.current?.click();
+            },
+        },
         { label: 'Duplicate Track', action: handleDuplicate },
         { label: 'Rename', action: handleRenameStart },
         { label: 'Track Color...', action: () => setShowColorPicker(true) },
@@ -309,8 +324,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 className="hidden"
                 onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file) {
-                        void handleImportAudio(file);
+                    const authority = audioImportAuthorityRef.current;
+                    audioImportAuthorityRef.current = null;
+                    if (file && authority?.isCurrent()) {
+                        void handleImportAudio(file, authority.isCurrent);
                     }
                     event.target.value = '';
                 }}
@@ -322,8 +339,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 className="hidden"
                 onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file) {
-                        void importMidiFile(file);
+                    const authority = midiImportAuthorityRef.current;
+                    midiImportAuthorityRef.current = null;
+                    if (file && authority?.isCurrent()) {
+                        void importMidiFile(file, { shouldContinue: authority.isCurrent });
                     }
                     event.target.value = '';
                     close();

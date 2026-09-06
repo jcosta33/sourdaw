@@ -40,6 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
     ensureBusStrip: vi.fn(),
     garbageCollectCachedAudioBuffersByAge: vi.fn(),
     garbageCollectCachedAudioBuffersBySize: vi.fn(),

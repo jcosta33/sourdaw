@@ -15,6 +15,7 @@ import { SamplesTab } from '../SamplesTab';
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

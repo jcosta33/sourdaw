@@ -5,6 +5,7 @@ import { importAudioFile } from '../importAudioFile';
 
 const mocks = vi.hoisted(() => ({
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
     getAssetTransfer: vi.fn(),
     addClip: vi.fn(),
     pushUndoEntry: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     decodeAudioFile: mocks.decodeAudioFile,
+    discardDecodedAudioFile: mocks.discardDecodedAudioFile,
 }));
 
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
@@ -54,22 +56,25 @@ describe('importAudioFile', () => {
             buffer: { duration: 1 } as AudioBuffer,
         });
         mocks.getAssetTransfer.mockReturnValue(null);
+        mocks.addClip.mockReturnValue({ id: 'clip-imported' });
     });
 
     it('does not drop a concurrent track edit that lands during the asset-hash await', async () => {
-        // addLocalAsset is the awaited yield point (a real hashBlob is async).
+        // stageLocalAsset is the awaited yield point (a real hashBlob is async).
         // Hold it open, inject a concurrent trackStore write, then resolve.
         let releaseHash: (hash: string) => void = () => {};
         const hashGate = new Promise<string>((resolve) => {
             releaseHash = resolve;
         });
         mocks.getAssetTransfer.mockReturnValue({
-            addLocalAsset: vi.fn(() => hashGate),
+            stageLocalAsset: vi.fn(async () => ({ hash: await hashGate, leaseId: 'lease-1' })),
+            releaseStagedAsset: vi.fn(),
+            promoteStagedAsset: vi.fn(),
         });
 
-        const importPromise = importAudioFile(new File([], 'kick.wav'));
+        const importPromise = importAudioFile(new File([], 'kick.wav'), { shouldContinue: () => true });
 
-        // Let the import advance to the addLocalAsset await.
+        // Let the import advance to the staged asset-hash await.
         await Promise.resolve();
         await Promise.resolve();
 
@@ -87,10 +92,11 @@ describe('importAudioFile', () => {
         expect(ids).toContain('concurrent-track');
         // The imported audio track is also present (2 tracks total).
         expect(trackStore.value?.tracks).toHaveLength(2);
+        expect(mocks.getAssetTransfer.mock.results[0]?.value.promoteStagedAsset).toHaveBeenCalledWith('lease-1');
     });
 
     it('imports a file into an empty project creating a new bar-aligned audio track', async () => {
-        await importAudioFile(new File([], 'loop.wav'));
+        await importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true });
 
         // A single new audio track is created and a clip placed on it.
         expect(trackStore.value?.tracks).toHaveLength(1);
@@ -116,7 +122,7 @@ describe('importAudioFile', () => {
     it('aborts with an error notification when decoding fails', async () => {
         mocks.decodeAudioFile.mockRejectedValue(new Error('unsupported'));
 
-        await importAudioFile(new File([], 'corrupt.wav'));
+        await importAudioFile(new File([], 'corrupt.wav'), { shouldContinue: () => true });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('corrupt.wav'), 'error');
         expect(trackStore.value?.tracks).toHaveLength(0);
@@ -126,7 +132,7 @@ describe('importAudioFile', () => {
 
     it('records an undo function that restores the pre-import track state', async () => {
         const before = trackStore.value;
-        await importAudioFile(new File([], 'loop.wav'));
+        await importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true });
 
         const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
         undo();
@@ -136,7 +142,7 @@ describe('importAudioFile', () => {
     });
 
     it('records a redo function that reapplies the post-import track state', async () => {
-        await importAudioFile(new File([], 'loop.wav'));
+        await importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true });
 
         const snapshotAfterImport = trackStore.value;
         // Simulate a later unrelated change.
@@ -151,7 +157,9 @@ describe('importAudioFile', () => {
     it('aborts silently when the track store has not loaded before decode', async () => {
         trackStore.set(null);
 
-        await importAudioFile(new File([], 'loop.wav'));
+        await importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true });
+
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
 
         // decode ran, but there is no state to write into
         expect(mocks.addClip).not.toHaveBeenCalled();
@@ -165,10 +173,12 @@ describe('importAudioFile', () => {
             releaseHash = resolve;
         });
         mocks.getAssetTransfer.mockReturnValue({
-            addLocalAsset: vi.fn(() => hashGate),
+            stageLocalAsset: vi.fn(async () => ({ hash: await hashGate, leaseId: 'lease-1' })),
+            releaseStagedAsset: vi.fn(),
+            promoteStagedAsset: vi.fn(),
         });
 
-        const importPromise = importAudioFile(new File([], 'kick.wav'));
+        const importPromise = importAudioFile(new File([], 'kick.wav'), { shouldContinue: () => true });
         await Promise.resolve();
         await Promise.resolve();
 
@@ -179,11 +189,56 @@ describe('importAudioFile', () => {
 
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
+    });
+
+    it('discards a decoded buffer when the initiating project is superseded', async () => {
+        let resolveDecode!: (value: { id: string; buffer: AudioBuffer }) => void;
+        mocks.decodeAudioFile.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveDecode = resolve;
+            })
+        );
+        let current = true;
+
+        const importPromise = importAudioFile(new File([], 'stale.wav'), { shouldContinue: () => current });
+        current = false;
+        resolveDecode({ id: 'audio-stale', buffer: { duration: 1 } as AudioBuffer });
+
+        await expect(importPromise).resolves.toBe('superseded');
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('audio-stale');
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('releases the staged lease from the captured transfer when superseded during hashing', async () => {
+        let current = true;
+        const transfer = {
+            stageLocalAsset: vi.fn(async () => {
+                current = false;
+                return { hash: 'hash-stale', leaseId: 'lease-stale' };
+            }),
+            releaseStagedAsset: vi.fn(),
+            promoteStagedAsset: vi.fn(),
+        };
+        mocks.getAssetTransfer.mockReturnValue(transfer);
+
+        await expect(importAudioFile(new File([], 'stale.wav'), { shouldContinue: () => current })).resolves.toBe(
+            'superseded'
+        );
+
+        expect(mocks.getAssetTransfer).toHaveBeenCalledTimes(1);
+        expect(transfer.releaseStagedAsset).toHaveBeenCalledWith('lease-stale');
+        expect(transfer.promoteStagedAsset).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
+        expect(trackStore.value?.tracks).toEqual([]);
     });
 
     it('falls back to a 120 BPM tempo when the transport store is empty', async () => {
         // transportStore.value is null by default (not mocked) → tempo ?? 120.
-        await importAudioFile(new File([], 'loop.wav'));
+        await importAudioFile(new File([], 'loop.wav'), { shouldContinue: () => true });
 
         const clip = mocks.addClip.mock.calls[0]?.[0] as { endBeat: number };
         // duration 1s at 120 BPM = 2 beats → ceil(2/4)*4 = 4 beats.

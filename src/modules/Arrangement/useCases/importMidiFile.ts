@@ -22,7 +22,7 @@ type ImportedTrackIdentities = {
 };
 
 type ImportMidiFileOptions = {
-    shouldContinue?: () => boolean;
+    shouldContinue: () => boolean;
 };
 
 type ImportMidiFileOutput = 'completed' | 'superseded';
@@ -90,16 +90,19 @@ function removeImportedTracks(identities: ImportedTrackIdentities): void {
 
 export async function importMidiFile(
     file: File,
-    { shouldContinue }: ImportMidiFileOptions = {}
+    { shouldContinue }: ImportMidiFileOptions
 ): Promise<ImportMidiFileOutput> {
     let parsedTracks: Awaited<ReturnType<typeof readMidiFile>>;
     try {
         parsedTracks = await readMidiFile(file);
     } catch {
+        if (!shouldContinue()) {
+            return 'superseded';
+        }
         notifyUser(`Failed to import "${file.name}" - invalid or corrupt MIDI file`, 'error');
         return 'completed';
     }
-    if (shouldContinue?.() === false) {
+    if (!shouldContinue()) {
         return 'superseded';
     }
     if (parsedTracks.length === 0) {
@@ -146,7 +149,7 @@ export async function importMidiFile(
         notifyUser(`Failed to import "${file.name}" - generated track or clip IDs conflict with the project`, 'error');
         return 'completed';
     }
-    if (shouldContinue?.() === false) {
+    if (!shouldContinue()) {
         return 'superseded';
     }
 
@@ -176,7 +179,7 @@ export async function importMidiFile(
         return 'completed';
     }
 
-    if (shouldContinue?.() === false) {
+    if (!shouldContinue()) {
         batchStoreUpdates(() => {
             removeImportedTracks(identities);
             midiChange.undo();

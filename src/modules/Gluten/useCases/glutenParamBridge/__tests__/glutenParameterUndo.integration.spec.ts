@@ -42,6 +42,7 @@ const engineWrites: { trackId: string; deviceId: string; paramId: string; value:
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
         engineWrites.push({ trackId, deviceId, paramId, value });
     },

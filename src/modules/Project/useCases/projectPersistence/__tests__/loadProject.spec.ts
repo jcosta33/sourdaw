@@ -65,6 +65,7 @@ vi.mock('../../../stores/projectStore', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,

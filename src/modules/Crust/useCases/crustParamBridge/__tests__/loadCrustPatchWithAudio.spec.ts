@@ -41,6 +41,7 @@ const { updateDeviceParam, persistDeviceParam } = mocks;
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     updateDeviceParam: mocks.updateDeviceParam,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

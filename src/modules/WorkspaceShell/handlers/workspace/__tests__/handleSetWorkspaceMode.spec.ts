@@ -16,6 +16,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
     pickFiles: vi.fn(),
 }));
 

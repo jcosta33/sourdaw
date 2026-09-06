@@ -8,7 +8,7 @@ import {
     importMidiFile,
     setTimelineHorizontalScrollbarScrollX,
 } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -199,6 +199,34 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
+}));
+
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -281,6 +309,8 @@ const readFirstScrollbarCall = (): { scrollX: number; maxScrollX: number } => {
 describe('ArrangeView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectEpoch.reset();
+        vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
         Object.defineProperty(window, 'innerWidth', {
             configurable: true,
             value: 1000,
@@ -403,17 +433,109 @@ describe('ArrangeView', () => {
         expect(addClip).toHaveBeenCalled();
     });
 
-    it('imports every well-formed MIDI file in a drop without touching notifyUser', async () => {
-        vi.mocked(importMidiFile).mockResolvedValueOnce('completed');
+    it('keeps a forwarded MIDI continuation bound to its drop epoch', async () => {
+        vi.mocked(importMidiFile).mockImplementationOnce(async (_file, options) => {
+            expect(options.shouldContinue()).toBe(true);
+            projectEpoch.advance();
+            expect(options.shouldContinue()).toBe(false);
+            return 'superseded';
+        });
 
         render(<ArrangeView />);
         const goodMidi = new File([new Uint8Array([1, 2, 3])], 'melody.mid', { type: 'audio/midi' });
         dropFiles([goodMidi]);
 
-        await waitFor(() => {
-            expect(importMidiFile).toHaveBeenCalledWith(goodMidi);
-        });
+        await waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(1));
+        const originalOptions = vi.mocked(importMidiFile).mock.calls[0]?.[1];
+        expect(originalOptions?.shouldContinue()).toBe(false);
+
+        const successorMidi = new File([new Uint8Array([4, 5, 6])], 'successor.mid', { type: 'audio/midi' });
+        vi.mocked(importMidiFile).mockResolvedValueOnce('completed');
+        dropFiles([successorMidi]);
+
+        await waitFor(() => expect(importMidiFile).toHaveBeenCalledTimes(2));
+        const successorOptions = vi.mocked(importMidiFile).mock.calls[1]?.[1];
+        expect(successorOptions?.shouldContinue()).toBe(true);
         expect(notifyUser).not.toHaveBeenCalled();
+        expect(addTrack).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
+    });
+
+    it('discards every uncommitted parallel decode when the initiating project is superseded', async () => {
+        let resolveFirst!: (value: { id: string; buffer: AudioBuffer }) => void;
+        let resolveSecond!: (value: { id: string; buffer: AudioBuffer }) => void;
+        vi.mocked(decodeAudioFile)
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveFirst = resolve;
+                })
+            )
+            .mockReturnValueOnce(
+                new Promise((resolve) => {
+                    resolveSecond = resolve;
+                })
+            );
+        render(<ArrangeView />);
+        const first = new File(['first'], 'first.wav', { type: 'audio/wav' });
+        const second = new File(['second'], 'second.wav', { type: 'audio/wav' });
+        dropFiles([first, second]);
+        await waitFor(() => expect(decodeAudioFile).toHaveBeenCalledTimes(2));
+
+        resolveFirst({ id: 'audio-first', buffer: { duration: 1 } as AudioBuffer });
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+        resolveSecond({ id: 'audio-second', buffer: { duration: 1 } as AudioBuffer });
+
+        await waitFor(() => {
+            expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-first');
+            expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-second');
+        });
+        expect(addTrack).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+
+        vi.mocked(decodeAudioFile).mockResolvedValueOnce({
+            id: 'audio-successor',
+            buffer: { duration: 1 } as AudioBuffer,
+        });
+        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-successor' } as ReturnType<typeof addTrack>);
+        const successor = new File(['successor'], 'successor.wav', { type: 'audio/wav' });
+        dropFiles([successor]);
+
+        await waitFor(() => {
+            expect(addClip).toHaveBeenCalledWith(
+                expect.objectContaining({ trackId: 'track-successor', audioBufferId: 'audio-successor' })
+            );
+        });
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+    });
+
+    it('preserves an earlier committed decode when a later MIDI import supersedes the drop', async () => {
+        vi.mocked(decodeAudioFile)
+            .mockResolvedValueOnce({ id: 'audio-committed', buffer: { duration: 1 } as AudioBuffer })
+            .mockResolvedValueOnce({ id: 'audio-pending', buffer: { duration: 1 } as AudioBuffer });
+        vi.mocked(addTrack).mockReturnValueOnce({ id: 'track-committed' } as ReturnType<typeof addTrack>);
+        vi.mocked(importMidiFile).mockImplementationOnce(async () => {
+            projectEpoch.advance();
+            return 'superseded';
+        });
+        render(<ArrangeView />);
+        const first = new File(['first'], 'first.wav', { type: 'audio/wav' });
+        const midi = new File(['midi'], 'switch.mid', { type: 'audio/midi' });
+        const pending = new File(['pending'], 'pending.wav', { type: 'audio/wav' });
+
+        dropFiles([first, midi, pending]);
+
+        await waitFor(() => expect(discardDecodedAudioFile).toHaveBeenCalledWith('audio-pending'));
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'track-committed', audioBufferId: 'audio-committed' })
+        );
+        expect(discardDecodedAudioFile).not.toHaveBeenCalledWith('audio-committed');
+        expect(addTrack).toHaveBeenCalledTimes(1);
+        expect(notifyUser).not.toHaveBeenCalled();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
     });
 
     it('computes the horizontal scrollbar width without blowing the call stack on a very large clip count', () => {
