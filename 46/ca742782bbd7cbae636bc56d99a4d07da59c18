@@ -1,0 +1,16 @@
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_1228e573df1f42 472,513,1769-1785
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.spec.tsx
+  h_1228e573df1f42 36,41,66-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "46ca742782bbd7cbae636bc56d99a4d07da59c18",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
