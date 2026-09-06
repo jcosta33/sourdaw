@@ -36,6 +36,10 @@ function fakePort(root: string) {
         primaryRoot: () => root,
         pullRequest: () => pullRequest(),
         fetchShas: (base, head) => calls.push(`fetch:${base}:${head}`),
+        mergeBase: (base, head) => {
+            calls.push(`merge-base:${base}:${head}`);
+            return 'mergebasesha';
+        },
         diff: (base, head) => `diff ${base} ${head}\n`,
         showFile: (sha, path) => {
             calls.push(`show:${sha}:${path}`);
@@ -69,9 +73,14 @@ describe('review prepare', () => {
             const destination = prepareReview(42, port);
             expect(destination).toBe(reviewBundlePath(root, 42, 'headsha'));
             expect(logs.at(-1)).toBe(destination);
+            expect(calls).toContain('merge-base:basesha:headsha');
+            expect(calls).toContain('show:mergebasesha:AGENTS.md');
+            expect(calls).toContain('show:mergebasesha:CLAUDE.md');
+            expect(calls).toContain('decisions:mergebasesha');
+            expect(calls).toContain('show:mergebasesha:.agents/decisions/0026-ownership-by-exception.md');
             expect(JSON.parse(files['manifest.json'] ?? '{}')).toEqual({
                 pr: 42,
-                baseSha: 'basesha',
+                baseSha: 'mergebasesha',
                 headSha: 'headsha',
                 generated: [
                     'contracts/.agents/decisions/0026-ownership-by-exception.md',
@@ -82,7 +91,7 @@ describe('review prepare', () => {
                     'pr.md',
                 ],
             });
-            expect(files['diff.patch']).toBe('diff basesha headsha\n');
+            expect(files['diff.patch']).toBe('diff mergebasesha headsha\n');
             expect(files['pr.md']).toContain('feat(vcs): add identities');
             expect(files['pr.md']).toContain('Body text');
             expect(files['contracts/AGENTS.md']).toBe('base agents\n');
@@ -95,6 +104,42 @@ describe('review prepare', () => {
             expect(calls.some((call) => call.includes('worktree') || call.includes('agent-'))).toBe(false);
             expect(JSON.stringify(files)).not.toContain('ghs_');
             expect(JSON.stringify(files)).not.toContain('BEGIN RSA');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('resolves baseSha and contracts against the merge-base between base branch and head', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
+        const { port, calls, files } = fakePort(root);
+        port.pullRequest = () =>
+            pullRequest({
+                baseRefOid: 'origin-main-tip',
+                headRefOid: 'feature-head-sha',
+            });
+        port.mergeBase = (base, head) => {
+            calls.push(`merge-base:${base}:${head}`);
+            return 'common-ancestor-sha';
+        };
+        try {
+            prepareReview(42, port);
+            expect(calls).toContain('fetch:origin-main-tip:feature-head-sha');
+            expect(calls).toContain('merge-base:origin-main-tip:feature-head-sha');
+            expect(calls).toContain('show:common-ancestor-sha:AGENTS.md');
+            expect(calls).toContain('show:common-ancestor-sha:CLAUDE.md');
+            expect(calls).toContain('decisions:common-ancestor-sha');
+            expect(calls).toContain('show:common-ancestor-sha:.agents/decisions/0026-ownership-by-exception.md');
+            expect(JSON.parse(files['manifest.json'] ?? '{}')).toMatchObject({
+                pr: 42,
+                baseSha: 'common-ancestor-sha',
+                headSha: 'feature-head-sha',
+            });
+            expect(files['diff.patch']).toBe('diff common-ancestor-sha feature-head-sha\n');
+            expect(files['contracts/AGENTS.md']).toBe('base agents\n');
+            expect(files['contracts/CLAUDE.md']).toBe('base claude\n');
+            expect(files['contracts/.agents/decisions/0026-ownership-by-exception.md']).toBe(
+                'base .agents/decisions/0026-ownership-by-exception.md\n'
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

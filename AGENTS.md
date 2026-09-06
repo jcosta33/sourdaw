@@ -484,11 +484,13 @@ for them; developer-facing or internal work may name its actual validation inter
 diaries, unpublished rounds, and mutation tables off the pull request.
 
 `review:prepare` prints a bundle path on the primary root: `manifest.json`, `diff.patch`, `pr.md`,
-and base-commit `contracts/`. The caller writes `review.json` for **this** head, and later
-`discarded.json` beside it. The bundle path is keyed by head sha, so re-preparing for that same head
-replaces only the generated files and never discards what the caller wrote there. A reviewer agent
-gets that bundle, not the author transcript. `review:publish` prints the review id and posts
-through the reviewer App only while GitHub's head still matches the bundle.
+and merge-base `contracts/`. The bundle's `baseSha` records the merge-base between `origin/main` and
+the pull request head, and `diff.patch` captures the diff against that merge-base so that advances on
+`main` never appear as deletions the pull request makes. The caller writes `review.json` for **this**
+head, and later `discarded.json` beside it. The bundle path is keyed by head sha, so re-preparing
+for that same head replaces only the generated files and never discards what the caller wrote there.
+A reviewer agent gets that bundle, not the author transcript. `review:publish` prints the review id
+and posts through the reviewer App only while GitHub's head still matches the bundle.
 
 Review the diff as that teammate. Read every changed line. If a hunk is not enough to judge, read
 the surrounding code. When something is wrong, comment on that line: what is wrong, why it matters,
