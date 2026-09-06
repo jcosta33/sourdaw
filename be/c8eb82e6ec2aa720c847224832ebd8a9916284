@@ -1,0 +1,29 @@
+scripts/uiRestatementCensus.ts
+  s_9b530f08172a54::t_b32061e76275ab 494-500,502-508
+scripts/__tests__/uiRestatementCensus.spec.ts
+  s_6223b88813e04e::t_317878f5fa2cb5 353-376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "bec8eb82e6ec2aa720c847224832ebd8a9916284",
+  "prompts": {},
+  "sessions": {
+    "s_6223b88813e04e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9e4e7df7d91c15da",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
