@@ -1,0 +1,39 @@
+src/modules/CrdtDocument/workers/crdtWorker.ts
+  s_87ab0a2f60ccf8::t_7c0d0b8aa67c30 22-24,30-31,243-244,268,280-282
+  s_87ab0a2f60ccf8::t_2a1a0563faaf33 283-284
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_87ab0a2f60ccf8::t_7c0d0b8aa67c30 67,485-497
+  s_87ab0a2f60ccf8::t_3a5280b179a103 498-499
+src/modules/CrdtDocument/repositories/__tests__/automergeWorkerTestHarness.ts
+  s_87ab0a2f60ccf8::t_825225905af816 34-41,47-48,130
+  s_87ab0a2f60ccf8::t_d69fd89ed0e4d5 131-132
+src/modules/CrdtDocument/workers/__tests__/checkpointRootMedia.spec.ts
+  s_87ab0a2f60ccf8::t_825225905af816 1-17,21-55,57-60,62-63,66-108,110-111,113-136,138,140-144,146-193
+  s_87ab0a2f60ccf8::t_8b3229dfdf8006 18-20
+  s_87ab0a2f60ccf8::t_914f640ab529a2 56
+  s_87ab0a2f60ccf8::t_104e66e7ffa21f 61,137,145
+  s_87ab0a2f60ccf8::t_3a9d4802dcbe58 64-65,109,112,139
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.checkpointMedia.spec.ts
+  s_87ab0a2f60ccf8::t_825225905af816 1-17,19-22,24-48,51-75,77-80,83-99,101-135
+  s_87ab0a2f60ccf8::t_8b3229dfdf8006 18,23,49-50,76,81-82,100
+src/modules/CrdtDocument/workers/checkpointRootMedia.ts
+  s_87ab0a2f60ccf8::t_104e66e7ffa21f 9-12,29
+  s_87ab0a2f60ccf8::t_b799ad4afc0d0a 75-93,131
+  s_87ab0a2f60ccf8::t_7c0d0b8aa67c30 1-8,13-28,30-74,94-130,132-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "108f037fb140d046dac00a992a50bcfead95c01c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
