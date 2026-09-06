@@ -24,9 +24,18 @@
  *
  * ── Clear all, then schedule, in one batch ────────────────────────────────
  *
- * `clear-midi 0..null` wipes whatever the previous pass left in every target's
- * store. It travels in the same batch as the notes that replace it because a
- * batch is one visibility: split in two, the clear lands first and releases a
+ * `clear-midi 0..null` wipes every store this pass names, and every store the
+ * outgoing pass named that this one drops. The second half matters because a
+ * chain edit can move a strip's sink between one arm and the next — an
+ * instrument inserted ahead of another takes over as the note carrier, and the
+ * device it displaced keeps whatever the outgoing pass left in its store if
+ * nothing ever clears it, so the part sounds on both. A dropped target the
+ * engine no longer holds is left alone: naming a device the chain has released
+ * refuses the whole batch (`graph.rs`'s `midi_device_plugin_id`), so the clear
+ * for it would cost every other target's clear and schedule too.
+ *
+ * Every clear travels in the one batch with the notes that replace it because
+ * a batch is one visibility: split in two, a clear lands first and releases a
  * note the rewrite only meant to move
  * ({@link AudioGraphScheduleMidiCommand}).
  *
@@ -43,7 +52,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphDeviceTarget } from '../../models/AudioGraphBackend';
 
 import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
@@ -58,6 +67,7 @@ import {
 } from './nativeLiveMidiWriterState';
 import { type LiveMidiProgrammeExclusion, type LiveMidiSpan } from './projectLiveMidiProgramme';
 import { readLiveMidiProgramme } from './readLiveMidiProgramme';
+import { readNativeChain } from './readNativeChain';
 import { watchNativeLiveMidiEdits } from './watchNativeLiveMidiEdits';
 
 export type ArmNativeLiveMidiWriterInput = Readonly<{
@@ -122,13 +132,55 @@ function reportExclusions(exclusions: readonly LiveMidiProgrammeExclusion[]): vo
     }
 }
 
-/** The opening batch: every target's store wiped, then filled to the horizon. */
-function openingBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWriterBatch {
+function targetKey(target: AudioGraphDeviceTarget): string {
+    return `${target.trackId}::${target.deviceId}`;
+}
+
+/**
+ * The outgoing pass's targets this arm does not renew, provided the engine
+ * still holds their device.
+ *
+ * A target the incoming pass also names needs no separate clear: its own slot
+ * in {@link openingBatch} already wipes and refills it. A target neither pass
+ * names is the one left holding the previous pass's notes — an instrument the
+ * chain edit demoted, its sink taken over by the device inserted ahead of it —
+ * and nothing else in this batch, or the next pump's, ever addresses it again.
+ * The chain check is what keeps the batch valid: naming a device the engine
+ * has already released refuses the whole thing (`graph.rs`'s
+ * `midi_device_plugin_id`), so a target the chain edit also removed is left
+ * for that removal to account for, not for this clear to name.
+ */
+function abandonedTargets(
+    outgoing: readonly LiveMidiWriterTarget[],
+    incoming: readonly LiveMidiWriterTarget[]
+): readonly AudioGraphDeviceTarget[] {
+    const incomingKeys = new Set(incoming.map((slot) => targetKey(slot.target)));
+    return outgoing
+        .map((slot) => slot.target)
+        .filter((target) => !incomingKeys.has(targetKey(target)))
+        .filter((target) => (readNativeChain(target.trackId) ?? []).includes(target.deviceId));
+}
+
+/**
+ * The opening batch: every store this pass names wiped and refilled to the
+ * horizon, and every store the outgoing pass named that this one drops wiped
+ * alongside it.
+ */
+function openingBatch(
+    pass: LiveMidiWriterPass,
+    positionSeconds: number,
+    abandoned: readonly AudioGraphDeviceTarget[]
+): MidiWriterBatch {
     // A looping pass is sent whole: the wrap replays what the store already
     // holds, and windowing inside a region would need a behind-clear that
     // deletes exactly what the next wrap is going to play.
     const horizonSeconds = pass.looping ? Number.POSITIVE_INFINITY : positionSeconds + MIDI_WINDOW_SECONDS;
-    const commands: AudioGraphCommand[] = [];
+    const commands: AudioGraphCommand[] = abandoned.map((target): AudioGraphCommand => ({
+        kind: 'clear-midi',
+        target,
+        fromTime: 0,
+        toTime: null,
+    }));
     const admissions: MidiAdmission[] = [];
     for (const slot of pass.targets) {
         // Cleared even when nothing is admitted: this target's store may hold
@@ -192,6 +244,9 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
             };
         }),
     };
+    // Read ahead of the assignment below: once the outgoing pass is
+    // overwritten there is no other way back to what it was carrying.
+    const abandoned = abandonedTargets(nativeLiveMidiWriter.pass?.targets ?? [], pass.targets);
     nativeLiveMidiWriter.pass = pass;
     // For the life of the pass: a note edited under a rolling playhead has to
     // reach the store the engine is reading from.
@@ -199,7 +254,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
 
     await applyMidiBatch({
         pass,
-        batch: openingBatch(pass, input.positionSeconds),
+        batch: openingBatch(pass, input.positionSeconds, abandoned),
         epoch: nativeLiveMidiWriter.epoch,
     });
 }

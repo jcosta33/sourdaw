@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => ({
     /** What every read of the programme answers, as the arm would receive it. */
     events: [] as { time: number; note: number }[],
     exclusions: [] as { stripId: string; reason: string }[],
+    /** The targets the programme reports, reassignable per test to move a sink between arms. */
+    targets: [] as { trackId: string; deviceId: string }[],
     apply: vi.fn<(batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult>>(),
     readPosition: vi.fn<() => Promise<EngineTransportPosition>>(),
     warn: vi.fn<(message: string, ...rest: unknown[]) => void>(),
@@ -65,22 +67,20 @@ vi.mock('../readLiveMidiProgramme', () => ({
     // locate indistinguishable from a no-op, and would hand the engine entries
     // behind its own playhead — which it counts late and never delivers.
     readLiveMidiProgramme: (input: { span: { startSeconds: number; endSeconds: number } }) => ({
-        targets: [
-            {
-                target: TARGET,
-                events: mocks.events
-                    .filter((entry) => entry.time >= input.span.startSeconds && entry.time < input.span.endSeconds)
-                    .map((entry): AudioGraphMidiNoteEvent => ({
-                        time: entry.time,
-                        note: entry.note,
-                        velocity: 100,
-                        channel: 0,
-                        isNoteOn: true,
-                    })),
-            },
-        ],
+        targets: mocks.targets.map((target) => ({
+            target,
+            events: mocks.events
+                .filter((entry) => entry.time >= input.span.startSeconds && entry.time < input.span.endSeconds)
+                .map((entry): AudioGraphMidiNoteEvent => ({
+                    time: entry.time,
+                    note: entry.note,
+                    velocity: 100,
+                    channel: 0,
+                    isNoteOn: true,
+                })),
+        })),
         exclusions: mocks.exclusions,
-        nativeVoicedStripIds: new Set([TARGET.trackId]),
+        nativeVoicedStripIds: new Set(mocks.targets.map((target) => target.trackId)),
         probabilitySeed: 7,
     }),
 }));
@@ -178,6 +178,7 @@ beforeEach(() => {
     mocks.warn.mockClear();
     mocks.events = [];
     mocks.exclusions = [];
+    mocks.targets = [TARGET];
     disarmNativeLiveMidiWriter();
     nativeEnginePlayheadFeed.running = true;
     nativeEnginePlayheadFeed.epoch += 1;
@@ -390,5 +391,53 @@ describe('the live MIDI writer', () => {
         await flush();
 
         expect(batches()).toHaveLength(2);
+    });
+
+    // A chain edit can move a strip's sink between one arm and the next: an
+    // instrument inserted ahead of another takes over as the note carrier, and
+    // the device it displaced keeps whatever the outgoing pass left in its
+    // store unless something clears it — the part would otherwise sound on
+    // both.
+    it('clears the store of a target the outgoing pass held and the incoming one drops', async () => {
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
+        mocks.events = lane(5);
+
+        await arm(0);
+
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'ferm' }];
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['midi-1', ['ferm', 'plug']]]);
+
+        await arm(0);
+
+        expect(clearsIn(1)).toEqual(
+            expect.arrayContaining([
+                { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'plug' }, fromTime: 0, toTime: null },
+                { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'ferm' }, fromTime: 0, toTime: null },
+            ])
+        );
+        const scheduleCommands = (batches()[1]?.commands ?? []).filter(
+            (command): command is AudioGraphScheduleMidiCommand => command.kind === 'schedule-midi'
+        );
+        expect(scheduleCommands.map((command) => command.target.deviceId)).toEqual(['ferm']);
+        expect(scheduleCommands.flatMap((command) => command.notes).length).toBeGreaterThan(0);
+    });
+
+    // A device the chain edit also removed is one `graph.rs` no longer holds a
+    // strip slot for: naming it in a `clear-midi` refuses the whole batch, so
+    // the abandoned-target clear must skip exactly what the removal already
+    // accounts for.
+    it('leaves a dropped target alone when the engine no longer holds its device', async () => {
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
+        mocks.events = lane(5);
+
+        await arm(0);
+
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'ferm' }];
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['midi-1', ['ferm']]]);
+
+        await arm(0);
+
+        const secondBatchDeviceIds = (batches()[1]?.commands ?? []).map((command) => command.target.deviceId);
+        expect(secondBatchDeviceIds).not.toContain('plug');
     });
 });

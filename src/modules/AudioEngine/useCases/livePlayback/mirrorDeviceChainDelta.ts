@@ -242,10 +242,12 @@ export function mirrorDeviceChainDelta(input: MirrorDeviceChainDeltaInput): Prom
                 provenAfterBatch: result.admittedBatch ?? null,
                 positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
             });
-            // And the note pass with it, because the same batch decides which
-            // instrument a MIDI strip's notes are addressed to: an instrument
-            // arriving in a chain gives a strip its first native sink, and one
-            // leaving takes the sink the pass is still naming.
+            // The removal arm above fires only for a device the automation
+            // pass still writes, but the note pass is re-read alongside it
+            // regardless: the same batch may have moved a strip's sink to an
+            // instrument inserted ahead of the one that used to carry it, and
+            // the note re-arm is what clears the store the demoted device
+            // would otherwise keep replaying from.
             await rearmNativeLiveMidiWriterInPlace({
                 positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds,
             });
