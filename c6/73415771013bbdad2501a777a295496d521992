@@ -1,0 +1,31 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/deleteCheckpointArtifact.ts
+  s_87ab0a2f60ccf8::t_616da0dffa4c62 38-42
+src/modules/CrdtDocument/repositories/crdtPersistence/listCheckpointCatalog.ts
+  s_87ab0a2f60ccf8::t_616da0dffa4c62 60-66
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/checkpointArtifactPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_1d8ee822fe7990 567-569
+  s_87ab0a2f60ccf8::t_616da0dffa4c62 543-566,570-572
+src/modules/CrdtDocument/repositories/crdtPersistence/checkpointArtifactModel.ts
+  s_87ab0a2f60ccf8::t_616da0dffa4c62 125-129
+  s_87ab0a2f60ccf8::t_f5372af211642a 141-145
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/helpers.spec.ts
+  s_87ab0a2f60ccf8::t_616da0dffa4c62 105
+src/modules/CrdtDocument/repositories/crdtPersistence/readCheckpointArtifact.ts
+  s_87ab0a2f60ccf8::t_616da0dffa4c62 29-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "c673415771013bbdad2501a777a295496d521992",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
