@@ -585,6 +585,53 @@ describe('FermenterPanel', () => {
 
             const rightRail = container.querySelector('aside.min-h-\\[220px\\]');
             expect(rightRail).toBeInTheDocument();
+            expect(rightRail).toHaveClass('overflow-y-auto');
+
+            const leftRail = container.querySelector('aside.w-\\[228px\\]');
+            expect(leftRail).toBeInTheDocument();
+            expect(leftRail).toHaveClass('overflow-y-auto', 'min-h-0');
+
+            const centerSection = container.querySelector('section');
+            expect(centerSection).toBeInTheDocument();
+            expect(centerSection).toHaveClass('overflow-y-auto', 'min-h-0');
+        });
+
+        it('prevents rail cards from collapsing with shrink constraints', () => {
+            storeState.value = makeState({ uiLevel: 5 });
+            const { container } = renderPanel();
+
+            const leftRail = container.querySelector('aside.w-\\[228px\\]');
+            const leftRailCards = leftRail?.children;
+            expect(leftRailCards).toBeDefined();
+            if (leftRailCards) {
+                for (const card of Array.from(leftRailCards)) {
+                    expect(card).toHaveClass('shrink-0');
+                }
+            }
+
+            const presetBrowserContainer = leftRail?.querySelector('.min-h-\\[160px\\]');
+            expect(presetBrowserContainer).toHaveClass('shrink-0');
+
+            const rightRail = container.querySelector('aside.min-h-\\[220px\\]');
+            const rightRailCards = rightRail?.children;
+            expect(rightRailCards).toBeDefined();
+            if (rightRailCards) {
+                for (const card of Array.from(rightRailCards)) {
+                    expect(card).toHaveClass('shrink-0');
+                }
+            }
+        });
+
+        it('renders SectionHeader with stacked eyebrow and title in a column to prevent horizontal truncation', () => {
+            renderPanel();
+            const eyebrow = screen.getByText('Scenes');
+            const title = screen.getByText('Preset bench');
+            const stackContainer = eyebrow.parentElement;
+
+            expect(stackContainer).toBe(title.parentElement);
+            expect(stackContainer).toHaveClass('flex-col');
+            expect(stackContainer).toHaveClass('min-w-0');
+            expect(title).toHaveClass('truncate');
         });
     });
 
