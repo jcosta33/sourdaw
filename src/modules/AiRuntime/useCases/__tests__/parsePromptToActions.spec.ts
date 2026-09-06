@@ -456,8 +456,27 @@ describe('parsePromptToActions', () => {
     it('preserves user text case when renaming a clip through deterministic parameterized path', async () => {
         vi.mocked(tryParameterizedPath).mockImplementation(actualParsing.tryParameterizedPath);
 
+        const mixerContext = createMixerContext();
+        const track = mixerContext.tracks[0]!;
         const context: ProjectContext = {
-            ...baseContext,
+            ...mixerContext,
+            tracks: [
+                {
+                    ...track,
+                    clipCount: 1,
+                    clips: [
+                        {
+                            id: 'c1',
+                            name: 'Intro',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            noteCount: 0,
+                        },
+                    ],
+                },
+                ...mixerContext.tracks.slice(1),
+            ],
             selectedClipId: 'c1',
             selectedClipIds: ['c1'],
         };
@@ -473,7 +492,7 @@ describe('parsePromptToActions', () => {
         ]);
         expect(generateToolCalls).not.toHaveBeenCalled();
 
-        const upperResult = await parsePromptToActions('RENAME THE CLIP TO Chorus 1', context);
+        const upperResult = await parsePromptToActions('RENAME THE CLIP TO "Chorus 1"', context);
 
         expect(upperResult.actions).toEqual([
             {
@@ -516,7 +535,7 @@ describe('parsePromptToActions', () => {
         vi.mocked(tryCompoundFastPath).mockImplementation(actualParsing.tryCompoundFastPath);
 
         const result = await parsePromptToActions(
-            'create 2 audio tracks named Lead Vocals, Backing Vocals',
+            'create 2 audio tracks named "Lead Vocals", "Backing Vocals"',
             baseContext
         );
 
@@ -533,7 +552,7 @@ describe('parsePromptToActions', () => {
         expect(generateToolCalls).not.toHaveBeenCalled();
 
         const upperResult = await parsePromptToActions(
-            'CREATE 2 AUDIO TRACKS NAMED Lead Vocals, Backing Vocals',
+            'CREATE 2 AUDIO TRACKS NAMED "Lead Vocals", "Backing Vocals"',
             baseContext
         );
         expect(upperResult.actions).toEqual([

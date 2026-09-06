@@ -3,6 +3,7 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 export const postTargetScopeActionNames = [
     'removeTrack',
     'removeClip',
+    'renameClip',
     'clearSolos',
     'removeFromVca',
     'quantizeNotes',

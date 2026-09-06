@@ -17,6 +17,7 @@ import {
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
+import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
@@ -74,6 +75,7 @@ import { groundPostTargetScopeAdmission } from './groundingStrategies/postTarget
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { resolveAgentReference } from './resolveAgentReference';
+import { resolveCompleteClipReference } from './resolveCompleteClipReference';
 
 type BridgeGroundedLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
@@ -776,25 +778,75 @@ function getSemanticClipReferenceTexts(context: ProjectContext): string[] {
         .sort((left, right) => right.length - left.length);
 }
 
-function maskProjectReferences(prompt: string, context: ProjectContext): string {
-    let maskedPrompt = prompt;
-    for (const reference of getSemanticClipReferenceTexts(context)) {
+type ProjectReferenceMaskSpan = {
+    end: number;
+    replacement: string;
+    start: number;
+};
+
+function collectProjectReferenceMaskSpans(
+    prompt: string,
+    references: readonly string[],
+    spans: ProjectReferenceMaskSpan[],
+    getReplacement: (match: string, end: number) => string
+): void {
+    for (const reference of references) {
         const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        maskedPrompt = maskedPrompt.replaceAll(pattern, (match, offset: number) => {
-            const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
-                maskedPrompt.slice(offset + match.length)
-            );
-            if (explicitEntitySuffix) {
-                return '□'.repeat(match.length);
+        for (const match of prompt.matchAll(pattern)) {
+            const start = match.index;
+            const value = match[0];
+            if (start === undefined || !value) {
+                continue;
             }
-            return `clip${'□'.repeat(match.length - 'clip'.length)}`;
-        });
+            const end = start + value.length;
+            if (spans.some((span) => start < span.end && end > span.start)) {
+                continue;
+            }
+            spans.push({ start, end, replacement: getReplacement(value, end) });
+        }
     }
-    for (const reference of getProjectReferenceTexts(context)) {
-        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'giu');
-        maskedPrompt = maskedPrompt.replaceAll(pattern, (match) => '□'.repeat(match.length));
+}
+
+function maskProjectReferences(prompt: string, context: ProjectContext): string {
+    const spans: ProjectReferenceMaskSpan[] = [];
+    collectProjectReferenceMaskSpans(prompt, getSemanticClipReferenceTexts(context), spans, (match, end) => {
+        const explicitEntitySuffix = /^\s+(?:clip|track|device|bus|master|output|send|parameter)\b/iu.test(
+            prompt.slice(end)
+        );
+        return explicitEntitySuffix ? '□'.repeat(match.length) : `clip${'□'.repeat(match.length - 'clip'.length)}`;
+    });
+    collectProjectReferenceMaskSpans(prompt, getProjectReferenceTexts(context), spans, (match) =>
+        '□'.repeat(match.length)
+    );
+
+    let maskedPrompt = '';
+    let cursor = 0;
+    for (const span of spans.toSorted((left, right) => left.start - right.start)) {
+        maskedPrompt += prompt.slice(cursor, span.start);
+        maskedPrompt += span.replacement;
+        cursor = span.end;
     }
-    return maskedPrompt;
+    return maskedPrompt + prompt.slice(cursor);
+}
+
+function restoreClipRenameIntentCarrier(prompt: string, maskedPrompt: string): string {
+    const quoteScan = scanPromptQuotedText(prompt);
+    if (!quoteScan.complete) {
+        return maskedPrompt;
+    }
+
+    let restoredPrompt = maskedPrompt;
+    for (const clause of getPromptClauses(prompt, quoteScan.maskedText)) {
+        const carrier = /^\s*rename\s+(?:the\s+)?clip(?=\s|$)/iu.exec(clause.masked);
+        if (!carrier) {
+            continue;
+        }
+        const carrierClipOffset = carrier[0].toLocaleLowerCase().lastIndexOf('clip');
+        const start = clause.start + carrierClipOffset;
+        const end = start + 'clip'.length;
+        restoredPrompt = `${restoredPrompt.slice(0, start)}${prompt.slice(start, end)}${restoredPrompt.slice(end)}`;
+    }
+    return restoredPrompt;
 }
 
 function isClipFadeValueSeparator({
@@ -1640,6 +1692,9 @@ function resolveActionPromptScope({
         }
     }
     let projectMaskedPrompt = groundingRules.targetRules.length === 0 ? prompt : maskProjectReferences(prompt, context);
+    if (actionName === 'renameClip') {
+        projectMaskedPrompt = restoreClipRenameIntentCarrier(prompt, projectMaskedPrompt);
+    }
     if (actionName === 'glueClips') {
         projectMaskedPrompt = restoreGlueCommandIntents(prompt, projectMaskedPrompt);
     }
@@ -2022,6 +2077,109 @@ function getTargetPromptScope(
         return actionScope.text.slice(0, separator.index).trim();
     }
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
+}
+
+type ValidClipRenameCarrier =
+    { kind: 'bare-selected-source'; value: string } | { kind: 'explicit-source'; sourcePrompt: string; value: string };
+
+type ClipRenameCarrier = ValidClipRenameCarrier | { kind: 'invalid' };
+
+function getWhitespaceDelimitedConnectorIndexes(maskedText: string, connector: string): number[] {
+    const indexes: number[] = [];
+    for (const match of maskedText.matchAll(new RegExp(connector, 'giu'))) {
+        const start = match.index;
+        const end = start + match[0].length;
+        if (
+            start > 0 &&
+            end < maskedText.length &&
+            /\s/u.test(maskedText[start - 1]!) &&
+            /\s/u.test(maskedText[end]!)
+        ) {
+            indexes.push(start);
+        }
+    }
+    return indexes;
+}
+
+function getGroundedEditableClipIds(prompt: string, referenceText: string, context: ProjectContext): string[] {
+    const groundedIds = new Set<string>();
+    for (const clip of context.tracks.flatMap((track) => track.clips)) {
+        const result = resolveCompleteClipReference({
+            prompt,
+            referenceText,
+            assertedId: clip.id,
+            capability: 'editable-clip',
+            context,
+        });
+        if (result.status === 'resolved') {
+            groundedIds.add(result.id);
+        } else if (result.reason === 'ambiguous-target') {
+            for (const candidateId of result.candidateIds ?? []) {
+                groundedIds.add(candidateId);
+            }
+        }
+    }
+    return [...groundedIds];
+}
+
+function getClipRenameCarrier(actionScope: ActionPromptScope, context: ProjectContext): ClipRenameCarrier | null {
+    const sourceScope = actionScope.text.trim();
+    const quoteScan = scanPromptQuotedText(sourceScope);
+    const prefix = /^rename\s+(?:the\s+)?clip(?=\s|$)\s*/iu.exec(quoteScan.maskedText);
+    if (!prefix) {
+        return null;
+    }
+    if (!quoteScan.complete) {
+        return { kind: 'invalid' };
+    }
+
+    const carrierText = sourceScope.slice(prefix[0].length).trim();
+    const maskedCarrier = quoteScan.maskedText.slice(prefix[0].length).trim();
+    if (carrierText.length === 0) {
+        return { kind: 'invalid' };
+    }
+
+    const leadingConnector = /^to(?:\s+|$)/iu.exec(maskedCarrier);
+    if (leadingConnector) {
+        const value = carrierText.slice(leadingConnector[0].length).trim();
+        return value.length > 0 ? { kind: 'bare-selected-source', value } : { kind: 'invalid' };
+    }
+
+    const connectorIndexes = getWhitespaceDelimitedConnectorIndexes(maskedCarrier, 'to');
+    if (connectorIndexes.length === 0) {
+        return { kind: 'bare-selected-source', value: carrierText };
+    }
+
+    const interpretations = connectorIndexes.flatMap((connectorIndex) => {
+        const explicitSource = carrierText.slice(0, connectorIndex).trim();
+        const value = carrierText.slice(connectorIndex + 'to'.length).trim();
+        if (explicitSource.length === 0 || value.length === 0) {
+            return [];
+        }
+        const sourcePrompt = `${sourceScope.slice(0, prefix[0].length)}${explicitSource}`.trim();
+        return getGroundedEditableClipIds(sourcePrompt, explicitSource, context).map((clipId) => ({
+            clipId,
+            sourcePrompt,
+            value,
+        }));
+    });
+    if (interpretations.length !== 1) {
+        return { kind: 'invalid' };
+    }
+
+    const interpretation = interpretations[0]!;
+    return {
+        kind: 'explicit-source',
+        sourcePrompt: interpretation.sourcePrompt,
+        value: interpretation.value,
+    };
+}
+
+function getClipRenameTargetPrompt(carrier: ValidClipRenameCarrier | null, targetPrompt: string): string {
+    if (carrier?.kind === 'bare-selected-source') {
+        return 'selected clip';
+    }
+    return carrier?.kind === 'explicit-source' ? carrier.sourcePrompt : targetPrompt;
 }
 
 function collectPromptClearSolosRestrictionClauses(
@@ -3556,14 +3714,25 @@ function validateGroundedValue(
 }
 
 function validateGroundedValues(
+    actionName: string,
     groundingRules: GroundingRules,
     groundedArguments: Record<string, unknown>,
     actionScope: ActionPromptScope,
-    context: ProjectContext
+    context: ProjectContext,
+    clipRenameCarrier: ValidClipRenameCarrier | null
 ): string | null {
     for (const valueRule of groundingRules.valueRules) {
         const assertedValue = groundedArguments[valueRule.argument];
-        const valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+        let valueRejection: string | null;
+        const renameCarrier = actionName === 'renameClip' && valueRule.argument === 'name' ? clipRenameCarrier : null;
+        if (renameCarrier === null) {
+            valueRejection = validateGroundedValue(valueRule, assertedValue, actionScope, groundedArguments, context);
+        } else {
+            const matchesRenameValue =
+                typeof assertedValue === 'string' &&
+                normalizePromptText(assertedValue) === normalizePromptText(renameCarrier.value);
+            valueRejection = matchesRenameValue ? null : getValueMismatchReason(valueRule.argument);
+        }
         if (valueRejection) {
             return valueRejection;
         }
@@ -3697,11 +3866,14 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
-function admitsCompilerResolvedTrackControlTarget(actionName: string, prompt: string): boolean {
-    return (
-        (actionName !== 'muteTrack' && actionName !== 'soloTrack') ||
-        getUniversalTrackControlIntentPhrases(prompt).length > 0
-    );
+function admitsCompilerResolvedTargetWithoutReferenceResolution(actionName: string, prompt: string): boolean {
+    if (actionName === 'renameClip') {
+        return false;
+    }
+    if (actionName === 'muteTrack' || actionName === 'soloTrack') {
+        return getUniversalTrackControlIntentPhrases(prompt).length > 0;
+    }
+    return true;
 }
 
 /**
@@ -3924,6 +4096,10 @@ function groundToolCall({
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
+    const clipRenameCarrier = call.name === 'renameClip' ? getClipRenameCarrier(actionScope, context) : null;
+    if (clipRenameCarrier?.kind === 'invalid') {
+        return rejection(index, call.name, 'Provider clip rename source is not grounded or ambiguous');
+    }
     if (
         call.name === 'moveClip' &&
         !hasGroundedMoveBeatAssertions({
@@ -3987,7 +4163,9 @@ function groundToolCall({
             continue;
         }
         let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
-        if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
+        if (call.name === 'renameClip' && targetRule.argument === 'clipId') {
+            targetPrompt = getClipRenameTargetPrompt(clipRenameCarrier, targetPrompt);
+        } else if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
             targetPrompt = prompt;
         } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
             targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog, context.tracks);
@@ -4206,7 +4384,7 @@ function groundToolCall({
         if (
             compilerTargetOverride !== undefined &&
             'stableIds' in compilerTargetOverride &&
-            admitsCompilerResolvedTrackControlTarget(call.name, prompt)
+            admitsCompilerResolvedTargetWithoutReferenceResolution(call.name, prompt)
         ) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||
@@ -4303,7 +4481,7 @@ function groundToolCall({
     }
     const valueRejection = admitsPlanCreatedObject
         ? null
-        : validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
+        : validateGroundedValues(call.name, groundingRules, groundedArguments, actionScope, context, clipRenameCarrier);
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
     }

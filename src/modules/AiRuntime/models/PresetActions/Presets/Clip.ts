@@ -6,6 +6,7 @@ export const clipPresets: readonly PresetAction[] = [
         id: 'duplicate-clip',
         label: 'Duplicate Clip',
         keywords: ['duplicate clip', 'copy clip', 'clone clip'],
+        commandAliases: ['copy clip', 'clone clip'],
         category: 'Clip',
         requiresSelection: 'clip',
         buildAction: clipAction('duplicateClip', (id) => ({ clipId: id })),

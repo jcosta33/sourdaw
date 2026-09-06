@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
-
 import { type ProjectContext } from '../../../models/ProjectContext';
-import { buildPresetContext, findTrack, isComplexPrompt, tryParameterizedPath } from '../parsing';
+import { buildPresetContext, resolveTrackReference, isComplexPrompt, tryParameterizedPath } from '../parsing';
 
 function makeCtx(overrides: Partial<ProjectContext> = {}): ProjectContext {
     return {
@@ -126,7 +124,7 @@ describe('tryParameterizedPath', () => {
         expect(result).toHaveLength(1);
         expect(result[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Verse' } });
 
-        const upperResult = tryParameterizedPath('RENAME THE CLIP TO Bridge Solo', ctx);
+        const upperResult = tryParameterizedPath('RENAME THE CLIP TO "Bridge Solo"', ctx);
         expect(upperResult).toHaveLength(1);
         expect(upperResult[0]).toMatchObject({ type: 'renameClip', payload: { clipId: 'c1', name: 'Bridge Solo' } });
 
@@ -182,14 +180,14 @@ describe('tryParameterizedPath', () => {
         expect(result).toEqual([]);
     });
 
-    it('clamps gain to the fader ceiling, not unity', () => {
+    it('preserves out-of-range gain for runtime validation', () => {
         const result = tryParameterizedPath('set gain to 200%', ctx);
-        expect(result[0]).toMatchObject({ type: 'setTrackGain', payload: { gain: FADER_MAX_GAIN } });
+        expect(result[0]).toMatchObject({ type: 'setTrackGain', payload: { gain: 2 } });
     });
 
-    it('clamps pan to -50 to 50', () => {
+    it('preserves out-of-range pan for runtime validation', () => {
         const result = tryParameterizedPath('set pan to 100', ctx);
-        expect(result[0]).toMatchObject({ type: 'setTrackPan', payload: { pan: 50 } });
+        expect(result[0]).toMatchObject({ type: 'setTrackPan', payload: { pan: 100 } });
     });
 });
 
@@ -228,20 +226,20 @@ describe('isComplexPrompt', () => {
     });
 });
 
-describe('findTrack', () => {
+describe('resolveTrackReference', () => {
     it('matches by exact name (case-insensitive)', () => {
-        expect(findTrack(ctx, 'drums')?.id).toBe('t1');
+        expect(resolveTrackReference(ctx, 'drums')?.id).toBe('t1');
     });
 
     it('strips a trailing "track" suffix', () => {
-        expect(findTrack(ctx, 'Bass track')?.id).toBe('t2');
+        expect(resolveTrackReference(ctx, 'Bass track')?.id).toBe('t2');
     });
 
-    it('falls back to a partial match', () => {
-        expect(findTrack(ctx, 'Dru')?.id).toBe('t1');
+    it('does not fall back to a partial match', () => {
+        expect(resolveTrackReference(ctx, 'Dru')).toBeUndefined();
     });
 
     it('returns undefined when nothing matches', () => {
-        expect(findTrack(ctx, 'Strings')).toBeUndefined();
+        expect(resolveTrackReference(ctx, 'Strings')).toBeUndefined();
     });
 });

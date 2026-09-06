@@ -98,6 +98,63 @@ describe('post-target scope admission strategies', () => {
         expect(groundPostTargetScopeAdmission({ ...input, actionName: 'setTempo' })).toBeNull();
     });
 
+    it('rejects a rename whose final grounded clip is explicitly protected', () => {
+        const protectedClip = {
+            id: 'clip-bass-verse',
+            name: 'Bass Verse',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: 0,
+        };
+        const clipContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    id: 'track-bass',
+                    name: 'Bass',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: false,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    clipCount: 1,
+                    deviceCount: 0,
+                    clips: [protectedClip],
+                    devices: [],
+                },
+            ],
+        };
+        const prompt = 'rename clip to Bridge Solo; leave Bass Verse unchanged';
+
+        expect(
+            groundPostTargetScopeAdmission({
+                actionName: 'renameClip',
+                actionScope: { matchedIntentPhrase: 'rename clip', text: 'rename clip to Bridge Solo' },
+                bulkMutedEmptyTrackDeletionTargetIds: null,
+                context: clipContext,
+                groundedArguments: { clipId: protectedClip.id, name: 'Bridge Solo' },
+                plannedActionNames: ['renameClip'],
+                prompt,
+            })
+        ).toBe('Provider clip rename target is explicitly protected');
+
+        expect(
+            groundPostTargetScopeAdmission({
+                actionName: 'renameClip',
+                actionScope: { matchedIntentPhrase: 'rename clip', text: 'rename clip to Bridge Solo' },
+                bulkMutedEmptyTrackDeletionTargetIds: null,
+                context: clipContext,
+                groundedArguments: { clipId: protectedClip.id, name: 'Bridge Solo' },
+                plannedActionNames: ['renameClip'],
+                prompt: 'rename clip to Bridge Solo; leave "Bass Verse unchanged',
+            })
+        ).toBe('Provider clip protection clause is incomplete or malformed');
+    });
+
     it('rejects a clear-solos restriction that lives outside the split clause', () => {
         const input = {
             actionName: 'clearSolos' as const,
