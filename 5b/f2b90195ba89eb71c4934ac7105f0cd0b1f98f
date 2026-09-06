@@ -1,0 +1,71 @@
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_87ab0a2f60ccf8::t_b2f0855252ae7c 27-28,39,46
+  s_87ab0a2f60ccf8::t_eadcdcf0da9c33 70
+  s_87ab0a2f60ccf8::t_5567bd20ee6a40 2-3,8-11,14-18,20-26,29-38,40-45,47-58,60,64-69,71-76,87,120,122,125,131-134
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_87ab0a2f60ccf8::t_c7d11c6374739e 2-3,427-428
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_87ab0a2f60ccf8::t_b2f0855252ae7c 182-183
+  s_87ab0a2f60ccf8::t_74d45c25a29e0c 41-43,61-69,140-150,152-160,162-167,169-171,173-177
+  s_87ab0a2f60ccf8::t_4ceee761e54f25 4,80-83,94,101,108,114,123,127,133,136,151,161,168,172,178-181,184-188
+src/modules/AiRuntime/transformers/promptParser/__tests__/selectedClipReference.spec.ts
+  s_87ab0a2f60ccf8::t_2b67df4b1abf54 1-77
+  s_87ab0a2f60ccf8::t_0078f7f0724552 78-80
+.agents/skills/llm-action-bridge/SKILL.md
+  s_87ab0a2f60ccf8::t_2f8b0b6ea20b14 80
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_87ab0a2f60ccf8::t_c7d11c6374739e 13
+  s_87ab0a2f60ccf8::t_4e1533be0ec6ab 124
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_87ab0a2f60ccf8::t_2295b3d7ff9115 839-845,849-850,870-878
+  s_87ab0a2f60ccf8::t_0ba464d284c252 879-880
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetScopeAdmissionStrategy.spec.ts
+  s_87ab0a2f60ccf8::t_629d49d584f178 144-155
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_fbe0a646d7e872 6140-6150,6231-6265,6277-6294
+  s_87ab0a2f60ccf8::t_2ef62928f8cd72 6295-6296
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_87ab0a2f60ccf8::t_839d7bb2382a4a 297-302,315-349
+  s_87ab0a2f60ccf8::t_d54fe8d9db0cdc 172,174
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_87ab0a2f60ccf8::t_8ff6413b144447 2027,2031,2035,2037-2041,3586
+  s_87ab0a2f60ccf8::t_5d50d49b221753 2029-2030,2032-2034,2036
+  s_87ab0a2f60ccf8::t_d54fe8d9db0cdc 3576,3585,4339
+  s_87ab0a2f60ccf8::t_4d57f9894098c1 3584,3587-3594
+src/modules/AiRuntime/useCases/__tests__/promptInterpretationRouting.spec.ts
+  s_87ab0a2f60ccf8::t_b9388873493a8d 120-144,297-328
+src/modules/AiRuntime/transformers/promptParser/selectedClipReference.ts
+  s_87ab0a2f60ccf8::t_3cb4501037055e 1-16
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_87ab0a2f60ccf8::t_a26db1b5e64f88 324-347,480-524,546-589,758-786,788
+  s_87ab0a2f60ccf8::t_b811f08a29c978 525-545,787,789-826,829-830
+  s_87ab0a2f60ccf8::t_2ce2994b494a71 827-828
+src/modules/AiRuntime/transformers/promptParser/promptQuotedText.ts
+  s_87ab0a2f60ccf8::t_3cb4501037055e 1-39,41-63,66
+  s_87ab0a2f60ccf8::t_c4fa37a49e458f 40
+src/modules/AiRuntime/transformers/promptParser/__tests__/promptQuotedText.spec.ts
+  s_87ab0a2f60ccf8::t_d54fe8d9db0cdc 36-37
+  s_87ab0a2f60ccf8::t_2b67df4b1abf54 1-35,38-39
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_87ab0a2f60ccf8::t_4889cb7fd0f6de 15,123,129
+src/modules/AiRuntime/useCases/agentReference/__tests__/getApplicationProtectedObjects.spec.ts
+  s_87ab0a2f60ccf8::t_629d49d584f178 65,68-69,71,75-82
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_87ab0a2f60ccf8::t_4889cb7fd0f6de 4,324-329,331-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5bf2b90195ba89eb71c4934ac7105f0cd0b1f98f",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
