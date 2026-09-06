@@ -1,0 +1,19 @@
+src/modules/Arrangement/presentations/views/TimelineEmptyMenu.tsx
+  s_9b530f08172a54::t_2bfcfbbcdadfe7 159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1b3773a98e4419bc23f1ca20afe3ee66ea105136",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
