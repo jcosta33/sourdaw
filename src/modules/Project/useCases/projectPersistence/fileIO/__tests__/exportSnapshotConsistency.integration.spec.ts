@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    projectFileIoFixture,
+    getProjectFileIoNativeWrites,
+    getProjectFileIoSaveDialogCallCount,
+    queueProjectFileIoSaveDialog,
     resetProjectFileIoFixture,
+    setProjectFileIoDesktopRuntime,
 } from '../../../../repositories/__tests__/projectFileIoTestFixture';
 
 const audioRuntime = vi.hoisted(() => ({
@@ -306,14 +309,14 @@ describe('project export snapshot consistency integration', () => {
     });
 
     it('writes the coherent completed snapshot through the real native serializer after a delayed dialog', async () => {
-        projectFileIoFixture.desktop = true;
+        setProjectFileIoDesktopRuntime(true);
         audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
         const projectIdA = projectStore.value?.projectId;
         const dialog = deferred<string | null>();
-        projectFileIoFixture.desktopSaveDialog.mockReturnValueOnce(dialog.promise);
+        queueProjectFileIoSaveDialog(dialog.promise);
 
         const exporting = exportProjectFile();
-        await vi.waitFor(() => expect(projectFileIoFixture.desktopSaveDialog).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(getProjectFileIoSaveDialogCallCount()).toBe(1));
         await executeAppAction({
             type: 'addMarker',
             payload: { markerId: 'marker-after-dialog', beat: 16, name: 'After Dialog' },
@@ -327,8 +330,8 @@ describe('project export snapshot consistency integration', () => {
         dialog.resolve('/tmp/project-a.sourdaw');
         await exporting;
 
-        expect(projectFileIoFixture.writeFileBytes).toHaveBeenCalledOnce();
-        const written = projectFileIoFixture.writeFileBytes.mock.calls[0]?.[0];
+        expect(getProjectFileIoNativeWrites()).toHaveLength(1);
+        const written = getProjectFileIoNativeWrites()[0];
         if (!written) {
             throw new Error('Expected native bytes');
         }
