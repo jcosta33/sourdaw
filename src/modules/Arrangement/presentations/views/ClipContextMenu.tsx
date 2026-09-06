@@ -285,6 +285,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     return (
         <DawContextMenuSurface
             ref={menuRef}
+            onClose={onClose}
             x={x}
             y={y}
             xClampOffset={200}

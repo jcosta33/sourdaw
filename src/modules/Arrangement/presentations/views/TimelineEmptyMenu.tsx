@@ -156,6 +156,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
     return (
         <DawContextMenuSurface
             ref={menuRef}
+            onClose={onClose}
             x={x}
             y={y}
             xClampOffset={200}
