@@ -1,0 +1,41 @@
+src/modules/Command/useCases/__tests__/executeUserAppAction.spec.ts
+  s_bba506e427db16::t_1e497d0efcdc4d 45-59
+src/modules/Command/useCases/actionLabels.ts
+  s_9c8563756953cd::t_919d1e377259b7 8-9
+src/modules/Command/useCases/executeUserAppAction.ts
+  s_9c8563756953cd::t_a8ce8fb8588762 8,16
+src/modules/Command/useCases/humanizeActionType.ts
+  s_87ab0a2f60ccf8::t_ccd6d8623f7a34 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9d9022e7dd4c15eceadb03f1d0af130b124385cb",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9c8563756953cd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07593-835e-7eb2-bf18-82322cbac1cb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bba506e427db16": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0758f-b4cc-7793-b595-734a5fcb5ea1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
