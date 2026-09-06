@@ -6313,6 +6313,27 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ).toEqual([]);
     });
 
+    it.each(['rename clip Intro to Road to Nowhere', 'rename clip Intro to "Road to Nowhere"'])(
+        'keeps a connector-bearing destination attached to one known source for %s',
+        (prompt) => {
+            const context = createNamedClipSourceContext();
+            expect(context.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Intro to Road')).toBe(
+                false
+            );
+
+            expect(
+                bridge(
+                    [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Road to Nowhere' } }],
+                    prompt,
+                    context
+                )
+            ).toEqual({
+                actions: [{ type: 'renameClip', payload: { clipId: 'clip-intro', name: 'Road to Nowhere' } }],
+                rejections: [],
+            });
+        }
+    );
+
     it('rejects competing rename source interpretations before provider target selection', () => {
         const context = withNamedClip(
             withNamedClip(createNamedClipSourceContext(), 'clip-road-long', 'Road to Nowhere'),

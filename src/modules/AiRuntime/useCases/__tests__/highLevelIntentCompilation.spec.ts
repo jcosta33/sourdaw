@@ -582,6 +582,54 @@ describe('high-level intent compilation', () => {
 
     it.each([
         {
+            label: 'direct with an unquoted destination',
+            prompt: 'rename clip Lead to Road to Nowhere',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed with an unquoted destination',
+            prompt: 'rename clip Lead to Road to Nowhere',
+            proposal: proposeTurn([renameClipListItem('Lead', 'Road to Nowhere')]),
+        },
+        {
+            label: 'direct with a quoted destination',
+            prompt: 'rename clip Lead to "Road to Nowhere"',
+            proposal: proposeCommandsTurn([
+                { name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
+            ]),
+        },
+        {
+            label: 'compiler-backed with a quoted destination',
+            prompt: 'rename clip Lead to "Road to Nowhere"',
+            proposal: proposeTurn([renameClipListItem('Lead', 'Road to Nowhere')]),
+        },
+    ])('diagnoses a connector-bearing destination through $label', async ({ prompt, proposal }) => {
+        expect(
+            selectedClipProject.tracks.flatMap((track) => track.clips).some((clip) => clip.name === 'Lead to Road')
+        ).toBe(false);
+        vi.mocked(generateToolPlanningOutcome)
+            .mockResolvedValueOnce(renameSearchTurn)
+            .mockResolvedValueOnce(renameDiscoverTurn)
+            .mockResolvedValueOnce(proposal);
+
+        const result = await parsePromptToActions(
+            prompt,
+            selectedClipProject,
+            undefined,
+            'revision-destination-connector'
+        );
+
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'renameClip', payload: { clipId: 'clip-lead', name: 'Road to Nowhere' } },
+        ]);
+    });
+
+    it.each([
+        {
             label: 'direct',
             proposal: proposeCommandsTurn([
                 { name: 'renameClip', arguments: { clipId: 'clip-road-short', name: 'Nowhere to Ending' } },
