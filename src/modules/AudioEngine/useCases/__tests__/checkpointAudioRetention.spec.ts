@@ -335,6 +335,10 @@ describe('checkpoint audio retention', () => {
 
         vi.resetModules();
         const restarted = await importApi();
+        seedBuffer(controls, 'restart-size-control');
+        await restarted.collectBySize({ maxSizeBytes: 0 });
+        expect(controls.committed.has('restart-size-control')).toBe(false);
+        expect(retainedIds.every((id) => controls.committed.has(id) && controls.committedMeta.has(id))).toBe(true);
         const prepared = await restarted.prepare({ audioContext: audioContext(), bufferIds: retainedIds });
         expect(prepared).not.toBeNull();
         expect(prepared?.publish()).toBe(retainedIds.length);
