@@ -1,6 +1,13 @@
+import { load } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ControlledWorker, type InspectCheckpointRootMediaRequest } from './automergeWorkerTestHarness';
+import {
+    ControlledWorker,
+    createRootBundle,
+    respondToCompactShadow,
+    respondToLoad,
+    type InspectCheckpointRootMediaRequest,
+} from './automergeWorkerTestHarness';
 
 describe('AutomergeRepository checkpoint media inspection', () => {
     beforeEach(() => {
@@ -60,6 +67,70 @@ describe('AutomergeRepository checkpoint media inspection', () => {
         expect(automergeRepository.getDocIds()).toEqual(['root']);
         expect(automergeRepository.getMutationEpoch()).toBe(mutationEpoch);
         expect(automergeRepository.getDocumentIdentityEpoch()).toBe(identityEpoch);
+    });
+
+    it('preserves the warmed repository shadow so the next edited save stays off-thread', async () => {
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'loadBundle') {
+                queueMicrotask(() => respondToLoad(worker, request));
+                return;
+            }
+            if (request.type === 'inspectCheckpointRootMedia') {
+                queueMicrotask(() => {
+                    worker.emitMessage({
+                        id: request.id,
+                        type: 'checkpointRootMediaInspected',
+                        audioBufferIds: [],
+                    });
+                });
+                return;
+            }
+            if (request.type === 'compactShadow') {
+                queueMicrotask(() => respondToCompactShadow(worker, request));
+            }
+        };
+
+        const liveBundle = createRootBundle();
+        const checkpointBytes = createRootBundle().get('root');
+        if (!checkpointBytes) {
+            throw new Error('Expected captured checkpoint root bytes');
+        }
+        expect(checkpointBytes).not.toBe(liveBundle.get('root'));
+        const { automergeRepository } = await import('../automergeRepository');
+        await expect(automergeRepository.loadAll({ bundle: liveBundle })).resolves.toBe(true);
+        const worker = ControlledWorker.instances[0];
+        if (!worker) {
+            throw new Error('Expected warmed CRDT worker');
+        }
+        expect(worker.posted.map((request) => request.type)).toEqual(['loadBundle']);
+
+        await expect(automergeRepository.inspectCheckpointRootMedia({ rootBytes: checkpointBytes })).resolves.toEqual({
+            audioBufferIds: [],
+        });
+        const requestCountAfterInspection = worker.posted.length;
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.editAfterInspection = 'survived';
+        });
+
+        const savedBundle = await automergeRepository.saveAllOffThread();
+
+        const requestsAfterInspection = worker.posted.slice(requestCountAfterInspection);
+        expect(requestsAfterInspection.map((request) => request.type)).toEqual(['compactShadow']);
+        const compactRequest = requestsAfterInspection[0];
+        if (compactRequest?.type !== 'compactShadow') {
+            throw new Error('Expected one compactShadow request after inspection');
+        }
+        const rootDelta = compactRequest.deltas.find(([id]) => id === 'root');
+        expect(rootDelta?.[1].byteLength).toBeGreaterThan(0);
+        expect(new Map(compactRequest.expectedHeads).get('root')).toEqual(automergeRepository.getHeads('root'));
+        const savedRoot = savedBundle.get('root');
+        if (!savedRoot) {
+            throw new Error('Expected saved root bytes');
+        }
+        expect(load<Record<string, unknown>>(savedRoot)).toMatchObject({
+            seed: true,
+            editAfterInspection: 'survived',
+        });
     });
 
     it('rejects an unexpected worker response without decoding checkpoint bytes on the main thread', async () => {
