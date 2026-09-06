@@ -1,15 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type WriteFileBytesInput = {
-    bytes: Uint8Array;
-    path: string;
-};
+import {
+    projectFileIoFixture,
+    resetProjectFileIoFixture,
+} from '../../../../repositories/__tests__/projectFileIoTestFixture';
 
-const runtime = vi.hoisted(() => ({
-    desktop: false,
-    desktopSaveDialog: vi.fn(),
+const audioRuntime = vi.hoisted(() => ({
     exportCachedAudioBuffers: vi.fn(),
-    writeFileBytes: vi.fn((_input: WriteFileBytesInput) => Promise.resolve()),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -17,7 +14,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     return {
         ...actual,
         clearRuntimeCachedAudioBuffers: vi.fn(),
-        exportCachedAudioBuffers: runtime.exportCachedAudioBuffers,
+        exportCachedAudioBuffers: audioRuntime.exportCachedAudioBuffers,
         getAudioContext: vi.fn(() => ({})),
         importCachedAudioBuffers: vi.fn(() =>
             Promise.resolve({ persist: () => Promise.resolve(true), publish: () => 0 })
@@ -37,18 +34,6 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     ensureTrackStrips: vi.fn(() => ({ status: 'ready', externalPluginActivations: [] })),
     stopPlayback: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
-    desktopSaveDialog: runtime.desktopSaveDialog,
-    isDesktopRuntime: () => runtime.desktop,
-    writeFileBytes: runtime.writeFileBytes,
-}));
-
-vi.mock('#/utils/desktopRuntime', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/utils/desktopRuntime')>()),
-    isDesktopRuntime: () => runtime.desktop,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -237,10 +222,8 @@ describe('project export snapshot consistency integration', () => {
         resetActionReplayAuthority();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
-        runtime.desktop = false;
-        runtime.desktopSaveDialog.mockReset();
-        runtime.exportCachedAudioBuffers.mockReset();
-        runtime.writeFileBytes.mockClear();
+        resetProjectFileIoFixture();
+        audioRuntime.exportCachedAudioBuffers.mockReset();
         await seedProjectA();
     });
 
@@ -257,11 +240,11 @@ describe('project export snapshot consistency integration', () => {
 
     it('returns no snapshot when a marker changes during PCM export', async () => {
         const pcm = deferred<Record<string, never>>();
-        runtime.exportCachedAudioBuffers.mockReturnValueOnce(pcm.promise);
+        audioRuntime.exportCachedAudioBuffers.mockReturnValueOnce(pcm.promise);
         const before = captureProjectRevision();
 
         const building = buildProjectData({ includeAudioBuffers: true });
-        await vi.waitFor(() => expect(runtime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(audioRuntime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
         await executeAppAction({
             type: 'addMarker',
             payload: { markerId: 'marker-after-capture', beat: 12, name: 'Later Marker' },
@@ -274,7 +257,7 @@ describe('project export snapshot consistency integration', () => {
 
     it('returns no snapshot when the tempo map changes during PCM export', async () => {
         const pcm = deferred<Record<string, never>>();
-        runtime.exportCachedAudioBuffers.mockReturnValueOnce(pcm.promise);
+        audioRuntime.exportCachedAudioBuffers.mockReturnValueOnce(pcm.promise);
         const seeded = await buildProjectData();
         const tempoChangeId = seeded?.data.tempoMap?.changes[0]?.id;
         if (!tempoChangeId) {
@@ -283,7 +266,7 @@ describe('project export snapshot consistency integration', () => {
         const before = captureProjectRevision();
 
         const building = buildProjectData({ includeAudioBuffers: true });
-        await vi.waitFor(() => expect(runtime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(audioRuntime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
         updateTempoChange(tempoChangeId, 177);
         expect(captureProjectRevision()).not.toBe(before);
         pcm.resolve({});
@@ -294,11 +277,11 @@ describe('project export snapshot consistency integration', () => {
     it('returns no snapshot when Project A is replaced by Project B during PCM export', async () => {
         const incoming = await projectBData();
         const pcm = deferred<Record<string, never>>();
-        runtime.exportCachedAudioBuffers.mockReturnValueOnce(pcm.promise);
+        audioRuntime.exportCachedAudioBuffers.mockReturnValueOnce(pcm.promise);
         const before = captureProjectRevision();
 
         const building = buildProjectData({ includeAudioBuffers: true });
-        await vi.waitFor(() => expect(runtime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(audioRuntime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
         await switchToProjectB(incoming);
         expect(projectStore.value).toMatchObject({ projectId: incoming.meta.projectId, name: 'Project B' });
         expect(captureProjectRevision()).not.toBe(before);
@@ -308,7 +291,7 @@ describe('project export snapshot consistency integration', () => {
     });
 
     it('builds one complete coherent Project A snapshot when the revision stays unchanged', async () => {
-        runtime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
+        audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
 
         const built = await buildProjectData({ includeAudioBuffers: true });
 
@@ -323,14 +306,14 @@ describe('project export snapshot consistency integration', () => {
     });
 
     it('writes the coherent completed snapshot through the real native serializer after a delayed dialog', async () => {
-        runtime.desktop = true;
-        runtime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
+        projectFileIoFixture.desktop = true;
+        audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
         const projectIdA = projectStore.value?.projectId;
         const dialog = deferred<string | null>();
-        runtime.desktopSaveDialog.mockReturnValueOnce(dialog.promise);
+        projectFileIoFixture.desktopSaveDialog.mockReturnValueOnce(dialog.promise);
 
         const exporting = exportProjectFile();
-        await vi.waitFor(() => expect(runtime.desktopSaveDialog).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(projectFileIoFixture.desktopSaveDialog).toHaveBeenCalledOnce());
         await executeAppAction({
             type: 'addMarker',
             payload: { markerId: 'marker-after-dialog', beat: 16, name: 'After Dialog' },
@@ -344,8 +327,8 @@ describe('project export snapshot consistency integration', () => {
         dialog.resolve('/tmp/project-a.sourdaw');
         await exporting;
 
-        expect(runtime.writeFileBytes).toHaveBeenCalledOnce();
-        const written = runtime.writeFileBytes.mock.calls[0]?.[0];
+        expect(projectFileIoFixture.writeFileBytes).toHaveBeenCalledOnce();
+        const written = projectFileIoFixture.writeFileBytes.mock.calls[0]?.[0];
         if (!written) {
             throw new Error('Expected native bytes');
         }
@@ -357,7 +340,7 @@ describe('project export snapshot consistency integration', () => {
 
     it('writes the coherent completed snapshot Blob after Project B replaces the live project during a browser picker', async () => {
         const incoming = await projectBData();
-        runtime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
+        audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
         const projectIdA = projectStore.value?.projectId;
         const picker = deferred<FileSystemFileHandle>();
         const write = vi.fn((_data: FileSystemWriteChunkType) => Promise.resolve());
