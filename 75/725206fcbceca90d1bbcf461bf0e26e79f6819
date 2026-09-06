@@ -1,0 +1,16 @@
+src/components/daw/DawContextMenuSurface.tsx
+  h_1228e573df1f42 4,73-81,109
+src/components/daw/__tests__/DawContextMenuSurface.spec.tsx
+  h_1228e573df1f42 53-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "75725206fcbceca90d1bbcf461bf0e26e79f6819",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
