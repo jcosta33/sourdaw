@@ -1,0 +1,21 @@
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.checkpointMedia.spec.ts
+  s_87ab0a2f60ccf8::t_962553bf0997f1 98
+  s_87ab0a2f60ccf8::t_b7946a65be9514 1,4-10,72-97,99-133
+  s_87ab0a2f60ccf8::t_cbaa774b20530d 134-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2c2196cd4b94c2a070b559e45f11cb1071308959",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
