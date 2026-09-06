@@ -796,7 +796,7 @@
                 "sha256:2c7c2b09e316033b878869ec0e4a801e7499e3485f1cebe57931ccb6d614528f:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
-                "sha256:0767b7a7072eac7e5463e97e88ae8ca9d358e3f56757e140c7084046239a74af:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "sha256:ff966a7faa3d3dd4869be77f717af0f0b237a442b6d992af386eb5f69b3baf0e:src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts",
                 "sha256:abbe466881490518b4665e3937e63cfe8b00866720f36af51e0af7423dc4f2da:src/modules/BrowserAi/useCases/downloadModel.ts",
                 "sha256:f59b8857e8986c66e485394a293eddb66b422589f181ee990fac15cdd3bad45f:src/modules/BrowserAi/useCases/initBrowserAi.ts",
