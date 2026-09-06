@@ -75,11 +75,20 @@ type MarkerlessRecoveryBytes = Float32Array & {
 
 export type StoredRecoveryValue = StoredRecoveryRecord | MarkerlessRecoveryBytes;
 
-export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryValue;
+export type StoredCheckpointRetention = {
+    schemaVersion: 1;
+    checkpointId: string;
+    projectOwnerId: string;
+    bufferIds: string[];
+    ownershipToken: string;
+};
+
+export type StoredValue = StoredAudioBuffer | StoredBufferMeta | StoredRecoveryValue | StoredCheckpointRetention;
 
 export const BUFFER_STORE = 'buffers';
 export const META_STORE = 'bufferMeta';
 export const RECOVERY_STORE = 'preparedBufferRecovery';
+export const CHECKPOINT_RETENTION_STORE = 'checkpointRetentions';
 const RECOVERY_MIGRATION_MARKER_KEY = 0;
 
 /** Structured-clone payload size of one value, in bytes.
@@ -162,6 +171,8 @@ export type FakeAudioIndexedDbControls = {
     committedMeta: Map<IDBValidKey, StoredBufferMeta>;
     /** Committed contents of the isolated prepared-recovery object store. */
     committedRecovery: Map<IDBValidKey, StoredRecoveryValue>;
+    /** Committed durable checkpoint ownership rows. */
+    committedCheckpointRetentions: Map<IDBValidKey, StoredCheckpointRetention>;
     /** Object stores that exist on the database right now. */
     storeNames: () => string[];
     /** Abort every subsequent readwrite transaction, after its requests succeed. */
@@ -538,6 +549,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     const committed = new Map<IDBValidKey, StoredAudioBuffer>();
     const committedMeta = new Map<IDBValidKey, StoredBufferMeta>();
     const committedRecovery = new Map<IDBValidKey, StoredRecoveryValue>();
+    const committedCheckpointRetentions = new Map<IDBValidKey, StoredCheckpointRetention>();
     const existingStores = new Set<string>(input.existingStores ?? [BUFFER_STORE]);
     if (existingStores.has(RECOVERY_STORE) && !input.pendingLegacyRecoveryMigration) {
         committedRecovery.set(RECOVERY_MIGRATION_MARKER_KEY, {
@@ -551,9 +563,12 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
     tables.set(BUFFER_STORE, committed);
     tables.set(META_STORE, committedMeta);
     tables.set(RECOVERY_STORE, committedRecovery);
+    tables.set(CHECKPOINT_RETENTION_STORE, committedCheckpointRetentions);
 
     let databaseVersion = 1;
-    if (existingStores.has(RECOVERY_STORE)) {
+    if (existingStores.has(CHECKPOINT_RETENTION_STORE)) {
+        databaseVersion = 4;
+    } else if (existingStores.has(RECOVERY_STORE)) {
         databaseVersion = 3;
     } else if (existingStores.has(META_STORE)) {
         databaseVersion = 2;
@@ -849,6 +864,7 @@ export function installFakeAudioIndexedDb(input: InstallFakeAudioIndexedDbInput 
         committed,
         committedMeta,
         committedRecovery,
+        committedCheckpointRetentions,
         storeNames: () => [...existingStores],
         abortWrites: () => {
             abortWrites = true;

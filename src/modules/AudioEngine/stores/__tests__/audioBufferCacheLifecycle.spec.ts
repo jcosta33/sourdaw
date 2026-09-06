@@ -90,6 +90,7 @@ function installFakeIndexedDb(): FakeBacking {
     const recoveryBacking = new Map<IDBValidKey, unknown>([
         [0, { kind: 'prepared-audio-recovery-migration', schemaVersion: 1 }],
     ]);
+    const retentionBacking = new Map<IDBValidKey, unknown>();
     backing.meta = metaBacking;
     function makeStore<Key, Value>(table: Map<Key, Value>) {
         return {
@@ -106,14 +107,21 @@ function installFakeIndexedDb(): FakeBacking {
     const objectStore = makeStore(backing);
     const metaStore = makeStore(metaBacking);
     const recoveryStore = makeStore(recoveryBacking);
+    const retentionStore = makeStore(retentionBacking);
     function storeFor(name: string) {
+        if (name === 'buffers') {
+            return objectStore;
+        }
         if (name === 'bufferMeta') {
             return metaStore;
         }
         if (name === 'preparedBufferRecovery') {
             return recoveryStore;
         }
-        return objectStore;
+        if (name === 'checkpointRetentions') {
+            return retentionStore;
+        }
+        throw new Error(`Unexpected IndexedDB object store: ${name}`);
     }
     const database = {
         close: vi.fn(),
