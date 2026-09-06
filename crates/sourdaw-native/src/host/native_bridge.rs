@@ -1,4 +1,4 @@
-use daw_dsp::crumbs::engine::CrumbsEngine;
+use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::types::CrumbsCommand;
 /// Bridge: implements daw_engine::NativePlugin for any hosted plugin runtime.
 ///
@@ -2049,13 +2049,15 @@ mod tests {
         let (tx, rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
-        let mut engine = CrumbsEngine::new(48_000.0);
+        let metering = Arc::new(CrumbsMetering::default());
+        let mut engine = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
         engine.enable_commit_handoff();
         let slot = CrumbsPluginSlot {
             engine,
             command_rx: rx,
             commit_tx,
             recycle_rx,
+            metering,
         };
         (slot, tx, commit_rx, recycle_tx)
     }
@@ -2394,6 +2396,60 @@ mod tests {
         );
     }
 
+    /// A block rendered in segments must publish the peak of the whole block,
+    /// not merely its last segment.
+    ///
+    /// `CrumbsEngine::process_block` measures and publishes only the slice it
+    /// was just handed. Splitting a block at each MIDI event's offset calls it
+    /// once per segment, so the raw per-segment publish leaves the atomics
+    /// holding only the tail's own peak — silently under-reporting any block
+    /// whose loudest audio came before its last event, exactly the shape a
+    /// note sounding loudly through most of the block and released near its
+    /// end produces.
+    #[test]
+    fn a_segmented_crumbs_block_publishes_the_peak_of_the_whole_block() {
+        const FRAMES: usize = 512;
+        const NOTE_OFF_OFFSET: usize = 400;
+
+        let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
+        // Sounding from the very start of the block, as though triggered in a
+        // previous callback: the command drains before any segment renders.
+        queue_a_sounding_note(&mut tx);
+
+        let mut left = vec![0.0f32; FRAMES];
+        let mut right = vec![0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[engine_note(60, 100, 0, false, NOTE_OFF_OFFSET as u32)],
+            &TransportState::default(),
+        );
+
+        let block_peak = left
+            .iter()
+            .fold(0.0f32, |peak, &sample| peak.max(sample.abs()));
+        let tail_peak = left[NOTE_OFF_OFFSET..]
+            .iter()
+            .fold(0.0f32, |peak, &sample| peak.max(sample.abs()));
+
+        assert!(
+            block_peak > 0.0,
+            "the note must actually sound, or this test proves nothing"
+        );
+        assert!(
+            tail_peak < block_peak,
+            "the note-off must actually quiet the tail relative to the rest of \
+             the block, or this test proves nothing"
+        );
+        assert_eq!(
+            slot.engine.read_peak_left(),
+            block_peak,
+            "a segmented block must publish the peak of the whole block, not \
+             merely its last segment"
+        );
+    }
+
     /// The slot is one member of the native master chain, and
     /// `CrumbsEngine::process_block` sums into the buffers it is handed. It
     /// must never zero them: on the master chain they carry what every member
@@ -2697,6 +2753,10 @@ pub struct CrumbsPluginSlot {
     pub command_rx: Consumer<CrumbsCommand>,
     pub commit_tx: rtrb::Producer<PendingRecordingCommit>,
     pub recycle_rx: Consumer<RecordBufferPair>,
+    /// The same `Arc` the engine publishes into (`CrumbsEngine::with_metering`).
+    /// `process_block_internal` overwrites it with the whole block's peak once
+    /// every segment has rendered — see `publish_block_peak`.
+    pub metering: Arc<CrumbsMetering>,
 }
 
 impl CrumbsPluginSlot {
@@ -2741,10 +2801,14 @@ impl CrumbsPluginSlot {
         // The engine stamps its events non-decreasing, so the cursor only ever
         // moves forward.
         let mut cursor = 0;
+        let mut peak_left = 0.0f32;
+        let mut peak_right = 0.0f32;
         for event in midi_events {
             let offset = (event.frame_offset as usize).min(num_samples);
             if offset > cursor {
                 self.render_segment(left, right, cursor, offset);
+                peak_left = peak_left.max(self.engine.read_peak_left());
+                peak_right = peak_right.max(self.engine.read_peak_right());
                 cursor = offset;
             }
             self.dispatch_note(event);
@@ -2761,6 +2825,9 @@ impl CrumbsPluginSlot {
             &mut left[cursor..num_samples],
             &mut right[cursor..num_samples],
         );
+        peak_left = peak_left.max(self.engine.read_peak_left());
+        peak_right = peak_right.max(self.engine.read_peak_right());
+        self.publish_block_peak(peak_left, peak_right);
 
         // Forward any committed take to the command side over the SPSC ring.
         // The engine did only pointer moves; the clone + pool insertion
@@ -2780,6 +2847,23 @@ impl CrumbsPluginSlot {
     fn render_segment(&mut self, left: &mut [f32], right: &mut [f32], from: usize, to: usize) {
         self.engine
             .process_block(&mut left[from..to], &mut right[from..to]);
+    }
+
+    /// Overwrite the shared metering with the whole block's peak.
+    ///
+    /// Every `process_block` call — one per segment — measures and publishes
+    /// only the peak of the slice it just rendered, so a block split at MIDI
+    /// event offsets otherwise leaves the atomics holding just the tail
+    /// segment's peak. The meter owes the block's peak, not its last slice's,
+    /// so this replaces it with the maximum this caller tracked across every
+    /// segment, tail included.
+    fn publish_block_peak(&self, peak_left: f32, peak_right: f32) {
+        self.metering
+            .peak_left
+            .store(peak_left.to_bits(), Ordering::Relaxed);
+        self.metering
+            .peak_right
+            .store(peak_right.to_bits(), Ordering::Relaxed);
     }
 
     /// Hand one engine event to the sampler as the command it names.

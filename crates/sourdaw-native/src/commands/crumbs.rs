@@ -426,6 +426,7 @@ fn register_crumbs_slot(
         command_rx,
         commit_tx,
         recycle_rx,
+        metering: Arc::clone(metering),
     };
 
     engine_handle
@@ -1839,17 +1840,19 @@ mod tests {
         let (command_tx, command_rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
-        let mut engine = CrumbsEngine::new(48_000.0);
+        let metering = Arc::new(CrumbsMetering::default());
+        let mut engine = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
         engine.enable_commit_handoff();
         let mut slot = CrumbsPluginSlot {
             engine,
             command_rx,
             commit_tx,
             recycle_rx,
+            metering: Arc::clone(&metering),
         };
         let instance = CrumbsInstanceData {
             samples: HashMap::new(),
-            metering: Arc::new(CrumbsMetering::default()),
+            metering,
             engine_slot: CrumbsEngineSlot::Attached {
                 plugin_id: 1000,
                 ends: CrumbsInstanceEnds {
