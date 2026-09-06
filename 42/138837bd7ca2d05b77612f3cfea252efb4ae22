@@ -1,0 +1,25 @@
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/applyExportNormalization.boundary.integration.spec.ts
+  s_87ab0a2f60ccf8::t_0f653b7cc5daca 1-68
+src/modules/AudioRendering/repositories/audioEncoders/measureTruePeak.ts
+  s_87ab0a2f60ccf8::t_468fc8d663bf29 99,101
+  s_87ab0a2f60ccf8::t_285f39a78da50d 97
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/measureTruePeak.spec.ts
+  s_87ab0a2f60ccf8::t_0f653b7cc5daca 5-20,61-101
+  s_87ab0a2f60ccf8::t_5d439e6ce35ec0 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "42138837bd7ca2d05b77612f3cfea252efb4ae22",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
