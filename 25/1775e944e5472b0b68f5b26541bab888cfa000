@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_cf6b5f1c84f4f3::t_1da1dd5f92fe2f 1-307
+src/modules/Arrangement/handlers/clip/handleDrawClip.ts
+  s_cf6b5f1c84f4f3::t_0329609d4b6fe2 9,110
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  s_cf6b5f1c84f4f3::t_06e5a5998052b4 8,111
+src/modules/Arrangement/handlers/clip/handleMoveClips.ts
+  s_cf6b5f1c84f4f3::t_45a340f908deb8 10,187
+src/modules/Command/useCases/index.ts
+  s_cf6b5f1c84f4f3::t_30461ad496ca1a 107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "251775e944e5472b0b68f5b26541bab888cfa000",
+  "prompts": {},
+  "sessions": {
+    "s_cf6b5f1c84f4f3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a354cf900826ec27a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
