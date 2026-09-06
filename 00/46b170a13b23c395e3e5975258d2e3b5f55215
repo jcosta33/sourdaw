@@ -1,0 +1,39 @@
+src/modules/AiRuntime/useCases/__tests__/promptInterpretationRouting.spec.ts
+  s_87ab0a2f60ccf8::t_357d11c985b7b2 163-164,172,254,259,264,453-456
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_87ab0a2f60ccf8::t_2109bf5e80f08f 269
+  s_87ab0a2f60ccf8::t_5f81628acaeb03 51-88,165-182,185,260-263,330-334,336-366,369
+  s_87ab0a2f60ccf8::t_b9933dd1a2736c 183-184,198-218,335
+  s_87ab0a2f60ccf8::t_056721fb093865 186
+  s_87ab0a2f60ccf8::t_3462ed310f0989 264-266
+  s_87ab0a2f60ccf8::t_f4e90b70a3e91f 367-368
+  s_87ab0a2f60ccf8::t_0d8d8d69c53e22 370-371
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_87ab0a2f60ccf8::t_b41c77f167a833 476,519,536
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_87ab0a2f60ccf8::t_af9796232f463f 6085-6148
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_87ab0a2f60ccf8::t_0fcbb3a98721e7 161,192,300,330-338,415,515
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_87ab0a2f60ccf8::t_357d11c985b7b2 263-269,323-324
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_87ab0a2f60ccf8::t_15f1f0a3a7f6b7 2027-2031,3995-3997
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_87ab0a2f60ccf8::t_357d11c985b7b2 127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0046b170a13b23c395e3e5975258d2e3b5f55215",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
