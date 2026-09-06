@@ -9,14 +9,20 @@ const CEILING_DBTP = -1;
 const CEILING_LINEAR = 10 ** (CEILING_DBTP / 20);
 const FLOAT32_TOLERANCE = 1e-6;
 
-function makeBuffer(channel: Float32Array): AudioBuffer {
+function makeBuffer(channel: Float32Array<ArrayBuffer>): AudioBuffer {
     return {
-        numberOfChannels: 1,
-        length: channel.length,
-        sampleRate: SAMPLE_RATE,
+        copyFromChannel: (destination, _channelNumber, bufferOffset = 0) => {
+            destination.set(channel.subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel: (source, _channelNumber, bufferOffset = 0) => {
+            channel.set(source, bufferOffset);
+        },
         duration: channel.length / SAMPLE_RATE,
         getChannelData: () => channel,
-    } as AudioBuffer;
+        length: channel.length,
+        numberOfChannels: 1,
+        sampleRate: SAMPLE_RATE,
+    };
 }
 
 function measureWithTrailingZeros(channel: Float32Array): number {
