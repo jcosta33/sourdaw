@@ -12,7 +12,7 @@ import {
 } from '#/modules/Command/useCases';
 import { createCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
-import { createTrack } from '../../../models/Track';
+import { createTrack, type Device } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../getArrangementHandlers';
 import { executeRemoveDeviceAction } from '../executeRemoveDeviceAction';
@@ -35,13 +35,13 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 
-const removedDevice = {
+const removedDevice: Device = {
     id: 'device-2',
     name: 'EQ',
     type: 'builtin-eq',
     bypassed: true,
     parameterValues: { frequency: 2400, gain: -3 },
-    deviceState: { mode: 'surgical' },
+    deviceState: { version: 1, data: { mode: 'surgical' } },
 };
 
 const acceptedRuntimeDelta = { acceptance: 'accepted' as const, application: 'applied' as const };
