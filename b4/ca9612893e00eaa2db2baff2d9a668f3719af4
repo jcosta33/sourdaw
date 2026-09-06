@@ -1,0 +1,76 @@
+.agents/skills/review-stances/test-validity.md
+  s_9b530f08172a54::t_edb61d4d281304 150-164
+  s_9b530f08172a54::t_64ade893bbbd81 18-20
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_9b530f08172a54::t_6612fa79798761 161-162
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_9b530f08172a54::t_c7bc4c2e266efc 81-82
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_9b530f08172a54::t_07ff49ab5b388a 67-68
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_9b530f08172a54::t_61608c82609b94 78-79
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_9b530f08172a54::t_4d48c44aba0a1c 83-84
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_9b530f08172a54::t_bfd43671a72c95 191-192
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_9b530f08172a54::t_aea4ac546eeb37 246-247
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_9b530f08172a54::t_f304210ad3dd8f 66-67
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_9b530f08172a54::t_05f4620aebd8fc 103-104
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_9b530f08172a54::t_a58fb458549854 92-93
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_9b530f08172a54::t_46eb5c19616ff7 95-96
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_9b530f08172a54::t_63087799586631 197-198
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_9b530f08172a54::t_fc771b21c9c789 324
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_9b530f08172a54::t_cbad9fe8823356 99
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_9b530f08172a54::t_db3d9e3cb97a67 90-91
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.integration.spec.ts
+  s_9b530f08172a54::t_c467233b3e5cb4 44-45
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_9b530f08172a54::t_4e5f61ff424526 98-99
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_f22fa9452a4961 162-163
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_9b530f08172a54::t_bedd28e682f134 115-116
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_9b530f08172a54::t_ac1119d1340c85 83-84
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_9b530f08172a54::t_f4aeee2094d324 64-65
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_9b530f08172a54::t_45551606c2f769 48-49
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_9b530f08172a54::t_1548f4fdfc716a 91-92
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_9b530f08172a54::t_236d41ebe81197 96-97
+src/modules/Toaster/useCases/__tests__/disposeToasterDevice.spec.ts
+  s_9b530f08172a54::t_79d8058609a6fe 39-40
+src/modules/Toaster/useCases/__tests__/sequencerPlayback.spec.ts
+  s_9b530f08172a54::t_497c0a5fb2d3ad 25-26
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_9b530f08172a54::t_b20a06b5b1aa69 122-123
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_9b530f08172a54::t_31cf3e3d117f09 138-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "b4ca9612893e00eaa2db2baff2d9a668f3719af4",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
