@@ -1,9 +1,8 @@
-import {
-    type CheckpointArtifactRecord,
-    combineCheckpointPair,
-    requireCheckpointIdentity,
-} from './checkpointArtifactModel';
+import { type CheckpointArtifactRecord } from '../../models/CheckpointArtifact';
+
+import { combineCheckpointPair } from './combineCheckpointPair';
 import { CHECKPOINT_ARTIFACT_STORE_NAME, CHECKPOINT_CATALOG_STORE_NAME, openDatabase } from './helpers';
+import { requireCheckpointIdentity } from './requireCheckpointIdentity';
 
 export async function readCheckpointArtifact(
     checkpointId: string,

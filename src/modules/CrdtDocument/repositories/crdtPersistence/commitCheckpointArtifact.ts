@@ -1,5 +1,7 @@
-import { type CheckpointArtifactRecord, normalizeCheckpointArtifactRecord } from './checkpointArtifactModel';
+import { type CheckpointArtifactRecord } from '../../models/CheckpointArtifact';
+
 import { CHECKPOINT_ARTIFACT_STORE_NAME, CHECKPOINT_CATALOG_STORE_NAME, openDatabase } from './helpers';
+import { normalizeCheckpointArtifactRecord } from './normalizeCheckpointArtifactRecord';
 
 export async function commitCheckpointArtifact(input: CheckpointArtifactRecord): Promise<void> {
     const normalized = normalizeCheckpointArtifactRecord(input);

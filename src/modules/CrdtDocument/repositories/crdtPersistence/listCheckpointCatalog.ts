@@ -1,10 +1,9 @@
-import {
-    type CheckpointCatalogEntry,
-    combineCheckpointPair,
-    parseCheckpointArtifactEntry,
-    requireCheckpointIdentity,
-} from './checkpointArtifactModel';
+import { type CheckpointCatalogEntry } from '../../models/CheckpointArtifact';
+
+import { combineCheckpointPair } from './combineCheckpointPair';
 import { CHECKPOINT_ARTIFACT_STORE_NAME, CHECKPOINT_CATALOG_STORE_NAME, openDatabase } from './helpers';
+import { parseCheckpointArtifactEntry } from './parseCheckpointArtifactEntry';
+import { requireCheckpointIdentity } from './requireCheckpointIdentity';
 
 function compareCatalogEntries(left: CheckpointCatalogEntry, right: CheckpointCatalogEntry): number {
     const createdAtOrder = Date.parse(left.createdAt) - Date.parse(right.createdAt);

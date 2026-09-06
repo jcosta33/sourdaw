@@ -1,9 +1,12 @@
-import {
-    type DeletedCheckpointArtifactOwnership,
-    combineCheckpointPair,
-    requireCheckpointIdentity,
-} from './checkpointArtifactModel';
+import { combineCheckpointPair } from './combineCheckpointPair';
 import { CHECKPOINT_ARTIFACT_STORE_NAME, CHECKPOINT_CATALOG_STORE_NAME, openDatabase } from './helpers';
+import { requireCheckpointIdentity } from './requireCheckpointIdentity';
+
+type DeletedCheckpointArtifactOwnership = {
+    checkpointId: string;
+    projectOwnerId: string;
+    ownershipToken: string;
+};
 
 export async function deleteCheckpointArtifact(
     checkpointId: string,
