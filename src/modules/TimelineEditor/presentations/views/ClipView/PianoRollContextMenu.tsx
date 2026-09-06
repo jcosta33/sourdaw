@@ -89,7 +89,7 @@ export const PianoRollContextMenu = ({
     };
 
     return (
-        <DawContextMenuSurface ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
+        <DawContextMenuSurface onClose={onClose} ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
             {/* Select/Clipboard */}
             <DawMenuButton role="menuitem" shortcut="⌘A" onClick={act(onSelectAll)}>
                 Select All
