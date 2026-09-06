@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
 import {
     getProjectFileIoNativeWrites,
     getProjectFileIoSaveDialogCallCount,
@@ -60,7 +61,6 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
 
-import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
 import { projectStore } from '../../../../stores/projectStore';
 import { stopActiveAutoSave } from '../../helpers/stopActiveAutoSave';
 import { newProject } from '../../newProject';
