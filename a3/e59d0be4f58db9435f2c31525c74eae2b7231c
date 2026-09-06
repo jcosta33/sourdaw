@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_87ab0a2f60ccf8::t_63f04d236d7f27 92
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenuFocus.spec.tsx
+  s_87ab0a2f60ccf8::t_6e03f4f0f44ed5 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "a3e59d0be4f58db9435f2c31525c74eae2b7231c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
