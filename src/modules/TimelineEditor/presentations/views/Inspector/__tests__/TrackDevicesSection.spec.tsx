@@ -39,6 +39,7 @@ const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
 const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
 const mockExecuteAddDeviceAction = vi.fn<(trackId: string, deviceType: string) => void>();
+const mockExecuteRemoveDeviceAction = vi.fn<(deviceId: string) => void>();
 const mockCompileReorderDevicesAction = vi.fn();
 const mockProjectTrackToLiveStrip =
     vi.fn<(input: { trackId: string; activateDormantExternalPlugins: boolean }) => void>();
@@ -61,6 +62,10 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         executeAddDeviceAction: (trackId: string, deviceType: string): Promise<unknown> => {
             mockExecuteAddDeviceAction(trackId, deviceType);
             return Promise.resolve({ status: 'applied', deviceId: 'device-added' });
+        },
+        executeRemoveDeviceAction: (deviceId: string): Promise<unknown> => {
+            mockExecuteRemoveDeviceAction(deviceId);
+            return Promise.resolve({ status: 'applied' });
         },
         compileReorderDevicesAction: (trackId: string, deviceId: string, targetDeviceId: string): unknown =>
             mockCompileReorderDevicesAction(trackId, deviceId, targetDeviceId),
@@ -318,15 +323,12 @@ describe('TrackDevicesSection', () => {
         });
     });
 
-    it('should dispatch the removeDevice action when remove button is clicked', () => {
+    it('consumes the removeDevice outcome when the remove button is clicked', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         const removeButton = screen.getByLabelText('Remove Compressor');
         fireEvent.click(removeButton);
-        // removeDevice is undoable via its restoreDevice inverse.
-        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
-            type: 'removeDevice',
-            payload: { deviceId: 'device-1' },
-        });
+        expect(mockExecuteRemoveDeviceAction).toHaveBeenCalledWith('device-1');
+        expect(mockExecuteUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeDevice' }));
     });
 
     it('routes a mixer device drop through the committed reorder action', () => {

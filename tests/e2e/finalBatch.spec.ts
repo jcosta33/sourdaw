@@ -76,12 +76,20 @@ test.describe('Inspector device chain operations', () => {
         await page.waitForTimeout(800);
 
         const bypass_before = await inspector.getByRole('button', { name: /^Bypass /i }).count();
+        const pageErrors: Error[] = [];
+        page.on('pageerror', (error) => pageErrors.push(error));
         await inspector.getByRole('button', { name: /^Remove Bacteria/i }).click();
-        await page.waitForTimeout(800);
 
+        await expect(inspector.getByRole('button', { name: /^Bypass Bacteria/i })).toHaveCount(0);
         const bypass_after = await inspector.getByRole('button', { name: /^Bypass /i }).count();
         expect(bypass_after).toBe(bypass_before - 1);
-        await expect(inspector.getByRole('button', { name: /^Bypass Bacteria/i })).toHaveCount(0);
+        await page.evaluate(
+            () =>
+                new Promise<void>((resolve) => {
+                    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+                })
+        );
+        expect(pageErrors).toEqual([]);
     });
 });
 

@@ -13,7 +13,12 @@ async function addAudioTrack(page: Page): Promise<void> {
     await page.keyboard.press(`${MOD}+k`);
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add Audio Track');
     await page.getByRole('option', { name: 'Add Audio Track' }).click();
-    await expect(page.getByRole('grid', { name: /Track list/i }).getByText('Audio', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(
+        page
+            .getByRole('grid', { name: /Track list/i })
+            .getByText('Audio', { exact: true })
+            .first()
+    ).toBeVisible({ timeout: 5000 });
 }
 
 async function addDeviceFromInspector(page: Page): Promise<void> {
@@ -61,8 +66,20 @@ test.describe('Mixer strip device chain', () => {
         await expect(deviceRow).toHaveAttribute('title', /double-click to bypass/i);
 
         // Remove drops the device from the strip entirely.
-        await audio.getByRole('button', { name: /^Remove /i }).first().click();
+        const pageErrors: Error[] = [];
+        page.on('pageerror', (error) => pageErrors.push(error));
+        await audio
+            .getByRole('button', { name: /^Remove /i })
+            .first()
+            .click();
         await expect(deviceRow).toHaveCount(0);
+        await page.evaluate(
+            () =>
+                new Promise<void>((resolve) => {
+                    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+                })
+        );
+        expect(pageErrors).toEqual([]);
 
         // The removal went through the action boundary: transport-undo
         // restores the device row to the strip.

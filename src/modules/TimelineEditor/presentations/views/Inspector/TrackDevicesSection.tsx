@@ -15,6 +15,7 @@ import {
     getPluginById,
     compileReorderDevicesAction,
     executeAddDeviceAction,
+    executeRemoveDeviceAction,
     projectTrackToLiveStrip,
 } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
@@ -454,13 +455,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     data-testid={`device-remove-${device.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        // Action boundary: removeDevice is
-                                        // undoable via its restoreDevice
-                                        // inverse.
-                                        void executeUserAppAction({
-                                            type: 'removeDevice',
-                                            payload: { deviceId: device.id },
-                                        });
+                                        void executeRemoveDeviceAction(device.id);
                                     }}
                                 >
                                     <Trash2 className="size-3 text-muted-foreground" />

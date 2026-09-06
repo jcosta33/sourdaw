@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAddDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied', deviceId: 'device-added' })),
+    executeRemoveDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied' })),
     compileReorderDevicesAction: vi.fn(),
     getPlatformPlugins: vi.fn<() => PluginStub[]>(() => []),
     openInspector: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     selectTrack: mocks.selectTrack,
     compileReorderDevicesAction: mocks.compileReorderDevicesAction,
     executeAddDeviceAction: mocks.executeAddDeviceAction,
+    executeRemoveDeviceAction: mocks.executeRemoveDeviceAction,
     getPlatformPlugins: mocks.getPlatformPlugins,
 }));
 
@@ -109,17 +111,14 @@ describe('DeviceChainSection', () => {
         });
     });
 
-    it('removes a device via its remove button through the action boundary', () => {
+    it('consumes the removeDevice outcome from its remove button', () => {
         const track: Track = { ...baseTrack, devices: [makeDevice({ id: 'dev-9', name: 'Chorus' })] };
         render(<DeviceChainSection track={track} />);
 
         fireEvent.click(screen.getByLabelText('Remove Chorus'));
 
-        // removeDevice is undoable via its restoreDevice inverse.
-        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
-            type: 'removeDevice',
-            payload: { deviceId: 'dev-9' },
-        });
+        expect(mocks.executeRemoveDeviceAction).toHaveBeenCalledWith('dev-9');
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeDevice' }));
     });
 
     it('routes a device rack drag through the compiled reorder action', () => {
