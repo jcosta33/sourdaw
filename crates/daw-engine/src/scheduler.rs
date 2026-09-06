@@ -1013,20 +1013,20 @@ impl FermenterBody {
     /// Render one run into the instrument's own buffers and sum them out.
     fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len();
-        // Either order is sound: each pointer names a separate heap allocation
-        // the instance owns, sized once in `FermenterInstance::new` and never
-        // resized, so a render cannot move the buffer the other pointer names.
-        // Taking the right pointer first is tidiness, not safety.
-        let rendered_right = self.instance.get_right_ptr();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
         let rendered_left = self.instance.process(frames as u32);
-        // SAFETY: both pointers name the instrument's own channel buffers,
-        // which `FermenterInstance::new` sizes at FERMENTER_BLOCK_FRAMES and
-        // no method resizes, so the render cannot move the buffer the right
-        // pointer already names; `frames` is bounded by that size in `process`
-        // above, so each slice is inside the allocation it names. The two
-        // buffers are separate heap allocations, so the pair of slices aliases
-        // nothing. Nothing mutates the instrument between the render and this
-        // copy.
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `FermenterInstance::new`
+        // sizes at FERMENTER_BLOCK_FRAMES and no method resizes; `frames` is
+        // bounded by that size in `process` above, so each slice is inside
+        // the allocation it names. The two buffers are separate heap
+        // allocations, so the pair of slices aliases nothing. Nothing mutates
+        // the instrument between the render and this copy.
         let (rendered_left, rendered_right) = unsafe {
             (
                 std::slice::from_raw_parts(rendered_left, frames),
