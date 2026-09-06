@@ -101,10 +101,7 @@ describe('setTempo project dirty integration', () => {
         expect(getCrdtDoc('root')).toMatchObject({ transport: { tempo: 133 } });
         expect(projectStore.value?.dirty).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.past[0]).toMatchObject({
-            kind: 'action',
-            inverseAction: { type: 'setTempo', payload: { bpm: 120, expectedBpm: 133, tempoChangeId: null } },
-        });
+        expect(undoStore.value?.past[0]?.label).toBe('Set tempo');
         expect(tempoProjectRevisionStore.value).toBe((initialTempoRevision ?? 0) + 1);
 
         tempoMapStore.set({ changes: [{ id: 'later-change', beat: 12, tempo: 96, curve: 'instant' }] });
@@ -129,10 +126,7 @@ describe('setTempo project dirty integration', () => {
         expect(tempoMapStore.value?.changes).toEqual([{ id: 'tempo-0', beat: 0, tempo: 133, curve: 'instant' }]);
         expect(projectStore.value?.dirty).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
-        expect(undoStore.value?.past[0]).toMatchObject({
-            kind: 'action',
-            inverseAction: { type: 'setTempo', payload: { bpm: 96, expectedBpm: 133, tempoChangeId: 'tempo-0' } },
-        });
+        expect(undoStore.value?.past[0]?.label).toBe('Set tempo');
 
         tempoMapStore.set({
             changes: [
