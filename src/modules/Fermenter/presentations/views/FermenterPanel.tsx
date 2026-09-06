@@ -126,16 +126,16 @@ const SectionHeader = ({
     description: string;
     detail?: string;
 }): ReactElement => (
-    <Row align="center" justify="between" gap={2} shrink={false}>
-        <Row align="center" gap={1.5} className="min-w-0">
-            <span className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70 shrink-0">
+    <Row align="start" justify="between" gap={2} shrink={false}>
+        <Stack gap={0.5} className="min-w-0">
+            <span className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
                 {eyebrow}
             </span>
             <span className="text-[13px] font-semibold text-foreground truncate">{title}</span>
             <span className="sr-only">{description}</span>
-        </Row>
+        </Stack>
         {detail ? (
-            <DawPluginLed tone="sage" className="shrink-0">
+            <DawPluginLed tone="sage" className="shrink-0 mt-0.5">
                 {detail}
             </DawPluginLed>
         ) : null}
@@ -536,7 +536,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                 as="aside"
                 gap={2.5}
                 shrink={false}
-                className="fermenter-window h-full w-[228px] overflow-hidden p-2.5"
+                className="fermenter-window h-full w-[228px] min-h-0 overflow-y-auto p-2.5"
             >
                 <SectionHeader
                     eyebrow="Scenes"
@@ -545,7 +545,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     detail={`${userPatches.length} user`}
                 />
 
-                <Row align="stretch" wrap gap={1.5}>
+                <Row align="stretch" wrap gap={1.5} shrink={false}>
                     {LEVELS.map((level) => (
                         <DawPluginChip
                             key={level.id}
@@ -559,7 +559,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     ))}
                 </Row>
 
-                <Row justify="between" gap={2} className="fermenter-window px-3 py-2">
+                <Row justify="between" gap={2} shrink={false} className="fermenter-window px-3 py-2">
                     <div className="min-w-0">
                         <div className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">
                             Current scene
@@ -632,7 +632,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </Row>
                 </Row>
 
-                <div className="fermenter-window min-h-0 flex-1 overflow-hidden">
+                <div className="fermenter-window min-h-[160px] flex-1 shrink-0 overflow-hidden">
                     <PresetBrowser
                         currentName={patch.name}
                         userPatches={userPatches}
@@ -699,7 +699,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                 </Row>
 
                 <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden">
-                    <Stack as="section" gap={2.5} className="fermenter-window overflow-hidden p-2.5">
+                    <Stack as="section" gap={2.5} className="fermenter-window min-h-0 overflow-y-auto p-2.5">
                         <SectionHeader
                             eyebrow={sectionMeta.eyebrow}
                             title={sectionMeta.title}
@@ -746,7 +746,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                     </Stack>
 
                     <Stack as="aside" gap={2.5} className="fermenter-window min-h-[220px] overflow-y-auto p-2.5">
-                        <Stack gap={3} className="fermenter-window min-h-[220px] p-3">
+                        <Stack gap={3} shrink={false} className="fermenter-window p-3">
                             <SectionHeader
                                 eyebrow="Performance"
                                 title="Macro rig"
@@ -769,7 +769,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         </Stack>
 
                         {uiLevel >= 3 ? (
-                            <div className="fermenter-window p-3">
+                            <div className="fermenter-window shrink-0 p-3">
                                 <LayerStack
                                     numLayers={patch.numLayers}
                                     activeLayer={patch.activeLayer}
@@ -786,10 +786,10 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
 
                         {uiLevel >= 5 ? (
                             <>
-                                <div className="fermenter-window p-3">
+                                <div className="fermenter-window shrink-0 p-3">
                                     <TransformPad deviceId={deviceId} />
                                 </div>
-                                <Stack gap={2} className="fermenter-window p-3">
+                                <Stack gap={2} shrink={false} className="fermenter-window p-3">
                                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                                         Spectrum
                                     </div>
