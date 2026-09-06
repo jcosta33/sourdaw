@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_87ab0a2f60ccf8::t_1c3b4b740cf8fe 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6319a438c769708676b014f455c8b66b5597a53a",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
