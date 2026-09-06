@@ -1,0 +1,55 @@
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_87ab0a2f60ccf8::t_ed6a69470ad642 247,277
+src/modules/AiRuntime/models/PresetActions/Presets/Transport.ts
+  s_87ab0a2f60ccf8::t_d43e8fd0774342 8,16,24,32
+src/modules/AiRuntime/models/PresetActions/Presets/Types.ts
+  s_87ab0a2f60ccf8::t_d43e8fd0774342 21-22
+src/modules/AiRuntime/models/PresetActions/Presets/Track.ts
+  s_87ab0a2f60ccf8::t_d43e8fd0774342 9,20,28,45,54,63,72,104,113
+src/modules/AiRuntime/models/PresetActions/Presets/Device.ts
+  s_87ab0a2f60ccf8::t_d43e8fd0774342 51
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_87ab0a2f60ccf8::t_95c9b86ace8b5b 252-253
+  s_87ab0a2f60ccf8::t_dc2c46845d874f 7,72,81-85
+  s_87ab0a2f60ccf8::t_b062e1409a1a26 73-75,296-297,332
+  s_87ab0a2f60ccf8::t_ed6a69470ad642 4,349,371,413
+  s_87ab0a2f60ccf8::t_a1866d64c5be36 10,71,76,142,152,159-162,190-193,196,198,208,222,225,227,232,234,254-255,258-261,295,298-303,309,311-331,333-338,340-347,350,352-370,372-386,388-390,392-399,401-412,414-419,421-426,428-430,432,435,439-446,451-455
+  s_87ab0a2f60ccf8::t_62a6296e855a10 77
+  s_87ab0a2f60ccf8::t_218fc698c2ccc4 210
+src/modules/AiRuntime/models/PresetActions/Presets/Clip.ts
+  s_87ab0a2f60ccf8::t_d43e8fd0774342 9
+src/modules/AiRuntime/services/__tests__/fuzzySearch.spec.ts
+  s_87ab0a2f60ccf8::t_245a599fc589d1 3
+src/modules/AiRuntime/useCases/__tests__/promptInterpretationRouting.spec.ts
+  s_87ab0a2f60ccf8::t_ed6a69470ad642 197-205
+  s_87ab0a2f60ccf8::t_075318d320c1a7 3,5,108,141,145-146,149,157-192
+  s_87ab0a2f60ccf8::t_f1f75dcd4c11f2 1-2,4,6-48,50-107,109-140,142-144,147-148,150-156,193-196,224-255
+  s_87ab0a2f60ccf8::t_b3156838178955 49
+  s_87ab0a2f60ccf8::t_f8b76cbab49456 206-223
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsing.spec.ts
+  s_87ab0a2f60ccf8::t_5223a2ea650ddc 96-113,410-413
+  s_87ab0a2f60ccf8::t_9cac0c55ac46bd 85-95,204-212,216-222,225,395-400,472-475
+  s_87ab0a2f60ccf8::t_f8b76cbab49456 213-215,223-224,226,228-236,240
+  s_87ab0a2f60ccf8::t_245a599fc589d1 10,202,227,237-239,241-274,401,403-409,414-417,466-469,479,488-489,493,496-497,501
+  s_87ab0a2f60ccf8::t_4eca1d651bc2ae 402
+.agents/skills/llm-action-bridge/SKILL.md
+  s_87ab0a2f60ccf8::t_ed6a69470ad642 72-77
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  s_87ab0a2f60ccf8::t_245a599fc589d1 4,183,185,188,190,229,231,235,238-239,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "7302532b009225bfd10ac6649bb35000cd0a0e4c",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
