@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
-import {
+const {
     getProjectFileIoNativeWrites,
     getProjectFileIoSaveDialogCallCount,
     queueProjectFileIoSaveDialog,
     resetProjectFileIoFixture,
     setProjectFileIoDesktopRuntime,
-} from '../../../../repositories/__tests__/projectFileIoTestFixture';
+} = await vi.hoisted(async () => import('../../../../repositories/__tests__/projectFileIoTestFixture'));
 
 const audioRuntime = vi.hoisted(() => ({
     exportCachedAudioBuffers: vi.fn(),
@@ -61,6 +60,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
 
+import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
 import { projectStore } from '../../../../stores/projectStore';
 import { stopActiveAutoSave } from '../../helpers/stopActiveAutoSave';
 import { newProject } from '../../newProject';
