@@ -69,6 +69,12 @@ When a multi-action prompt is segmented, retain each action's exclusions, qualif
 
 **Why:** clause boundaries are a parsing convenience, not permission to widen a destructive action or collapse competing targets.
 
+### 10. Prove complete deterministic admission
+
+Deterministic execution requires a grammar that consumes the whole request and resolves every target uniquely. Fuzzy search rank, partial text, context availability, or the first matching registry entry are discovery evidence only; they never authorize an action.
+
+**Why:** once a partial proposal reaches validation, approval, and receipts, the omitted intent cannot be reconstructed and an ambiguity can look like a deliberate edit.
+
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — use cases and command surfaces actions must hit.

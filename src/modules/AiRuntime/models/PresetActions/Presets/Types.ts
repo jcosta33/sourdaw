@@ -18,6 +18,8 @@ export type PresetAction = {
     label: string;
     /** Search terms & common aliases — fuzzy matched against user input */
     keywords: string[];
+    /** Complete imperative synonyms eligible for exact deterministic execution. */
+    commandAliases?: string[];
     category: PresetCategory;
     /** What must be selected for this preset to be available */
     requiresSelection?: 'track' | 'clip' | 'clipMidi' | 'clipAudio';
