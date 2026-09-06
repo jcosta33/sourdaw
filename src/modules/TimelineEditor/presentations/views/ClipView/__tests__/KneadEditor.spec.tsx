@@ -119,6 +119,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 // read back through the real import. Keep exactly one registration.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     executeUserAppAction: actionMocks.executeUserAppAction,
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),

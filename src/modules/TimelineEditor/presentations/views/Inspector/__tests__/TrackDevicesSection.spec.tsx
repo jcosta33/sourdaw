@@ -76,6 +76,7 @@ const mockExecuteUserAppAction = vi.fn<(action: unknown) => void>();
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     executeUserAppAction: (action: unknown): void => {
         mockExecuteUserAppAction(action);
     },

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { installMultiDatabaseIndexedDb } from './multiDatabaseIndexedDb';
@@ -110,6 +112,7 @@ function encodeFloat32(values: Float32Array): string {
 
 describe('saveProject audio durability integration', () => {
     beforeEach(() => {
+        clearHandlerRegistry();
         localStorage.clear();
         injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
     });
@@ -117,6 +120,8 @@ describe('saveProject audio durability integration', () => {
     afterEach(async () => {
         const { stopActiveAutoSave } = await import('../../helpers/stopActiveAutoSave');
         stopActiveAutoSave();
+        clearHandlerRegistry();
+        Container.clear();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
@@ -137,7 +142,7 @@ describe('saveProject audio durability integration', () => {
         });
         const [
             { audioEngine, clearRuntimeCachedAudioBuffers, getCachedAudioBuffer, restoreCachedAudioBuffersFromIdb },
-            { importAudioFile, renameTrack },
+            { getArrangementHandlers, importAudioFile, renameTrack, setArrangementEventBus },
             project,
             { projectStore },
             { trackStore },
@@ -163,6 +168,8 @@ describe('saveProject audio durability integration', () => {
         context.createBuffer = createAudioBuffer;
         context.decodeAudioData = (bytes) => Promise.resolve(decodeMonoWave(bytes));
         await restoreCachedAudioBuffersFromIdb({ audioContext: context });
+        setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
+        registerHandlerMap(getArrangementHandlers());
 
         registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
