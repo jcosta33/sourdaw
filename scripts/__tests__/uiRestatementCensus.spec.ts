@@ -350,6 +350,30 @@ describe('canonicalizeCensus', () => {
         expect(first).toBe(second);
         expect(first.endsWith('\n')).toBe(true);
     });
+
+    it('produces identical canonical bytes regardless of input row order', () => {
+        const row = (id: string, file: string, line: number): UiRestatementRow => ({
+            id,
+            file,
+            line,
+            fingerprint: 'div\tflex flex-col',
+            kind: 'layout',
+            mapping: 'Stack',
+            disposition: 'already-migrated',
+        });
+        const rows = [
+            row('ui-cccccccccccccccc', 'src/c.tsx', 3),
+            row('ui-aaaaaaaaaaaaaaaa', 'src/a.tsx', 1),
+            row('ui-bbbbbbbbbbbbbbbb', 'src/b.tsx', 2),
+        ];
+
+        const forward = canonicalizeCensus(rows);
+        const reversed = canonicalizeCensus([...rows].reverse());
+
+        expect(reversed).toBe(forward);
+        const ids = (JSON.parse(forward) as Array<{ id: string }>).map((entry) => entry.id);
+        expect(ids).toEqual([...ids].sort());
+    });
 });
 
 describe('diffCensus', () => {
