@@ -46,6 +46,20 @@ const generatedClip = {
     muted: false,
 };
 
+function reorderObjectKeys(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(reorderObjectKeys);
+    }
+    if (value === null || typeof value !== 'object') {
+        return value;
+    }
+    return Object.fromEntries(
+        Object.entries(value)
+            .reverse()
+            .map(([key, nested]) => [key, reorderObjectKeys(nested)])
+    );
+}
+
 describe('isGeneratedMidiStateCurrent', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -76,6 +90,68 @@ describe('isGeneratedMidiStateCurrent', () => {
             })
         ).toBe(true);
         expect(mocks.serializeMidiStateForClips).toHaveBeenCalledWith(['generated-clip'], undefined);
+    });
+
+    it('accepts recursively reordered captured object keys', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedTrack.id,
+                entityType: 'track',
+                guard: {
+                    entityJson: JSON.stringify(reorderObjectKeys(generatedTrack)),
+                    midiByClipIdJson: 'exact-midi',
+                },
+            })
+        ).toBe(true);
+    });
+
+    it.each([
+        ['a changed scalar', (track: ReturnType<typeof createTrack>) => ({ ...track, name: 'Changed' })],
+        [
+            'changed array order',
+            (track: ReturnType<typeof createTrack>) => ({
+                ...track,
+                alternatives: [track.alternatives[1]!, track.alternatives[0]!],
+            }),
+        ],
+        [
+            'a missing field',
+            (track: ReturnType<typeof createTrack>) => {
+                const captured: Record<string, unknown> = { ...track };
+                delete captured.name;
+                return captured;
+            },
+        ],
+        ['a null in place of a field', (track: ReturnType<typeof createTrack>) => ({ ...track, name: null })],
+        ['malformed captured JSON', () => '{'],
+    ])('rejects %s in the captured entity', (_case, capture) => {
+        const baseTrack = createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' });
+        const generatedTrack = {
+            ...baseTrack,
+            alternatives: [
+                baseTrack.alternatives[0]!,
+                { ...baseTrack.alternatives[0]!, id: 'alternative-second', name: 'Second' },
+            ],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        const captured = capture(generatedTrack);
+
+        expect(
+            isGeneratedMidiStateCurrent({
+                entityId: generatedTrack.id,
+                entityType: 'track',
+                guard: {
+                    entityJson: typeof captured === 'string' ? captured : JSON.stringify(captured),
+                    midiByClipIdJson: 'exact-midi',
+                },
+            })
+        ).toBe(false);
     });
 
     it('rejects deletion after MIDI or dependent routing changes', () => {

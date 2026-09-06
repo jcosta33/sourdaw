@@ -85,6 +85,12 @@ Automerge guarantees convergence of concurrent edits. It does not guarantee sens
 
 **Why:** convergence without semantics yields a technically-consistent document nobody can explain.
 
+### 7. Review identity-scoped undo against peer edits
+
+For project-integrity review, apply peer edits after the original operation and again after undo, then exercise real undo/redo through Command and inspect both the authoritative CRDT document and its store projection. Reject whole-aggregate snapshot restoration for an identity-scoped edit even when an isolated round trip passes. When a divergence guard captures serialized project entities, prove that CRDT serialization field order alone cannot become a conflict while changed values, array order, missing fields, and malformed captures still fail closed.
+
+**Why:** issue #3757 escaped in commit `9b8166687867a4e1eb2ffb39ca4f2f69795d349e` because whole-track snapshots passed ordinary undo/redo coverage while erasing later peer work.
+
 ## Anti-patterns
 
 ### CRITICAL — Direct store write against a CRDT-backed store
