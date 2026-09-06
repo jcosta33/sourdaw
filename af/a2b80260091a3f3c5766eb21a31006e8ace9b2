@@ -1,0 +1,21 @@
+src/modules/Command/stores/clearUndoHistory.ts
+  s_9b530f08172a54::t_7b1be2f784466f 1-2,4,12-16,21-24
+src/modules/Command/useCases/__tests__/clearUndoHistory.spec.ts
+  s_9b530f08172a54::t_79d8bd8a92556a 3-5,7,19-30,35,45-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "afa2b80260091a3f3c5766eb21a31006e8ace9b2",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
