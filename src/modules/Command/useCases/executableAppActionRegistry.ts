@@ -530,6 +530,23 @@ export const executableAppActionDescriptors = [
         },
     },
     {
+        actionType: 'slipClipContent',
+        risk: 'bounded-reversible',
+        description:
+            "Slip an existing clip's content by setting its content offset in beats without moving the clip's boundaries.",
+        intentPhrases: ['slip clip', 'slip clip content'],
+        targetRules: editableClipTargetRules,
+        valueRules: [{ argument: 'offset', kind: 'number-if-present', requiredInPrompt: true }],
+        parameters: {
+            properties: {
+                clipId: { type: 'string' },
+                clipType: { type: 'string', enum: ['audio', 'midi'], description: 'Which content offset to slide' },
+                offset: { type: 'number', description: 'New content offset in beats' },
+            },
+            required: ['clipId', 'clipType', 'offset'],
+        },
+    },
+    {
         actionType: 'setClipGain',
         risk: 'bounded-reversible',
         description: 'Set an existing clip gain from 0.0 through 2.0.',
@@ -2590,6 +2607,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     trimClipStart: CLIP_MUTATION_IDENTITY,
     trimClipEnd: CLIP_MUTATION_IDENTITY,
     nudgeClip: CLIP_MUTATION_IDENTITY,
+    slipClipContent: CLIP_MUTATION_IDENTITY,
     setClipGain: CLIP_MUTATION_IDENTITY,
     muteClip: CLIP_MUTATION_IDENTITY,
     setClipColor: CLIP_MUTATION_IDENTITY,
@@ -2691,6 +2709,7 @@ export const executableAppActionMutationIdempotenceByType = {
     trimClipStart: false,
     trimClipEnd: false,
     nudgeClip: false,
+    slipClipContent: false,
     setClipGain: true,
     muteClip: true,
     setClipColor: true,

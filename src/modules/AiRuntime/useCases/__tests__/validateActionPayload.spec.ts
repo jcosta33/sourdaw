@@ -834,6 +834,17 @@ const guardedPayloadContractCases = [
             { laneId: 'lane-1', gridSize: 0.25, extra: true },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'slipClipContent',
+        validPayload: { clipId: 'clip-1', clipType: 'audio', offset: 1.5 },
+        invalidPayloads: [
+            { clipId: '', clipType: 'audio', offset: 1.5 },
+            { clipId: 'clip-1', clipType: 'video', offset: 1.5 },
+            { clipId: 'clip-1', clipType: 'audio' },
+            { clipId: 'clip-1', clipType: 'audio', offset: Number.NaN },
+            { clipId: 'clip-1', clipType: 'audio', offset: 1.5, extra: true },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {

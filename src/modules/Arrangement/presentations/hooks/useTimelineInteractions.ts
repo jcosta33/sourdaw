@@ -22,7 +22,6 @@ import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
 import { moveClip } from '../../useCases/clip/moveClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
 import { removeClip } from '../../useCases/clip/removeClip';
-import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -72,6 +71,41 @@ export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
 // Kept in the same range as the Ctrl+wheel pinch step (see useTimelineGestures,
 // -deltaY * 0.02) so touch and trackpad pinch feel consistent (findings #81/#17).
 const PINCH_ZOOM_FACTOR = 0.02;
+
+// A single-clip drag commits through the registered moveClip action (#3641):
+// the handler performs the write and mints the undo entry, so admission
+// refusals surface and session replay reaches the entry. Group gestures — the
+// same mousedown test that seeded the preview — keep the callback commit even
+// when locked or stale members leave exactly one previewed clip, as do
+// same-track moves under ripple editing (ripple and multi-clip moves migrate
+// in slice three). The write geometry is the callback loop's skip rule
+// verbatim: a release in place commits nothing.
+const commitSingleClipMove = (
+    preview: { positions: Map<string, ClipPreviewPosition>; originals: Map<string, ClipPreviewPosition> },
+    rippleEnabled: boolean,
+    isGroupGesture: boolean
+): boolean => {
+    if (isGroupGesture) {
+        return false;
+    }
+    const entries = [...preview.positions];
+    const single = entries[0];
+    if (entries.length !== 1 || !single) {
+        return false;
+    }
+    const [clipId, pos] = single;
+    const orig = preview.originals.get(clipId);
+    if (!orig || (rippleEnabled && orig.trackId === pos.trackId)) {
+        return false;
+    }
+    if (orig.trackId !== pos.trackId || !Object.is(orig.startBeat, pos.startBeat)) {
+        void executeUserAppAction({
+            type: 'moveClip',
+            payload: { clipId, trackId: pos.trackId, startBeat: pos.startBeat },
+        });
+    }
+    return true;
+};
 
 export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasElement | null>) => {
     const [dragState, setDragState] = useState<DragState | null>(null);
@@ -764,13 +798,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (view) {
                 const deltaBeats = (x - startX) / view.pixelsPerBeat;
                 if (Math.abs(deltaBeats) > 0.001) {
-                    const newOffset = originalOffset + deltaBeats;
-                    slipClipContent(clipId, clipType, newOffset);
-                    pushUndoEntry(
-                        'Slip clip content',
-                        () => slipClipContent(clipId, clipType, originalOffset),
-                        () => slipClipContent(clipId, clipType, newOffset)
-                    );
+                    // Dispatched through the registered action (#3641), not
+                    // pushUndoEntry: the handler performs the write and records
+                    // the same 'Slip clip content' history entry, so admission
+                    // refusals surface instead of vanishing.
+                    void executeUserAppAction({
+                        type: 'slipClipContent',
+                        payload: { clipId, clipType, offset: originalOffset + deltaBeats },
+                    });
                 }
             }
             return;
@@ -988,6 +1023,22 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     }
                 } else if (dragMode === 'move') {
                     const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+                    // Same mousedown group test that seeded the preview: a drag
+                    // that began on a multi-selection member is a group gesture
+                    // even when locked or stale members leave one previewed clip.
+                    const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
+                    const isGroupGesture = selectedClipIds.length > 1 && selectedClipIds.includes(dragClipId);
+                    // A single previewed clip already committed through the
+                    // registered action (or provably no-op'd) — return through
+                    // the same reset tail the collapse branch uses.
+                    if (commitSingleClipMove(preview, rippleEnabled, isGroupGesture)) {
+                        dragStateRef.current = null;
+                        setDragState(null);
+                        if (canvasRef.current) {
+                            canvasRef.current.style.cursor = '';
+                        }
+                        return;
+                    }
                     // Every ripple-moved clip gets its own plan; keeping only the
                     // last one made undo restore just that clip's shifted
                     // neighbors on a multi-clip ripple drag.

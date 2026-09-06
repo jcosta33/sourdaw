@@ -50,6 +50,7 @@ export const ACTION_LABELS: Record<string, string> = {
     removeClip: 'Remove clip',
     trimClipStart: 'Trim start',
     trimClipEnd: 'Trim end',
+    slipClipContent: 'Slip clip content',
     quantizeNotes: 'Quantize',
     removeShortMidiOverlaps: 'Remove short MIDI overlaps',
     copyMidiArticulations: 'Copy MIDI articulations',

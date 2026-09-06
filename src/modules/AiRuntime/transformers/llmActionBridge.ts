@@ -1043,6 +1043,28 @@ function bridgeToolCall({
         return { type: 'nudgeClip', payload: { clipId: source.clip.id, beats: args.beats } };
     }
 
+    if (call.name === 'slipClipContent') {
+        const source = findClip(context, args.clipId);
+        if (
+            !hasExactKeys(args, ['clipId', 'clipType', 'offset']) ||
+            !source ||
+            source.clip.locked === true ||
+            (args.clipType !== 'audio' && args.clipType !== 'midi') ||
+            args.clipType !== source.clip.type ||
+            !isFiniteNumber(args.offset)
+        ) {
+            return rejection(
+                index,
+                call.name,
+                'Expected an unlocked clipId, a clipType matching the clip, and a finite content offset'
+            );
+        }
+        return {
+            type: 'slipClipContent',
+            payload: { clipId: source.clip.id, clipType: args.clipType, offset: args.offset },
+        };
+    }
+
     if (call.name === 'setClipGain') {
         const source = findClip(context, args.clipId);
         if (
@@ -1723,6 +1745,7 @@ function getClipTargetIds(action: RuntimeAction): string[] {
         action.type === 'trimClipStart' ||
         action.type === 'trimClipEnd' ||
         action.type === 'nudgeClip' ||
+        action.type === 'slipClipContent' ||
         action.type === 'setClipGain' ||
         action.type === 'muteClip' ||
         action.type === 'setClipColor' ||
@@ -1986,6 +2009,9 @@ function getMutationKeys(
     }
     if (action.type === 'trimClipStart' || action.type === 'trimClipEnd' || action.type === 'nudgeClip') {
         return [`clip:${action.payload.clipId}:geometry`];
+    }
+    if (action.type === 'slipClipContent') {
+        return [`clip:${action.payload.clipId}:offset`];
     }
     if (action.type === 'setClipStretchRatio' || action.type === 'fitClipToBeats') {
         return [`clip:${action.payload.clipId}:geometry`, `clip:${action.payload.clipId}:stretch`];

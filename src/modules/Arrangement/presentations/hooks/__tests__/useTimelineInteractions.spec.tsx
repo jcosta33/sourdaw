@@ -837,7 +837,7 @@ describe('useTimelineInteractions', () => {
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('slip-edits clip content on Ctrl+Shift+drag and commits the new offset', () => {
+    it('slip-edits clip content on Ctrl+Shift+drag and dispatches slipClipContent', () => {
         mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
         mocks.trackStoreValue.value = {
             tracks: [
@@ -865,13 +865,15 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 250, clientY: 50 } as any);
         });
 
-        // 150px / 100ppb = 1.5 beats delta → new offset 1.5.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
-            'Slip clip content',
-            expect.any(Function),
-            expect.any(Function)
-        );
+        // 150px / 100ppb = 1.5 beats delta → new offset 1.5, dispatched to the
+        // registered action; the gesture never writes or records history itself.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+        });
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('does not commit a slip when the drag delta is sub-threshold', () => {
@@ -900,10 +902,11 @@ describe('useTimelineInteractions', () => {
         });
 
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('commits a clip move to a new track position with a plain undo entry', () => {
+    it('dispatches the registered moveClip action for a single-clip move', () => {
         mocks.trackStoreValue.value = {
             tracks: [
                 { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
@@ -927,6 +930,98 @@ describe('useTimelineInteractions', () => {
             ],
             tempo: 120,
         });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 300, clientY: 120 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 300, clientY: 120 } as any);
+        });
+
+        // Release at x=300 → beat 3: the dispatch carries the exact previewed
+        // geometry, and the gesture itself neither writes nor records history.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'moveClip',
+            payload: { clipId: 'c1', trackId: 't2', startBeat: 3 },
+        });
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('dispatches nothing when a single-clip move releases without movement', () => {
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'move',
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 0, clientY: 20 } as any);
+        });
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('commits a multi-clip move through the callback loop, not the registered action', () => {
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 0, endBeat: 4 },
+                    ],
+                },
+                { id: 't2', clips: [] },
+            ],
+        };
+        mocks.clipSelectionStoreValue.value = {
+            selectedClipId: 'c1',
+            selectedClipIds: ['c1', 'c2'],
+            marqueeSelection: null,
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'move',
+        });
+        mocks.getTrackAtY.mockReturnValue({ index: 1 });
+        mocks.buildTimelineRenderModel.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    height: 100,
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 0, endBeat: 4 },
+                    ],
+                },
+                { id: 't2', height: 100, clips: [] },
+            ],
+            tempo: 120,
+        });
         // moveClip reports whether the write landed; history only follows a real mutation.
         mocks.moveClip.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
@@ -941,8 +1036,9 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 300, clientY: 120 } as any);
         });
 
-        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't2', expect.any(Number), 0);
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Move clip', expect.any(Function), expect.any(Function));
+        expect(mocks.moveClip).toHaveBeenCalledTimes(2);
+        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Move 2 clips', expect.any(Function), expect.any(Function));
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('commits an Alt+drag duplicate with a duplicate undo entry', () => {
@@ -1094,7 +1190,10 @@ describe('useTimelineInteractions', () => {
         });
 
         // 150px / 100ppb = 1.5 beats from a base offset of 0.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+        });
     });
 
     it('defaults a missing midi offset to 0 when starting a slip drag on a midi clip', () => {
@@ -1121,7 +1220,10 @@ describe('useTimelineInteractions', () => {
         });
 
         // 100px / 100ppb = 1.0 beats from a base offset of 0.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('cm', 'midi', 1);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'cm', clipType: 'midi', offset: 1 },
+        });
     });
 
     it('broadcasts cursor presence to collaborators while dragging (throttled)', () => {

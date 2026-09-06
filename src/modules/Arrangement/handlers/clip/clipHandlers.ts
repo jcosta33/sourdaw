@@ -35,6 +35,7 @@ import { handleSetClipFade } from './handleSetClipFade';
 import { handleSetClipGain } from './handleSetClipGain';
 import { handleSetClipLoop } from './handleSetClipLoop';
 import { handleSetClipLoopLength } from './handleSetClipLoopLength';
+import { handleSlipClipContent } from './handleSlipClipContent';
 import { handleSplitClip } from './handleSplitClip';
 import { handleStripSilence } from './handleStripSilence';
 import { handleTrimClipEnd } from './handleTrimClipEnd';
@@ -63,6 +64,7 @@ export const clipHandlers = {
     glueClips: handleGlueClips,
     restoreClipGlueState: handleRestoreClipGlueState,
     nudgeClip: handleNudgeClip,
+    slipClipContent: handleSlipClipContent,
     crossfadeClips: handleCrossfadeClips,
     restoreCrossfadeClips: handleRestoreCrossfadeClips,
     setClipGain: handleSetClipGain,
