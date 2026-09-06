@@ -67,6 +67,7 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeAppActionBatch: vi.fn(),
     pushUndoEntry: vi.fn(),
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),

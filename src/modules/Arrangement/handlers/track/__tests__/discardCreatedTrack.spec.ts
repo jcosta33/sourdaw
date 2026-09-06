@@ -60,6 +60,42 @@ describe('handleDiscardCreatedTrack', () => {
         ).toBe(false);
     });
 
+    it('accepts a reordered track capture after projecting an earlier clip inverse', () => {
+        const track = {
+            id: 'created',
+            name: 'Created',
+            freezeState: { status: 'unfrozen', renderedAt: 2 },
+            clips: [{ id: 'created-clip' }],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+        const action = {
+            type: 'discardCreatedTrack' as const,
+            payload: {
+                trackId: 'created',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify({
+                        clips: [],
+                        freezeState: { renderedAt: 2, status: 'unfrozen' },
+                        name: 'Created',
+                        id: 'created',
+                    }),
+                    midiByClipIdJson: '{}',
+                },
+            },
+        };
+        const validate = handleDiscardCreatedTrack.validate;
+        if (!validate) {
+            throw new Error('Expected discardCreatedTrack to provide validation');
+        }
+
+        expect(
+            validate(action, {
+                actions: [{ type: 'discardDuplicatedClip', payload: { clipId: 'created-clip' } }, action],
+                actionIndex: 1,
+            })
+        ).toBe(true);
+    });
+
     it('removes a committed created track and publishes after commit', async () => {
         mocks.removeTrack.mockReturnValue({
             removed: true,

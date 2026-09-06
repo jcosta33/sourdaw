@@ -164,6 +164,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     clearUndoHistory: mockClearUndoHistory,
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),

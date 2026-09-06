@@ -92,6 +92,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),

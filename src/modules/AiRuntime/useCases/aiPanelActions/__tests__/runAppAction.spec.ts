@@ -25,6 +25,7 @@ function create_malformed_punch_action(type: 'setPunchIn' | 'setPunchOut', paylo
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    executeAppActionBatch: vi.fn(),
     executeUserAppAction: mocks.executeUserAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),

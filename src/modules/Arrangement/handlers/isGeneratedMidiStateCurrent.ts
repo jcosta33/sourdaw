@@ -12,6 +12,8 @@ import { hasNonDefaultWarpState } from '../stores/warpStates';
 import { serializeClipScopedAutomationLanes } from '../useCases/clip/serializeClipScopedAutomationLanes';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
+import { isJsonEntityEqual } from './isJsonEntityEqual';
+
 type IsGeneratedMidiStateCurrentInput = {
     entityId: string;
     entityType: 'clip' | 'track';
@@ -98,7 +100,7 @@ export function isGeneratedMidiStateCurrent({
         clipIds = collectTrackClipIds(track);
     }
 
-    if (JSON.stringify(entity) !== guard.entityJson) {
+    if (!isJsonEntityEqual(entity, guard.entityJson)) {
         return false;
     }
     if (
