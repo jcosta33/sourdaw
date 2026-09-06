@@ -2006,20 +2006,25 @@ impl ActiveEffect {
     /// triggers are the only thing besides the player's own release that ever
     /// lifts the key.
     ///
-    /// Only a note the device will actually be handed is tracked. An effect
-    /// that receives no block has this buffer discarded before anything reads
-    /// it, so holding that note would owe a release for a key which never went
-    /// down. The converse is the same contract read the other way, and
-    /// [`Self::release_sounding_notes`] states it: a release is only ever
-    /// spent on a device that will be handed the buffer it is pushed into.
+    /// An event addressed to a device that [`Self::receives_no_block`] is
+    /// dropped at the door: nothing is pushed and nothing is tracked. That is
+    /// not an overflow, so it is not counted as one — it is the discard law a
+    /// bypassed or detached device is held to everywhere else. Deciding both
+    /// on the same gate is what keeps them paired: a bypass or placement
+    /// change landing between a live note-on and its note-off can never leave
+    /// a queued event with no bit behind it, or a bit held for an event that
+    /// was never queued. What is queued is exactly what is tracked, and
+    /// [`Self::release_sounding_notes`] states the same contract the other
+    /// way: a release is only ever spent on a device that will be handed the
+    /// buffer it is pushed into.
     #[inline]
     fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
+        if self.receives_no_block() {
+            return;
+        }
         // Drop the newest event when the fixed block-local buffer is full.
         if !self.pending_midi.try_push(event) {
             diagnostics.record_scheduler_event_buffer_overflow(1);
-            return;
-        }
-        if self.receives_no_block() {
             return;
         }
         if event.is_note_on {
@@ -4829,10 +4834,13 @@ mod tests {
         assert_eq!(
             scheduler.rt_work_counters(),
             RtWorkCounters {
-                pending_midi_work_visits: 2,
+                pending_midi_work_visits: 1,
                 ..RtWorkCounters::default()
             },
-            "one pending detached event needs one empty check and one cleanup visit, never a table walk"
+            "the event addressed to a detached device was dropped at the door rather than queued, \
+             so the compact work set only ever needed the one empty check to notice and remove it \
+             — never a table walk, and never a second cleanup visit for an event that was never \
+             banked"
         );
         assert!(scheduler.effects[population - 1].pending_midi.is_empty());
         assert_eq!(scheduler.pending_midi_work.positions[population - 1], 0);
@@ -12383,6 +12391,78 @@ mod timeline_tests {
                 (BLOCK as u64, 60, LIVE_CHANNEL, false),
             ],
             "the splice hands over the release the key has been owed since the strip went"
+        );
+    }
+
+    /// A note struck while bypassed is dropped at the door: `enqueue_midi`
+    /// gates on [`ActiveEffect::receives_no_block`] before it pushes, so
+    /// nothing is queued and nothing is held in `live_sounding`. Banking the
+    /// event first and gating only the tracking would leave a queued note-on
+    /// with no bit behind it, so the render the un-bypass exposes it to would
+    /// still hand the instrument a key nothing was ever holding down, and no
+    /// release would ever be owed to lift it.
+    #[test]
+    fn a_live_note_struck_while_bypassed_is_dropped_at_the_door() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        // All three land in the same drain, ahead of any render: the window
+        // a push-before-gate order would have let the queued note-on cross.
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            Vec::new(),
+            "the note-on struck behind the bypass is dropped at the door, not delivered once the \
+             device un-bypasses"
+        );
+
+        harness.send(GraphCommand::SetTransport(TransportState::default()));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            Vec::new(),
+            "nothing was ever tracked for the dropped note-on, so the stop owes no phantom release"
+        );
+    }
+
+    /// The same discard law holds for the detached path. This differs from
+    /// [`a_device_placed_back_on_a_chain_releases_the_live_notes_it_held`],
+    /// where the note-on is struck while the device still runs a chain and
+    /// only then detaches: here the strike happens after the device is
+    /// already detached, and nothing renders in between to drain the queue
+    /// before the splice re-places it — the exact window a push-before-gate
+    /// order would have let a banked note-on cross into the instrument.
+    #[test]
+    fn a_live_note_struck_while_detached_is_dropped_at_the_door() {
+        const BLOCK: usize = 64;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        harness.send(GraphCommand::RemoveTrack(1));
+        assert_eq!(
+            harness.scheduler.effects[0].placement,
+            EffectPlacement::Detached
+        );
+        harness.send(GraphCommand::SendMidiNote(7, live_note_on(60)));
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(2)));
+        harness.send(insert_track_device(2, generator(7), 0));
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_addressed_notes(&received),
+            Vec::new(),
+            "the note-on struck while detached is dropped at the door, not delivered once the \
+             splice re-places the device"
         );
     }
 
