@@ -86,40 +86,42 @@ describe('updateDeviceParam', () => {
         expect(audioEngine.updateDeviceParam).not.toHaveBeenCalledWith('t1', 'd1', 'mix', 4.2);
     });
 
-    // The carried strip's Web Audio node is gated out of the mix, so the web
-    // write moves nothing a musician hears; and the engine holds the value it
-    // was stamped, so writing both is two beliefs about one control. The name
-    // is the instrument's, not the panel's: the engine refuses a key it cannot
+    // A carried strip's Web Audio node is gated out of the mix while rolling,
+    // but it is the fallback carrier the moment Stop reopens the gate, so it
+    // has to hold the current value too — the native send is additive, in the
+    // name the instrument answers to, and the engine refuses a key it cannot
     // resolve and takes the whole batch with it.
-    it('writes a carried built-in over the engine, in the name the instrument answers to', () => {
+    it('writes the Web Audio node and the carried native body', () => {
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
 
         updateDeviceParam('t1', 'd1', 'oscEngine', 0.75);
 
+        expect(audioEngine.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'oscEngine', 0.75);
         expect(sendNativeDeviceParameters).toHaveBeenCalledTimes(1);
         expect(sendNativeDeviceParameters).toHaveBeenCalledWith({
             trackId: 't1',
             deviceId: 'd1',
             values: { engine: 0.75 },
         });
-        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
     });
 
     // A built-in whose ids are already the engine's names still goes over the
     // engine when the session carries it — the routing is about the carrier,
-    // not about which body happens to need a translation.
-    it('writes a carried knead over the engine under the name the project stores', () => {
+    // not about which body happens to need a translation — and the Web Audio
+    // node still gets the same write for when the carry ends.
+    it('writes the Web Audio node and the carried knead body under the name the project stores', () => {
         projectHolding(createDevice({ id: 'd1', type: 'knead' }));
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
 
         updateDeviceParam('t1', 'd1', 'shift_semitones', 3);
 
+        expect(audioEngine.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'shift_semitones', 3);
         expect(sendNativeDeviceParameters).toHaveBeenCalledWith({
             trackId: 't1',
             deviceId: 'd1',
             values: { shift_semitones: 3 },
         });
-        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
     });
 
     // A device the session is not carrying is still Web Audio's to sound, and

@@ -1,11 +1,13 @@
 /**
  * Where a whole patch lands, and that it lands whole (#3893).
  *
- * A patch load is one gesture. On a strip the native session carries, the Web
- * Audio node is gated out of the mix, so the web write moves nothing a musician
- * hears — and writing both would drive the value the engine already holds a
- * second time. What is under test is that the patch goes to exactly one of the
- * two, and that nothing of it is lost on the way.
+ * A patch load is one gesture. The Web Audio node always gets it, carried or
+ * not: gated out of the mix while the native session carries the strip, that
+ * node is still the fallback carrier for the moment Stop reopens the gate, and
+ * it has to already hold the current patch then. A carried built-in gets the
+ * same patch additionally, over the graph command path. What is under test is
+ * that the web write always lands, that the native send lands only when
+ * carried, and that nothing of the patch is lost on the way.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -66,24 +68,28 @@ describe('updateDevicePatch', () => {
         trackStore.set(null);
     });
 
-    it('hands a carried built-in the whole patch in one write', () => {
+    it('writes the Web Audio node and hands the carried native body the whole patch in one write', () => {
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
         const patch = enginePatchOf(130);
 
         updateDevicePatch('t1', 'd1', patch);
 
+        expect(audioEngine.updateDevicePatch).toHaveBeenCalledTimes(1);
+        expect(audioEngine.updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', patch);
         expect(sendNativeDeviceParameters).toHaveBeenCalledTimes(1);
         expect(sendNativeDeviceParameters).toHaveBeenCalledWith({ trackId: 't1', deviceId: 'd1', values: patch });
-        expect(audioEngine.updateDevicePatch).not.toHaveBeenCalled();
     });
 
     // The panel's own ids are what project truth stores, so a patch authored
-    // there has to reach the engine respelled rather than refused by name.
-    it('spells a patch of authored ids in the names the instrument answers to', () => {
+    // there has to reach the engine respelled rather than refused by name; the
+    // Web Audio node keeps the patch in the caller's own spelling.
+    it('writes the Web Audio node as authored and spells the carried native body in the names the instrument answers to', () => {
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        const patch = { oscEngine: 2, filterCutoff: 800 };
 
-        updateDevicePatch('t1', 'd1', { oscEngine: 2, filterCutoff: 800 });
+        updateDevicePatch('t1', 'd1', patch);
 
+        expect(audioEngine.updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', patch);
         expect(sendNativeDeviceParameters).toHaveBeenCalledWith({
             trackId: 't1',
             deviceId: 'd1',

@@ -1,21 +1,21 @@
 /**
- * The native built-in body a live parameter write to this device belongs to, or
- * `null` when Web Audio still owns the write (#3893).
+ * The native built-in body a live parameter write to this device must ALSO
+ * reach natively, or `null` when Web Audio alone owns the device right now
+ * (#3893).
  *
- * A strip the native session carries is gated out of the Web Audio mix, so its
- * Web Audio node is silent and a write sent there moves nothing a musician
- * hears. Writing both paths is worse than writing only the wrong one: the
- * engine already holds the value it was stamped, and a second driver for the
- * same parameter is two beliefs about where a control stands. The automation
- * writer stands down from a carried device for that reason
- * (`readLiveAutomationWrites`), and a hand-moved control owes the same.
+ * This is additive, never exclusive: the caller keeps writing the Web Audio
+ * node whatever this returns. A strip the native session carries is gated out
+ * of the Web Audio mix while rolling, but that node is the strip's fallback
+ * carrier — `stopNativeLiveGraphSession` claims the carried set empty at Stop,
+ * so the strip is heard through Web Audio again the moment the gate reopens,
+ * and it has to already hold the current value for that moment.
  *
  * Both halves have to hold. The device's type must name a body the engine
  * builds, because the vocabulary a write is spelled in belongs to the body
  * rather than to the caller; and the session must actually be carrying that
  * device, because a device the mapper degraded or one no splice has placed yet
- * is on project truth and not in the engine, so a caller that stopped writing
- * it over the web path would strand it.
+ * is on project truth and not in the engine, so a native send would address a
+ * device the engine does not hold.
  */
 
 import { trackStore } from '#/modules/Arrangement/stores';

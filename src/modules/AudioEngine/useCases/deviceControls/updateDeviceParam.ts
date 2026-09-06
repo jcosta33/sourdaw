@@ -19,17 +19,19 @@ import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
  * already in hand; both read the same law so there is one definition of what a
  * declared range means.
  *
- * Which DSP that is depends on who is carrying the device: a built-in the
- * native session carries takes the value over the graph command path, in the
- * engine's own name for the parameter, and never over the web path as well —
- * see {@link nativeBuiltinWriteTarget} for why both would be one too many.
+ * The Web Audio write always happens: while the native session carries the
+ * device it is the sound, but its Web Audio node is the strip's fallback
+ * carrier, silent only for as long as the session holds the gate closed on it,
+ * and it has to already hold the current value for the moment that gate
+ * reopens at Stop. The native send in {@link nativeBuiltinWriteTarget} is
+ * additive on top of that, in the engine's own name for the parameter, for
+ * whichever built-in the native session is carrying right now.
  */
 export function updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
     const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
+    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
         void sendNativeDeviceParameters({ trackId, deviceId, values: { [body.parameterName(paramId)]: clamped } });
-        return;
     }
-    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
 }
