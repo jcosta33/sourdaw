@@ -1,0 +1,31 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_268bfb0998a6fa 104-106,108-112
+  s_87ab0a2f60ccf8::t_f38d40064521a1 107
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_87ab0a2f60ccf8::t_46748e89adca73 22-39,231,243-245,260,281,298,313,328,337-351,353-354
+  s_87ab0a2f60ccf8::t_589c03ab371aa5 5,138,147,149-150,152-153,255-259,262-271,273-274,352
+  s_87ab0a2f60ccf8::t_c795bc1b4b78cc 11-14,60,64,139-146,148,151,261,272
+  s_87ab0a2f60ccf8::t_268bfb0998a6fa 43-44,80-81,110-112,117-125,241,275-280,282-297,299-312,314-327,329-336
+  s_87ab0a2f60ccf8::t_e711b8c9cf2be8 355
+src/modules/CrdtDocument/useCases/crdtBranching/switchBranch.ts
+  s_87ab0a2f60ccf8::t_5f3a8b50c8305c 36-38
+  s_87ab0a2f60ccf8::t_576765a779cd8f 3,20-21,35,92-96
+  s_87ab0a2f60ccf8::t_268bfb0998a6fa 6,12,17-19,22-30,32-34,39-43,97,121
+  s_87ab0a2f60ccf8::t_f7d1f45c71414d 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "1fcd1ac52359bbb2c5f4505433ecab4333f344f2",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
