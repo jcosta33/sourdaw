@@ -128,7 +128,13 @@ export type NativeGraphWireCommand =
     // the strip and the device as the variant's own fields rather than as a
     // nested target: only `write-device-parameter` needs a target object, and
     // only because it also names a parameter.
-    | Readonly<{ kind: 'schedule-midi'; trackId: string; deviceId: string; notes: readonly NativeGraphWireMidiNote[] }>
+    | Readonly<{
+          kind: 'schedule-midi';
+          trackId: string;
+          deviceId: string;
+          probabilitySeed: number;
+          notes: readonly NativeGraphWireMidiNote[];
+      }>
     | Readonly<{ kind: 'clear-midi'; trackId: string; deviceId: string; fromTime: number; toTime: number | null }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
     | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>
@@ -253,6 +259,9 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
                 kind: 'schedule-midi',
                 trackId: command.target.trackId,
                 deviceId: command.target.deviceId,
+                // A project value, stated once here and stamped onto every note
+                // by the mirror; the roll mixes it first, so it has no default.
+                probabilitySeed: command.probabilitySeed,
                 notes: command.notes.map(serializeMidiNote),
             };
         case 'clear-midi':

@@ -269,6 +269,7 @@ describe('createWebAudioOfflineBackend', () => {
                 {
                     kind: 'schedule-midi',
                     target: { trackId: 't1', deviceId: 'd' },
+                    probabilitySeed: 0xdecafbad,
                     notes: [{ time: 0.25, note: 60, velocity: 100, channel: 0, isNoteOn: true }],
                 },
             ],

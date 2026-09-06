@@ -514,6 +514,18 @@ export type AudioGraphMidiNoteEvent = Readonly<{
 export type AudioGraphScheduleMidiCommand = Readonly<{
     kind: 'schedule-midi';
     target: AudioGraphDeviceTarget;
+    /**
+     * The project's probability seed — `midiStore`'s `probabilitySeed`, minted
+     * once per project — which every carrier rolls a chance note with.
+     *
+     * A project value rather than a note's, so it is stated once for the whole
+     * command. It is required rather than defaulted because the roll mixes it
+     * first: a stand-in is itself a seed, and it would decide a chance note
+     * differently from the live and offline Web Audio carriers, so one
+     * arrangement would voice one way in the browser and another way through a
+     * backend that supplied its own.
+     */
+    probabilitySeed: number;
     notes: readonly AudioGraphMidiNoteEvent[];
 }>;
 

@@ -350,13 +350,24 @@ pub enum GraphCommandPayload {
     ///
     /// Visible together is not the same as succeeding together. This mapping
     /// refuses only what it can see control-side; the engine still refuses a
-    /// device holding no note store — a built-in effect has none — and a batch
-    /// past the store's free capacity, counting either in
+    /// batch past the store's free capacity, counting it in
     /// `midi_note_batches_refused`, and the clear stays applied regardless.
     #[serde(rename_all = "camelCase")]
     ScheduleMidi {
         track_id: String,
         device_id: String,
+        /// The project's probability seed: the value every carrier rolls a
+        /// chance note with, and the same one the Web Audio live and offline
+        /// carriers read off the project (`midiStore`'s `probabilitySeed`).
+        ///
+        /// A project fact rather than a note's, so it travels once per command
+        /// and is stamped onto every note the command maps. Required, because
+        /// a default would itself be a seed:
+        /// [`daw_engine::midi_fx::deterministic_probability_roll`] mixes it
+        /// first, so a stand-in decides a chance note differently from every
+        /// other carrier, and one arrangement would voice one way in the
+        /// browser and another way through this wire.
+        probability_seed: u32,
         notes: Vec<MidiNotePayload>,
     },
     /// Drop a device's scheduled notes in the half-open seconds window
@@ -1364,7 +1375,22 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 ///
 /// The same lookup and the same two refusals `write-device-parameter` makes,
 /// under whichever command name is asking: a device the registry does not hold,
-/// and one held on a different strip than the command claims.
+/// and one held on a different strip than the command claims. Then a third that
+/// command has no need of: a device with no instrument to sound the notes.
+///
+/// That third one reads the registry's ownership fact because *store presence
+/// is decided at registration*. Every engine-owned device is registered through
+/// `EngineHandle::add_hosted_plugin`, which attaches a note store
+/// unconditionally; a built-in is an `AddDetachedEffect` and never gets one,
+/// and the crumbs capture slot is not in `registry.devices` at all. So
+/// `engine_owned == false` is exactly "holds no note store" today, and
+/// scheduling at one spends a whole batch the store side can answer only as a
+/// count on the audio thread.
+///
+/// A built-in instrument registered *with* a store (#3124) parts those two
+/// facts the moment it exists. It flips this test through an explicit note-sink
+/// flag on [`DeviceEntry`] written at registration, never by relaxing the
+/// ownership test into a guess about what a device can hold.
 fn midi_device_plugin_id(
     registry: &GraphRegistry,
     track_id: &str,
@@ -1378,6 +1404,11 @@ fn midi_device_plugin_id(
     if device.strip_id != track_id {
         return Err(format!(
             "{command}: device '{device_id}' is not on strip '{track_id}'"
+        ));
+    }
+    if !device.engine_owned {
+        return Err(format!(
+            "{command}: device '{device_id}' has no instrument to sound notes"
         ));
     }
     Ok(device.native_effect_id)
@@ -1408,7 +1439,11 @@ fn scheduled_probability_cutoff(probability: Option<f64>) -> Result<u64, String>
 /// note the store cannot address could never be tracked as sounding, so nothing
 /// would ever release it — which is why the store refuses it and why this
 /// refuses it by name first.
-fn map_midi_note(note: &MidiNotePayload, sample_rate: f32) -> Result<TimedMidiNote, String> {
+fn map_midi_note(
+    note: &MidiNotePayload,
+    probability_seed: u32,
+    sample_rate: f32,
+) -> Result<TimedMidiNote, String> {
     if note.channel >= MIDI_CHANNELS {
         return Err(format!(
             "schedule-midi: channel {} has no address in the note store",
@@ -1432,7 +1467,7 @@ fn map_midi_note(note: &MidiNotePayload, sample_rate: f32) -> Result<TimedMidiNo
             // the span that renders it.
             frame_offset: 0,
             probability_cutoff: scheduled_probability_cutoff(note.probability)?,
-            project_probability_seed: 0,
+            project_probability_seed: probability_seed,
             clip_id_hash: note.clip_id_hash.unwrap_or(0),
             event_id_hash: note.event_id_hash.unwrap_or(0),
             absolute_occurrence_index: note.absolute_occurrence_index.unwrap_or(0),
@@ -2411,6 +2446,7 @@ fn map_command(
         GraphCommandPayload::ScheduleMidi {
             track_id,
             device_id,
+            probability_seed,
             notes,
         } => {
             let plugin_id = midi_device_plugin_id(registry, track_id, device_id, "schedule-midi")?;
@@ -2426,7 +2462,7 @@ fn map_command(
             }
             let mut mapped = notes
                 .iter()
-                .map(|note| map_midi_note(note, sample_rate))
+                .map(|note| map_midi_note(note, *probability_seed, sample_rate))
                 .collect::<Result<Vec<_>, _>>()?;
             // The store refuses an unordered batch: sorting runs on the audio
             // thread only by allocating, so it belongs on this side of the ring
@@ -6994,11 +7030,18 @@ mod tests {
             .expect("the MIDI batch should deserialize")
     }
 
+    /// The project seed the fixtures below schedule with. It is the seed of
+    /// the `0xdecafbad` rows in the cross-runtime corpus
+    /// ([`a_scheduled_chance_note_is_decided_as_the_web_carrier_decides_it`]),
+    /// so a fixture note and a pinned decision speak of the same project.
+    const MIDI_PROBABILITY_SEED: u32 = 0xdeca_fbad;
+
     fn schedule_midi_batch(track_id: &str, device_id: &str, notes: Value) -> GraphBatchPayload {
         midi_batch(json!([{
             "kind": "schedule-midi",
             "trackId": track_id,
             "deviceId": device_id,
+            "probabilitySeed": MIDI_PROBABILITY_SEED,
             "notes": notes,
         }]))
     }
@@ -7056,7 +7099,176 @@ mod tests {
                 note.event.probability_cutoff, PROBABILITY_CUTOFF_RANGE,
                 "an unstated probability always plays"
             );
+            assert_eq!(
+                note.event.project_probability_seed, MIDI_PROBABILITY_SEED,
+                "the command's project seed is stamped on every note it maps"
+            );
         }
+    }
+
+    /// The web carrier's twin is `matches the fixed cross-runtime tuple corpus`
+    /// in `src/modules/MIDI/useCases/__tests__/shouldPlayMidiEvent.spec.ts`, and
+    /// `daw_engine::midi_fx`'s `matches_the_cross_runtime_tuple_corpus` holds
+    /// the same rows as bare rolls. The pair below is that corpus's
+    /// `0xdecafbad` pair, which differs in the event identity alone.
+    ///
+    /// Here the tuple travels the wire instead of being called directly: the
+    /// seed, the two hashes and the occurrence reach the store through
+    /// `schedule-midi`, and the stated chance becomes the cutoff — so a note
+    /// this command schedules sounds exactly when `shouldPlayMidiEvent` says
+    /// the same note sounds in the browser.
+    #[test]
+    fn a_scheduled_chance_note_is_decided_as_the_web_carrier_decides_it() {
+        use daw_engine::midi_fx::{deterministic_probability_roll, hash_probability_id};
+
+        let samples = TimelineSamplePool::default();
+
+        for (event_id, corpus_roll, web_carrier_plays_it) in [
+            ("event-alpha", 283_418_835_u32, true),
+            ("event-beta", 3_377_534_636_u32, false),
+        ] {
+            let mut registry = registry_with_hosted_device("t1", "d1");
+            let batch = schedule_midi_batch(
+                "t1",
+                "d1",
+                json!([{
+                    "time": 0.0,
+                    "note": 60,
+                    "velocity": 100,
+                    "channel": 0,
+                    "isNoteOn": true,
+                    "probability": 0.5,
+                    "clipIdHash": hash_probability_id("clip-1"),
+                    "eventIdHash": hash_probability_id(event_id),
+                    "absoluteOccurrenceIndex": 0,
+                }]),
+            );
+
+            let mapped = map_unbound_batch(&batch, &mut registry, &samples, 48_000.0)
+                .expect("a chance note on a registered hosted device maps");
+            let GraphCommand::ScheduleMidiNotes { notes, .. } = &mapped.ops[0] else {
+                panic!("schedule-midi must map onto ScheduleMidiNotes");
+            };
+            let event = &notes[0].event;
+
+            let roll = deterministic_probability_roll(
+                event.project_probability_seed,
+                event.clip_id_hash,
+                event.event_id_hash,
+                event.absolute_occurrence_index,
+            );
+            assert_eq!(
+                roll, corpus_roll,
+                "the mapped note must roll the corpus stream for {event_id}"
+            );
+            assert_eq!(
+                u64::from(roll) < event.probability_cutoff,
+                web_carrier_plays_it,
+                "the wire must decide {event_id} as the web carrier decides it"
+            );
+        }
+    }
+
+    /// A stated chance is a `0..=1` fraction on the wire and a percentage to
+    /// the shared converter, which is the only spelling a MIDI FX chain knows.
+    #[test]
+    fn schedule_midi_maps_a_stated_probability_onto_the_shared_cutoff() {
+        let samples = TimelineSamplePool::default();
+        let chance_note = |probability: Value| -> Value {
+            json!([{
+                "time": 0.0, "note": 60, "velocity": 100, "channel": 0,
+                "isNoteOn": true, "probability": probability,
+            }])
+        };
+
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let batch = schedule_midi_batch("t1", "d1", chance_note(json!(0.5)));
+        let mapped = map_unbound_batch(&batch, &mut registry, &samples, 48_000.0)
+            .expect("a stated chance maps");
+        let GraphCommand::ScheduleMidiNotes { notes, .. } = &mapped.ops[0] else {
+            panic!("schedule-midi must map onto ScheduleMidiNotes");
+        };
+        assert_eq!(
+            notes[0].event.probability_cutoff,
+            probability_percent_to_cutoff(50.0),
+            "half a chance is fifty percent to the shared converter"
+        );
+
+        for outside in [1.5_f64, -0.1_f64] {
+            let mut registry = registry_with_hosted_device("t1", "d1");
+            let batch = schedule_midi_batch("t1", "d1", chance_note(json!(outside)));
+
+            let refusal = map_unbound_batch(&batch, &mut registry, &samples, 48_000.0)
+                .expect_err("a chance outside the fraction is refused");
+
+            assert!(
+                refusal.contains(&format!(
+                    "schedule-midi: probability {outside} is outside 0..=1"
+                )),
+                "refusal must name the chance it read: {refusal}"
+            );
+        }
+    }
+
+    /// A built-in device is registered the way the topology fixtures register a
+    /// Knead — through the `create-track-strip` that carries it — which is what
+    /// puts it in the registry as a device the engine does not own, and so
+    /// holding no note store.
+    #[test]
+    fn schedule_midi_refuses_a_device_with_no_instrument() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(json!([{
+                "kind": "create-track-strip",
+                "trackId": "t1",
+                "name": "Lead",
+                "state": strip_state(1.0),
+                "devices": [ { "id": "d-knead", "type": "knead", "bypassed": false,
+                               "parameterValues": {} } ],
+                "honorMuted": true,
+                "contributesAudio": true
+            }])),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("a strip carrying a built-in maps");
+
+        // Both commands refuse whole, which is this module's law: an `Err` is
+        // the absence of a `MappedBatch`, so no op reached the engine and the
+        // working registry clone the mapper was handed is discarded with it.
+        let mut working = registry.clone();
+        let refusal = map_unbound_batch(
+            &schedule_midi_batch("t1", "d-knead", json!([note_at(0.0, 60, 0)])),
+            &mut working,
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a built-in has no note store to schedule into");
+        assert!(
+            refusal.contains("schedule-midi: device 'd-knead' has no instrument to sound notes"),
+            "refusal must name the device that cannot sound the notes: {refusal}"
+        );
+
+        let mut working = registry.clone();
+        let refusal = map_unbound_batch(
+            &midi_batch(json!([{
+                "kind": "clear-midi",
+                "trackId": "t1",
+                "deviceId": "d-knead",
+                "fromTime": 0.0,
+                "toTime": Value::Null,
+            }])),
+            &mut working,
+            &samples,
+            48_000.0,
+        )
+        .expect_err("a built-in has no note store to clear");
+        assert!(
+            refusal.contains("clear-midi: device 'd-knead' has no instrument to sound notes"),
+            "refusal must name the device that cannot sound the notes: {refusal}"
+        );
     }
 
     #[test]
@@ -7187,6 +7399,35 @@ mod tests {
             panic!("clear-midi must map onto ClearMidiNotes");
         };
         assert_eq!(*to_frame, u64::MAX, "an absent end is the end of the store");
+
+        // A stated `null` and an omitted key are one meaning: serde reads a
+        // missing `Option` field as `None` on its own, so both spellings reach
+        // the same arm. What this case pins is the wire's acceptance of the
+        // shorter one — a producer that never writes the field at all is the
+        // ordinary way to say "to the end of the store", and a later
+        // tightening that made the field required would break it here rather
+        // than against a producer.
+        let mut registry = registry_with_hosted_device("t1", "d1");
+        let mapped = map_unbound_batch(
+            &midi_batch(json!([{
+                "kind": "clear-midi",
+                "trackId": "t1",
+                "deviceId": "d1",
+                "fromTime": 1.0,
+            }])),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .expect("a command that omits the end maps");
+        let GraphCommand::ClearMidiNotes { to_frame, .. } = &mapped.ops[0] else {
+            panic!("clear-midi must map onto ClearMidiNotes");
+        };
+        assert_eq!(
+            *to_frame,
+            u64::MAX,
+            "an omitted end is the end of the store, exactly as a null one is"
+        );
 
         let mut registry = registry_with_hosted_device("t1", "d1");
         let refusal = map_unbound_batch(

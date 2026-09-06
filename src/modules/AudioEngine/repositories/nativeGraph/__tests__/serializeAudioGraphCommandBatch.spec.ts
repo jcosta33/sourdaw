@@ -260,6 +260,7 @@ describe('serializeAudioGraphCommandBatch', () => {
                 {
                     kind: 'schedule-midi',
                     target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    probabilitySeed: 0xdecafbad,
                     notes: [
                         {
                             time: 0.25,
@@ -288,6 +289,8 @@ describe('serializeAudioGraphCommandBatch', () => {
             kind: 'schedule-midi',
             trackId: 'track-1',
             deviceId: 'dev-plugin',
+            // A project value: one per command, never one per note.
+            probabilitySeed: 0xdecafbad,
             notes: [
                 {
                     time: 0.25,
