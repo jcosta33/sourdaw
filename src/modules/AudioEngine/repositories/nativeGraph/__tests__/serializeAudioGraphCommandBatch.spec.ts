@@ -292,6 +292,43 @@ describe('serializeAudioGraphCommandBatch', () => {
     });
 
     /**
+     * The same flattening for a live note, and one more thing the mapper turns
+     * on: a note carries no timeline position, so every field it does carry is
+     * the whole of what the engine has to place it by.
+     */
+    it('flattens a live note batch onto the graph.rs send-midi-note spelling', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'send-midi-note',
+                    target: { trackId: 'track-1', deviceId: 'dev-plugin' },
+                    note: 60,
+                    velocity: 100,
+                    channel: 5,
+                    isNoteOn: true,
+                },
+            ],
+        });
+
+        const sent = wire.commands[0];
+        if (sent?.kind !== 'send-midi-note') {
+            throw new Error('the batch must serialize as send-midi-note');
+        }
+        expect(sent).toEqual({
+            kind: 'send-midi-note',
+            trackId: 'track-1',
+            deviceId: 'dev-plugin',
+            note: 60,
+            velocity: 100,
+            channel: 5,
+            isNoteOn: true,
+        });
+        // Flattened, not nested: the mirror has no `target` field to read.
+        expect(Object.keys(sent)).toEqual(['kind', 'trackId', 'deviceId', 'note', 'velocity', 'channel', 'isNoteOn']);
+    });
+
+    /**
      * The contract nests the strip and the device in a target; `graph.rs` reads
      * them as the variant's own fields. That flattening is the whole of what
      * this serializer does for the command, so it is stated as literals.
