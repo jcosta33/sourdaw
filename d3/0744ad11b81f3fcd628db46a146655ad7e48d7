@@ -1,0 +1,68 @@
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 73
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_87ab0a2f60ccf8::t_8b6ef055055101 18
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 37
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_87ab0a2f60ccf8::t_ed4d5993decf60 442-448,466-482,485-491,507-522
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 45
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 55
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 22
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 53
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 59
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 41
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 61
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_8b6ef055055101 47
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 68
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_87ab0a2f60ccf8::t_8bf58bd6f7943a 436,448-458,460-461
+  s_87ab0a2f60ccf8::t_415392e78cd085 437-442
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_87ab0a2f60ccf8::t_851b6486732d1f 701-706,722
+  s_87ab0a2f60ccf8::t_074d99ea8e9139 7-37,700,723-732,734-738
+  s_87ab0a2f60ccf8::t_c400849c25ab4a 355,405,413,448,459,492,535,614,660,763,821,848,879,887,910,921,981
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_87ab0a2f60ccf8::t_8b6ef055055101 40
+src/modules/Arrangement/presentations/views/__tests__/TimelineEmptyMenu.spec.tsx
+  s_87ab0a2f60ccf8::t_7f155eb771c48e 594-599,603,609-613
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_87ab0a2f60ccf8::t_8b6ef055055101 192
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_87ab0a2f60ccf8::t_1ffff793ce1c11 121
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 44
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 53
+src/modules/WorkspaceShell/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts
+  s_87ab0a2f60ccf8::t_cd1e27407826d7 19
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_87ab0a2f60ccf8::t_8b6ef055055101 108
+src/modules/WorkspaceShell/handlers/workspace/__tests__/workspaceProjectHandlers.spec.ts
+  s_87ab0a2f60ccf8::t_62ccdfba06efc9 137-142,147-151,208-213,218-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d30744ad11b81f3fcd628db46a146655ad7e48d7",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
