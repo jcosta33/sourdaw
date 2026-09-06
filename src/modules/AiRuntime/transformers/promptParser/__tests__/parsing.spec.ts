@@ -274,6 +274,35 @@ describe('promptParser parsing', () => {
             expect(tryParameterizedPath('join session invite then mute Bass', context)).toEqual([]);
         });
 
+        it('consumes structural optional words without backtracking them into missing values', () => {
+            const namedThe = { ...context.tracks[0]!, id: 'the-track', name: 'The' };
+            const namedTrack = { ...context.tracks[0]!, id: 'named-track', name: 'Track' };
+            const prefixContext = { ...context, tracks: [namedThe, namedTrack] };
+
+            expect(tryParameterizedPath('rename clip to', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('RENAME THE CLIP TO   ', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('rename clip to "to"', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
+            ]);
+            expect(tryParameterizedPath('rename clip "to"', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
+            ]);
+            expect(tryParameterizedPath('rename clip to to', prefixContext)).toEqual([
+                { type: 'renameClip', payload: { clipId: 'c1', name: 'to' } },
+            ]);
+            expect(tryParameterizedPath('mute the', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('solo the', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('add eq to the', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('delete track', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('delete the track', prefixContext)).toEqual([]);
+            expect(tryParameterizedPath('mute "The"', prefixContext)).toEqual([
+                { type: 'muteTrack', payload: { trackId: 'the-track', muted: true } },
+            ]);
+            expect(tryParameterizedPath('delete "Track"', prefixContext)).toEqual([
+                { type: 'removeTrack', payload: { trackId: 'named-track' } },
+            ]);
+        });
+
         it('rejects unquoted sentence continuations while preserving literal punctuation', () => {
             expect(tryParameterizedPath('rename clip to Verse. Mute Bass', context)).toEqual([]);
             expect(tryParameterizedPath('rename clip to Verse: mute Bass', context)).toEqual([]);

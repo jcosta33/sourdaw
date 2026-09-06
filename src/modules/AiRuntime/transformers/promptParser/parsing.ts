@@ -159,9 +159,10 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
         ];
     }
 
-    const renameClipMatch = text.match(/^rename\s+(?:the\s+)?clip\s+(?:to\s+)?(.+)$/i);
+    const renameClipMatch = text.match(/^rename\s+(?:the\s+)?clip(?:\s+(.+))?$/i);
     if (renameClipMatch && selectedClipId) {
-        const name = parseOpaqueValue(renameClipMatch[1]!);
+        const renameValue = consumeOptionalLeadingWord(renameClipMatch[1], 'to');
+        const name = renameValue === null ? null : parseOpaqueValue(renameValue);
         if (name !== null) {
             return [{ type: 'renameClip', payload: { clipId: selectedClipId, name } }];
         }
@@ -198,9 +199,10 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
         }
     }
 
-    const muteTrackMatch = text.match(/^(mute|unmute)\s+(?:the\s+)?(.+)$/i);
+    const muteTrackMatch = text.match(/^(mute|unmute)(?:\s+(.+))?$/i);
     if (muteTrackMatch) {
-        const track = resolveTrackReference(context, muteTrackMatch[2]!);
+        const reference = consumeOptionalLeadingWord(muteTrackMatch[2], 'the');
+        const track = reference === null ? undefined : resolveTrackReference(context, reference);
         if (track) {
             return [
                 {
@@ -210,9 +212,10 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
             ];
         }
     }
-    const soloTrackMatch = text.match(/^(solo|unsolo)\s+(?:the\s+)?(.+)$/i);
+    const soloTrackMatch = text.match(/^(solo|unsolo)(?:\s+(.+))?$/i);
     if (soloTrackMatch) {
-        const track = resolveTrackReference(context, soloTrackMatch[2]!);
+        const reference = consumeOptionalLeadingWord(soloTrackMatch[2], 'the');
+        const track = reference === null ? undefined : resolveTrackReference(context, reference);
         if (track) {
             return [
                 {
@@ -223,20 +226,16 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
         }
     }
 
-    const addDeviceToTrack = text.match(
-        /^add\s+(?:a\s+)?(eq|compressor|reverb|delay|gain|chorus|flanger|phaser|distortion|limiter|gate)\s+to\s+(?:the\s+)?(.+)$/i
-    );
-    if (addDeviceToTrack) {
-        const track = resolveTrackReference(context, addDeviceToTrack[2]!);
-        if (track) {
-            const deviceType = DEVICE_TYPES[addDeviceToTrack[1]!.toLowerCase()]!;
-            return [{ type: 'addDevice', payload: { trackId: track.id, deviceType } }];
-        }
+    const deviceActions = tryDeviceCommand(text, context);
+    if (deviceActions !== null) {
+        return deviceActions;
     }
 
-    const deleteTrackMatch = text.match(/^(?:delete|remove)\s+(?:the\s+)?(?:track\s+)?(.+)$/i);
+    const deleteTrackMatch = text.match(/^(?:delete|remove)(?:\s+(.+))?$/i);
     if (deleteTrackMatch) {
-        const track = resolveTrackReference(context, deleteTrackMatch[1]!);
+        const withoutArticle = consumeOptionalLeadingWord(deleteTrackMatch[1], 'the');
+        const reference = withoutArticle === null ? null : consumeOptionalLeadingWord(withoutArticle, 'track');
+        const track = reference === null ? undefined : resolveTrackReference(context, reference);
         if (track && track.kind !== 'master') {
             return [{ type: 'removeTrack', payload: { trackId: track.id } }];
         }
@@ -248,8 +247,6 @@ export function tryParameterizedPath(text: string, context: ProjectContext): Run
 // ── Compound fast path ──────────────────────────────────────────────────
 
 export function tryCompoundFastPath(text: string, context: ProjectContext): RuntimeAction[] | null {
-    const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
-
     const bulkTrackActions = tryBulkTrackCommand(text, context);
     if (bulkTrackActions !== null) {
         return bulkTrackActions;
@@ -277,15 +274,9 @@ export function tryCompoundFastPath(text: string, context: ProjectContext): Runt
         return actions;
     }
 
-    const selectedTrackDeviceList =
-        text.match(/^add\s+(?:an?\s+)?(.+?)\s+to\s+(?:the\s+)?(?:(?:selected|this|tagged)\s+)?track$/i)?.[1] ??
-        text.match(/^add\s+(?:an?\s+)?(.+)$/i)?.[1];
-    const deviceTypes = selectedTrackDeviceList ? parseDeviceList(selectedTrackDeviceList) : null;
-    if (selectedTrack && deviceTypes !== null) {
-        return deviceTypes.map((deviceType) => ({
-            type: 'addDevice' as const,
-            payload: { trackId: selectedTrack.id, deviceType },
-        }));
+    const deviceActions = tryDeviceCommand(text, context);
+    if (deviceActions !== null) {
+        return deviceActions;
     }
 
     return null;
@@ -329,6 +320,19 @@ const GRAMMAR_COMMAND_HEADS = new Set([
 
 function normalizeCommandText(value: string): string {
     return value.trim().toLocaleLowerCase().replaceAll(/\s+/gu, ' ');
+}
+
+function consumeOptionalLeadingWord(value: string | undefined, word: string): string | null {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+        return null;
+    }
+    const firstWord = trimmed.match(/^\S+/u)?.[0];
+    if (firstWord?.toLocaleLowerCase() !== word) {
+        return trimmed;
+    }
+    const remainder = trimmed.slice(firstWord.length).trim();
+    return remainder.length > 0 ? remainder : null;
 }
 
 function parseQuotedValue(value: string): string | null {
@@ -469,6 +473,54 @@ function parseDeviceList(value: string): string[] | null {
         return null;
     }
     return tokens.map((token) => DEVICE_TYPES[token]!);
+}
+
+type DeviceTarget = { kind: 'selected' } | { kind: 'reference'; value: string };
+
+function parseDeviceTypes(value: string): string[] | null {
+    const normalized = normalizeCommandText(value);
+    const singleDeviceType = DEVICE_TYPES[normalized];
+    return singleDeviceType === undefined ? parseDeviceList(value) : [singleDeviceType];
+}
+
+function parseDeviceTarget(value: string): DeviceTarget | null {
+    const target = consumeOptionalLeadingWord(value, 'the');
+    if (target === null) {
+        return null;
+    }
+    if (
+        !target.startsWith('"') &&
+        !target.startsWith("'") &&
+        /^(?:(?:selected|this|tagged)\s+)?track$/iu.test(target)
+    ) {
+        return { kind: 'selected' };
+    }
+    return { kind: 'reference', value: target };
+}
+
+function tryDeviceCommand(text: string, context: ProjectContext): RuntimeAction[] | null {
+    const targetedMatch = text.match(/^add\s+(?:an?\s+)?(.+?)\s+to\s+(.+)$/iu);
+    const untargetedMatch = targetedMatch === null ? text.match(/^add\s+(?:an?\s+)?(.+)$/iu) : null;
+    const deviceTypes = parseDeviceTypes(targetedMatch?.[1] ?? untargetedMatch?.[1] ?? '');
+    if (deviceTypes === null || (untargetedMatch !== null && deviceTypes.length === 1)) {
+        return null;
+    }
+
+    const target = targetedMatch === null ? { kind: 'selected' as const } : parseDeviceTarget(targetedMatch[2]!);
+    if (target === null) {
+        return null;
+    }
+    const track =
+        target.kind === 'selected'
+            ? context.tracks.find((candidate) => candidate.id === context.selectedTrackId)
+            : resolveTrackReference(context, target.value);
+    if (track === undefined) {
+        return null;
+    }
+    return deviceTypes.map((deviceType) => ({
+        type: 'addDevice' as const,
+        payload: { trackId: track.id, deviceType },
+    }));
 }
 
 export function resolveTrackReference(

@@ -95,6 +95,28 @@ function createBulkNameCollisionContext(): ProjectContext {
     };
 }
 
+function createReservedSelectorCollisionContext(): ProjectContext {
+    const context = createContext();
+    return {
+        ...context,
+        tracks: [
+            context.tracks[0]!,
+            ...[
+                ['track-selected-name', 'Selected'],
+                ['track-this-name', 'This'],
+                ['track-tagged-name', 'Tagged'],
+                ['track-track-name', 'Track'],
+            ].map(([id, name]) => ({
+                ...context.tracks[0]!,
+                id: id!,
+                name: name!,
+                clips: [],
+                clipCount: 0,
+            })),
+        ],
+    };
+}
+
 function providerClarification() {
     return {
         status: 'complete' as const,
@@ -140,6 +162,9 @@ describe('whole-request prompt interpretation routing', () => {
         ['rename clip to "Bridge And Solo"', 'renameClip'],
         ['rename clip to "Verse. Mute Bass"', 'renameClip'],
         ['rename clip to "Verse: mute Bass"', 'renameClip'],
+        ['rename clip to "to"', 'renameClip'],
+        ['rename clip "to"', 'renameClip'],
+        ['rename clip to to', 'renameClip'],
         ['join session invite-ABC', 'joinCollabSession'],
         ['join session "invite-ABC. Mute Bass"', 'joinCollabSession'],
     ])('keeps the complete explicit command %s on the deterministic route', async (prompt, actionType) => {
@@ -267,6 +292,66 @@ describe('whole-request prompt interpretation routing', () => {
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['selected track', 'Selected', 'track-selected-name'],
+        ['this track', 'This', 'track-this-name'],
+        ['tagged track', 'Tagged', 'track-tagged-name'],
+        ['track', 'Track', 'track-track-name'],
+    ])(
+        'reserves %s for the selected track across single and multi-device forms',
+        async (selector, displayName, namedTrackId) => {
+            const context = createReservedSelectorCollisionContext();
+
+            const single = await parsePromptToActions(`add eq to ${selector}`, context);
+            const multi = await parsePromptToActions(`add eq and compressor to ${selector}`, context);
+            const quoted = await parsePromptToActions(`add eq to "${displayName}"`, context);
+            const quotedMulti = await parsePromptToActions(`add eq and compressor to "${displayName}"`, context);
+
+            expect(single.actions).toMatchObject([
+                { type: 'addDevice', payload: { trackId: 'track-bass', deviceType: 'EQ' } },
+            ]);
+            expect(multi.actions).toMatchObject([
+                { type: 'addDevice', payload: { trackId: 'track-bass', deviceType: 'EQ' } },
+                { type: 'addDevice', payload: { trackId: 'track-bass', deviceType: 'Compressor' } },
+            ]);
+            expect(quoted.actions).toMatchObject([
+                { type: 'addDevice', payload: { trackId: namedTrackId, deviceType: 'EQ' } },
+            ]);
+            expect(quotedMulti.actions).toMatchObject([
+                { type: 'addDevice', payload: { trackId: namedTrackId, deviceType: 'EQ' } },
+                { type: 'addDevice', payload: { trackId: namedTrackId, deviceType: 'Compressor' } },
+            ]);
+            expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['selected track', 'this track', 'tagged track', 'track'])(
+        'clarifies the reserved selector %s when no track is selected',
+        async (selector) => {
+            const context = { ...createReservedSelectorCollisionContext(), selectedTrackId: null };
+            const prompt = `add eq to ${selector}`;
+
+            const result = await parsePromptToActions(prompt, context);
+
+            expect(result.actions).toEqual([]);
+            expect(result.planningOutcome?.kind).toBe('clarify');
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+        }
+    );
+
+    it('clarifies a reserved selector when selectedTrackId does not resolve', async () => {
+        const context = { ...createReservedSelectorCollisionContext(), selectedTrackId: 'missing-track' };
+        const prompt = 'add eq and compressor to selected track';
+
+        const result = await parsePromptToActions(prompt, context);
+
+        expect(result.actions).toEqual([]);
+        expect(result.planningOutcome?.kind).toBe('clarify');
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[4]).toBe(prompt);
+    });
+
     it('rejects an invalid explicit numeric value truthfully without changing or semantically rerouting it', async () => {
         const context = createContext();
 
@@ -319,6 +404,8 @@ describe('whole-request prompt interpretation routing', () => {
         ['make it warm without adding devices', createContext],
         ['add a bluesy sounding piano and melody', createContext],
         ['create 2 tracks named Bass, Keys then mute Bass', createContext],
+        ['rename clip to', createContext],
+        ['RENAME THE CLIP TO   ', createContext],
         ['rename clip to Verse. Mute Bass', createContext],
         ['rename clip to Verse: mute Bass', createContext],
         ['join session invite-ABC. Mute Bass', createContext],
