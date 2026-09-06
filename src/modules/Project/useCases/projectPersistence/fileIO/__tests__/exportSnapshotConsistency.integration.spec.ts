@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type WriteFileBytesInput = Parameters<typeof writeFileBytesContract>[0];
+
 const runtime = vi.hoisted(() => ({
     desktop: false,
     desktopSaveDialog: vi.fn(),
     exportCachedAudioBuffers: vi.fn(),
-    writeFileBytes: vi.fn(() => Promise.resolve()),
+    writeFileBytes: vi.fn((_input: WriteFileBytesInput) => Promise.resolve()),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -77,6 +79,8 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 import { buildProjectData } from '../buildProjectData';
 import { exportProjectFile } from '../exportProjectFile';
 
+import type { writeFileBytes as writeFileBytesContract } from '#/utils/desktopBridge';
+
 const AUDIO_BUFFER_A = 'buffer-a';
 const AUDIO_PAYLOAD_A = {
     [AUDIO_BUFFER_A]: {
@@ -85,6 +89,8 @@ const AUDIO_PAYLOAD_A = {
         channelData: ['AAAA'],
     },
 };
+
+type CoherentProjectSnapshot = Pick<ProjectData, 'arrangement' | 'audioBuffers' | 'markers' | 'meta' | 'tempoMap'>;
 
 function deferred<Value>(): {
     promise: Promise<Value>;
@@ -95,6 +101,44 @@ function deferred<Value>(): {
         resolveDeferred = resolve;
     });
     return { promise, resolve: resolveDeferred };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function assertCoherentProjectShape(value: unknown): asserts value is CoherentProjectSnapshot {
+    if (!isRecord(value)) {
+        throw new TypeError('Expected serialized project data');
+    }
+    const meta = value.meta;
+    const arrangement = value.arrangement;
+    const tempoMap = value.tempoMap;
+    if (
+        !isRecord(meta) ||
+        typeof meta.projectId !== 'string' ||
+        typeof meta.name !== 'string' ||
+        !isRecord(arrangement) ||
+        !Array.isArray(arrangement.tracks) ||
+        !Array.isArray(value.markers) ||
+        !isRecord(tempoMap) ||
+        !Array.isArray(tempoMap.changes) ||
+        !isRecord(value.audioBuffers)
+    ) {
+        throw new TypeError('Expected coherent project identity, tracks, markers, tempo, and media');
+    }
+}
+
+function createBrowserFileHandle(writable: FileSystemWritableFileStream): FileSystemFileHandle {
+    const name = 'Project_A.sourdaw';
+    const handle: FileSystemFileHandle = {
+        kind: 'file',
+        name,
+        createWritable: () => Promise.resolve(writable),
+        getFile: () => Promise.resolve(new File([], name)),
+        isSameEntry: (other) => Promise.resolve(other === handle),
+    };
+    return handle;
 }
 
 async function seedProjectA(): Promise<void> {
@@ -160,7 +204,7 @@ async function switchToProjectB(data: ProjectData): Promise<void> {
     flushAutomergeStorageWrites();
 }
 
-function expectCoherentProjectA(data: ProjectData, projectId: string | undefined): void {
+function expectCoherentProjectA(data: CoherentProjectSnapshot, projectId: string | undefined): void {
     expect(data.meta).toMatchObject({
         projectId,
         name: 'Project A',
@@ -298,7 +342,8 @@ describe('project export snapshot consistency integration', () => {
         if (!written) {
             throw new Error('Expected native bytes');
         }
-        const decoded = JSON.parse(new TextDecoder().decode(written.bytes)) as ProjectData;
+        const decoded: unknown = JSON.parse(new TextDecoder().decode(written.bytes));
+        assertCoherentProjectShape(decoded);
         expect(decoded.meta.projectId).toBe(projectIdA);
         expectCoherentProjectA(decoded, projectIdA);
     });
@@ -308,18 +353,23 @@ describe('project export snapshot consistency integration', () => {
         runtime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
         const projectIdA = projectStore.value?.projectId;
         const picker = deferred<FileSystemFileHandle>();
-        const write = vi.fn(() => Promise.resolve());
+        const write = vi.fn((_data: FileSystemWriteChunkType) => Promise.resolve());
         const close = vi.fn(() => Promise.resolve());
         const abort = vi.fn(() => Promise.resolve());
+        const writable: FileSystemWritableFileStream = Object.assign(new WritableStream(), {
+            abort,
+            close,
+            seek: vi.fn((_position: number) => Promise.resolve()),
+            truncate: vi.fn((_size: number) => Promise.resolve()),
+            write,
+        });
         const showSaveFilePicker = vi.fn(() => picker.promise);
         vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
 
         const exporting = exportProjectFile();
         await vi.waitFor(() => expect(showSaveFilePicker).toHaveBeenCalledOnce());
         await switchToProjectB(incoming);
-        picker.resolve({
-            createWritable: () => Promise.resolve({ write, close, abort }),
-        } as unknown as FileSystemFileHandle);
+        picker.resolve(createBrowserFileHandle(writable));
         await exporting;
 
         expect(write).toHaveBeenCalledOnce();
@@ -329,7 +379,8 @@ describe('project export snapshot consistency integration', () => {
         if (!(blob instanceof Blob)) {
             throw new TypeError('Expected the browser writer to receive a Blob');
         }
-        const decoded = JSON.parse(await blob.text()) as ProjectData;
+        const decoded: unknown = JSON.parse(await blob.text());
+        assertCoherentProjectShape(decoded);
         expect(decoded.meta.projectId).toBe(projectIdA);
         expectCoherentProjectA(decoded, projectIdA);
     });
