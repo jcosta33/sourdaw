@@ -161,6 +161,32 @@ describe('mirrorDeviceChainDelta', () => {
         expect(apply).not.toHaveBeenCalled();
     });
 
+    /**
+     * A newly inserted Fermenter goes through `editChain`, the other producer
+     * of `insert-device`. Same requirement as a rebuild: the engine names this
+     * built-in's parameters by its own vocabulary, not project truth's ids.
+     */
+    it('projects a newly inserted fermenter device onto the engine parameter names', async () => {
+        const ferm = device('ferm', {
+            type: 'fermenter',
+            parameterValues: { oscEngine: 2, filterCutoff: 0.5 },
+        });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('comp')]),
+            after: track([device('eq'), device('comp'), ferm]),
+        });
+
+        expect(sentCommands()).toEqual([
+            {
+                kind: 'insert-device',
+                trackId: 'audio-1',
+                device: { ...ferm, parameterValues: { engine: 2, cutoff: 0.5 } },
+                index: 2,
+            },
+        ]);
+    });
+
     it('records the reports of the batch the engine applied', async () => {
         apply.mockResolvedValue({
             ...APPLIED,
@@ -230,6 +256,30 @@ describe('mirrorDeviceChainDelta', () => {
             { kind: 'insert-device', trackId: 'audio-1', device: device('comp'), index: 0 },
             { kind: 'insert-device', trackId: 'audio-1', device: device('eq'), index: 1 },
         ]);
+    });
+
+    /**
+     * A rebuilt Fermenter must reach the engine under its own vocabulary: the
+     * mapper resolves `parameterValues` by name against the built-in's own
+     * names, and refuses the whole batch over a camelCase id it does not hold.
+     */
+    it('projects a rebuilt fermenter device onto the engine parameter names', async () => {
+        const ferm = device('ferm', {
+            type: 'fermenter',
+            parameterValues: { oscEngine: 2, filterCutoff: 0.5 },
+        });
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['ferm', 'comp']]]);
+
+        await mirrorDeviceChainDelta({
+            before: track([ferm, device('comp')]),
+            after: track([device('comp'), ferm]),
+        });
+
+        const insert = sentCommands().find(
+            (command): command is Extract<AudioGraphCommand, { kind: 'insert-device' }> =>
+                command.kind === 'insert-device' && command.device.id === 'ferm'
+        );
+        expect(insert?.device.parameterValues).toEqual({ engine: 2, cutoff: 0.5 });
     });
 
     /**

@@ -34,6 +34,9 @@ function bodyOf(deviceType: string): NativeBuiltinBody {
  */
 const FERMENTER_PARAM_NAME = /^[a-z0-9_]{1,32}$/;
 
+/** `FermenterPatch['macros']` (`#/modules/Fermenter/models`) is an 8-slot tuple. */
+const FERMENTER_MACRO_COUNT = 8;
+
 describe('nativeBuiltinBody', () => {
     it('answers for every type the engine registers, and for nothing else', () => {
         expect(nativeBuiltinBody('knead')).not.toBeNull();
@@ -75,9 +78,13 @@ describe('the fermenter body', () => {
         expect(new Set(names).size).toBeLessThanOrEqual(MAX_IMMEDIATE_DEVICE_PARAMETERS);
     });
 
-    it('spells every authored parameter as a name the engine can parse', () => {
-        for (const param of FERMENTER_PARAMS) {
-            expect(bodyOf('fermenter').parameterName(param.id)).toMatch(FERMENTER_PARAM_NAME);
+    // Every id the projection can emit, not only the authored ones: a patch's
+    // `macros` array expands into `macro0`..`macro7` too (FermenterPatch's
+    // macro tuple is 8 slots wide), and those names travel the same wire.
+    it('spells every id the projection can emit as a name the engine can parse', () => {
+        const macroIds = Array.from({ length: FERMENTER_MACRO_COUNT }, (_, index) => `macro${index}`);
+        for (const paramId of [...FERMENTER_PARAMS.map((param) => param.id), ...macroIds]) {
+            expect(bodyOf('fermenter').parameterName(paramId)).toMatch(FERMENTER_PARAM_NAME);
         }
     });
 

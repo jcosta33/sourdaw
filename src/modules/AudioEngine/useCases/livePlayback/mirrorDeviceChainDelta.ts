@@ -43,6 +43,11 @@ import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { notifyDeferredChainChange } from './notifyDeferredChainChange';
+// A re-inserted chain reaches `map_device` under the strip's `contributes_audio`,
+// which refuses the whole batch by device and key over one camelCase id it does
+// not hold a vocabulary for — every `insert-device` this file builds carries a
+// projected device, not the raw project one.
+import { projectDeviceForNativeBody } from './projectDeviceForNativeBody';
 import { readNativeChain } from './readNativeChain';
 import { rearmNativeLiveAutomationWriterInPlace } from './rearmNativeLiveAutomationWriterInPlace';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
@@ -106,7 +111,7 @@ function rebuildChain(track: Track, nativeChain: readonly string[]): readonly Au
         ...track.devices.map((device, index): AudioGraphCommand => ({
             kind: 'insert-device',
             trackId: track.id,
-            device,
+            device: projectDeviceForNativeBody(device),
             index,
         })),
     ];
@@ -131,7 +136,7 @@ function editChain(input: MirrorDeviceChainDeltaInput, nativeChain: readonly str
             continue;
         }
         const index = nativeInsertIndex(idsOf(after.devices), device.id, projected);
-        commands.push({ kind: 'insert-device', trackId: after.id, device, index });
+        commands.push({ kind: 'insert-device', trackId: after.id, device: projectDeviceForNativeBody(device), index });
         projected = [...projected.slice(0, index), device.id, ...projected.slice(index)];
     }
     return commands;

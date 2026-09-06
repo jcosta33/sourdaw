@@ -72,6 +72,10 @@ import {
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
+// Project truth spells a built-in's parameters as the ids a panel authors; the
+// native mapper resolves them against the engine's own vocabulary and refuses
+// the whole batch, by strip, over one it cannot name (#3893).
+import { projectDeviceForNativeBody } from '../livePlayback/projectDeviceForNativeBody';
 
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
 import { automationWriteCommand } from './automationWriteCommand';
@@ -207,13 +211,14 @@ export async function renderOfflineWithNativeEngine(
             soloGated: soloGatedByTrackId.get(track.id) ?? false,
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
         };
+        const devices = track.devices.map(projectDeviceForNativeBody);
         return track.kind === 'bus'
             ? {
                   kind: 'create-bus-strip',
                   busId: track.id,
                   name: track.name,
                   state,
-                  devices: track.devices,
+                  devices,
                   honorMuted: true,
                   contributesAudio: scheduledTrackIds.has(track.id),
               }
@@ -222,7 +227,7 @@ export async function renderOfflineWithNativeEngine(
                   trackId: track.id,
                   name: track.name,
                   state,
-                  devices: track.devices,
+                  devices,
                   honorMuted: true,
                   contributesAudio: scheduledTrackIds.has(track.id),
               };
