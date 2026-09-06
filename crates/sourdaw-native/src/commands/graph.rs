@@ -244,56 +244,33 @@ const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_
 /// mixer and device target — so it can refuse a hostile batch without ever
 /// meeting an honest one.
 ///
-/// This law assumes about one op per command, and every command holds to
-/// that except one: [`GraphCommandPayload::SetDeviceParameters`] expands one
-/// command into up to [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] `SetParam` ops. A
-/// per-record ceiling alone does not bound a batch of many such records, so
-/// `map_batch` also charges every record's key count against a running total
-/// for the whole batch, refusing before
-/// [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`] is crossed and before that
-/// record's keys are ever parsed. The op count that actually sizes the two
-/// rings is therefore bounded by `MAX_BATCH_COMMANDS +
-/// MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH` — every command one op, plus at
-/// most the batch ceiling of expanded immediate writes — not by
-/// `MAX_BATCH_COMMANDS` alone.
+/// The op count that sizes the two rings is not one op per command. A
+/// replacing batch tears every existing strip and device down before the
+/// first command runs ([`GraphRegistry::take_topology_down`]), and a device
+/// command ([`map_device`]) always expands into several ops of its own —
+/// `AddDetachedEffect`, one `SetParam` per resolved parameter, an optional
+/// `SetBypass`, and the caller's own insert op.
+/// [`GraphCommandPayload::SetDeviceParameters`] is the one command whose own
+/// expansion is data-driven rather than fixed, and `map_batch` bounds that
+/// expansion across the whole batch by charging every record's key count
+/// against [`MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH`] before any of that
+/// record's keys are parsed. The op count is therefore a bounded multiple of
+/// `MAX_BATCH_COMMANDS`, plus that ceiling — not an exact sum of the two.
 const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
     * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
 
 /// The most parameters one `set-device-parameters` record may carry.
 ///
-/// The largest honest record is one full Fermenter patch, sized from the
-/// wire producer rather than from any claimed instrument vocabulary:
-/// `mapFermenterPatchToDspPatch`
-/// (`src/modules/Fermenter/useCases/fermenterParamBridge/`) emits one key per
-/// entry of the parameter descriptor (`FERMENTER_PARAMS`, 105 entries) plus
-/// one key per macro slot of the patch model (`FermenterPatch.macros`, 8
-/// slots) — 113 keys for a full patch. This ceiling rounds that up to 128
-/// for headroom. Whether the instrument honours any given key is the
-/// instrument's own affair, never this count's claim: `macro0`..`macro7` are
-/// keys the producer emits, not parameters `crates/daw-dsp/src/fermenter/`
-/// defines, and a well-shaped name the instrument does not recognize is
-/// simply a silent no-op there — `FermenterParamName::parse` admits any
-/// well-shaped snake_case name whether or not the DSP crate acts on it. The
-/// ceiling is charged against the record's length before any key is
-/// resolved, so a hostile record is refused without ever parsing a single
-/// name.
+/// Sized from the wire producer, not any claimed instrument vocabulary:
+/// `mapFermenterPatchToDspPatch` (`src/modules/Fermenter/useCases/fermenterParamBridge/`) emits one key per patch field plus one per `macros` slot, and its own spec pins that a full patch fits under this ceiling — 128 rounds that up with headroom.
+/// Whether the instrument honours a key is its own affair; a well-shaped name it does not recognize is simply a silent no-op there. The ceiling is charged against the record's length before any key is resolved, so a hostile record is refused without ever parsing a single name.
 const MAX_IMMEDIATE_DEVICE_PARAMETERS: usize = 128;
 
 /// The most immediate device parameters one whole batch may carry, summed
 /// across every [`GraphCommandPayload::SetDeviceParameters`] record in it.
 ///
-/// [`MAX_IMMEDIATE_DEVICE_PARAMETERS`] bounds one record; nothing stopped a
-/// batch from naming [`MAX_BATCH_COMMANDS`] such records, each at the
-/// per-record ceiling, and expanding into tens of millions of `SetParam`
-/// ops — resident allocation on the very rings `MAX_BATCH_COMMANDS` exists to
-/// bound. The largest honest batch is one full patch write to every device
-/// slot of one strip in one animation frame: the producer batches one frame
-/// of gestures, never more than a strip's own chain, so
-/// `MAX_TRACK_DEVICES` records at the per-record ceiling is the most an
-/// honest producer ever sends in one batch. `map_batch` charges every
-/// record's key count against this running total before that record's own
-/// keys are resolved, refusing the batch whole — naming the running count and
-/// this ceiling — the moment it would be crossed.
+/// This ceiling bounds the sum of every record's key count in one batch. The honest maximum is one full patch written to every device slot of one strip in one animation frame, since the producer batches one frame of gestures at a time.
+/// `map_batch` charges each record's key count against a running total before that record's keys are parsed, refusing the batch whole — naming the running count and this ceiling — the moment it would be crossed.
 const MAX_IMMEDIATE_DEVICE_PARAMETERS_PER_BATCH: usize =
     MAX_TRACK_DEVICES * MAX_IMMEDIATE_DEVICE_PARAMETERS;
 
@@ -7767,12 +7744,10 @@ mod tests {
         let mut registry =
             registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
 
-        let values: serde_json::Map<String, Value> = (0..MAX_IMMEDIATE_DEVICE_PARAMETERS)
-            .map(|index| (format!("param_{index:03}"), json!(index as f64 / 1000.0)))
-            .collect();
+        let values = fermenter_keys_record("param", MAX_IMMEDIATE_DEVICE_PARAMETERS);
 
         let mapped = map_immediate(
-            &set_device_parameters_batch("t1", "d-ferm", Value::Object(values)),
+            &set_device_parameters_batch("t1", "d-ferm", values),
             &mut registry,
         )
         .expect("a record at the ceiling must be accepted");
@@ -7796,9 +7771,11 @@ mod tests {
         let mut registry =
             registry_with_builtin_device("t1", "d-ferm", BuiltinEffectType::Fermenter);
 
-        let mut values: serde_json::Map<String, Value> = (0..MAX_IMMEDIATE_DEVICE_PARAMETERS)
-            .map(|index| (format!("param_{index:03}"), json!(index as f64 / 1000.0)))
-            .collect();
+        let Value::Object(mut values) =
+            fermenter_keys_record("param", MAX_IMMEDIATE_DEVICE_PARAMETERS)
+        else {
+            panic!("fermenter_keys_record must build a JSON object");
+        };
         values.insert("filterCutoff".to_string(), json!(0.5));
         assert_eq!(values.len(), MAX_IMMEDIATE_DEVICE_PARAMETERS + 1);
 
