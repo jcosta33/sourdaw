@@ -13,6 +13,15 @@
  * playhead when the musician entered it from before, and sends the whole thing
  * here rather than windowing it.
  *
+ * ── Where a non-looping pass ends, and why nowhere ────────────────────────
+ *
+ * It does not end. The audio programme's last playback is not this span's
+ * bound: a project whose only material is MIDI schedules no playback at all,
+ * and a span closed at that end would carry no note whatsoever. Every note past
+ * the playhead is projected instead, and what leaves on each tick is bounded by
+ * the writer's own lookahead and trail ({@link pumpNativeLiveMidiWriter}) —
+ * which is the only bound that has ever decided what the store holds.
+ *
  * ── Clear all, then schedule, in one batch ────────────────────────────────
  *
  * `clear-midi 0..null` wipes whatever the previous pass left in every target's
@@ -54,10 +63,18 @@ import { watchNativeLiveMidiEdits } from './watchNativeLiveMidiEdits';
 export type ArmNativeLiveMidiWriterInput = Readonly<{
     /** The strips the session's topology built — the only ones a note may address. */
     stripTracks: readonly Track[];
+    /**
+     * The external plugin instances the native engine currently owns.
+     *
+     * The caller's, never read here, and that is the whole point: the caller
+     * projected its topology against one attach state, and an instrument the
+     * writer read from a *fresher* one would be voiced by neither carrier —
+     * gated out of Web Audio by no batch, and sent notes by an engine whose
+     * graph has no body for it.
+     */
+    attachedInstanceIds: ReadonlySet<string>;
     /** The frame grid this session's notes are placed on. */
     sampleRate: number;
-    /** Where the session's programme ends, on the engine clock. */
-    programmeEndSeconds: number;
     /** Where this pass begins, on the engine clock. */
     positionSeconds: number;
 }>;
@@ -67,7 +84,7 @@ type PassSpan = LiveMidiSpan & Readonly<{ looping: boolean }>;
 function passSpan(input: ArmNativeLiveMidiWriterInput): PassSpan {
     const { loopRegion, loopEnabled } = nativeLiveGraphSession;
     if (!loopEnabled || !loopRegion || input.positionSeconds >= loopRegion.endSeconds) {
-        return { startSeconds: input.positionSeconds, endSeconds: input.programmeEndSeconds, looping: false };
+        return { startSeconds: input.positionSeconds, endSeconds: Number.POSITIVE_INFINITY, looping: false };
     }
     return {
         startSeconds: Math.min(input.positionSeconds, loopRegion.startSeconds),
@@ -127,6 +144,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
     const span = passSpan(input);
     const programme = readLiveMidiProgramme({
         stripTracks: input.stripTracks,
+        attachedInstanceIds: input.attachedInstanceIds,
         sampleRate: input.sampleRate,
         span,
     });
@@ -142,7 +160,6 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
         stripTracks: input.stripTracks,
         sampleRate: input.sampleRate,
         probabilitySeed: programme.probabilitySeed,
-        programmeEndSeconds: input.programmeEndSeconds,
         entrySeconds: input.positionSeconds,
         looping: span.looping,
         loopRegion: span.looping ? nativeLiveGraphSession.loopRegion : null,

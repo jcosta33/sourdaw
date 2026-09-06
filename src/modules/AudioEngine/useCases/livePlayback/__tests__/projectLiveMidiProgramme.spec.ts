@@ -261,6 +261,35 @@ describe('projectLiveMidiProgramme', () => {
         expect(events.every((event) => event.probability === undefined)).toBe(true);
     });
 
+    // A MIDI strip's instrument sits at the head of its chain and anything
+    // attached behind it is an effect, so the sink is the *first* attached
+    // external device. Addressing the last would send the part to a reverb and
+    // leave the instrument holding nothing.
+    it('addresses the first attached external device on a chain that holds two', () => {
+        const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'midi-1',
+                    devices: [
+                        instrument('d1', 'i1'),
+                        createDevice({
+                            id: 'd2',
+                            name: 'Harness Reverb',
+                            type: 'external-plugin',
+                            externalInstanceId: 'i2',
+                        }),
+                    ],
+                    clips: [clip],
+                }),
+            ],
+            attachedInstanceIds: new Set(['i1', 'i2']),
+            notesByClipId: { 'clip-1': [note({ id: 'n1' })] },
+        });
+
+        expect(programme.targets.map((entry) => entry.target)).toEqual([{ trackId: 'midi-1', deviceId: 'd1' }]);
+    });
+
     // A generative strip produces its notes on the Web Audio path, so it has no
     // native route at all — and unlike a strip with no instrument, it is one a
     // musician can see a plugin on and would otherwise never hear.

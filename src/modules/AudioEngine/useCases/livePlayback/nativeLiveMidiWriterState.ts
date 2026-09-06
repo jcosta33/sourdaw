@@ -90,8 +90,6 @@ export type LiveMidiWriterPass = {
      * the notes still to be sent than for the ones already in the store.
      */
     probabilitySeed: number;
-    /** Where the session's programme ends, on the engine clock. */
-    programmeEndSeconds: number;
     /** Where this pass began, on the engine clock. */
     entrySeconds: number;
     /** Whether the engine will actually wrap this pass. */

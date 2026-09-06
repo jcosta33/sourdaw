@@ -136,8 +136,8 @@ function flush(): Promise<void> {
 async function arm(positionSeconds: number): Promise<void> {
     await armNativeLiveMidiWriter({
         stripTracks: [],
+        attachedInstanceIds: new Set(),
         sampleRate: SAMPLE_RATE,
-        programmeEndSeconds: 60,
         positionSeconds,
     });
 }
@@ -204,6 +204,26 @@ describe('the live MIDI writer', () => {
         expect(sent).toHaveLength(MIDI_WINDOW_SECONDS * 10);
         expect(sent.at(-1)?.time).toBeCloseTo(MIDI_WINDOW_SECONDS - 0.1, 10);
         expect(batches()[0]?.commands[0]?.kind).toBe('clear-midi');
+    });
+
+    // A project whose only material is MIDI schedules no audio playback at all,
+    // so the audio programme it is played beside ends at zero. A note span
+    // closed there would carry nothing whatsoever: what bounds a non-looping
+    // pass is this writer's own lookahead and trail, not the last clip the
+    // engine plays as samples.
+    it('reaches every note past the playhead when the project schedules no audio at all', async () => {
+        mocks.events = [
+            { time: 0, note: 60 },
+            { time: 30, note: 62 },
+        ];
+
+        await arm(0);
+
+        expect(scheduledIn(0).map((event) => event.time)).toEqual([0]);
+
+        await pump(28);
+
+        expect(scheduledIn(1).map((event) => event.time)).toEqual([30]);
     });
 
     // The refusal is whole-batch, so a store shorter than the take stops at a
@@ -298,6 +318,23 @@ describe('the live MIDI writer', () => {
         await pump(6, 0);
         await pump(1, 1);
         expect(batches()).toHaveLength(1);
+    });
+
+    // `frames_until_loop_end` wraps a playhead already below the region's end,
+    // so entering a region partway through still plays the region entire from
+    // the first wrap on. A pass that began at the playhead would leave the
+    // region's head empty for every wrap after that.
+    it('takes a looping pass from the region start when the playhead entered it partway through', async () => {
+        mocks.events = [
+            { time: 2, note: 60 },
+            { time: 9, note: 62 },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+
+        await arm(6);
+
+        expect(scheduledIn(0).map((event) => event.time)).toEqual([2, 9]);
     });
 
     // A locate moves the playhead out of the window this pass filled, and the

@@ -13,11 +13,18 @@
  * notes it already held rather than a gap; one far ahead would skip the bar the
  * musician is listening to, which is why the live reading is preferred to the
  * entry whenever a caller holds one.
+ *
+ * The attach state is read here rather than carried on the pass, because an
+ * instrument arriving in or leaving a chain is one of the things that re-arms:
+ * a pass re-read against the set it opened with would keep addressing an
+ * instrument the engine no longer holds. One read, handed on, so the
+ * programme's projection and the writer's targets answer to the same set.
  */
 
 import { armNativeLiveMidiWriter } from './armNativeLiveMidiWriter';
 import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
+import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 
 export type RearmNativeLiveMidiWriterInPlaceInput = Readonly<{
     /**
@@ -34,8 +41,8 @@ export async function rearmNativeLiveMidiWriterInPlace(input: RearmNativeLiveMid
     }
     await armNativeLiveMidiWriter({
         stripTracks: currentStripTracks(pass.stripTracks),
+        attachedInstanceIds: readAttachedExternalInstanceIds(),
         sampleRate: pass.sampleRate,
-        programmeEndSeconds: pass.programmeEndSeconds,
         positionSeconds: input.positionSeconds ?? pass.entrySeconds,
     });
 }

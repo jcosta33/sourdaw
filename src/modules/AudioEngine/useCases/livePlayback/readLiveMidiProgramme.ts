@@ -22,11 +22,19 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 
 import { bakedStripIds } from './bakedStripIds';
 import { projectLiveMidiProgramme, type LiveMidiProgramme, type LiveMidiSpan } from './projectLiveMidiProgramme';
-import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 
 export type ReadLiveMidiProgrammeInput = Readonly<{
     /** The strips this session built, in project order. */
     stripTracks: readonly Track[];
+    /**
+     * The external plugin instances the native engine currently owns.
+     *
+     * The caller's, not read here, for the same reason `readLiveGraphProgramme`
+     * takes it: one arm threads a single attach state through every projection
+     * it makes, so the notes and the strips they are sent to cannot disagree
+     * about which instruments the engine holds.
+     */
+    attachedInstanceIds: ReadonlySet<string>;
     /** The frame grid this session's notes are placed on. */
     sampleRate: number;
     span: LiveMidiSpan;
@@ -58,7 +66,7 @@ export function readLiveMidiProgramme(input: ReadLiveMidiProgrammeInput): LiveMi
     return {
         ...projectLiveMidiProgramme({
             stripTracks: input.stripTracks,
-            attachedInstanceIds: readAttachedExternalInstanceIds(),
+            attachedInstanceIds: input.attachedInstanceIds,
             bakedStripIds: bakedStripIds({
                 stripTracks: input.stripTracks,
                 readBuffer: (bufferId) => audioBufferCache.get(bufferId),
