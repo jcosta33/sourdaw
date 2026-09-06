@@ -6,7 +6,7 @@ import { restoreVersion } from '../restoreVersion';
 const mocks = vi.hoisted(() => ({
     storeValue: { value: null as VersionControlState | null },
     storeSet: vi.fn<(value: VersionControlState) => void>(),
-    restoreSnapshot: vi.fn<() => void>(),
+    restoreSnapshot: vi.fn<() => boolean>(),
 }));
 
 vi.mock('../../../stores/versionControlStore', () => ({
@@ -31,7 +31,11 @@ function makeState(snapshotData: string): VersionControlState {
                 createdAt: '2024-01-01T00:00:00.000Z',
                 parentId: null,
                 description: 'first',
-                snapshot: { data: snapshotData, size: snapshotData.length },
+                snapshot: {
+                    ownerProjectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+                    data: snapshotData,
+                    size: snapshotData.length,
+                },
                 tags: [],
             },
         ],
@@ -46,6 +50,15 @@ describe('restoreVersion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.storeValue.value = null;
+        mocks.restoreSnapshot.mockReturnValue(true);
+    });
+
+    it('preserves version selection when snapshot admission refuses the restore', () => {
+        mocks.storeValue.value = makeState(JSON.stringify({ tracks: { tracks: [] } }));
+        mocks.restoreSnapshot.mockReturnValue(false);
+
+        expect(restoreVersion('ver-1')).toBe(false);
+        expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
     it('should export restoreVersion', () => {

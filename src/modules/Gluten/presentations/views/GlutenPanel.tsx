@@ -307,7 +307,7 @@ const ControlCard = ({
     children: ReactNode;
 }): ReactElement => (
     <DawPluginSectionCard
-        className="gluten-window"
+        className="gluten-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-lavender)]/68"
@@ -727,25 +727,21 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     style={active ? { borderColor: meta.color } : undefined}
                                     onClick={() => setGlutenParamWithAudio(deviceId, 'topology', topology)}
                                 >
-                                    <Row justify="between" gap={3} className="w-full">
-                                        <Row gap={2}>
-                                            <div
-                                                className="rounded-full border border-white/10 p-1.5"
-                                                style={{ color: meta.color }}
-                                            >
-                                                <Icon className="size-3.5" />
-                                            </div>
-                                            <Stack>
-                                                <div className="text-dense font-semibold text-foreground">
-                                                    {meta.label}
-                                                </div>
-                                                <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/42">
-                                                    {meta.detail}
-                                                </div>
-                                            </Stack>
-                                        </Row>
+                                    <Row justify="between" align="center" className="w-full">
+                                        <div
+                                            className="rounded-full border border-white/10 p-1.5"
+                                            style={{ color: meta.color }}
+                                        >
+                                            <Icon className="size-3.5" />
+                                        </div>
                                         {active ? <DawPluginLed tone="lavender">Live</DawPluginLed> : null}
                                     </Row>
+                                    <Stack gap={0.5}>
+                                        <div className="text-dense font-semibold text-foreground">{meta.label}</div>
+                                        <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/42">
+                                            {meta.detail}
+                                        </div>
+                                    </Stack>
                                 </Stack>
                             );
                         })}

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackColor: vi.fn(),
     executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     toggleVcaMembership: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -129,7 +131,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleMute();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
             { skipUndo: true }
         );
@@ -141,7 +143,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleMute();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'muteTrack', payload: { trackId: 'track-1', muted: false, expectedMuted: true } },
             { skipUndo: true }
         );
@@ -152,7 +154,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSolo(true);
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
             { skipUndo: true }
         );
@@ -167,7 +169,7 @@ describe('useChannelStripActions', () => {
         result.current.toggleSolo(false);
 
         expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
     it('toggleArm routes the inverse armed flag through the canonical AppAction write path', () => {
@@ -175,7 +177,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleArm();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'armTrack',
             payload: { trackId: 'track-1', armed: false },
         });
@@ -194,7 +196,7 @@ describe('useChannelStripActions', () => {
 
         result.current.toggleSoloSafeFlag();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
             { type: 'toggleSoloSafe', payload: { trackId: 'track-1' } },
             { skipUndo: true }
         );
@@ -451,7 +453,7 @@ describe('useChannelStripActions', () => {
 
         result.current.setColor('#00ff00');
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'setTrackColor',
             payload: { trackId: 'track-1', color: '#00ff00' },
         });
@@ -463,7 +465,7 @@ describe('useChannelStripActions', () => {
 
         result.current.rename('New Name');
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'renameTrack',
             payload: { trackId: 'track-1', name: 'New Name' },
         });
@@ -547,7 +549,7 @@ describe('useChannelStripActions', () => {
             variant: 'danger',
         });
         await waitFor(() => {
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'removeTrack',
                 payload: { trackId: 'track-1' },
             });
@@ -564,7 +566,7 @@ describe('useChannelStripActions', () => {
         await waitFor(() => {
             expect(mocks.confirmUser).toHaveBeenCalledTimes(1);
         });
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
 });

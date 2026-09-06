@@ -149,6 +149,7 @@ export function disposableIgnored(path: string): boolean {
         /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
         /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized) ||
         /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
+        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(normalized) ||
         underDisposableRootPath(normalized)
     );
 }

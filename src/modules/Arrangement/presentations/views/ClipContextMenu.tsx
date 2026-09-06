@@ -65,18 +65,22 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     // stay centralized.
     const deleteSelected = () => {
         // Per-clip dispatch through the registered action boundary gives each
-        // clip a complete undo entry; one-gesture-one-step grouping for these
-        // singleton-batch actions is tracked in issue #3622.
+        // clip a complete undo entry; one fresh group id per gesture makes the
+        // whole gesture a single undo step (#3622).
         const ids = multiSelected ? selectedIds : [clipId];
+        const groupId = `clip-menu-delete-${crypto.randomUUID()}`;
+        const groupLabel = `Delete ${ids.length} clip${ids.length === 1 ? '' : 's'}`;
         for (const id of ids) {
-            void executeUserAppAction({ type: 'removeClip', payload: { clipId: id } });
+            void executeUserAppAction({ type: 'removeClip', payload: { clipId: id } }, { groupId, groupLabel });
         }
     };
 
     const duplicateSelected = () => {
         const ids = multiSelected ? selectedIds : [clipId];
+        const groupId = `clip-menu-duplicate-${crypto.randomUUID()}`;
+        const groupLabel = `Duplicate ${ids.length} clip${ids.length === 1 ? '' : 's'}`;
         for (const id of ids) {
-            void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: id } });
+            void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: id } }, { groupId, groupLabel });
         }
     };
 
@@ -84,13 +88,13 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         <>
             <DawMenuButton
                 role="menuitem"
-                onClick={act(() => void executeAppAction({ type: 'normalizeClip', payload: { clipId } }))}
+                onClick={act(() => void executeUserAppAction({ type: 'normalizeClip', payload: { clipId } }))}
             >
                 Normalize
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
-                onClick={act(() => void executeAppAction({ type: 'reverseClip', payload: { clipId } }))}
+                onClick={act(() => void executeUserAppAction({ type: 'reverseClip', payload: { clipId } }))}
             >
                 Reverse
             </DawMenuButton>
@@ -174,7 +178,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'arpeggiate', payload: { clipId } });
+                    void executeUserAppAction({ type: 'arpeggiate', payload: { clipId } });
                 })}
             >
                 Arpeggiate
@@ -182,7 +186,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'invertNotes', payload: { clipId } });
+                    void executeUserAppAction({ type: 'invertNotes', payload: { clipId } });
                 })}
             >
                 Invert Pitch
@@ -190,7 +194,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeAppAction({ type: 'retrogradeNotes', payload: { clipId } });
+                    void executeUserAppAction({ type: 'retrogradeNotes', payload: { clipId } });
                 })}
             >
                 Reverse (Retrograde)
@@ -259,7 +263,11 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
                     void runAiActionWithToast(
-                        () => executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } }),
+                        () =>
+                            executeAppAction({
+                                type: 'generateBassline',
+                                payload: { clipId, style: 'root-fifth' },
+                            }),
                         {
                             startMsg: 'Generating bassline that follows this clip…',
                             successMsg: 'Bassline generated',
@@ -277,6 +285,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     return (
         <DawContextMenuSurface
             ref={menuRef}
+            onClose={onClose}
             x={x}
             y={y}
             xClampOffset={200}

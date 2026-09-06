@@ -21,14 +21,17 @@ export type NativeLiveGraphSession = {
     /**
      * Whether this session's engine is the one a musician is actually hearing.
      *
-     * Two independent conditions, and both have to hold: the topology has to
-     * schedule something (an engine with no clips has nothing to sound), and
-     * the monitor has to be open (a shadowed engine writes true zeros at the
-     * device however full its timeline is). Naming it for the conclusion
-     * rather than for either half is deliberate — the earlier `carriesAudio`
-     * asked only whether clips were scheduled, and the day a shadowed session
-     * schedules a real programme that reading is wrong in the direction that
-     * moves the playback cursor onto an engine nobody can hear.
+     * Two independent conditions, and both have to hold: the batch has to
+     * carry at least one strip the engine was told to contribute (a strip Web
+     * Audio has been gated out of is one only this engine can voice, whether a
+     * clip plays on it or a hosted plugin generates into it, and a batch that
+     * carries none leaves every strip where it was), and the monitor has to be
+     * open (a shadowed engine writes true zeros at the device however full its
+     * timeline is). Naming it for the conclusion rather than for either half is
+     * deliberate — the earlier `carriesAudio` asked only whether clips were
+     * scheduled, and the day a shadowed session schedules a real programme that
+     * reading is wrong in the direction that moves the playback cursor onto an
+     * engine nobody can hear.
      *
      * Anything that must follow the audible transport — the playback cursor
      * above all — reads this rather than assuming a running engine is the one
@@ -89,6 +92,37 @@ export type NativeLiveGraphSession = {
      * engine's attach state does.
      */
     lastSilentPluginNotice: string | null;
+    /**
+     * The deferred-chain-change notice this session last showed, under the same
+     * rule as the two above.
+     */
+    lastDeferredChainNotice: string | null;
+    /**
+     * What the engine's chain holds, per strip this session built, in graph
+     * order.
+     *
+     * The engine's own observation rather than the project's chain: a device
+     * the mapper degraded is absent here, and every index a chain edit
+     * addresses is an index into *this* list. Written from the `reports` of
+     * every applied batch the session sends, because that is the only readback
+     * of the realized chain there is.
+     *
+     * A strip missing from this map is a strip this session never built — a
+     * track added mid-roll — and a chain edit on one has nothing to mirror
+     * into.
+     */
+    nativeChainByStripId: ReadonlyMap<string, readonly string[]>;
+    /**
+     * The strips this session is sounding, as it last claimed them.
+     *
+     * The same set `setNativeCarriedTracks` shuts the Web Audio gates for, held
+     * here because the split has a second reader: the tick path has to know
+     * whether a device's parameters are being stamped by the engine before it
+     * writes them over IPC itself, and asking Web Audio's own gate state would
+     * be asking the consumer of the split what the split is (#3568). Written
+     * only by `claimCarriedStrips`, which is what keeps the two in step.
+     */
+    carriedStripIds: ReadonlySet<string>;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
@@ -106,6 +140,9 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     loopEnabled: false,
     lastDeclineNotice: null,
     lastSilentPluginNotice: null,
+    lastDeferredChainNotice: null,
+    nativeChainByStripId: new Map(),
+    carriedStripIds: new Set(),
     pending: Promise.resolve(),
 };
 

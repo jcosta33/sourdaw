@@ -139,6 +139,7 @@ impl SourdawNative {
         crate::host::latency_watcher::start(
             Arc::clone(&events),
             Arc::clone(&singletons.app_state.engine_plugins),
+            Arc::clone(&singletons.app_state.engine),
         );
         crate::host::plugin_host_requests::start(
             Arc::clone(&events),
@@ -681,22 +682,6 @@ impl SourdawNative {
             commands::plugins::set_plugin_bypass(instance_id, bypassed, &self.singletons.app_state)
                 .await,
         )
-    }
-
-    #[napi]
-    pub async fn process_plugin_audio(
-        &self,
-        instance_id: String,
-        audio_bytes: Buffer,
-    ) -> Result<Buffer> {
-        Ok(Buffer::from(reason(
-            commands::plugins::process_plugin_audio(
-                instance_id,
-                audio_bytes.to_vec(),
-                &self.singletons.app_state,
-            )
-            .await,
-        )?))
     }
 
     #[napi]

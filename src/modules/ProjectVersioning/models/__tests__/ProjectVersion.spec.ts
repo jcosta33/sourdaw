@@ -6,7 +6,7 @@ describe('createVersion', () => {
     it('builds a version with snapshot, parent, and tags', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2024-06-01T12:00:00.000Z'));
-        const snapshot = { data: '{}', size: 2 };
+        const snapshot = { ownerProjectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa', data: '{}', size: 2 };
         const value = createVersion('Label', 'desc', snapshot, 'parent-1', ['t1']);
 
         expect(value.label).toBe('Label');
@@ -20,7 +20,12 @@ describe('createVersion', () => {
     });
 
     it('defaults tags to an empty array', () => {
-        const value = createVersion('L', 'd', { data: '', size: 0 }, null);
+        const value = createVersion(
+            'L',
+            'd',
+            { ownerProjectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa', data: '', size: 0 },
+            null
+        );
         expect(value.tags).toEqual([]);
     });
 });

@@ -29,12 +29,6 @@ function diagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiag
         effectIdCollisions: 0,
         unsupportedEffectAdditions: 0,
         unmappedSetParamCalls: 0,
-        bridgeOutputBlocksDropped: 0,
-        unmatchedBridgeBlocks: 0,
-        bridgeBacklogBlocksShed: 0,
-        bridgeBlocksPassedChainBound: 0,
-        callbackFramesOverBridgeReach: 0,
-        bridgeInputBlocksRefused: 0,
         captureConsumerRefusals: 0,
         captureBlocksDropped: 0,
         captureInputUnderruns: 0,
@@ -55,7 +49,7 @@ describe('refreshEngineRtDiagnostics', () => {
     });
 
     it('publishes the latest reading to the store and returns it', async () => {
-        const reading = diagnostics({ unmappedSetParamCalls: 4, bridgeInputBlocksRefused: 2 });
+        const reading = diagnostics({ unmappedSetParamCalls: 4, captureConsumerRefusals: 2 });
         vi.mocked(getEngineRtDiagnostics).mockResolvedValue(reading);
 
         const returned = await refreshEngineRtDiagnostics();

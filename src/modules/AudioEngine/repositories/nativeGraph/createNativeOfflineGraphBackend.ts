@@ -126,17 +126,19 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
  * The commands this backend refuses on its own, ahead of the native probe.
  *
  * The header's rule is that validation lives on the native side, and this is
- * the one class it cannot hold: `map_command` is shared with the live path,
- * where the monitor gate is exactly the command it is meant to carry. A native
- * mapper that refused it would break the live session; one that accepts it
- * leaves a bounce accepting-and-ignoring a command whose own contract in
- * `AudioGraphBackend` says a backend with no monitor must refuse it. So the
- * refusal is sited where the "no monitor" is true — here — and it mirrors
- * `createWebAudioOfflineBackend`, because both offline backends owe the caller
- * the same answer.
+ * the one class it cannot hold: `map_command` is shared with the live path, and
+ * these commands are exactly what that path is meant to carry — the monitor
+ * gate, and the master fader a rolling engine smooths towards. A native mapper
+ * that refused them would break the live session; one that accepts them leaves
+ * a bounce accepting-and-ignoring a command it has no monitor and no live fader
+ * to apply, and whose own contract in `AudioGraphBackend` says an offline
+ * backend must refuse it. So the refusal is sited where that is true — here —
+ * and it mirrors `createWebAudioOfflineBackend`, because both offline backends
+ * owe the caller the same answer.
  */
 const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
+    'set-master-gain': 'an offline render applies the master level itself, from the project',
 };
 
 function describeUnsupported(command: AudioGraphCommand): string | null {

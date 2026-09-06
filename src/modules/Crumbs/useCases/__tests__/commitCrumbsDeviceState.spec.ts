@@ -5,7 +5,10 @@ const { mockCrumbsStore, mockExecuteAppAction } = vi.hoisted(() => ({
     mockExecuteAppAction: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mockExecuteAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mockExecuteAppAction,
+    executeUserAppAction: vi.fn(),
+}));
 vi.mock('../../stores/crumbsStore', () => ({ crumbsStore: mockCrumbsStore }));
 
 import { commitCrumbsDeviceState } from '../commitCrumbsDeviceState';

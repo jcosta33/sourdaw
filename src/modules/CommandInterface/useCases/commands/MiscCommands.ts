@@ -1,4 +1,4 @@
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -252,7 +252,7 @@ export const miscCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'detectTransients', payload: { clipId } });
+                void executeUserAppAction({ type: 'detectTransients', payload: { clipId } });
             }
         },
     },
@@ -321,7 +321,7 @@ export const miscCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'enableWarping', payload: { clipId } });
+                void executeUserAppAction({ type: 'enableWarping', payload: { clipId } });
             }
         },
     },

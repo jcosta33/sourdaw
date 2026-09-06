@@ -14,6 +14,7 @@ import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
 import { resolveInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
+import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 
 export const handleWebMidiNoteOn = inject({
     ...midiMessageHandlerDependencies,
@@ -189,6 +190,25 @@ export const handleWebMidiNoteOn = inject({
                         }
                     }
                 }
+                return;
+            }
+
+            // The native body precedes every built-in branch below: a device the
+            // engine is carrying is silent on Web Audio, so a carried device must
+            // never fall into a built-in branch that would voice it there instead.
+            const nativeSink = instrumentTrack
+                ? resolveNativeNoteSink(instrumentTrack, deps.isDeviceCarriedByNativeSession)
+                : null;
+            if (nativeSink) {
+                noteData.nativeDeviceId = nativeSink.id;
+                void deps.sendNativeLiveMidiNote({
+                    trackId: instrumentTrackId,
+                    deviceId: nativeSink.id,
+                    note,
+                    velocity,
+                    channel,
+                    isNoteOn: true,
+                });
                 return;
             }
 

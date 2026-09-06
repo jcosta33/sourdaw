@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     generateGroupId: () => ({ groupId: 'group-1', groupLabel: 'Prompt action' }),
     isExecutableAppActionType: (type: string) => type !== 'removeAllTracks',
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,

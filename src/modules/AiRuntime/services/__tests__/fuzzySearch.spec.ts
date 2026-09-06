@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { searchPresets, findBestMatch, getAvailablePresets } from '../fuzzySearch';
+import { searchPresets, getAvailablePresets } from '../fuzzySearch';
 
 import type { PresetContext } from '../../models/PresetActions/Registry';
 
@@ -76,21 +76,5 @@ describe('searchPresets', () => {
         if (result.length >= 2) {
             expect(result[0]!.score).toBeGreaterThanOrEqual(result[1]!.score);
         }
-    });
-});
-
-describe('findBestMatch', () => {
-    it('returns null for empty query', () => {
-        expect(findBestMatch('', ctx)).toBeNull();
-    });
-
-    it('returns null for gibberish', () => {
-        expect(findBestMatch('zzzqqqxxx', ctx)).toBeNull();
-    });
-
-    it('returns preset for exact match', () => {
-        const result = findBestMatch('add track', ctx);
-        // Should find something matching "add track"
-        expect(result).not.toBeNull();
     });
 });

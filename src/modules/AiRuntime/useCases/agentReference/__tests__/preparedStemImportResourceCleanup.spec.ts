@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
     ensureBusStrip: vi.fn(),
     garbageCollectCachedAudioBuffersByAge: vi.fn(),
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
@@ -58,7 +61,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -76,6 +78,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
@@ -92,6 +96,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     getVersionedCommandBatchCommitProof: mocks.getVersionedCommandBatchCommitProof,
 }));
 

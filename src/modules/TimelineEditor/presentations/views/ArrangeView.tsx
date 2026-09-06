@@ -33,10 +33,11 @@ import {
     importMidiFile,
     setTimelineHorizontalScrollbarScrollX,
 } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
 import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
@@ -412,12 +413,20 @@ const EmptyArrangeOverlay = (): ReactElement => {
     const [isDragOver, setIsDragOver] = useState(false);
 
     const handleDrop = async (event: DragEvent<HTMLDivElement>): Promise<void> => {
+        const authority = captureProjectTransitionAuthority();
         event.preventDefault();
         event.stopPropagation();
         setIsDragOver(false);
 
         const files = Array.from(event.dataTransfer.files);
         const currentBeat = 0;
+        const pendingDecodedAudioIds = new Set<string>();
+        const discardPendingAudio = () => {
+            for (const bufferId of pendingDecodedAudioIds) {
+                discardDecodedAudioFile(bufferId);
+            }
+            pendingDecodedAudioIds.clear();
+        };
 
         // Decode/import every file in parallel, but commit state mutations
         // (addTrack/addClip) afterward in the original drop order so clip
@@ -440,6 +449,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
 
                 try {
                     const { id: bufferId, buffer } = await decodeAudioFile(file);
+                    pendingDecodedAudioIds.add(bufferId);
                     return { kind: 'audio' as const, file, bufferId, buffer };
                 } catch {
                     return { kind: 'error' as const, file };
@@ -447,20 +457,39 @@ const EmptyArrangeOverlay = (): ReactElement => {
             })
         );
 
+        if (!authority.isCurrent()) {
+            discardPendingAudio();
+            return;
+        }
+
         for (const result of imports) {
+            if (!authority.isCurrent()) {
+                discardPendingAudio();
+                return;
+            }
             if (result.kind === 'skip') {
                 continue;
             }
 
             if (result.kind === 'error') {
-                notifyUser(`Failed to import "${result.file.name}" — unsupported format or corrupt file`, 'error');
+                if (authority.isCurrent()) {
+                    notifyUser(`Failed to import "${result.file.name}" — unsupported format or corrupt file`, 'error');
+                }
                 continue;
             }
 
             if (result.kind === 'midi') {
                 try {
-                    await importMidiFile(result.file);
+                    const outcome = await importMidiFile(result.file, { shouldContinue: authority.isCurrent });
+                    if (outcome === 'superseded') {
+                        discardPendingAudio();
+                        return;
+                    }
                 } catch {
+                    if (!authority.isCurrent()) {
+                        discardPendingAudio();
+                        return;
+                    }
                     notifyUser(`Failed to import "${result.file.name}" — unsupported format or corrupt file`, 'error');
                 }
                 continue;
@@ -468,13 +497,15 @@ const EmptyArrangeOverlay = (): ReactElement => {
 
             const newTrack = addTrack({ name: result.file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
             if (!newTrack) {
+                discardDecodedAudioFile(result.bufferId);
+                pendingDecodedAudioIds.delete(result.bufferId);
                 continue;
             }
 
             const tempo = transportStore.value?.tempo ?? 120;
             const durationBeats = Math.max(4, Math.ceil((result.buffer.duration / 60) * tempo));
 
-            addClip({
+            const clip = addClip({
                 trackId: newTrack.id,
                 startBeat: currentBeat,
                 endBeat: currentBeat + durationBeats,
@@ -482,6 +513,12 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 type: 'audio',
                 audioBufferId: result.bufferId,
             });
+            if (!clip) {
+                discardDecodedAudioFile(result.bufferId);
+                pendingDecodedAudioIds.delete(result.bufferId);
+                continue;
+            }
+            pendingDecodedAudioIds.delete(result.bufferId);
         }
     };
 

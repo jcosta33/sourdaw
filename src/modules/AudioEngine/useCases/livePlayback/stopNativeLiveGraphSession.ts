@@ -20,9 +20,10 @@
  * for good.
  */
 
-import { setNativeCarriedTracks } from '../trackAudioControls/setNativeCarriedTracks';
-
+import { claimCarriedStrips } from './claimCarriedStrips';
+import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
+import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
@@ -40,7 +41,7 @@ export function stopNativeLiveGraphSession(
 ): Promise<StopNativeLiveGraphSessionResult> {
     return queueOnNativeLiveGraphSession(async (): Promise<StopNativeLiveGraphSessionResult> => {
         // First, and unconditionally — see the header.
-        setNativeCarriedTracks(new Set());
+        claimCarriedStrips(new Set());
         // Stopped before the command, and whatever the command answers: the
         // feed exists to draw a rolling playhead, and one that keeps polling a
         // transport nobody is watching only burns bridge round trips.
@@ -51,6 +52,11 @@ export function stopNativeLiveGraphSession(
         // `hold_automation`, which freezes every mixer parameter where it
         // stands rather than letting a ramp keep gliding past the stop.
         disarmNativeLiveAutomationWriter();
+        // And the note pass with it. Nothing is sent to empty the stores: the
+        // engine releases every sounding note on the stop itself
+        // (`release_sounding_notes`), and the next play's arm clears each store
+        // whole before it fills it.
+        disarmNativeLiveMidiWriter();
         const backend = nativeLiveGraphSession.backend;
         if (!backend) {
             return { outcome: 'declined', reason: 'no live native graph session' };
@@ -71,6 +77,10 @@ export function stopNativeLiveGraphSession(
         // still-rolling engine, and recording it as parked would be a claim
         // about the engine that the engine never made.
         nativeLiveGraphSession.rolling = false;
+        // Forgotten with the roll it described. Nothing edits a parked chain —
+        // the next play replaces the whole topology and records its own reports
+        // — so a record kept past the stop could only outlive its truth.
+        clearNativeChains();
         return { outcome: 'stopped' };
     });
 }

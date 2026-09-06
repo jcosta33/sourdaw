@@ -18,6 +18,7 @@ const commandRecoveryMocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     executeVersionedCommandBatchEnvelope: commandRecoveryMocks.executeVersionedCommandBatchEnvelope,
     getVersionedCommandBatchIdempotentReplay: commandRecoveryMocks.getVersionedCommandBatchIdempotentReplay,
 }));

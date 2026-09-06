@@ -384,7 +384,10 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         id: 'arrangement.deleteTimeRange',
         label: 'Delete Time Range',
         category: 'editing',
-        defaultKeys: ['mod+backspace'],
+        // `Backspace` capitalized exactly as the browser reports it:
+        // `matches()` compares multi-char key names case-sensitively, so a
+        // lowercase `mod+backspace` combo could never fire.
+        defaultKeys: ['mod+Backspace'],
         action: { type: 'callback', id: 'deleteTimeRange' },
     },
     {

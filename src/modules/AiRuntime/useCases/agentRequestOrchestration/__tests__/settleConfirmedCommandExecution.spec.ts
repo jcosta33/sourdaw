@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(() => ({ status: 'valid', envelope: { commands: [] } })),
 }));
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.message }));

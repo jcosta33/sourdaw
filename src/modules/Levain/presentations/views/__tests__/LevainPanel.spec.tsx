@@ -97,8 +97,8 @@ vi.mock('#/components/daw/DawPluginMetricTile', () => ({
 }));
 
 vi.mock('#/components/daw/DawPluginSectionCard', () => ({
-    DawPluginSectionCard: ({ title, children }: any) => (
-        <div data-testid="section-card">
+    DawPluginSectionCard: ({ title, children, className }: any) => (
+        <div data-testid="section-card" className={className}>
             <h3>{title}</h3>
             {children}
         </div>
@@ -169,6 +169,17 @@ describe('LevainPanel', () => {
     it('should render section cards', () => {
         render(<LevainPanel deviceId="test-device" />);
         expect(screen.getAllByTestId('section-card').length).toBeGreaterThan(0);
+    });
+
+    it('keeps all section cards from shrinking and establishes responsive container hierarchy', () => {
+        const { container } = render(<LevainPanel deviceId="test-device" />);
+        const cards = screen.getAllByTestId('section-card');
+        expect(cards).toHaveLength(7);
+        expect(cards.every((card) => card.className.includes('shrink-0'))).toBe(true);
+
+        const stageContainer = container.querySelector('section.\\@container');
+        expect(stageContainer).not.toBeNull();
+        expect(stageContainer?.querySelector('.grid.grid-cols-1.\\@\\[540px\\]\\:grid-cols-2')).not.toBeNull();
     });
 
     it('should display engine status', () => {

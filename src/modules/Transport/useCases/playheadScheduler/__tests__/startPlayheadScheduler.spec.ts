@@ -681,6 +681,48 @@ describe('startPlayheadScheduler', () => {
         expect(takeCalls).toContainEqual(['rec-b', 'clip-rec-b', 'Take 1', 0, 4]);
     });
 
+    it('adds a loop-wrap take lane and take for the armed track only, never for an unarmed track whose clip id sits in the recording ref', async () => {
+        // The hazard state: an unarmed track whose clip id IS in the ref —
+        // disarm mid-take, or ref churn that outlived the disarm. The wrap-take
+        // block's armed filter is the only thing standing between that track
+        // and a lane + take it never asked for.
+        trackStoreState.value = {
+            tracks: [
+                { id: 'rec-armed', armed: true, kind: 'audio', clips: [{ id: 'clip-rec-armed' }] },
+                { id: 'rec-unarmed', armed: false, kind: 'audio', clips: [{ id: 'clip-rec-unarmed' }] },
+            ],
+        };
+        activeRecordingRefState.current = ['clip-rec-armed', 'clip-rec-unarmed'];
+        takeLaneStoreState.value = null;
+        transportStoreState.value = playingState({
+            playheadPosition: 3.9,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            isRecording: true,
+        });
+        startPlayheadScheduler();
+        ctxTime.now = 0.2;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // The armed track alone gets its lane and its take.
+        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.addTakeLane).toHaveBeenCalledWith('rec-armed');
+        expect(arrangementMocks.addTake).toHaveBeenCalledTimes(1);
+        expect(arrangementMocks.addTake).toHaveBeenCalledWith('rec-armed', 'clip-rec-armed', 'Take 1', 0, 4);
+        // The unarmed track is never the subject of either call, even though
+        // its clip id sits in the ref.
+        const laneCalls = arrangementMocks.addTakeLane.mock.calls as unknown as [string][];
+        const takeCalls = arrangementMocks.addTake.mock.calls as unknown as [string, string, string, number, number][];
+        expect(laneCalls.flat()).not.toContain('rec-unarmed');
+        expect(takeCalls.map((call) => call[0])).not.toContain('rec-unarmed');
+    });
+
     it('stops playback when a follow action requests a stop', async () => {
         const onStop = vi.fn();
         schedulerSession.onStopRequested = onStop;

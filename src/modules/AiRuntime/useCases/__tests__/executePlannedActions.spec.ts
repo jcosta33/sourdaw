@@ -28,6 +28,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppActionBatch: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeVersionedCommandBatchEnvelope: vi.fn(),
     generateGroupId: vi.fn((groupLabel: string) => ({ groupId: 'group-1', groupLabel })),
 }));

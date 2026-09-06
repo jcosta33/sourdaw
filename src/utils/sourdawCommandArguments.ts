@@ -62,7 +62,6 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['open_provider_gateway_session', ['adapter_id', 'origin', 'credential_source', 'credential']],
     ['open_push_transport', ['model']],
     ['parse_scl', ['content', 'root_note', 'root_freq']],
-    ['process_plugin_audio', ['instance_id', 'audio_bytes']],
     ['provider_gateway_request', ['request_id', 'session_id', 'operation', 'body']],
     ['read_file_bytes', ['path']],
     ['register_timeline_sample', ['sample_id', 'sample_rate', 'channels', 'pcm']],

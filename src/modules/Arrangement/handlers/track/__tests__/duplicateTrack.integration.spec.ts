@@ -10,6 +10,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 // here is what project truth holds after undo, so the engine seam is stubbed
 // rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
@@ -19,6 +21,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
     ensureBusStrip: vi.fn(),
     garbageCollectCachedAudioBuffersByAge: vi.fn(),
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
@@ -43,7 +46,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -62,6 +64,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';

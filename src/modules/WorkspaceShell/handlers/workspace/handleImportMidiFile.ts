@@ -1,21 +1,24 @@
 import { importMidiFile } from '#/modules/Arrangement/useCases';
-import { pickFiles } from '#/modules/Project/useCases';
+import { captureProjectTransitionAuthority, pickFiles } from '#/modules/Project/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleImportMidiFile = createHandler<'importMidiFile'>({
     execute: () => {
+        const authority = captureProjectTransitionAuthority();
         pickFiles({ filters: [{ name: 'MIDI', extensions: ['mid', 'midi'] }] })
             .then((files) => {
-                if (files) {
+                if (files && authority.isCurrent()) {
                     for (const file of files) {
-                        void importMidiFile(file);
+                        void importMidiFile(file, { shouldContinue: authority.isCurrent });
                     }
                 }
                 return null;
             })
             .catch(() => {
-                notifyUser('Failed to open file dialog', 'error');
+                if (authority.isCurrent()) {
+                    notifyUser('Failed to open file dialog', 'error');
+                }
                 return null;
             });
     },

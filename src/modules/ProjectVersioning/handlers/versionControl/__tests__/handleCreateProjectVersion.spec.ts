@@ -30,26 +30,46 @@ describe('version control handlers', () => {
     beforeEach(() => {
         injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.mocked(createProjectVersion).mockClear();
+        vi.mocked(createProjectVersion).mockReturnValue(true);
         vi.mocked(restoreVersion).mockClear();
+        vi.mocked(restoreVersion).mockReturnValue(true);
         vi.mocked(createVersionBranch).mockClear();
+        mockNotificationEventBus.emit.mockClear();
     });
 
     it('handleCreateProjectVersion forwards label and description', async () => {
-        await handleCreateProjectVersion.execute({
+        const result = await handleCreateProjectVersion.execute({
             type: 'createProjectVersion',
             payload: { label: 'v1', description: 'notes' },
         });
 
         expect(createProjectVersion).toHaveBeenCalledWith('v1', 'notes');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no write and notifies when snapshot capture is unavailable', async () => {
+        vi.mocked(createProjectVersion).mockReturnValue(false);
+
+        const result = await handleCreateProjectVersion.execute({
+            type: 'createProjectVersion',
+            payload: { label: 'v1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mockNotificationEventBus.emit).toHaveBeenCalledWith('ui.notify', {
+            level: 'error',
+            message: 'Project versions are unavailable until the project finishes loading',
+        });
     });
 
     it('handleRestoreProjectVersion forwards version id', async () => {
-        await handleRestoreProjectVersion.execute({
+        const result = await handleRestoreProjectVersion.execute({
             type: 'restoreProjectVersion',
             payload: { versionId: 'vid-1' },
         });
 
         expect(restoreVersion).toHaveBeenCalledWith('vid-1');
+        expect(result).toEqual({ status: 'written' });
     });
 
     it('handleCreateVersionBranch forwards name', async () => {

@@ -20,6 +20,15 @@ function shouldDispatchShortcutAppActions(): boolean {
     return Object.keys(getHandlerMap()).length > 0;
 }
 
+// A focused dialog / alertdialog / menu / listbox surface owns the keyboard:
+// keydowns from inside it stay in the surface, not the app shortcuts (#3618).
+const MODAL_SURFACE_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
+/** True when the keydown's target sits inside an open modal or menu surface. */
+function isWithinModalSurface(target: EventTarget | null): boolean {
+    return target instanceof Element && target.closest(MODAL_SURFACE_SELECTOR) !== null;
+}
+
 /**
  * View-layer keyboard shortcut contract exposed to other modules.
  */
@@ -62,7 +71,20 @@ export const useGlobalKeyboardShortcuts = (): void => {
             //     FINDING-inventory-decisions-backlog.md (#21 residual).
             //   • Mixer — has no keyboard Delete of its own, so gating it would
             //     disable delete with no replacement (same finding).
-            const isInput = isKeyboardEditableTarget(target);
+            //
+            // A portaled modal or menu surface owns the keyboard while focus is
+            // inside it (#3618). Radix marks its Dialog/Popover content with
+            // `role="dialog"` and its DropdownMenu content with `role="menu"`,
+            // and the hand-rolled portals (dialogService overlays, context
+            // menus) mark the same roles; Radix also moves focus into the
+            // surface on open. Without this gate an unhandled Delete /
+            // Backspace falls through to this window listener and deletes the
+            // selected arrangement clips behind the surface with no
+            // confirmation. Gate the whole layer exactly like a text input —
+            // a modal is no more a shortcut context than an input is, so the
+            // one `allowedInInput` exception (Cmd+K palette summon) applies
+            // here too, as it already does inside a dialog's own inputs.
+            const isInput = isKeyboardEditableTarget(target) || isWithinModalSurface(event.target);
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,

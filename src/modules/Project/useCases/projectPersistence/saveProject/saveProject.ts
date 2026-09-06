@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -13,6 +14,11 @@ import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
+
+type AudioDurabilityReceipt = {
+    isCurrent: () => boolean;
+    release: () => void;
+};
 
 function assertProjectSnapshotAuthority(): void {
     if (agentProjectRepairStateStore.value !== null) {
@@ -59,6 +65,7 @@ export async function saveProject(): Promise<boolean> {
     // doesn't orphan the old key.
     const recentKey = getProjectSnapshotKey(project.createdAt);
 
+    let audioDurabilityReceipt: AudioDurabilityReceipt | undefined;
     try {
         await migrateActiveProjectIdentity();
 
@@ -107,55 +114,59 @@ export async function saveProject(): Promise<boolean> {
             throw new Error('[saveProject] Project snapshot could not be built');
         }
 
-        // buildProjectData synchronizes the current arrangement projection into
-        // project truth. Flush that known write before capturing the snapshot's
-        // revision so persistCrdtProject cannot make an ordinary save look
-        // concurrent with itself.
-        flushAutomergeStorageWrites();
-        const snapshotRevision = captureProjectRevision();
+        const assertSnapshotContinuation = (requiresAudioReceipt: boolean): void => {
+            // A public project edit updates its store immediately but may defer
+            // the corresponding Automerge write until the next animation frame.
+            // Expose that write before every post-await authority check so the
+            // original serialized revision cannot certify a newer visible state.
+            flushAutomergeStorageWrites();
+            assertProjectSnapshotAuthority();
+            const activeProject = projectStore.value;
+            if (
+                !activeProject ||
+                activeProject.createdAt !== persistedProject.createdAt ||
+                activeProject.projectId !== persistedProject.projectId ||
+                captureProjectRevision() !== built.snapshotRevision ||
+                (requiresAudioReceipt && !audioDurabilityReceipt?.isCurrent())
+            ) {
+                throw new Error('[saveProject] Project or audio changed during snapshot persistence');
+            }
+        };
+
+        assertSnapshotContinuation(false);
+        const audioDurability = await ensureCachedAudioBuffersDurable(built.requiredAudioBufferIds);
+        if (audioDurability.status !== 'durable') {
+            throw new Error('[saveProject] Required audio PCM could not be made durable');
+        }
+        audioDurabilityReceipt = audioDurability;
+        assertSnapshotContinuation(true);
 
         await persistCrdtProject();
-        assertProjectSnapshotAuthority();
-        if (captureProjectRevision() !== snapshotRevision) {
-            throw new Error('[saveProject] Project changed during CRDT persistence');
-        }
+        assertSnapshotContinuation(true);
 
         // Awaited, so a rejected transaction reaches the catch below rather
         // than being reported as a successful save.
-        assertProjectSnapshotAuthority();
         await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
+        assertSnapshotContinuation(true);
 
         // Only record the recent-projects entry once the snapshot write is
         // observed to have committed for the exact revision it serialized.
         // A newer edit leaves the stale snapshot unadvertised and the project
         // dirty so the next save can replace it.
-        assertProjectSnapshotAuthority();
-        if (captureProjectRevision() !== snapshotRevision) {
-            throw new Error('[saveProject] Project changed during named snapshot persistence');
-        }
         addToRecentProjects(persistedProject.name, recentKey);
+        assertSnapshotContinuation(true);
 
-        // A save clears dirty only when the complete project authority still
-        // matches the revision captured above. Any edit or project identity
-        // transition during the async snapshot write keeps dirty asserted so
-        // the next autosave cannot be suppressed by a stale completion.
-        const latest = projectStore.value;
-        if (
-            agentProjectRepairStateStore.value === null &&
-            latest?.createdAt === persistedProject.createdAt &&
-            latest.projectId === persistedProject.projectId &&
-            captureProjectRevision() === snapshotRevision
-        ) {
-            // The CRDT snapshot and named project file above establish the
-            // same durable identity that a freshly-created project is waiting
-            // for. Clear the transient pending bit only for this exact active
-            // project/revision; a newer project or edit keeps close blocked.
-            projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
-        }
+        // The CRDT snapshot and named project file above establish the same
+        // durable project identity and exact PCM set. Only this receipt may
+        // clear dirty; replacement, removal, or transition invalidates it.
+        const latest = projectStore.value!;
+        projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
         return true;
     } catch (error) {
         logger.warn('[saveProject] Project persistence failed:', error);
         notifyUser('Save failed — your latest changes could not be persisted.', 'error');
         return false;
+    } finally {
+        audioDurabilityReceipt?.release();
     }
 }

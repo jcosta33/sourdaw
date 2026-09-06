@@ -46,6 +46,51 @@ function createProjectedBus(busId: string, name: string): ProjectContextTrack {
     };
 }
 
+function createProjectedTrack(
+    trackId: string,
+    name: string,
+    kind: string,
+    initialDeviceId: string | undefined
+): ProjectContextTrack {
+    const devices =
+        kind === 'midi' && initialDeviceId !== undefined
+            ? [{ id: initialDeviceId, name: 'Synth', type: 'builtin-synth', bypassed: false, parameters: [] }]
+            : [];
+    return {
+        id: trackId,
+        name,
+        kind,
+        muted: false,
+        soloed: false,
+        soloSafe: false,
+        armed: false,
+        frozen: false,
+        gain: 0.8,
+        pan: 0,
+        automationMode: 'read',
+        vcaGroupId: null,
+        outputId: 'master',
+        clipCount: 0,
+        alternativeClipIds: [],
+        deviceCount: devices.length,
+        clips: [],
+        devices,
+        sends: [],
+    };
+}
+
+function hasDeviceParameterStateGuards(
+    action: Extract<MaterializableRuntimeAction, { type: 'setDeviceParameter' }>
+): boolean {
+    return (
+        action.payload.expectedTrackId !== undefined ||
+        action.payload.expectedDeviceType !== undefined ||
+        action.payload.expectedDeviceIds !== undefined ||
+        action.payload.expectedValue !== undefined ||
+        action.payload.expectedTrackFrozen !== undefined
+    );
+}
+
 export function materializeActionStateGuards(
     actions: readonly MaterializableRuntimeAction[],
     context: ProjectContext,
@@ -338,6 +383,29 @@ export function materializeActionStateGuards(
             });
             continue;
         }
+        if (action.type === 'addTrack' && action.payload.id) {
+            if (tracksById.has(action.payload.id)) {
+                return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };
+            }
+            tracksById.set(
+                action.payload.id,
+                createProjectedTrack(
+                    action.payload.id,
+                    action.payload.name,
+                    action.payload.kind,
+                    action.payload.initialDeviceId
+                )
+            );
+            deviceIdsByTrack.set(
+                action.payload.id,
+                action.payload.kind === 'midi' && action.payload.initialDeviceId !== undefined
+                    ? [action.payload.initialDeviceId]
+                    : []
+            );
+            frozenByTrack.set(action.payload.id, false);
+            materialized.push(action);
+            continue;
+        }
         if (action.type === 'addDevice') {
             const expectedFrozen = frozenByTrack.get(action.payload.trackId);
             if (expectedFrozen === undefined) {
@@ -384,11 +452,15 @@ export function materializeActionStateGuards(
                 return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
             }
             const projectedDevices = [...projectedTrack.devices];
+            const descriptor = context.availableDeviceTypes?.find(
+                (candidate) => candidate.id === action.payload.deviceType
+            );
             projectedDevices.splice(insertionIndex, 0, {
                 id: deviceId,
+                ...(descriptor ? { name: descriptor.name } : {}),
                 type: action.payload.deviceType,
                 bypassed: false,
-                parameters: [],
+                parameters: descriptor?.parameters?.map((parameter) => ({ ...parameter })) ?? [],
             });
             tracksById.set(action.payload.trackId, {
                 ...projectedTrack,
@@ -403,6 +475,40 @@ export function materializeActionStateGuards(
                     expectedDeviceIds,
                     expectedFrozen,
                 },
+            });
+            continue;
+        }
+        if (action.type === 'setDeviceParameter' && hasDeviceParameterStateGuards(action)) {
+            const owners = [...tracksById.values()].filter((track) =>
+                track.devices.some((device) => device.id === action.payload.deviceId)
+            );
+            const owner = owners.length === 1 ? owners[0] : undefined;
+            const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
+            const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
+            if (
+                !owner ||
+                !device ||
+                !parameter ||
+                owner.frozen === true ||
+                (action.payload.expectedTrackId !== undefined && action.payload.expectedTrackId !== owner.id) ||
+                (action.payload.expectedDeviceType !== undefined &&
+                    action.payload.expectedDeviceType !== device.type) ||
+                (action.payload.expectedValue !== undefined && action.payload.expectedValue !== parameter.value) ||
+                (action.payload.expectedTrackFrozen !== undefined &&
+                    action.payload.expectedTrackFrozen !== owner.frozen)
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: `Device parameter state is unavailable or protected: ${action.payload.deviceId}/${action.payload.paramId}`,
+                };
+            }
+            const expectedDeviceIds = deviceIdsByTrack.get(owner.id);
+            if (!expectedDeviceIds) {
+                return { status: 'rejected', reason: `Track is unavailable: ${owner.id}` };
+            }
+            materialized.push({
+                type: 'setDeviceParameter',
+                payload: { ...action.payload, expectedDeviceIds: [...expectedDeviceIds] },
             });
             continue;
         }

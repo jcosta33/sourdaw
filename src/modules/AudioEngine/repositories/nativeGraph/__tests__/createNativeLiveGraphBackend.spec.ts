@@ -108,9 +108,9 @@ describe('createNativeLiveGraphBackend', () => {
     // The list exists because the load that created these instances already
     // told their devices there was no engine, and nothing else ever revises
     // that. A payload without the field attached nothing — it is not a defect
-    // the way an unreadable outcome is — and an entry missing either half is
-    // dropped, because the bridge depth is added to a latency figure and a
-    // substituted zero is a compensation error nobody can see.
+    // the way an unreadable outcome is — and an entry that does not name an
+    // instance is dropped rather than guessed at, because a substituted id
+    // would mark an instance attached that the engine never took.
     it('reads the instances an engine start took over, and drops an entry it cannot read', async () => {
         const transport = stubTransport(() =>
             Promise.resolve({
@@ -119,17 +119,11 @@ describe('createNativeLiveGraphBackend', () => {
                 runtimeRevision: 4,
                 reports: [],
                 attachedPlugins: [
-                    { instanceId: 'inst-1', bridgeRoundTripFrames: 512 },
+                    { instanceId: 'inst-1' },
                     { instanceId: 'inst-2' },
-                    { bridgeRoundTripFrames: 512 },
-                    { instanceId: 'inst-3', bridgeRoundTripFrames: 'soon' },
-                    // A number that is not a figure. Both survive `typeof
-                    // 'number'` and both poison the latency sum they are added
-                    // to — NaN erases it, Infinity pins it — so the reader has
-                    // to ask whether the depth is finite, not whether it is
-                    // numeric.
-                    { instanceId: 'inst-4', bridgeRoundTripFrames: Number.NaN },
-                    { instanceId: 'inst-5', bridgeRoundTripFrames: Number.POSITIVE_INFINITY },
+                    {},
+                    { instanceId: 7 },
+                    { instanceId: null },
                 ],
             })
         );
@@ -137,7 +131,7 @@ describe('createNativeLiveGraphBackend', () => {
         const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
 
         expect(result).toMatchObject({
-            attachedPlugins: [{ instanceId: 'inst-1', bridgeRoundTripFrames: 512 }],
+            attachedPlugins: [{ instanceId: 'inst-1' }, { instanceId: 'inst-2' }],
         });
     });
 

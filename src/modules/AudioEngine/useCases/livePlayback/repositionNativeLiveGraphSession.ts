@@ -18,6 +18,11 @@
  *   at the frame each span starts on. So the engine reports the arrangement's
  *   tempo at the new position without being told it again.
  *
+ * - The master fader is a smoother the engine advances per sample rather than a
+ *   stamped write (`MasterFader`, `timeline.rs`), so a locate cannot reach it:
+ *   it holds no frame for the seek to invalidate, and a glide the locate
+ *   interrupts simply continues at the new position.
+ *
  * The native `set-transport` maps to `SetTransportPlayback` followed by
  * `SeekFrames` (`commands/graph.rs`) — playback state, then the locate — and
  * the locate is what drops the automation writes the move made stale
@@ -40,8 +45,10 @@
  */
 
 import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
 export type RepositionNativeLiveGraphSessionInput = Readonly<{
@@ -80,15 +87,27 @@ export function repositionNativeLiveGraphSession(
             // it would have its first writes cancelled by the very command
             // that made re-arming necessary.
             armNativeLiveAutomationWriter({
-                stripTracks: pass.stripTracks,
+                // The chain as the store holds it now, not as the pass took it:
+                // an arm claims to re-project the whole world, and a locate that
+                // re-projected the arm-time objects would leave a plugin added
+                // since then driven by neither engine.
+                stripTracks: currentStripTracks(pass.stripTracks),
                 sampleRate: pass.sampleRate,
                 programmeEndSeconds: pass.programmeEndSeconds,
                 positionSeconds: input.positionSeconds,
                 // The locate's own fence. Until the engine has drained it, its
                 // published position is still the one the musician left.
                 provenAfterBatch: result.admittedBatch ?? null,
+                seek: true,
             });
         }
+        // The note pass is re-armed on its own terms, and unconditionally: a
+        // locate moves the playhead out of the window this pass filled, and the
+        // engine drops an entry the playhead has passed rather than delivering
+        // it late. Only now, for the same reason as above — the locate releases
+        // the sounding notes, so notes sent ahead of it would be cut off by the
+        // very command that made re-arming necessary.
+        await rearmNativeLiveMidiWriterInPlace({ positionSeconds: input.positionSeconds });
         return { outcome: 'repositioned' };
     });
 }

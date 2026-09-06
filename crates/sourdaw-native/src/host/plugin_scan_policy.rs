@@ -62,6 +62,17 @@ impl PluginScanPolicy {
     /// The resolved path, not the caller's spelling: the checks below are made
     /// against the canonical path, so walking anything else would walk a
     /// directory this function never looked at.
+    ///
+    /// The whole rule in one place: a request with a symlink component is
+    /// refused unless it is component-equal to one of this policy's own
+    /// allowed roots — the platform's own layout, not a user-supplied escape
+    /// attempt, for example a Linux distribution that symlinks `/usr/lib64`
+    /// to `/usr/lib` — in which case it is authorized to its canonical path.
+    /// An allowed root is otherwise matched by its resolved path, not its
+    /// spelling, so a descendant reached by naming exactly what the scan
+    /// walked — a symlinked allowed root's own canonical path — is
+    /// authorized too; only a request that itself carries a symlink
+    /// component and is not an own root is refused.
     pub fn authorize_scan_root(&self, requested_path: &Path) -> Result<PathBuf, String> {
         if requested_path.as_os_str().is_empty() {
             return Err("Plugin scan path cannot be empty".to_string());
@@ -77,6 +88,15 @@ impl PluginScanPolicy {
         let requested_path_exists = requested_path.exists();
         if requested_path_exists {
             match path_has_symlink_component(requested_path) {
+                Ok(true) if self.is_own_allowed_root(requested_path) => {
+                    return fs::canonicalize(requested_path).map_err(|error| {
+                        format!(
+                            "Plugin scan path cannot be resolved: {}: {}",
+                            requested_path.display(),
+                            error
+                        )
+                    });
+                }
                 Ok(true) => return Err(unauthorized_scan_path(requested_path)),
                 Ok(false) => {}
                 Err(error) => return Err(error),
@@ -100,12 +120,6 @@ impl PluginScanPolicy {
 
         let is_authorized = self.allowed_roots.iter().any(|allowed_root| {
             let allowed_root = if requested_path_exists {
-                match path_has_symlink_component(allowed_root) {
-                    Ok(true) => return false,
-                    Ok(false) => {}
-                    Err(_) => return false,
-                }
-
                 match fs::canonicalize(allowed_root) {
                     Ok(path) => path,
                     Err(_) => return false,
@@ -122,6 +136,29 @@ impl PluginScanPolicy {
         }
 
         Err(unauthorized_scan_path(&requested_path))
+    }
+
+    /// Whether `path` is one of this policy's own allowed roots, compared
+    /// component by component.
+    ///
+    /// The platform defines these paths itself, so a symlink component in one
+    /// of them — a Linux distribution's `/usr/lib64` pointing at `/usr/lib`
+    /// — is the platform's own layout choice, not a path a caller built to
+    /// slip past the symlink check. `Path`'s `PartialEq` compares components,
+    /// so it looks past a `.` segment, a repeated separator, or a trailing
+    /// slash — but it performs no `..` resolution and no symlink resolution:
+    /// `get_default_plugin_paths` hands out one component spelling per root,
+    /// and only a request matching that spelling, `..` and symlinks aside,
+    /// may take this arm. Lexical normalization pops a `..` component before
+    /// any symlink in the path resolves, so `<allowed-root>/S/../VST3`
+    /// through a symlink `S` that leaves the tree would normalize back to the
+    /// allowed root's own spelling and wrongly match here, even though the
+    /// path it names — once `S` actually resolves — sits outside every
+    /// allowed root.
+    fn is_own_allowed_root(&self, path: &Path) -> bool {
+        self.allowed_roots
+            .iter()
+            .any(|allowed_root| allowed_root == path)
     }
 }
 
@@ -418,6 +455,73 @@ mod tests {
         );
     }
 
+    /// A path that is exactly one of the policy's own allowed roots is the
+    /// platform's layout, not a user-supplied escape: it is authorized to its
+    /// canonical path even through a symlinked component, which is how a Linux
+    /// `/usr/lib64/vst3` resolves where `/usr/lib64` symlinks to `/usr/lib`.
+    #[cfg(unix)]
+    #[test]
+    fn authorizes_an_allowed_root_reached_through_the_platforms_own_symlink() {
+        let temp_root = unique_temp_scan_root("symlink-policy-own-root");
+        let real_root = temp_root.join("real");
+        let real_vst3 = real_root.join("VST3");
+        let linked_root = temp_root.join("linked");
+        std::fs::create_dir_all(&real_vst3).expect("real VST3 root should be created");
+        std::os::unix::fs::symlink(&real_root, &linked_root)
+            .expect("linked root symlink should be created");
+
+        let allowed_root = linked_root.join("VST3");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![allowed_root.clone()]);
+        let result = policy.authorize_scan_root(&allowed_root);
+        let expected = std::fs::canonicalize(&real_vst3).expect("real VST3 root should resolve");
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert_eq!(
+            result,
+            Ok(expected),
+            "expected the platform's own symlinked default root to be authorized, got {result:?}"
+        );
+    }
+
+    /// A descendant of a symlinked own root, named by the canonical path the
+    /// own-root scan actually walked, has to authorize on a later launch: the
+    /// registry hydrates every plugin row by re-authorizing its recorded
+    /// (canonical) path, and a covering root that only matches the root's own
+    /// spelling would drop every plugin the scan found under it.
+    #[cfg(unix)]
+    #[test]
+    fn authorizes_a_descendant_of_a_symlinked_own_root_by_its_resolved_path() {
+        let temp_root = unique_temp_scan_root("symlink-policy-own-root-descendant");
+        let real_root = temp_root.join("real");
+        let real_vst3 = real_root.join("VST3");
+        let real_plugin = real_vst3.join("Foo.vst3");
+        let linked_root = temp_root.join("linked");
+        std::fs::create_dir_all(&real_plugin).expect("real plugin bundle should be created");
+        std::os::unix::fs::symlink(&real_root, &linked_root)
+            .expect("linked root symlink should be created");
+
+        let allowed_root = linked_root.join("VST3");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![allowed_root.clone()]);
+        let root_result = policy.authorize_scan_root(&allowed_root);
+        let canonical_root =
+            std::fs::canonicalize(&real_vst3).expect("real VST3 root should resolve");
+        let canonical_plugin =
+            std::fs::canonicalize(&real_plugin).expect("real plugin bundle should resolve");
+        let plugin_result = policy.authorize_scan_root(&canonical_plugin);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert_eq!(
+            root_result,
+            Ok(canonical_root),
+            "expected the symlinked own root to authorize to its canonical path, got {root_result:?}"
+        );
+        assert_eq!(
+            plugin_result,
+            Ok(canonical_plugin),
+            "expected the descendant named by its resolved path to be covered by the symlinked own root, got {plugin_result:?}"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn rejects_descendant_request_through_symlinked_allowed_root() {
@@ -440,6 +544,40 @@ mod tests {
                 .as_ref()
                 .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
             "expected symlinked allowed-root descendant to be rejected, got {result:?}"
+        );
+    }
+
+    /// Lexical normalization pops a `..` component before any symlink in the
+    /// path resolves, so `<allowed-root>/S/../VST3` — where `S` is a symlink
+    /// that leaves the allowed root's own tree — normalized back to the
+    /// allowed root's exact spelling and wrongly took the own-root arm, which
+    /// answers with `fs::canonicalize` and so resolved (and authorized) the
+    /// path `S` actually names: a folder outside every allowed root. Only a
+    /// path that is byte-for-byte one of the policy's own roots, the one
+    /// spelling `get_default_plugin_paths` hands out, may take that arm.
+    #[cfg(unix)]
+    #[test]
+    fn rejects_own_root_spelling_reached_through_a_symlink_and_parent_traversal() {
+        let temp_root = unique_temp_scan_root("symlink-policy-lexical-escape");
+        let real_root = temp_root.join("real");
+        let real_vst3 = real_root.join("VST3");
+        let outside_vst3 = temp_root.join("outside").join("VST3");
+        let symlink_path = real_root.join("S");
+        std::fs::create_dir_all(&real_vst3).expect("real VST3 root should be created");
+        std::fs::create_dir_all(&outside_vst3).expect("outside VST3 root should be created");
+        std::os::unix::fs::symlink(&outside_vst3, &symlink_path)
+            .expect("symlink out of the allowed root's tree should be created");
+
+        let policy = PluginScanPolicy::with_allowed_roots(vec![real_vst3]);
+        let requested_path = symlink_path.join("..").join("VST3");
+        let result = policy.authorize_scan_root(&requested_path);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|error| error.contains("Unauthorized plugin scan path")),
+            "expected the symlink-then-parent-traversal path to be rejected rather than matched to the allowed root's own spelling, got {result:?}"
         );
     }
 }

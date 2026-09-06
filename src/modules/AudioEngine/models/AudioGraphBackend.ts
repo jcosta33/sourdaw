@@ -176,7 +176,13 @@ export type AudioGraphStripParameterTarget =
     | Readonly<{ kind: 'track-send-level'; trackId: AudioGraphStripId; busId: AudioGraphStripId }>;
 
 /**
- * A built-in device's own parameter, in the device's units.
+ * A device's own parameter, in the device's units.
+ *
+ * Two families answer to one shape. A built-in names its parameter, and the
+ * backend maps that name onto a closed set it knows. A hosted plugin's
+ * parameters are the plugin's own numeric ids, opaque to the backend and
+ * spelled here as strings; the plugin resolves them when the stamp reaches the
+ * block it is due on.
  *
  * Addressed by its own command ({@link AudioGraphWriteDeviceParameterCommand})
  * rather than sharing `write-parameter`, because it is not a strip position and
@@ -194,6 +200,18 @@ export type AudioGraphDeviceParameterTarget = Readonly<{
 }>;
 
 export type AudioGraphParameterTarget = AudioGraphStripParameterTarget | AudioGraphDeviceParameterTarget;
+
+/**
+ * A device on a strip, addressed as itself rather than through one of its
+ * parameters.
+ *
+ * Carries no `kind`, unlike {@link AudioGraphDeviceParameterTarget}: it belongs
+ * to no union, so there is nothing for a discriminant to tell it apart from.
+ */
+export type AudioGraphDeviceTarget = Readonly<{
+    trackId: AudioGraphStripId;
+    deviceId: string;
+}>;
 
 /**
  * Land `value` at `landTime`, replacing whatever was already scheduled.
@@ -446,9 +464,160 @@ export type AudioGraphWriteDeviceParameterCommand = Readonly<{
     write: AudioGraphStepWrite;
 }>;
 
+/**
+ * Land a whole record of a device's own parameters at the next audio callback,
+ * replacing each parameter's current value and leaving whatever the device's
+ * stamp queue is holding untouched.
+ *
+ * The immediate counterpart of {@link AudioGraphWriteDeviceParameterCommand},
+ * and a record rather than one write, because what reaches here is a patch: a
+ * Fermenter's is around a hundred keys, and a morph or a macro drag reloads the
+ * whole record at animation-frame rate. A stamped write cannot carry that — a
+ * backend's per-device queue holds a few dozen pending stamps in total, so one
+ * patch overruns it several times over — while a value applied on the next
+ * callback queues nothing.
+ *
+ * It addresses a **native built-in** only. An externally hosted plugin's
+ * parameters are the plugin's own, addressed over the plugin host's control
+ * path, and a backend refuses one aimed there rather than mapping it through a
+ * built-in vocabulary that cannot name it.
+ *
+ * Keys are the built-in's own native parameter names — for a Fermenter, the
+ * instrument's snake_case vocabulary, not the camelCase descriptor ids a panel
+ * authors. A key the device has no address for refuses the whole batch, naming
+ * the device and the key, exactly as {@link
+ * AudioGraphWriteDeviceParameterCommand} does: a batch reported applied while
+ * some of its values went nowhere is worse than one refused.
+ */
+export type AudioGraphSetDeviceParametersCommand = Readonly<{
+    kind: 'set-device-parameters';
+    target: AudioGraphDeviceTarget;
+    values: Readonly<Record<string, number>>;
+}>;
+
+/**
+ * The most parameters one {@link AudioGraphSetDeviceParametersCommand} may
+ * carry, mirroring the native mapper's `MAX_IMMEDIATE_DEVICE_PARAMETERS`
+ * (`crates/sourdaw-native/src/commands/graph.rs`).
+ *
+ * The engine charges a record's key count against that ceiling before it parses
+ * a single name, and refuses the whole batch over a record that crosses it, so
+ * a producer that sends a patch as one record has to know where the line is.
+ * The figure is sized from this side rather than from a claimed instrument
+ * vocabulary: a Fermenter's patch is one key per field plus one per macro slot,
+ * and 128 holds a full one with headroom. This mirror is what pins that fit —
+ * the Rust doc says so, and the spec beside it renders every factory preset
+ * through the same projection the wire uses and reads the key count.
+ */
+export const MAX_IMMEDIATE_DEVICE_PARAMETERS = 128;
+
 export type AudioGraphScheduleClipCommand = Readonly<{
     kind: 'schedule-clip';
     playback: AudioGraphClipPlayback;
+}>;
+
+/**
+ * One note and the position on the backend's clock it sounds at.
+ *
+ * No block offset: the backend places the note inside whichever block renders
+ * `time`, from `time` itself, so a producer stating an offset would be stating a
+ * number the backend overwrites. A note therefore survives a locate and every
+ * pass a loop makes over it, because it names a position in the arrangement
+ * rather than a moment in a queue.
+ */
+export type AudioGraphMidiNoteEvent = Readonly<{
+    /** Absolute position on the backend's clock. */
+    time: number;
+    note: number;
+    velocity: number;
+    /** `0` through `15`. */
+    channel: number;
+    isNoteOn: boolean;
+    /**
+     * The chance this note sounds, `0` through `1`. Absent means it always
+     * plays, which is what a producer writing plain notes wants and what the
+     * backend's live note path already answers.
+     */
+    probability?: number;
+    clipIdHash?: number;
+    eventIdHash?: number;
+    absoluteOccurrenceIndex?: number;
+}>;
+
+/**
+ * Write notes into the note store a device holds.
+ *
+ * A rewrite is an {@link AudioGraphClearMidiCommand} and this together, in one
+ * {@link AudioGraphCommandBatch}: a batch is one visibility, so the clear
+ * settles against the store the whole batch left and reads a note-off it
+ * stripped as *moved* rather than deleted. Split across two batches the clear
+ * lands first and releases a note the rewrite only meant to lengthen — which is
+ * why this is a command in the batch rather than a call of its own.
+ *
+ * Visible together is not the same as succeeding together. A backend refuses a
+ * device holding no note store, and a batch past what its store can hold,
+ * while the clear stays applied either way.
+ */
+export type AudioGraphScheduleMidiCommand = Readonly<{
+    kind: 'schedule-midi';
+    target: AudioGraphDeviceTarget;
+    /**
+     * The project's probability seed — `midiStore`'s `probabilitySeed`, minted
+     * once per project — which every carrier rolls a chance note with.
+     *
+     * A project value rather than a note's, so it is stated once for the whole
+     * command. It is required rather than defaulted because the roll mixes it
+     * first: a stand-in is itself a seed, and it would decide a chance note
+     * differently from the live and offline Web Audio carriers, so one
+     * arrangement would voice one way in the browser and another way through a
+     * backend that supplied its own.
+     */
+    probabilitySeed: number;
+    notes: readonly AudioGraphMidiNoteEvent[];
+}>;
+
+/**
+ * Play one note now on a device that sinks notes.
+ *
+ * The note is handed to the device at the head of the first block the backend
+ * renders after this batch is applied, and it sounds whether or not the
+ * transport is playing: a key struck on a keyboard names no timeline position,
+ * so there is none for a stopped playhead to withhold it from. A note that
+ * *does* have one travels as {@link AudioGraphScheduleMidiCommand} instead.
+ *
+ * A backend releases it on a stop or a locate exactly as it releases a stored
+ * note, so a note whose note-off never arrives cannot hold an instrument down
+ * for the rest of the session. A loop wrap does not: it lifts a stored key,
+ * whose note-off lies past the seam and will never render, and leaves a key the
+ * player is holding down — no DAW takes a musician's hands off the keyboard
+ * where a region starts again.
+ */
+export type AudioGraphSendMidiNoteCommand = Readonly<{
+    kind: 'send-midi-note';
+    target: AudioGraphDeviceTarget;
+    note: number;
+    velocity: number;
+    /** `0` through `15`. */
+    channel: number;
+    isNoteOn: boolean;
+}>;
+
+/**
+ * Drop the device's scheduled notes between `fromTime` and `toTime`.
+ *
+ * Half-open, so a producer rewriting one bar clears exactly its span and the
+ * note starting the next bar borders the window without being inside it.
+ * `toTime` of `null` is the end of the store, so `0` with a null end clears it.
+ *
+ * A clear naming a device holding no note store is refused by name, on the
+ * same terms as `schedule-midi`, so a producer clears only devices it could
+ * have scheduled.
+ */
+export type AudioGraphClearMidiCommand = Readonly<{
+    kind: 'clear-midi';
+    target: AudioGraphDeviceTarget;
+    fromTime: number;
+    toTime: number | null;
 }>;
 
 /**
@@ -504,6 +673,30 @@ export type AudioGraphSetMonitorShadowCommand = Readonly<{
     shadowed: boolean;
 }>;
 
+/**
+ * Where the master fader stands, as a linear amplitude on the same scale a
+ * strip's `gain` uses — `1` is unity and the ceiling is the fader's headroom,
+ * not unity.
+ *
+ * Session-level, like the monitor gate above and unlike everything else in
+ * this union: it addresses no strip, so it appears in no
+ * {@link AudioGraphStripReport}, and it is deliberately not a
+ * {@link AudioGraphStripParameterTarget}. A fader is a gesture, and a gesture
+ * has no timeline coordinate: where the hand left it is true at every position,
+ * including one the transport reaches by seeking or by wrapping a loop. So this
+ * is a target the backend approaches from wherever its fader currently stands,
+ * never a change stamped at a frame — which also means no ordering against a
+ * locate, and no queue for a drag to overrun.
+ *
+ * A backend that applies the master level from the project rather than from a
+ * live gesture — an offline render is one — refuses this rather than accepting
+ * it and doing nothing.
+ */
+export type AudioGraphSetMasterGainCommand = Readonly<{
+    kind: 'set-master-gain';
+    gain: number;
+}>;
+
 export type AudioGraphCommand =
     | AudioGraphCreateTrackStripCommand
     | AudioGraphCreateBusStripCommand
@@ -514,9 +707,14 @@ export type AudioGraphCommand =
     | AudioGraphRemoveDeviceCommand
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
+    | AudioGraphSetDeviceParametersCommand
     | AudioGraphScheduleClipCommand
+    | AudioGraphScheduleMidiCommand
+    | AudioGraphSendMidiNoteCommand
+    | AudioGraphClearMidiCommand
     | AudioGraphSetTransportCommand
-    | AudioGraphSetMonitorShadowCommand;
+    | AudioGraphSetMonitorShadowCommand
+    | AudioGraphSetMasterGainCommand;
 
 /**
  * The correlation a graph write carries, shared with the live delta protocol
@@ -586,14 +784,13 @@ export type AudioGraphStripReport = Readonly<{
 /**
  * One external plugin instance a batch handed to the engine.
  *
- * The bridge round trip is the reason the caller is given anything beyond the
- * id: it is frames the worklet↔plugin bridge adds on top of the plugin's own
- * latency, known only to the engine that took the instance, and the caller adds
- * it when compensating that device.
+ * The instance id is the whole payload. A hosted plugin runs inline on the
+ * engine's own clock, so it adds nothing to the device's latency beyond what
+ * the plugin itself declares, and the caller needs only to know which instances
+ * the start took over.
  */
 export type AudioGraphAttachedPlugin = Readonly<{
     instanceId: string;
-    bridgeRoundTripFrames: number;
 }>;
 
 /**

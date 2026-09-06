@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createPreparedAudioBufferLifecycle } from '../preparedAudioBufferLifecycle';
 
-import { BUFFER_STORE, flushIndexedDbTasks, installFakeAudioIndexedDb, META_STORE } from './fakeAudioBufferIndexedDb';
+import {
+    BUFFER_STORE,
+    flushIndexedDbTasks,
+    installFakeAudioIndexedDb,
+    META_STORE,
+    RECOVERY_STORE,
+} from './fakeAudioBufferIndexedDb';
 import {
     createAudioBuffer,
     createTestContext,
@@ -86,6 +92,93 @@ describe('prepared audio-buffer lifecycle races', () => {
         }
     );
 
+    it('does not let prepared persistence invalidate a newer source after its ownership read', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
+        const data = {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.6])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        };
+        let sourceCurrent = true;
+        const invalidateSource = vi.fn(() => sourceCurrent);
+        const lifecycle = createPreparedAudioBufferLifecycle({
+            bufferStoreName: BUFFER_STORE,
+            captureDurabilitySourceInvalidation: () => invalidateSource,
+            claimDurableMutation: () => 1,
+            createRuntimeBuffer: () => createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            evictRuntime: () => undefined,
+            finishDurableMutation: () => undefined,
+            hasPinnedReservation: () => false,
+            hasRuntime: () => false,
+            isDurableMutationCurrent: () => true,
+            isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
+            metadataStoreName: META_STORE,
+            openDatabase: openAudioDatabase,
+            publishRuntime: () => undefined,
+            recoveryStoreName: 'preparedBufferRecovery',
+        });
+
+        const persistence = lifecycle.persist({ id: 'source-fenced-persistence', leaseId: 'lease', data });
+        sourceCurrent = false;
+
+        await expect(persistence).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio persistence was superseded.',
+        });
+        expect(invalidateSource).toHaveBeenCalledOnce();
+        expect(controls.committed.has('source-fenced-persistence')).toBe(false);
+        expect(controls.committedMeta.has('source-fenced-persistence')).toBe(false);
+    });
+
+    it('does not let prepared discard invalidate a newer source after its ownership read', async () => {
+        const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
+        const id = 'source-fenced-discard';
+        const data = {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.6])],
+            lastAccessed: 1,
+            sizeInBytes: 4,
+        };
+        controls.committed.set(id, data);
+        controls.committedMeta.set(id, {
+            lastAccessed: 1,
+            preparedOwner: { schemaVersion: 1, leaseId: 'lease', status: 'temporary' },
+            sizeInBytes: 4,
+        });
+        let sourceCurrent = true;
+        const invalidateSource = vi.fn(() => sourceCurrent);
+        const lifecycle = createPreparedAudioBufferLifecycle({
+            bufferStoreName: BUFFER_STORE,
+            captureDurabilitySourceInvalidation: () => invalidateSource,
+            claimDurableMutation: () => 1,
+            createRuntimeBuffer: () => createAudioBuffer({ length: 1, sampleRate: 48_000 }),
+            evictRuntime: () => undefined,
+            finishDurableMutation: () => undefined,
+            hasPinnedReservation: () => false,
+            hasRuntime: () => false,
+            isDurableMutationCurrent: () => true,
+            isValidSerializedBuffer: (candidate): candidate is typeof data => candidate?.sizeInBytes === 4,
+            metadataStoreName: META_STORE,
+            openDatabase: openAudioDatabase,
+            publishRuntime: () => undefined,
+            recoveryStoreName: 'preparedBufferRecovery',
+        });
+
+        const discard = lifecycle.release({ id, leaseId: 'lease', disposition: 'discard' });
+        sourceCurrent = false;
+
+        await expect(discard).resolves.toEqual({
+            status: 'failed',
+            reason: 'Prepared audio discard was superseded.',
+        });
+        expect(invalidateSource).toHaveBeenCalledOnce();
+        expect(controls.committed.has(id)).toBe(true);
+        expect(controls.committedMeta.has(id)).toBe(true);
+    });
+
     it('does not let a stale lifecycle rollback demote a newer same-lease promotion', async () => {
         const controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         const id = 'promotion-revision-aba';
@@ -109,6 +202,7 @@ describe('prepared audio-buffer lifecycle races', () => {
         const runtimeA = new Map<string, AudioBuffer>();
         const lifecycleA = createPreparedAudioBufferLifecycle({
             bufferStoreName: 'buffers',
+            captureDurabilitySourceInvalidation: () => () => true,
             claimDurableMutation: () => 1,
             createRuntimeBuffer: (candidate) => {
                 const buffer = new AudioBuffer({
@@ -166,6 +260,7 @@ describe('prepared audio-buffer lifecycle races', () => {
         const runtimeB = new Map<string, AudioBuffer>();
         const lifecycleB = createPreparedAudioBufferLifecycle({
             bufferStoreName: 'buffers',
+            captureDurabilitySourceInvalidation: () => () => true,
             claimDurableMutation: () => 1,
             createRuntimeBuffer: (candidate) => {
                 const buffer = new AudioBuffer({

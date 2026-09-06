@@ -10,7 +10,7 @@ import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import {
     togglePlayback,
     stopPlayback,
@@ -185,7 +185,7 @@ export const TransportControls = ({
     compact = false,
 }: TransportControlsProps): ReactElement => {
     const setPunchEnabled = (): void => {
-        void executeAppAction({
+        void executeUserAppAction({
             type: 'setPunchEnabled',
             payload: { enabled: !punchInEnabled },
         }).catch(() => undefined);

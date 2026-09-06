@@ -163,7 +163,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:94a4c86e120f9d35bce5e2657a4660074977b6613dfae1989992666482f1a794:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:26445882e8cd29fd9d1851a5da2a88fc5d8a86fee49b476bc2bbeaf1daae8eb6:release/dependency-license-proofs.json"
+                "sha256:bf4d2d6a5ae10ff053ae47e8cc1c9cd29aa6d1ca3d2a773c34e2b63550be03f5:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -796,7 +796,7 @@
                 "sha256:2c7c2b09e316033b878869ec0e4a801e7499e3485f1cebe57931ccb6d614528f:src/modules/BrowserAi/workers/modelStorageWorkerRuntime.ts",
                 "sha256:c6df6f09c03d695c05eee4b411f46bfd5cd6d661415d0f51da293ee06000d6e6:src/infra/release/modelReleaseAdmission.ts",
                 "sha256:18b18d9f09369884d0a41b78fa584c04858c167e1738fe56f7cf524960511a8a:src/modules/BrowserAi/models/DdspInstrumentCatalog.ts",
-                "sha256:0767b7a7072eac7e5463e97e88ae8ca9d358e3f56757e140c7084046239a74af:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
+                "sha256:cf08e9ea6716c0a9f82b5f91f6ba7b370ac804d55f823cfe6fc140d03db816b2:src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx",
                 "sha256:ff966a7faa3d3dd4869be77f717af0f0b237a442b6d992af386eb5f69b3baf0e:src/modules/BrowserAi/repositories/removeDdspInstrumentGenerations.ts",
                 "sha256:abbe466881490518b4665e3937e63cfe8b00866720f36af51e0af7423dc4f2da:src/modules/BrowserAi/useCases/downloadModel.ts",
                 "sha256:f59b8857e8986c66e485394a293eddb66b422589f181ee990fac15cdd3bad45f:src/modules/BrowserAi/useCases/initBrowserAi.ts",
@@ -1194,10 +1194,10 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:2daad4fe71162dbeab4e9f716fc805e5cea1a22133f07d4550b9202718abb1de:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:0a082d27ff81cdeaec63073694854c0fc1a65353d9a42cd5f13098b0033b30fb:grand-boule-live-runtime",
-                "tracked-set-sha256:6ae8062b740dff1b01581b664f9e0a4226e74fef394e2b97010cdf1b65aea328:grand-boule-project-state",
+                "tracked-set-sha256:80f4fa20d045c1d72eb82a96214f32837ce2b3944e26a877aa9cb1e5eba0ef67:grand-boule-live-runtime",
+                "tracked-set-sha256:99af90cfe0e102bbff1992a0f410bf982a0c3693d4cac01896e21621c71077ac:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:caf5312f14d452331b13fcae0905df20f3b932cd8ed95dafe03a99f5408ffbaf:grand-boule-release-proof"
+                "tracked-set-sha256:dda4846114db58b832039d35fd9c4812f8caea009ad676d6f5561f1b4c65cd0a:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1362,18 +1362,15 @@
                 "desktop"
             ],
             "paths": [
-                "public/audio/worklets/native-plugin-bridge-processor.js",
                 "public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "sources": [
-                "public/audio/worklets/native-plugin-bridge-processor.js",
                 "public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "revisions": [
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:7dc1d7ec14134e94b8ba7fe997da78e990021ae73a3fefa93dcf3e4af17762c9:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "licenses": [
@@ -1384,7 +1381,7 @@
                 "desktop webview audio worklets"
             ],
             "evidence": [
-                "Both shipped processors are direct project source; no generator or second source tree exists."
+                "Every shipped processor is direct project source; no generator or second source tree exists."
             ],
             "obligations": [
                 "Ship the project LICENSE and NOTICE with every distribution."
@@ -1690,7 +1687,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "b045a7ab2920f4af8169463e4bf91d34f95d8d289cb149d4f114ed80d2b261b2"
+            "sha256": "47d888591f963cbf65c99b5b99e0fe8bad267bfe490102566f419491c83daac0"
         },
         {
             "path": "server/package.json",

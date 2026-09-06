@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { promptUser } from '#/utils/Notification/promptUser';
 
@@ -59,7 +59,7 @@ export const clipCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'normalizeClip', payload: { clipId } });
+                void executeUserAppAction({ type: 'normalizeClip', payload: { clipId } });
             }
         },
     },
@@ -71,7 +71,7 @@ export const clipCommands: CallableCommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                void executeAppAction({ type: 'reverseClip', payload: { clipId } });
+                void executeUserAppAction({ type: 'reverseClip', payload: { clipId } });
             }
         },
     },
@@ -83,7 +83,7 @@ export const clipCommands: CallableCommandEntry[] = [
         action: () => {
             const ids = getSelectedClipIds();
             if (ids.length >= 2) {
-                void executeAppAction({ type: 'glueClips', payload: { clipIds: ids } });
+                void executeUserAppAction({ type: 'glueClips', payload: { clipIds: ids } });
             }
         },
     },
@@ -99,7 +99,7 @@ export const clipCommands: CallableCommandEntry[] = [
                 const track = trackStore.value?.tracks.find((time) => time.id === trackId);
                 const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
-                    void executeAppAction({
+                    void executeUserAppAction({
                         type: 'consolidateSelection',
                         payload: { trackId, startBeat: clip.startBeat, endBeat: clip.endBeat },
                     });
@@ -120,7 +120,7 @@ export const clipCommands: CallableCommandEntry[] = [
                 );
                 const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
-                    void executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
+                    void executeUserAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
                 }
             }
         },

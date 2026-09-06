@@ -21,7 +21,7 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
@@ -270,7 +270,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     data-testid={`track-arm-${track.id}`}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        void executeAppAction({
+                                        void executeUserAppAction({
                                             type: 'armTrack',
                                             payload: { trackId: track.id, armed: !track.armed },
                                         });

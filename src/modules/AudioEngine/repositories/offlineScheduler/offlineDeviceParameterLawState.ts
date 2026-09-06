@@ -15,6 +15,13 @@
  * module-load order — it reds a few dozen Arrangement specs). The composition
  * root hands the same functions down instead, exactly as it already does for
  * `evaluateAutomationValue`.
+ *
+ * This seam is no longer the offline render's alone. The live producer that
+ * stamps hosted plugin parameters onto the native engine
+ * (`livePlayback/readLiveAutomationWrites.ts`) runs the same laws over the same
+ * projection and reaches them the same way, for the same reason (#3568) — the
+ * name stays for the caller that opened the seam rather than being widened
+ * every time another one arrives.
  */
 
 export type OfflineDeviceParameterAutomatablePredicate = (input: { deviceType: string; paramId: string }) => boolean;
@@ -31,6 +38,26 @@ export type OfflineDeviceParameterClamp = (input: { deviceType: string; paramId:
 export type OfflineDeviceParameterQuantise = (input: { deviceType: string; paramId: string; value: number }) => number;
 
 /**
+ * The hosted-plugin half of the same two questions, which the two above cannot
+ * answer.
+ *
+ * A hosted plugin has no static descriptor: every external plugin device spells
+ * one device type, and the instance publishes its own parameter list and its
+ * own bounds. So acceptance and the clamp are asked of the *instance*, exactly
+ * as `applyAutomation` asks them (`acceptsExternalPluginAutomationParameter`,
+ * `clampExternalPluginAutomationValue`). Quantisation is not split: the type law
+ * is identity for `external-plugin`, so {@link OfflineDeviceParameterQuantise}
+ * answers both families.
+ */
+export type OfflineExternalPluginParameterPredicate = (externalInstanceId: string, parameterId: string) => boolean;
+
+export type OfflineExternalPluginParameterClamp = (input: {
+    externalInstanceId: string;
+    parameterId: string;
+    value: number;
+}) => number;
+
+/**
  * Unset means no law was injected, not "anything goes". The render then has no
  * basis to decide whether a parameter may be automated at all, so the caller
  * refuses device automation rather than substituting a looser rule than live's
@@ -41,8 +68,12 @@ export const offlineDeviceParameterLawState: {
     isAutomatable: OfflineDeviceParameterAutomatablePredicate | null;
     clampValue: OfflineDeviceParameterClamp | null;
     quantiseValue: OfflineDeviceParameterQuantise | null;
+    acceptsExternalPluginParameter: OfflineExternalPluginParameterPredicate | null;
+    clampExternalPluginValue: OfflineExternalPluginParameterClamp | null;
 } = {
     isAutomatable: null,
     clampValue: null,
     quantiseValue: null,
+    acceptsExternalPluginParameter: null,
+    clampExternalPluginValue: null,
 };

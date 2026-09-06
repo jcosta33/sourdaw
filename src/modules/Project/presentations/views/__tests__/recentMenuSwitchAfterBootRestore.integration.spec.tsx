@@ -70,6 +70,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(() => Promise.resolve()),
+    executeUserAppAction: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));

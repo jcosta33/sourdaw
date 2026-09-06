@@ -6,7 +6,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { TransportControls } from '../TransportControls';
 
 const mocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeUserAppAction: vi.fn().mockResolvedValue(undefined),
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
     toggleLoop: vi.fn(),
@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -159,7 +159,7 @@ describe('TransportControls', () => {
         it('routes punch through an explicit undoable command', () => {
             renderWithTooltip(<TransportControls {...defaultProps} />);
             fireEvent.click(screen.getByLabelText('Punch in/out'));
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'setPunchEnabled',
                 payload: { enabled: true },
             });
@@ -172,7 +172,7 @@ describe('TransportControls', () => {
             expect(punch).toBeDisabled();
             fireEvent.click(punch);
 
-            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it('routes count-in toggle to toggleCountIn', () => {
@@ -213,7 +213,7 @@ describe('TransportControls', () => {
 
             expect(mocks.toggleOverdub).toHaveBeenCalledTimes(1);
             expect(mocks.toggleMetronome).toHaveBeenCalledTimes(1);
-            expect(mocks.executeAppAction).toHaveBeenCalledWith({
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
                 type: 'setPunchEnabled',
                 payload: { enabled: true },
             });

@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { getScopedGrooveConsumerId } from '#/modules/MIDI/useCases';
 
 import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
@@ -17,7 +17,7 @@ export async function setYeastGrooveTemplate(processorId: string, templateId: st
 
     const assignment = getYeastGrooveAssignment(processorId);
     try {
-        await executeAppAction({
+        await executeUserAppAction({
             type: 'assignGrooveTemplate',
             payload: {
                 consumerType: 'yeast-processor',

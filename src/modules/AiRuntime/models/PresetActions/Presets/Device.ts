@@ -48,6 +48,7 @@ export const devicePresets: readonly PresetAction[] = [
         id: 'add-gain',
         label: 'Add Gain Utility',
         keywords: ['gain', 'utility', 'add gain', 'trim', 'level'],
+        commandAliases: ['add gain'],
         category: 'Device',
         requiresSelection: 'track',
         buildAction: trackAction('addDevice', (id) => ({ trackId: id, deviceType: 'builtin-gain' })),

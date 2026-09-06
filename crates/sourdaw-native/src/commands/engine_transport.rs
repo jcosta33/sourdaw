@@ -28,10 +28,15 @@
 //! is deliberately taken from the transport channel rather than from
 //! `GraphProgressSnapshot`, whose `playhead_frame` is the command-admission
 //! ledger's release evidence and means a happens-before, not a cursor position.
-//! That channel is the *whole* of the reading, batch count included: the two
+//! That channel is the whole of the *position*, batch count included: the two
 //! channels are published one after another at the end of every callback, so a
 //! reader taking one field from each can pair a count with a playhead the
 //! engine never held at the same moment.
+//!
+//! The master peak on the same reply is the one field drawn from elsewhere,
+//! and it is allowed to be because it claims nothing about the position beside
+//! it — see [`EngineTransportPosition`]. A field that did make such a claim
+//! would have to arrive on the transport channel or not at all.
 
 use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
@@ -121,6 +126,14 @@ pub struct TransportMapsApplied {
 /// thread. It travels on the transport snapshot itself
 /// ([`TransportPositionSnapshot::batches_applied`]), which is what makes it a
 /// statement about *this* playhead rather than about some other callback's.
+///
+/// `masterPeak` makes no such claim and is paired with nothing here. It rides
+/// this reply because the renderer already polls this command once per
+/// animation frame, and a second command at the same cadence would double the
+/// bridge wakeups to deliver a number the same frame is going to paint —
+/// economy, not a statement that the level and the position belong to one
+/// callback. Anything that needed them to would have to ask for a channel that
+/// publishes them together, and nothing does.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
@@ -133,11 +146,17 @@ pub struct EngineTransportPosition {
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
+    /// The engine's held master peak, linear and non-negative. Zero for an
+    /// engine that is not running, which is also what a running engine
+    /// handing the device silence reports — `running` is what tells them
+    /// apart, exactly as it does for every other number here.
+    pub master_peak: f64,
 }
 
 /// The engine's own snapshot, in the wire's units.
 fn transport_position_payload(
     snapshot: TransportPositionSnapshot,
+    master_peak: f32,
     sample_rate: f64,
 ) -> EngineTransportPosition {
     EngineTransportPosition {
@@ -150,6 +169,7 @@ fn transport_position_payload(
         tempo: snapshot.tempo,
         time_sig_num: snapshot.time_sig_num,
         time_sig_denom: snapshot.time_sig_denom,
+        master_peak: f64::from(master_peak),
     }
 }
 
@@ -313,8 +333,17 @@ pub async fn engine_transport_position(
     // the transport snapshot itself, so the pairing is the engine's own single
     // publish rather than an ordering this side could only hope for.
     let snapshot = engine.transport_position_snapshot();
+    // A second read, deliberately. The level is its own channel at the engine
+    // because it makes none of the pairing claims the position's fields make,
+    // and reading it here rather than on a command of its own only spares the
+    // bridge a wakeup — see [`EngineTransportPosition`].
+    let master_peak = engine.master_meter_snapshot().peak;
 
-    Ok(transport_position_payload(snapshot, sample_rate))
+    Ok(transport_position_payload(
+        snapshot,
+        master_peak,
+        sample_rate,
+    ))
 }
 
 #[cfg(test)]
@@ -428,6 +457,7 @@ mod tests {
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
+            master_peak: 0.5,
         })
         .expect("position should serialize");
 
@@ -436,9 +466,27 @@ mod tests {
             concat!(
                 r#"{"running":true,"playing":true,"positionSeconds":1.5,"#,
                 r#""playheadFrame":72000.0,"loopWraps":2.0,"batchesApplied":11.0,"#,
-                r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4}"#
+                r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4,"masterPeak":0.5}"#
             )
         );
+    }
+
+    /// The level the renderer's meter draws comes from the engine's own master
+    /// meter channel, widened to the wire's `f64` and otherwise untouched: a
+    /// payload that rescaled it, or that reported the transport snapshot's
+    /// silence in its place, would put a different number in front of the
+    /// musician than the one the device was handed.
+    #[test]
+    fn the_payload_carries_the_master_peak_the_engine_published() {
+        let snapshot = TransportPositionSnapshot {
+            playing: true,
+            playhead_frame: 72_000,
+            ..TransportPositionSnapshot::default()
+        };
+
+        let position = transport_position_payload(snapshot, 0.25, 48_000.0);
+
+        assert_eq!(position.master_peak, 0.25);
     }
 
     /// Every field of a reading comes from the one snapshot the engine
@@ -458,7 +506,7 @@ mod tests {
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(snapshot, 48_000.0);
+        let position = transport_position_payload(snapshot, 0.0, 48_000.0);
 
         assert_eq!(position.batches_applied, 11.0);
         assert_eq!(position.playhead_frame, 72_000.0);

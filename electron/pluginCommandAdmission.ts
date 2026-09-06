@@ -30,7 +30,6 @@ export const PLUGIN_RUNTIME_COMMANDS = [
     'get_plugin_state_bytes',
     'load_plugin',
     'open_plugin_gui',
-    'process_plugin_audio',
     'scan_plugins',
     'set_plugin_bypass',
     'set_plugin_parameter',

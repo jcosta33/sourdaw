@@ -42,6 +42,7 @@ import {
     type AudioGraphCommand,
     type AudioGraphCorrelation,
     type AudioGraphDeviceParameterTarget,
+    type AudioGraphMidiNoteEvent,
     type AudioGraphParameterWrite,
     type AudioGraphRouteTarget,
     type AudioGraphSendTap,
@@ -77,6 +78,19 @@ export type NativeGraphWireClipPlayback = Readonly<{
     fade: AudioGraphClipFade;
 }>;
 
+/** `MidiNotePayload` in `graph.rs`. */
+export type NativeGraphWireMidiNote = Readonly<{
+    time: number;
+    note: number;
+    velocity: number;
+    channel: number;
+    isNoteOn: boolean;
+    probability?: number;
+    clipIdHash?: number;
+    eventIdHash?: number;
+    absoluteOccurrenceIndex?: number;
+}>;
+
 /**
  * `GraphCommandPayload` in `graph.rs`. Everything the contract already states
  * in wire-safe terms is carried by its contract type; only the two variants
@@ -109,9 +123,37 @@ export type NativeGraphWireCommand =
     | Readonly<{ kind: 'remove-device'; trackId: string; deviceId: string }>
     | Readonly<{ kind: 'write-parameter'; target: AudioGraphStripParameterTarget; write: AudioGraphParameterWrite }>
     | Readonly<{ kind: 'write-device-parameter'; target: AudioGraphDeviceParameterTarget; write: AudioGraphStepWrite }>
+    | Readonly<{
+          kind: 'set-device-parameters';
+          trackId: string;
+          deviceId: string;
+          values: Readonly<Record<string, number>>;
+      }>
     | Readonly<{ kind: 'schedule-clip'; playback: NativeGraphWireClipPlayback }>
+    // The contract's device target is flattened here, because `graph.rs` reads
+    // the strip and the device as the variant's own fields rather than as a
+    // nested target: only `write-device-parameter` needs a target object, and
+    // only because it also names a parameter.
+    | Readonly<{
+          kind: 'schedule-midi';
+          trackId: string;
+          deviceId: string;
+          probabilitySeed: number;
+          notes: readonly NativeGraphWireMidiNote[];
+      }>
+    | Readonly<{
+          kind: 'send-midi-note';
+          trackId: string;
+          deviceId: string;
+          note: number;
+          velocity: number;
+          channel: number;
+          isNoteOn: boolean;
+      }>
+    | Readonly<{ kind: 'clear-midi'; trackId: string; deviceId: string; fromTime: number; toTime: number | null }>
     | Readonly<{ kind: 'set-transport'; playing: boolean; positionSeconds: number; locate?: boolean }>
-    | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>;
+    | Readonly<{ kind: 'set-monitor-shadow'; shadowed: boolean }>
+    | Readonly<{ kind: 'set-master-gain'; gain: number }>;
 
 /** `GraphBatchPayload` in `graph.rs`. */
 export type NativeGraphWireBatch = Readonly<{
@@ -156,6 +198,25 @@ function serializePlayback(playback: AudioGraphClipPlayback): NativeGraphWireCli
         playbackRate: playback.playbackRate,
         gain: playback.gain,
         fade: serializeFade(playback.fade),
+    };
+}
+
+function serializeMidiNote(note: AudioGraphMidiNoteEvent): NativeGraphWireMidiNote {
+    return {
+        time: note.time,
+        note: note.note,
+        velocity: note.velocity,
+        channel: note.channel,
+        isNoteOn: note.isNoteOn,
+        // Absence is the mirror's default on each of these, and the default is
+        // the meaning the contract gives an absent field, so only a stated one
+        // travels.
+        ...(note.probability !== undefined ? { probability: note.probability } : {}),
+        ...(note.clipIdHash !== undefined ? { clipIdHash: note.clipIdHash } : {}),
+        ...(note.eventIdHash !== undefined ? { eventIdHash: note.eventIdHash } : {}),
+        ...(note.absoluteOccurrenceIndex !== undefined
+            ? { absoluteOccurrenceIndex: note.absoluteOccurrenceIndex }
+            : {}),
     };
 }
 
@@ -206,8 +267,46 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             return { kind: 'write-parameter', target: { ...command.target }, write: { ...command.write } };
         case 'write-device-parameter':
             return { kind: 'write-device-parameter', target: { ...command.target }, write: { ...command.write } };
+        case 'set-device-parameters':
+            return {
+                kind: 'set-device-parameters',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                values: { ...command.values },
+            };
         case 'schedule-clip':
             return { kind: 'schedule-clip', playback: serializePlayback(command.playback) };
+        case 'schedule-midi':
+            return {
+                kind: 'schedule-midi',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                // A project value, stated once here and stamped onto every note
+                // by the mirror; the roll mixes it first, so it has no default.
+                probabilitySeed: command.probabilitySeed,
+                notes: command.notes.map(serializeMidiNote),
+            };
+        case 'send-midi-note':
+            return {
+                kind: 'send-midi-note',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                note: command.note,
+                velocity: command.velocity,
+                channel: command.channel,
+                isNoteOn: command.isNoteOn,
+            };
+        case 'clear-midi':
+            return {
+                kind: 'clear-midi',
+                trackId: command.target.trackId,
+                deviceId: command.target.deviceId,
+                fromTime: command.fromTime,
+                // `null` is the open end and travels as itself: the mirror reads
+                // an absent field the same way, but a producer that means "to
+                // the end of the store" should be able to say so.
+                toTime: command.toTime,
+            };
         case 'set-transport':
             return {
                 kind: 'set-transport',
@@ -220,6 +319,8 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             };
         case 'set-monitor-shadow':
             return { kind: 'set-monitor-shadow', shadowed: command.shadowed };
+        case 'set-master-gain':
+            return { kind: 'set-master-gain', gain: command.gain };
     }
     // Unreachable while the switch covers the union. Typed `never` so a command
     // added to the contract fails the typecheck here rather than crossing the

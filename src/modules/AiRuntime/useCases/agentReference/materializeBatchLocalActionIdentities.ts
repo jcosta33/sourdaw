@@ -9,6 +9,7 @@ type MaterializeBatchLocalActionIdentitiesResult =
 const GENERATED_ID_SUFFIX = String.raw`[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$`;
 const GENERATED_BUS_ID_PATTERN = new RegExp(`^bus-ai-${GENERATED_ID_SUFFIX}`, 'u');
 const GENERATED_DEVICE_ID_PATTERN = new RegExp(`^device-ai-${GENERATED_ID_SUFFIX}`, 'u');
+const GENERATED_INITIAL_DEVICE_ID_PATTERN = new RegExp(`^device-command-${GENERATED_ID_SUFFIX}`, 'u');
 const GENERATED_TRACK_ID_PATTERN = new RegExp(`^track-ai-${GENERATED_ID_SUFFIX}`, 'u');
 const GENERATED_CLIP_ID_PATTERN = new RegExp(`^clip-ai-${GENERATED_ID_SUFFIX}`, 'u');
 
@@ -36,6 +37,14 @@ function hasValidInitialGain(identity: BatchLocalActionIdentity): boolean {
     return Number.isFinite(identity.initialGain) && identity.initialGain >= 0 && identity.initialGain <= 2;
 }
 
+function hasValidInitialTrackDeviceId(identity: BatchLocalActionIdentity): boolean {
+    return (
+        identity.actionType !== 'addTrack' ||
+        identity.initialDeviceId === undefined ||
+        GENERATED_INITIAL_DEVICE_ID_PATTERN.test(identity.initialDeviceId)
+    );
+}
+
 function getIdentityKey(identity: BatchLocalActionIdentity): string {
     return `${identity.actionType}:${String(identity.actionOrdinal)}`;
 }
@@ -53,13 +62,20 @@ function indexBatchLocalActionIdentities(
             identity.actionOrdinal < 0 ||
             !GENERATED_ID_PATTERNS[identity.actionType].test(identityId) ||
             !hasValidInitialGain(identity) ||
+            !hasValidInitialTrackDeviceId(identity) ||
             identitiesByKey.has(identityKey) ||
-            assignedIds.has(identityId)
+            assignedIds.has(identityId) ||
+            (identity.actionType === 'addTrack' &&
+                identity.initialDeviceId !== undefined &&
+                assignedIds.has(identity.initialDeviceId))
         ) {
             return null;
         }
         identitiesByKey.set(identityKey, identity);
         assignedIds.add(identityId);
+        if (identity.actionType === 'addTrack' && identity.initialDeviceId !== undefined) {
+            assignedIds.add(identity.initialDeviceId);
+        }
     }
     return identitiesByKey;
 }
@@ -95,7 +111,14 @@ function applyBatchLocalActionIdentity(
         return { type: 'addDevice', payload: { ...action.payload, deviceId: identity.deviceId } };
     }
     if (action.type === 'addTrack' && identity.actionType === 'addTrack') {
-        return { type: 'addTrack', payload: { ...action.payload, id: identity.trackId } };
+        return {
+            type: 'addTrack',
+            payload: {
+                ...action.payload,
+                id: identity.trackId,
+                ...(identity.initialDeviceId === undefined ? {} : { initialDeviceId: identity.initialDeviceId }),
+            },
+        };
     }
     if (action.type === 'addClip' && identity.actionType === 'addClip') {
         return { type: 'addClip', payload: { ...action.payload, id: identity.clipId } };

@@ -590,6 +590,7 @@ code: no (all dormant).
   is correct until the boundary is chosen. Source:
   `src/modules/AudioEngine/engine/NativePluginBridgeNode.ts`,
   `src/modules/Plugin/repositories/pluginBridge/processAudioIPC.ts:36`.
+  **RESOLVED 2026-09-05 (#3071): the bridge boundary was deleted, not narrowed; hosted plugins run inline on the engine clock and no second cadence remains.**
 - **Faust real-time scheduling (product).** `faustDeviceFactory` schedules
   keyOn/keyOff via `setTimeout`-based `scheduleCall`, not sample-accurate.
   Options: accept timer scheduling for the target use cases vs build a

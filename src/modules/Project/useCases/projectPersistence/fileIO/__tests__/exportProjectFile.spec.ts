@@ -28,6 +28,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: agentProjectRepairStateStoreMock,
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: vi.fn(() => 'export-revision'),
+}));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),

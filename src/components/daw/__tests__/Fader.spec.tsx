@@ -271,6 +271,41 @@ describe('Fader', () => {
         });
     });
 
+    // audit M-082 follow-up — a panel switch (e.g. a keyboard shortcut) can
+    // unmount the fader mid-drag without ever firing blur, visibilitychange,
+    // or pointerup, and the blur/visibility effect's own cleanup only removed
+    // its listeners. Without finalizing there too, the gesture never settles:
+    // the engine is stuck on the last transient while the store, peers,
+    // persistence, and offline render all hold the pre-drag value.
+    describe('drag finalization on unmount', () => {
+        it('should settle a drag interrupted by unmounting the component', () => {
+            const onChange = vi.fn();
+            const { unmount } = render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 13, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 13, clientY: 40 });
+
+            const transientsBeforeUnmount = onChange.mock.calls.filter((call) => call[1] === true);
+            const lastTransientValue = onChange.mock.calls.at(-1)![0];
+
+            unmount();
+
+            const transientsAfterUnmount = onChange.mock.calls.filter((call) => call[1] === true);
+            expect(transientsAfterUnmount).toHaveLength(transientsBeforeUnmount.length);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[lastTransientValue, false]]);
+        });
+
+        it('should emit nothing when unmounting with no drag open', () => {
+            const onChange = vi.fn();
+            const { unmount } = render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+
+            unmount();
+
+            expect(onChange).not.toHaveBeenCalled();
+        });
+    });
+
     /**
      * The settle-then-commit half of the `onChange` contract, mirroring
      * `RotaryKnob`. Without it a caller that persists on every sample turns one
@@ -334,6 +369,200 @@ describe('Fader', () => {
 
             expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[jumped[0], false]]);
         });
+
+        it('should still settle a drag that moves away and returns to its start value', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+            const startValue = 0;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 12, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 12, clientY: 40 });
+            // Back to the exact pixel the gesture began from — the settled value
+            // equals the start value, but the gesture still drove the engine
+            // through the transient in between and must still close out.
+            fireEvent.pointerMove(slider, { pointerId: 12, clientY: 50 });
+            fireEvent.pointerUp(slider, { pointerId: 12 });
+
+            const transients = onChange.mock.calls.filter((call) => call[1] === true);
+            expect(transients.length).toBeGreaterThan(0);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[startValue, false]]);
+        });
+    });
+
+    /**
+     * A second pointer (touch or pen; a mouse cannot repeat a `pointerdown`
+     * under capture) pressing while a drag is already open is blocked
+     * outright in `handlePointerDown` — the already-captured pointer keeps
+     * the gesture exclusively. `handlePointerMove` and `handlePointerInterrupt`
+     * (which backs `onPointerUp` and `onPointerCancel`) now compare `event.pointerId`
+     * against `activePointerIdRef.current` too: a second pointer's own moves
+     * can no longer steer the cap, and its own release can no longer
+     * finalize — let alone settle — the first pointer's still-open gesture.
+     * `onLostPointerCapture` is not exempt: a second touch that
+     * `handlePointerDown` ignored still gets implicit pointer capture and
+     * still fires `lostpointercapture` on the root when it lifts (measured in
+     * Chromium), so it carries the same `activePointerIdRef` guard as
+     * `pointercancel`. Only `onBlur` and the window `blur`/`visibilitychange`
+     * listeners finalize unconditionally, because those carry no `pointerId`
+     * at all.
+     */
+    describe('second pointer during an open drag', () => {
+        it('should keep the gesture under the first pointer while a second pointer presses, moves, and lifts', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+
+            // Pointer 2 presses during the open drag: blocked outright, no call.
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50 });
+            expect(onChange.mock.calls).toHaveLength(1);
+
+            // Pointer 2 moves: its pointerId does not match the captured
+            // pointer, so it must not steer the cap. With `startY`/`startValue`
+            // still pointer 1's, this delta would compute 6 if the check were
+            // missing — that value must never appear among the transients.
+            fireEvent.pointerMove(slider, { pointerId: 2, clientY: 20 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+            expect(onChange.mock.calls).toHaveLength(1);
+
+            // Pointer 2 lifts: its pointerId does not match the captured
+            // pointer either, so it must not finalize — let alone settle —
+            // pointer 1's still-open gesture.
+            fireEvent.pointerUp(slider, { pointerId: 2 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            // Pointer 1 is still driving the gesture: its own next move keeps
+            // emitting transients under its own value.
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 43 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([
+                [4, true],
+                [5.5, true],
+            ]);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            // Pointer 1's own release settles the gesture exactly once, at
+            // pointer 1's own last value.
+            fireEvent.pointerUp(slider, { pointerId: 1 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[5.5, false]]);
+            expect(onChange.mock.calls).toHaveLength(3);
+        });
+
+        it('should ignore an alt-click reset from a second pointer during an open drag', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} defaultValue={0} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            onChange.mockClear();
+
+            // Pointer 2's alt-click during the open drag must not fire the
+            // default-value reset — that would settle the wrong gesture.
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50, altKey: true });
+            expect(onChange).not.toHaveBeenCalled();
+
+            // Pointer 1's own drag must still be alive: further moves keep
+            // emitting transients, and its own release settles normally.
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 35 });
+            expect(onChange).toHaveBeenCalledWith(6, true);
+
+            fireEvent.pointerUp(slider, { pointerId: 1 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[6, false]]);
+        });
+
+        it('should not finalize the open drag when a second pointer that never captured loses capture', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+
+            // Pointer 2 presses, moves, and lifts during the open drag: blocked
+            // outright by handlePointerDown, and its lift is a plain pointerup.
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 2, clientY: 20 });
+            fireEvent.pointerUp(slider, { pointerId: 2 });
+
+            // A second touch that handlePointerDown ignored still receives
+            // implicit pointer capture from the browser and still fires
+            // `lostpointercapture` on the root when it lifts (measured in
+            // Chromium). That must not finalize pointer 1's still-open drag.
+            fireEvent.lostPointerCapture(slider, { pointerId: 2 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            // Pointer 1 is still driving the gesture.
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 43 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([
+                [4, true],
+                [5.5, true],
+            ]);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            fireEvent.pointerUp(slider, { pointerId: 1 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[5.5, false]]);
+        });
+
+        it('should not finalize the open drag when a second pointer that never captured is cancelled', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 2, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 2, clientY: 20 });
+            fireEvent.pointerUp(slider, { pointerId: 2 });
+
+            // Same shape as the lost-capture case above, but the OS steals the
+            // second pointer with `pointercancel` instead.
+            fireEvent.pointerCancel(slider, { pointerId: 2 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 43 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([
+                [4, true],
+                [5.5, true],
+            ]);
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([]);
+
+            fireEvent.pointerUp(slider, { pointerId: 1 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[5.5, false]]);
+        });
+
+        it('should still finalize on the owning pointer’s own lost capture', () => {
+            const onChange = vi.fn();
+            render(<Fader value={0} onChange={onChange} min={-70} max={6} height={100} />);
+            const slider = screen.getByRole('slider');
+            const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+
+            fireEvent.pointerDown(cap, { button: 0, pointerId: 1, clientY: 50 });
+            fireEvent.pointerMove(slider, { pointerId: 1, clientY: 45 });
+            expect(onChange.mock.calls.filter((call) => call[1] === true)).toEqual([[4, true]]);
+
+            // The owner's own capture loss still finalizes the gesture — this
+            // guard only screens out pointers that were never the owner.
+            fireEvent.lostPointerCapture(slider, { pointerId: 1 });
+            expect(onChange.mock.calls.filter((call) => call[1] === false)).toEqual([[4, false]]);
+        });
+    });
+
+    it('should mark the root touch-none so a vertical drag is not claimed as a scroll pan', () => {
+        const { container } = render(<Fader value={0} onChange={vi.fn()} min={-70} max={6} />);
+        const root = container.firstChild as HTMLElement;
+        expect(root.className).toContain('touch-none');
     });
 
     /**

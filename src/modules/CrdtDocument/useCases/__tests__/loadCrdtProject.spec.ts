@@ -22,7 +22,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 vi.mock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
     loadPersistenceSnapshotFromIdb: mocks.loadPersistenceSnapshotFromIdb,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn(), executeUserAppAction: vi.fn() }));
 vi.mock('../runCrdtPersistenceLoad', () => ({
     runCrdtPersistenceLoad: vi.fn(
         async (

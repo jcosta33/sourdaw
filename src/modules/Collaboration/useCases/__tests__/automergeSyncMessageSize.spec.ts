@@ -15,6 +15,7 @@ import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { createPeerSyncMessages } from './peerSyncHandshake';
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
 

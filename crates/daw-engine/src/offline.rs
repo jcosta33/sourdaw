@@ -15,8 +15,8 @@
 
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::scheduler::{
-    graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
-    GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
+    graph_progress_channel, master_meter_channel, transport_position_channel, AudioScheduler,
+    GraphCommand, GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -65,6 +65,7 @@ impl OfflineRenderer {
             timeline_rt_diagnostics_channel();
         let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, _transport_position_reader) = transport_position_channel();
+        let (master_meter_tx, _master_meter_reader) = master_meter_channel();
         let scheduler = AudioScheduler::with_rt_diagnostics(
             command_rx,
             retired_tx,
@@ -73,6 +74,7 @@ impl OfflineRenderer {
             timeline_diagnostics_tx,
             graph_progress_tx,
             transport_position_tx,
+            master_meter_tx,
         );
 
         Self {

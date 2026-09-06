@@ -52,7 +52,7 @@ const SectionCard = ({
     children: ReactElement | ReactElement[];
 }): ReactElement => (
     <DawPluginSectionCard
-        className="crumbs-window"
+        className="crumbs-window shrink-0"
         title={title}
         detail={detail}
         titleClassName="text-[var(--color-accent-lavender)]/70"

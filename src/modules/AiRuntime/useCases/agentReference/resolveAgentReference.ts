@@ -1,11 +1,14 @@
 import { type ProjectContext } from '../../models/ProjectContext';
+import { maskQuotedTextContents } from '../../transformers/promptParser/promptQuotedText';
+import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import {
     isAgentReferenceCapabilityCandidate,
     type AgentReferenceCapability,
 } from './isAgentReferenceCapabilityCandidate';
+import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
 
-type ResolveAgentReferenceInput = {
+export type ResolveAgentReferenceInput = {
     prompt: string;
     assertedId: unknown;
     capability: AgentReferenceCapability;
@@ -21,7 +24,7 @@ type ReferenceCandidate = {
 
 type AgentReferenceEvidence = 'literal-id' | 'exact-name' | 'selection';
 
-type ResolveAgentReferenceResult =
+export type ResolveAgentReferenceResult =
     | { status: 'resolved'; id: string; evidence: AgentReferenceEvidence }
     | {
           status: 'rejected';
@@ -61,12 +64,6 @@ function foldReferenceMarks(value: string): string {
     return value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '');
 }
 
-function normalizeReferenceText(value: string): string {
-    return foldReferenceMarks(value)
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
-
 function escapeRegExp(value: string): string {
     return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
@@ -80,7 +77,7 @@ function getTokenReferenceRanges(
     reference: string,
     tokenJoiner: string
 ): readonly { end: number; start: number }[] {
-    const tokens = normalizeReferenceText(reference)
+    const tokens = normalizeAgentReferenceText(reference)
         .split(' ')
         .filter((token) => token.length > 0);
     if (tokens.length === 0) {
@@ -105,11 +102,11 @@ function getExactNameOverlapRanges(prompt: string, reference: string): readonly 
 }
 
 function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    const normalizedReference = normalizeReferenceText(reference);
+    const normalizedReference = normalizeAgentReferenceText(reference);
     if (normalizedReference.length === 0) {
         return [];
     }
-    const haystack = ` ${normalizeReferenceText(prompt)} `;
+    const haystack = ` ${normalizeAgentReferenceText(prompt)} `;
     const needle = ` ${normalizedReference} `;
     const ranges: { end: number; start: number }[] = [];
     let from = 0;
@@ -125,13 +122,13 @@ function getExactPhraseRanges(prompt: string, reference: string): readonly { end
 }
 
 function containsQualifiedMasterOutputReference(prompt: string): boolean {
-    const normalized = normalizeReferenceText(prompt);
+    const normalized = normalizeAgentReferenceText(prompt);
     return /\b(?:to|into|through) (?:the )?master\b|\bmaster (?:bus|channel|output)\b/u.test(normalized);
 }
 
 function containsQualifiedVcaGroupReference(prompt: string, reference: string): boolean {
-    const normalizedPrompt = ` ${normalizeReferenceText(prompt)} `;
-    const normalizedReference = normalizeReferenceText(reference);
+    const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
+    const normalizedReference = normalizeAgentReferenceText(reference);
     return [
         ` for ${normalizedReference} `,
         ` for the ${normalizedReference} `,
@@ -147,18 +144,18 @@ function containsQualifiedVcaGroupReference(prompt: string, reference: string): 
 }
 
 function hasExplicitTrackSelection(prompt: string): boolean {
-    const normalized = normalizeReferenceText(prompt);
+    const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
     return /\b(?:selected|current|this) (?:audio |midi |bus |folder )?track\b/u.test(normalized);
 }
 
 function hasExplicitClipSelection(prompt: string): boolean {
-    const normalized = normalizeReferenceText(prompt);
+    const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
     return /\b(?:selected|current|this) (?:audio |midi )?clip\b/u.test(normalized);
 }
 
 function containsQualifiedClipReference(prompt: string, reference: string): boolean {
-    const normalizedPrompt = ` ${normalizeReferenceText(prompt)} `;
-    const normalizedReference = normalizeReferenceText(reference);
+    const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
+    const normalizedReference = normalizeAgentReferenceText(reference);
     return (
         normalizedPrompt.includes(` ${normalizedReference} clip `) ||
         normalizedPrompt.includes(` clip ${normalizedReference} `)
@@ -178,8 +175,8 @@ function isClipCapability(capability: AgentReferenceCapability): boolean {
 type TrackOwnerReference = { status: 'none' } | { status: 'unique'; id: string } | { status: 'ambiguous' };
 
 function containsQualifiedTrackOwnerReference(prompt: string, reference: string): boolean {
-    const normalizedPrompt = ` ${normalizeReferenceText(prompt)} `;
-    const normalizedReference = normalizeReferenceText(reference);
+    const normalizedPrompt = ` ${normalizeAgentReferenceText(prompt)} `;
+    const normalizedReference = normalizeAgentReferenceText(reference);
     return [
         ` on ${normalizedReference} `,
         ` on the ${normalizedReference} `,
@@ -209,15 +206,15 @@ function hasNonClipReferenceCollision(
     clip: ProjectContext['tracks'][number]['clips'][number],
     context: ProjectContext
 ): boolean {
-    const clipReferences = new Set([normalizeReferenceText(clip.id), normalizeReferenceText(clip.name)]);
+    const clipReferences = new Set([normalizeAgentReferenceText(clip.id), normalizeAgentReferenceText(clip.name)]);
     return context.tracks.some(
         (track) =>
-            clipReferences.has(normalizeReferenceText(track.id)) ||
-            clipReferences.has(normalizeReferenceText(track.name)) ||
+            clipReferences.has(normalizeAgentReferenceText(track.id)) ||
+            clipReferences.has(normalizeAgentReferenceText(track.name)) ||
             track.devices.some(
                 (device) =>
-                    clipReferences.has(normalizeReferenceText(device.id)) ||
-                    clipReferences.has(normalizeReferenceText(device.type))
+                    clipReferences.has(normalizeAgentReferenceText(device.id)) ||
+                    clipReferences.has(normalizeAgentReferenceText(device.type))
             )
     );
 }
@@ -353,12 +350,12 @@ function removeOverlappedExactNameEvidence(
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const normalizedName = normalizeReferenceText(candidate.name);
+        const normalizedName = normalizeAgentReferenceText(candidate.name);
         const longerCandidates = candidates.filter((otherCandidate) => {
             if (otherCandidate.id === candidate.id || evidenceById.get(otherCandidate.id) !== 'exact-name') {
                 return false;
             }
-            const otherName = normalizeReferenceText(otherCandidate.name);
+            const otherName = normalizeAgentReferenceText(otherCandidate.name);
             return otherName.length > normalizedName.length && ` ${otherName} `.includes(` ${normalizedName} `);
         });
         if (longerCandidates.length === 0) {
@@ -422,11 +419,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     if (hasTrackSelection) {
         selectedReferenceId = input.context.selectedTrackId;
     } else if (hasClipSelection) {
-        const selectedClipIds = new Set(input.context.selectedClipIds);
-        if (input.context.selectedClipId !== null) {
-            selectedClipIds.add(input.context.selectedClipId);
-        }
-        selectedReferenceId = selectedClipIds.size === 1 ? [...selectedClipIds][0]! : null;
+        const selectedClipIds = getSelectedClipReferenceIds(input.context);
+        selectedReferenceId = selectedClipIds.length === 1 ? selectedClipIds[0]! : null;
     }
 
     let candidates = getReferenceCandidates(input).filter((candidate) => !excludedIds.has(candidate.id));
@@ -449,7 +443,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
         const hasUnqualifiedReservedVcaId =
             input.capability === 'vca-group' &&
-            reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.id)) &&
+            reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.id)) &&
             !containsQualifiedVcaGroupReference(input.prompt, candidate.id);
         if (getContiguousReferenceRanges(input.prompt, candidate.id).length > 0 && !hasUnqualifiedReservedVcaId) {
             evidenceById.set(candidate.id, 'literal-id');
@@ -458,7 +452,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         if (containsExactPhrase(input.prompt, candidate.name)) {
             if (
                 input.capability === 'vca-group' &&
-                reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.name)) &&
+                reservedVcaGroupReferenceWords.has(normalizeAgentReferenceText(candidate.name)) &&
                 !containsQualifiedVcaGroupReference(input.prompt, candidate.name)
             ) {
                 continue;
@@ -534,11 +528,11 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         );
         const hasSafeLiteralId =
             evidenceById.get(input.assertedId) === 'literal-id' &&
-            !reservedClipReferenceWords.has(normalizeReferenceText(clip.id));
+            !reservedClipReferenceWords.has(normalizeAgentReferenceText(clip.id));
         const requiresQualification =
             hasNonClipReferenceCollision(clip, input.context) ||
-            reservedClipReferenceWords.has(normalizeReferenceText(clip.id)) ||
-            reservedClipReferenceWords.has(normalizeReferenceText(clip.name));
+            reservedClipReferenceWords.has(normalizeAgentReferenceText(clip.id)) ||
+            reservedClipReferenceWords.has(normalizeAgentReferenceText(clip.name));
         if (
             requiresQualification &&
             !hasSafeLiteralId &&

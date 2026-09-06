@@ -171,10 +171,12 @@ and returns an answer the pipeline was going to give anyway.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
   (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
   `pnpm guard --profile <focused|broad|extended> [--max-rss-mib <estimate>] [--require-target] --
-<command>`. Estimate peak RAM from the latest observed guard peak or the nearest command; use
-  the profile ceiling when evidence is absent. The guard waits until free RAM covers active
-  reservations, this command, and the system reserve. Never bypass it. A timeout, RSS kill, or
-  memory-monitor failure is a stop.
+<command>`. Estimate peak RAM from the latest observed guard peak or the nearest command; without
+  an estimate the guard applies the profile ceiling, raised to the measured budget it records for
+  known heavy scripts, and an RSS kill prints the budget it applied — record a budget above the
+  observed peak in the guard's `measuredScriptBudgets`, never in a note. The guard waits until free
+  RAM covers active reservations, this command, and the system reserve. Never bypass it. A timeout,
+  RSS kill, or memory-monitor failure is a stop.
 - Run only checks that can fail because of the changed files. Never expand to repository-wide tests,
   lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.

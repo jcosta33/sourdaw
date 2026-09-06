@@ -13,7 +13,7 @@ import {
     removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -220,7 +220,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
     return {
         select: () => selectTrack(track.id),
         toggleMute: () => {
-            void executeAppAction(
+            void executeUserAppAction(
                 {
                     type: 'muteTrack',
                     payload: { trackId: track.id, muted: !track.muted, expectedMuted: track.muted },
@@ -230,7 +230,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         },
         toggleSolo: (additive) => {
             if (additive) {
-                void executeAppAction(
+                void executeUserAppAction(
                     { type: 'soloTrack', payload: { trackId: track.id, soloed: !track.soloed } },
                     PERFORMATIVE_TOGGLE
                 );
@@ -246,14 +246,14 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             soloTrackExclusive(track.id);
         },
         toggleArm: () => {
-            void executeAppAction({
+            void executeUserAppAction({
                 type: 'armTrack',
                 payload: { trackId: track.id, armed: !track.armed },
             });
         },
         toggleMonitoring: () => toggleInputMonitoring(track.id),
         toggleSoloSafeFlag: () => {
-            void executeAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } }, PERFORMATIVE_TOGGLE);
+            void executeUserAppAction({ type: 'toggleSoloSafe', payload: { trackId: track.id } }, PERFORMATIVE_TOGGLE);
         },
         setGain: (value, isTransient = false) => {
             setGestureGain(value);
@@ -286,10 +286,10 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             );
         },
         setColor: (color) => {
-            void executeAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });
+            void executeUserAppAction({ type: 'setTrackColor', payload: { trackId: track.id, color } });
         },
         rename: (name) => {
-            void executeAppAction({ type: 'renameTrack', payload: { trackId: track.id, name } });
+            void executeUserAppAction({ type: 'renameTrack', payload: { trackId: track.id, name } });
         },
         removeWithConfirm: () => {
             void (async () => {
@@ -303,7 +303,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                     variant: 'danger',
                 });
                 if (ok) {
-                    void executeAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
+                    void executeUserAppAction({ type: 'removeTrack', payload: { trackId: track.id } });
                 }
             })();
         },

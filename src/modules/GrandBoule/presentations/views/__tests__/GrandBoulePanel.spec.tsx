@@ -83,9 +83,14 @@ const executeAppAction = vi.hoisted(() =>
     })
 );
 
-// Non-spread listing of executeAppAction — helpers.ts and commitGrandBouleDeviceState.ts import it for authoritative parameter and morph commits.
+const executeUserAppAction = executeAppAction;
+
+// Non-spread listing of the dispatchers — helpers.ts imports executeUserAppAction and
+// commitGrandBouleDeviceState.ts imports executeAppAction, both bound to one mock that
+// writes authoritative parameter truth for parameter and morph commits.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction,
+    executeUserAppAction: executeAppAction,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
@@ -146,7 +151,7 @@ describe('GrandBoulePanel', () => {
             expect(createGrandBouleStore('dev-1').value?.config.micPosition).toBe(2);
         });
         expect(projectTrackState.current.tracks[0]?.devices[0]?.parameterValues.micPosition).toBe(2);
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'setDeviceParameter',
             payload: { deviceId: 'dev-1', paramId: 'micPosition', value: 2 },
         });
@@ -189,5 +194,24 @@ describe('GrandBoulePanel', () => {
         expect(faceplate).not.toBeNull();
         expect(faceplate?.className).toContain('min-h-[440px]');
         expect(faceplate?.className).not.toContain('overflow-hidden');
+    });
+
+    it('applies shrink-0 to Grand Boule section cards including MorphPanel', () => {
+        render(<GrandBoulePanel deviceId="dev-1" />);
+
+        const [morphTitle] = screen.getAllByText('Morph', { selector: 'div' });
+        expect(morphTitle).toBeDefined();
+        if (!morphTitle) {
+            throw new Error('Morph title not found');
+        }
+        const morphSection = morphTitle.closest('section');
+        expect(morphSection).not.toBeNull();
+        expect(morphSection).toHaveClass('shrink-0');
+
+        const sections = document.querySelectorAll('aside > section.grand-boule-window');
+        expect(sections.length).toBe(11);
+        for (const section of sections) {
+            expect(section).toHaveClass('shrink-0');
+        }
     });
 });

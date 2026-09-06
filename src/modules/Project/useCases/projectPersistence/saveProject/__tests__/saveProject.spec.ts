@@ -30,8 +30,15 @@ const mocks = vi.hoisted(() => {
         setSemanticContext: vi.fn(),
         clearSemanticContext: vi.fn(),
         writeNamedProjectJsonByKey: vi.fn<(key: string, json: string) => Promise<void>>(),
+        ensureCachedAudioBuffersDurable: vi.fn(() =>
+            Promise.resolve({ status: 'durable' as const, isCurrent: () => true, release: vi.fn() })
+        ),
     };
 });
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: mocks.ensureCachedAudioBuffersDurable,
+}));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
@@ -128,6 +135,15 @@ function makeProjectData(): ProjectData {
     };
 }
 
+function mockBuiltProjectData(snapshotRevision = 'saved-revision'): void {
+    mocks.buildProjectData.mockResolvedValue({
+        data: makeProjectData(),
+        missingBufferCount: 0,
+        requiredAudioBufferIds: [],
+        snapshotRevision,
+    });
+}
+
 describe('saveProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -135,7 +151,7 @@ describe('saveProject', () => {
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.captureProjectRevision.mockReturnValue('saved-revision');
-        mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
+        mockBuiltProjectData();
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.migrateActiveProjectIdentity.mockResolvedValue(false);
         mocks.repairState.value = null;
@@ -310,6 +326,7 @@ describe('saveProject', () => {
     it('rejects a snapshot when project truth changes after build while CRDT persistence is pending', async () => {
         let revision = 'built-revision';
         let resolvePersist: (() => void) | undefined;
+        mockBuiltProjectData(revision);
         mocks.captureProjectRevision.mockImplementation(() => revision);
         mocks.persistCrdtProject.mockReturnValue(
             new Promise<void>((resolve) => {
@@ -372,6 +389,7 @@ describe('saveProject', () => {
     it('clears the dirty flag once persistence succeeds and the revision is unchanged', async () => {
         // Every revision capture returns the same value, modelling a save with
         // no concurrent edit before or during either durable write.
+        mockBuiltProjectData('same-revision');
         mocks.captureProjectRevision.mockReturnValue('same-revision');
         await saveProject();
 
@@ -381,6 +399,7 @@ describe('saveProject', () => {
     it('rejects a committed snapshot that became stale during the named JSON write', async () => {
         let revision = 'snapshot-revision';
         let resolveWrite: (() => void) | undefined;
+        mockBuiltProjectData(revision);
         mocks.captureProjectRevision.mockImplementation(() => revision);
         mocks.writeNamedProjectJsonByKey.mockReturnValue(
             new Promise<void>((resolve) => {

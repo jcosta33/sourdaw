@@ -20,8 +20,32 @@ the probe that would have caught it. Keep each lesson short enough to paste into
   bug report named, and the adjacent value the report did not name.
 - A green gate is not evidence: name what would have to break for the existing checks to fail, and
   whether anything observes it.
+- When the change touches a shared control or a component that shares its input model, read the
+  sibling components on the same surface before attacking: their comments carry measured browser
+  behaviour (a `lostpointercapture` for a pointer the control never owned, a window or tab switch
+  that never delivers `pointerup`) that the change must survive, and a stance that reads only the
+  changed file re-derives, or misses, what a sibling already pinned.
+- When a change stores timed events for later delivery — notes, automation stamps, scheduled
+  commands — state its ordering rule, its release rule for every way playback leaves the timeline
+  (stop, locate, loop wrap, a clear of the window), and its per-occurrence rule for repeated keys;
+  a store that answers "is there a later note-off for this key" without "which occurrence does it
+  belong to" releases the wrong note. A clause with no enforcing route is the finding.
+- When a doc sentence calls two commands atomic, trace every command in the pair to the branch that
+  can refuse it after the fence has made them visible; visibility-atomic and success-atomic are
+  different claims, and the sentence must say which one holds and what a refusal leaves behind.
+- When a set or bitmap models the state of another thing one bit per key, ask what the model cannot
+  represent — two of one key, an order, a count — and whether the contract says so where a producer
+  of that state will read it.
 
 ## Lessons from escapes
+
+### 2026-09-05 — output selection recorded the requested sink after the browser refused it
+
+The output-device use case wrote the requested ID into its selection store after `setSinkId` rejected or was unavailable, so the picker claimed hardware that was not applied. Its existing spec blessed that mirror by asserting the requested ID after a rejection.
+
+Blind spot: the review treated a successful call attempt as the hardware outcome and never checked whether the store represented the browser's applied state through failure or overlapping requests.
+
+Probe that would have caught it: drive the real use case with fake hardware and observe the store and notification after rejection, absent or non-callable `setSinkId`, deferred success, and ordered overlapping requests; require every failed request to retain the last applied ID and every later request to wait for its predecessor.
 
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
@@ -102,3 +126,49 @@ post-install scripts, the runner-image release notes, the vendor's open issues �
 that supports or contradicts the claim; a caveat, restart flag, or open issue that contradicts the
 comment is the finding. When the job cannot run on the pull request, name the first hosted run as
 the only evidence and require the pull request's test section to say so.
+
+### 2026-09-05 — a retired renderer body with a carrier rule that still routed to it (escaped via PR #3593; fixed in #3846)
+
+PR #3593 made the native live session the audible carrier and turned the Web Audio
+external-plugin device into a synchronous pass-through, so only the native engine could voice
+a hosted plugin. The carrier law it shipped kept rule 1 — a strip with no native playback is
+`'nothing scheduled'` and stays on Web Audio — ahead of every chain rule, and the session
+called itself the audible carrier only when the batch scheduled a clip. A track holding an
+attached generator plugin and no clips, the exact project the nightly Desktop latency leg
+builds, was therefore handed to a carrier that could no longer sound it, and the native master
+peak read null. The approval walked every exit of the start sequence asking which carrier
+sounds each strip, and never walked the law's rules against the strips the retired body used to
+sound. The leg ran red from the first nightly after the merge until #3846.
+
+Blind spot: when a diff retires one carrier's body for a device, the reviewer checked the new
+carrier's exits and not whether the routing law can still send that device to the retired
+carrier.
+
+Probe that would have caught it: when a diff removes or stubs a renderer for something — a
+device type, a clip type, a route — enumerate every rule in the routing law that can still
+deliver that thing to the stub, drive each with the smallest project that hits it (one track,
+that device, nothing else) and require either the new carrier to take it or a notice that names
+why not. Then find the product's own standing consumers of that path — the nightly harness
+project, the smoke set — and run them through the same rule.
+
+### 2026-09-06 — a new device body admitted against the engine's vocabulary, never against the record its producer sends (escaped via 07102e912)
+
+The change that first admitted the Fermenter body to the native graph mapper kept the mapper's
+standing rule that any parameter key it cannot resolve refuses the whole batch, and it admitted the
+body on every strip. Every Fermenter device carries camelCase descriptor ids in `parameterValues`
+from the moment it is created — `addDevice.ts` seeds them and `serializeDevice` copies them
+verbatim — while the engine's Fermenter vocabulary is snake_case. So a native live session holding
+any Fermenter track was refused outright from the moment the body was admitted, on contributing and
+non-contributing strips alike. Four review rounds attacked the body's render and its pointer
+discipline and never ran the batch the producer actually sends.
+
+Blind spot: the mapper was checked against the vocabulary the engine defines rather than against the
+record the TypeScript producer emits today for that device type, and only on strips that contribute
+audio.
+
+Probe that would have caught it: when a mapper admits a new device type, build the batch the
+producer ships for a freshly created device of that type — read the creation use case's seeded
+`parameterValues`, then the serializer — and drive it through the mapper on a contributing strip and
+on a non-contributing one; a refusal on either is the finding. Then list every branch of that mapper
+that degrades to omission rather than refusing, and require any refusal reachable on the new type to
+obey the same law.

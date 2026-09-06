@@ -131,6 +131,28 @@ describe('MarkerLane', () => {
         expect(addMarker).toHaveBeenCalled();
     });
 
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open menu deletes the arrangement clips behind it.
+    it('marker context menu items sit inside a [role="menu"] surface', () => {
+        renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+        const lane = screen.getByTestId('lane-surface');
+
+        lane.getBoundingClientRect = vi.fn(
+            () =>
+                ({
+                    left: 0,
+                    top: 0,
+                    width: 1000,
+                    height: 20,
+                }) as any
+        );
+
+        fireEvent.contextMenu(lane, { clientX: 100, clientY: 10 });
+
+        expect(screen.getByText(/Add Marker at Beat/).closest('[role="menu"]')).not.toBeNull();
+    });
+
     it('should render marker context menu when right-clicking on a marker', async () => {
         mockMarkerState = {
             markers: [{ id: 'm1', name: 'Test Marker', beat: 10, color: 'oklch(0.40 0.07 200)' }],

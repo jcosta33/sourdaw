@@ -239,6 +239,123 @@ describe('createWebAudioOfflineBackend', () => {
         expect(backend.getTrackStrip('t1')).toBeUndefined();
     });
 
+    /**
+     * Accepted and ignored, not refused. This carrier voices MIDI through its
+     * own device scheduler, and only a natively carried strip stores notes on an
+     * engine instrument — so a batch carrying both is a batch that also builds
+     * strips, and refusing it would take those strips down with it.
+     */
+    it('accepts scheduled MIDI without applying it and without failing the batch', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'd', name: 'd', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'clear-midi',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    fromTime: 0,
+                    toTime: null,
+                },
+                {
+                    kind: 'schedule-midi',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    probabilitySeed: 0xdecafbad,
+                    notes: [{ time: 0.25, note: 60, velocity: 100, channel: 0, isNoteOn: true }],
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            reports: [{ kind: 'track', id: 't1', deviceIds: ['d'] }],
+        });
+    });
+
+    /**
+     * Accepted and ignored, on the same terms as scheduled MIDI, and for one
+     * reason more: an offline render has no live keys, so a note with no
+     * timeline position names no frame this carrier could place it on.
+     */
+    it('accepts a live note without applying it and without failing the batch', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'd', name: 'd', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'send-midi-note',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    isNoteOn: true,
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            reports: [{ kind: 'track', id: 't1', deviceIds: ['d'] }],
+        });
+    });
+
+    /**
+     * Accepted and ignored, on the same terms as scheduled MIDI. An immediate
+     * patch load addresses a native built-in, which only a natively carried
+     * strip holds, so refusing it would take down the strips a batch carrying
+     * one also builds.
+     */
+    it('accepts an immediate device-parameter batch without applying it and without failing the batch', async () => {
+        const { backend } = backendUnderTest();
+
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 't1',
+                    name: 'Fixture',
+                    state: REST,
+                    devices: [{ id: 'd', name: 'd', type: 'builtin-gain', bypassed: false, parameterValues: {} }],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'set-device-parameters',
+                    target: { trackId: 't1', deviceId: 'd' },
+                    values: { active_layer: 1, cutoff: 0.3 },
+                },
+            ],
+        });
+
+        expect(result).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+            reports: [{ kind: 'track', id: 't1', deviceIds: ['d'] }],
+        });
+    });
+
     it('refuses a correlated batch the composition root calls stale, before touching the graph', async () => {
         const master = fakeNode('gain');
         const backend = createWebAudioOfflineBackend({

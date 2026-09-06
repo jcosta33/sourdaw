@@ -4,7 +4,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { addTrack } from '../../../useCases/addTrack';
@@ -53,17 +54,46 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
 }));
 
-const importMidiFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const importMidiFileMock = vi.hoisted(() => vi.fn().mockResolvedValue('completed'));
 vi.mock('../../../useCases/importMidiFile', () => ({
     importMidiFile: importMidiFileMock,
 }));
 
 const decodeAudioFileMock = vi.hoisted(() => vi.fn<() => Promise<{ id: string; buffer: { duration: number } }>>());
+const discardDecodedAudioFileMock = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: decodeAudioFileMock,
+    discardDecodedAudioFile: discardDecodedAudioFileMock,
+}));
+
+const projectEpoch = vi.hoisted(() => {
+    let epoch = 0;
+    let latest: { isCurrent: () => boolean } | null = null;
+    const makeAuthority = () => {
+        const capturedEpoch = epoch;
+        return { isCurrent: () => epoch === capturedEpoch };
+    };
+    return {
+        advance: () => {
+            epoch += 1;
+        },
+        capture: vi.fn(() => {
+            latest = makeAuthority();
+            return latest;
+        }),
+        currentAuthority: makeAuthority,
+        latest: () => latest,
+        reset: () => {
+            epoch = 0;
+            latest = null;
+        },
+    };
+});
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: projectEpoch.capture,
 }));
 
 vi.mock('../../../useCases/clipboard/pasteClip', () => ({
@@ -107,6 +137,9 @@ describe('TimelineEmptyMenu', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        projectEpoch.reset();
+        storeValues.track = { tracks: [] };
+        vi.mocked(addClip).mockReturnValue({ id: 'clip-imported' } as never);
     });
 
     it('should render without crashing', () => {
@@ -155,7 +188,7 @@ describe('TimelineEmptyMenu', () => {
 
         fireEvent.click(screen.getByText('Add Bus Track'));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'createBus', payload: { name: 'Bus' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'createBus', payload: { name: 'Bus' } });
         expect(addTrack).not.toHaveBeenCalledWith({ name: 'Bus', kind: 'bus' });
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -202,17 +235,17 @@ describe('TimelineEmptyMenu', () => {
     it('dispatches generate actions with the selected trackId and startBeat', () => {
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="t1" beat={8} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Generate Drum Pattern'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateDrumPattern',
             payload: { style: 'rock', bars: 4, trackId: 't1', startBeat: 8 },
         });
         fireEvent.click(screen.getByText('Generate Chord Progression'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateChordProgression',
             payload: expect.objectContaining({ trackId: 't1', startBeat: 8, key: 0, scale: 'major' }),
         });
         fireEvent.click(screen.getByText('Generate Melody'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateMelody',
             payload: expect.objectContaining({ trackId: 't1', startBeat: 8 }),
         });
@@ -221,21 +254,21 @@ describe('TimelineEmptyMenu', () => {
     it('dispatches generate actions with undefined trackId when none is selected', () => {
         renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
         fireEvent.click(screen.getByText('Generate Drum Pattern'));
-        expect(executeAppAction).toHaveBeenCalledWith({
+        expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'generateDrumPattern',
             payload: { style: 'rock', bars: 4, trackId: undefined, startBeat: 0 },
         });
         // Drive the remaining generators so their `trackId ?? undefined`
         // fallbacks are exercised too.
         fireEvent.click(screen.getByText('Generate Chord Progression'));
-        expect(executeAppAction).toHaveBeenCalledWith(
+        expect(executeUserAppAction).toHaveBeenCalledWith(
             expect.objectContaining({
                 type: 'generateChordProgression',
                 payload: expect.objectContaining({ trackId: undefined }),
             })
         );
         fireEvent.click(screen.getByText('Generate Melody'));
-        expect(executeAppAction).toHaveBeenCalledWith(
+        expect(executeUserAppAction).toHaveBeenCalledWith(
             expect.objectContaining({
                 type: 'generateMelody',
                 payload: expect.objectContaining({ trackId: undefined }),
@@ -368,8 +401,121 @@ describe('TimelineEmptyMenu', () => {
         await captured!.onchange?.(new Event('change'));
         createSpy.mockRestore();
 
-        expect(importMidiFileMock).toHaveBeenCalled();
+        expect(importMidiFileMock).toHaveBeenCalledWith(expect.any(File), { shouldContinue: expect.any(Function) });
         expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('does not decode after the project changes while the audio picker is open', async () => {
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const element = realCreate(tag);
+            if (tag === 'input') {
+                captured = element as HTMLInputElement;
+                element.click = vi.fn();
+            }
+            return element;
+        });
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="same-track" beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        projectEpoch.advance();
+        const successorTracks = [{ id: 'same-track', kind: 'audio' }];
+        storeValues.track = { tracks: successorTracks };
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'stale.wav', { type: 'audio/wav' })],
+            configurable: true,
+        });
+
+        await captured!.onchange?.(new Event('change'));
+
+        expect(decodeAudioFileMock).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
+        expect(storeValues.track.tracks).toBe(successorTracks);
+
+        decodeAudioFileMock.mockResolvedValueOnce({ id: 'audio-successor', buffer: { duration: 1 } });
+        fireEvent.click(screen.getByText('Import Audio…'));
+        const successorFile = new File([], 'successor.wav', { type: 'audio/wav' });
+        Object.defineProperty(captured!, 'files', { value: [successorFile], configurable: true });
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+        expect(decodeAudioFileMock).toHaveBeenCalledWith(successorFile);
+        expect(addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 'same-track', audioBufferId: 'audio-successor' })
+        );
+        expect(captureProjectTransitionAuthority).toHaveBeenCalledTimes(2);
+    });
+
+    it('discards a decode that finishes after the project changes', async () => {
+        let resolveDecode!: (value: { id: string; buffer: { duration: number } }) => void;
+        decodeAudioFileMock.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveDecode = resolve;
+            })
+        );
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const element = realCreate(tag);
+            if (tag === 'input') {
+                captured = element as HTMLInputElement;
+                element.click = vi.fn();
+            }
+            return element;
+        });
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="same-track" beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'stale.wav', { type: 'audio/wav' })],
+            configurable: true,
+        });
+        const changePromise = captured!.onchange?.(new Event('change')) as Promise<void>;
+        projectEpoch.advance();
+        const successorTracks = [{ id: 'same-track', kind: 'audio' }];
+        storeValues.track = { tracks: successorTracks };
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+        resolveDecode({ id: 'audio-stale', buffer: { duration: 1 } });
+        await changePromise;
+        createSpy.mockRestore();
+
+        expect(discardDecodedAudioFileMock).toHaveBeenCalledWith('audio-stale');
+        expect(addTrack).not.toHaveBeenCalled();
+        expect(addClip).not.toHaveBeenCalled();
+        expect(storeValues.track.tracks).toBe(successorTracks);
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('discards a decoded buffer when the target clip write fails', async () => {
+        decodeAudioFileMock.mockResolvedValueOnce({ id: 'audio-uncommitted', buffer: { duration: 1 } });
+        vi.mocked(addClip).mockImplementationOnce(() => {
+            throw new Error('write failed');
+        });
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const element = realCreate(tag);
+            if (tag === 'input') {
+                captured = element as HTMLInputElement;
+                element.click = vi.fn();
+            }
+            return element;
+        });
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId="same-track" beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import Audio…'));
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'failed.wav', { type: 'audio/wav' })],
+            configurable: true,
+        });
+
+        await captured!.onchange?.(new Event('change'));
+        createSpy.mockRestore();
+
+        expect(discardDecodedAudioFileMock).toHaveBeenCalledWith('audio-uncommitted');
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('failed.wav'), 'error');
     });
 
     it('aborts the audio import when the file dialog is cancelled (no file)', async () => {
@@ -415,6 +561,56 @@ describe('TimelineEmptyMenu', () => {
         createSpy.mockRestore();
 
         expect(importMidiFileMock).not.toHaveBeenCalled();
+    });
+
+    it('does not parse MIDI after the initiating project changes while the picker is open', async () => {
+        let captured: HTMLInputElement | null = null;
+        const realCreate = document.createElement.bind(document);
+        const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+            const element = realCreate(tag);
+            if (tag === 'input') {
+                captured = element as HTMLInputElement;
+                element.click = vi.fn();
+            }
+            return element;
+        });
+        renderWithTooltip(<TimelineEmptyMenu x={0} y={0} trackId={null} beat={0} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByText('Import MIDI…'));
+        projectEpoch.advance();
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(projectEpoch.currentAuthority().isCurrent()).toBe(true);
+        const successorTracks = [{ id: 'successor-midi', kind: 'midi' }];
+        storeValues.track = { tracks: successorTracks };
+        Object.defineProperty(captured!, 'files', {
+            value: [new File([], 'stale.mid', { type: 'audio/midi' })],
+            configurable: true,
+        });
+
+        await captured!.onchange?.(new Event('change'));
+
+        expect(importMidiFileMock).not.toHaveBeenCalled();
+        expect(storeValues.track.tracks).toBe(successorTracks);
+
+        let resolveImport!: (outcome: 'completed' | 'superseded') => void;
+        importMidiFileMock.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveImport = resolve;
+            })
+        );
+        fireEvent.click(screen.getByText('Import MIDI…'));
+        const successorFile = new File([], 'successor.mid', { type: 'audio/midi' });
+        Object.defineProperty(captured!, 'files', { value: [successorFile], configurable: true });
+        const successorImport = captured!.onchange?.(new Event('change')) as Promise<void>;
+
+        const successorOptions = importMidiFileMock.mock.calls[0]?.[1];
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+        expect(importMidiFileMock).toHaveBeenCalledWith(successorFile, { shouldContinue: expect.any(Function) });
+        expect(successorOptions?.shouldContinue()).toBe(true);
+        projectEpoch.advance();
+        expect(successorOptions?.shouldContinue()).toBe(false);
+        resolveImport('superseded');
+        await successorImport;
+        createSpy.mockRestore();
     });
 
     it('notifies on a failed audio decode and adds nothing', async () => {

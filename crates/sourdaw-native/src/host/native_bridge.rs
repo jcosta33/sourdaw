@@ -1,4 +1,4 @@
-use daw_dsp::crumbs::engine::CrumbsEngine;
+use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::types::CrumbsCommand;
 /// Bridge: implements daw_engine::NativePlugin for any hosted plugin runtime.
 ///
@@ -18,8 +18,8 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
-    HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime, PluginParameter,
-    ProcessingGate,
+    HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime,
+    PluginParameter, ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
@@ -47,8 +47,23 @@ fn host_transport_from(transport: &TransportState) -> HostTransport {
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
 const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events per block for the event-conversion scratch array.
-const MAX_MIDI_EVENTS: usize = 64;
+///
+/// The engine's own per-block buffer, so the array holds every event the
+/// engine can hand over in one call. Sized under it, the packing would drop a
+/// full block's tail — the notes latest in the block, silently and with no
+/// counter — which is the whole reason the figure is taken from the engine
+/// rather than restated here.
+const MAX_MIDI_EVENTS: usize = daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
 /// Bounded pending parameter capacity, matched to ClapWrapper's process-event scratch.
+///
+/// The engine's per-effect stamp window,
+/// [`daw_engine::timeline::DEVICE_PARAM_QUEUE_CAPACITY`], is sized at what one
+/// process call of a hosted body can take, which is this number. The engine
+/// states that rationale without naming this constant — it sits downstream of
+/// the engine and must stay unknown to it — so the equality is recorded here,
+/// where the dependency runs the right way: raising this leaves the engine's
+/// window merely conservative, while lowering it lets a batch the engine admits
+/// whole overrun this ring, which drops the excess with nothing left to resend.
 const PENDING_PARAMETER_CAPACITY: usize = 64;
 
 const PLUGIN_ACCESS_IDLE: u8 = 0;
@@ -167,6 +182,17 @@ impl PendingParameterQueue {
         Err(())
     }
 
+    /// Fold a write into the pending value this queue already holds for the
+    /// same parameter, if it holds one.
+    ///
+    /// The fold keeps the later sequence, never simply the later writer: two
+    /// producers — the control path and the audio thread — take their sequence
+    /// numbers before they reach a slot, so the one that arrives second is not
+    /// always the one that was issued second. Overwriting unconditionally would
+    /// leave the earlier write's value pending and hand the plugin a parameter
+    /// value the automation had already moved past. A write the slot subsumes
+    /// still counts as queued: the parameter's pending value is at least as new
+    /// as the one being folded in.
     fn coalesce(&self, param_id: u32, value_bits: u64, sequence: u64) -> bool {
         for slot in &self.slots {
             if slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY {
@@ -190,8 +216,10 @@ impl PendingParameterQueue {
                 continue;
             }
 
-            slot.value_bits.store(value_bits, Ordering::Relaxed);
-            slot.sequence.store(sequence, Ordering::Relaxed);
+            if slot.sequence.load(Ordering::Relaxed) < sequence {
+                slot.value_bits.store(value_bits, Ordering::Relaxed);
+                slot.sequence.store(sequence, Ordering::Relaxed);
+            }
             slot.state.store(PENDING_PARAMETER_READY, Ordering::Release);
             return true;
         }
@@ -254,9 +282,31 @@ impl PendingParameterQueue {
             .any(|slot| slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_EMPTY)
     }
 
+    /// Drop every write this queue holds, leaving any slot mid-publish to the
+    /// producer that owns it.
+    ///
+    /// A slot in `WRITING` belongs to whoever won the CAS into it, and storing
+    /// `EMPTY` over one hands its address to the next producer while its owner
+    /// is still writing the value: the owner's later store of the value lands
+    /// on the id the new producer just put there, and the plugin is handed one
+    /// parameter carrying another's value. Two producers reach this queue, one
+    /// of them the audio thread, so the overlap is real rather than
+    /// theoretical.
+    ///
+    /// So a write caught mid-publish survives the load and is delivered after
+    /// the preset. What the compare-exchange guarantees is only that: a slot's
+    /// owner republishes whatever coalescing left in it, which may be its own
+    /// value or an editor write it folded a stale value into — the queue does
+    /// not record which path a pending value came from, and this is not a rule
+    /// about automation outranking the preset.
     fn clear(&self) {
         for slot in &self.slots {
-            slot.state.store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+            let _ = slot.state.compare_exchange(
+                PENDING_PARAMETER_READY,
+                PENDING_PARAMETER_EMPTY,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            );
         }
     }
 }
@@ -328,6 +378,19 @@ impl PluginRuntimeLifecycle {
             )),
         }
     }
+}
+
+/// One plugin's latency after a change it flagged, in the two units its two
+/// consumers need.
+///
+/// Milliseconds for the webview: the plugin counts latency in frames of the rate
+/// it was ACTIVATED with, which is a different clock from the `AudioContext`, so
+/// a sample count must not cross the IPC boundary. Frames for the engine graph,
+/// which schedules in the device's own frames and has no other unit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatencyChange {
+    pub latency_ms: f64,
+    pub latency_frames: usize,
 }
 
 /// Runtime owner for a hosted plugin shared by the RT processor and non-RT
@@ -414,6 +477,53 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
     /// Whether this plugin takes note events, as the plugin itself declared.
     pub fn accepts_midi(&self) -> bool {
         self.accepts_midi
+    }
+
+    /// Queue one parameter write for this plugin's next process call, from the
+    /// audio thread.
+    ///
+    /// The audio-thread counterpart of [`Self::enqueue_parameter`], and
+    /// deliberately not that method: the control entry takes
+    /// `lock_non_rt_control`, checks the instance's lifecycle, and copies the
+    /// write into the editor's queue, none of which the audio thread may do.
+    /// It skips each of them for a reason rather than for speed. The lifecycle
+    /// and activation checks are already enforced where they bind — an
+    /// unloading or inactive instance is never handed a block, because
+    /// [`Self::with_process`] refuses it. Nothing clears the queue an unload
+    /// leaves behind, and nothing needs to: the writes it holds are never
+    /// delivered once the lifecycle closes, and the retirement sweep drops the
+    /// instance whole, queue included. The editor is not told,
+    /// because an automated parameter is not a host-side edit: the plugin moves
+    /// its own parameter and reports it back through its own parameter events,
+    /// which is how every format expects a processor-side change to reach the
+    /// editor.
+    ///
+    /// The queue admits this second producer. Its slots run a
+    /// `EMPTY → WRITING → READY` compare-and-swap state machine that already
+    /// serialises the control-thread producer against the audio thread's drain,
+    /// and it serialises two producers by exactly the same transitions: a slot
+    /// is owned by whoever won the CAS into `WRITING`. Coalescing keeps at most
+    /// one pending value per parameter id: where a write meets a pending one
+    /// for the same id, the later sequence number survives, so a control write
+    /// and an audio write of the same parameter before one process call
+    /// collapse to the later of the two rather than to both.
+    ///
+    /// That ordering is what coalescing guarantees, and only that. A producer
+    /// takes its sequence number before it reaches a slot, so one descheduled
+    /// for longer than a block between taking a sequence and publishing it
+    /// finds no pending value left to fold into and publishes an older write
+    /// after newer ones have already drained — a window the queue does not
+    /// close, and one the control path's own lock keeps to a single writer.
+    ///
+    /// A non-finite value is refused without touching the queue, mirroring the
+    /// control path: `NaN` reaching the plugin is a parameter the host can
+    /// never move back.
+    pub fn enqueue_parameter_on_audio_thread(&self, param_id: u32, value: f64) -> bool {
+        if !value.is_finite() {
+            return false;
+        }
+
+        self.pending_parameters.enqueue(param_id, value).is_ok()
     }
 
     pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), String> {
@@ -524,19 +634,22 @@ impl<Runtime: HostedPluginRuntime> SharedHostedPlugin<Runtime> {
 
     /// Apply any pending latency change the plugin flagged (via
     /// `clap_host_latency.changed()` / `request_restart()`) and report the new
-    /// latency in **milliseconds**, or `None` when nothing was pending.
+    /// latency, or `None` when nothing was pending.
     ///
-    /// Milliseconds, not samples: the plugin counts latency in frames of the rate
-    /// it was ACTIVATED with (`load_plugin`'s CPAL default-output rate). That is a different clock
-    /// from the webview's `AudioContext`, so a sample count must not cross the
-    /// IPC boundary — `ClapWrapper::latency_ms` converts where the rate is known.
+    /// Both figures are read in this one control visit rather than in two,
+    /// because a second visit would answer about a plugin that may have been
+    /// deactivated, reactivated or re-flagged in between, and the event and the
+    /// compensation would then describe different plugins.
     ///
     /// Runs on the non-RT control path through the existing CAS control seam, so
     /// the deactivate/reactivate a latency change requires cannot race the RT
     /// `process` path — and it adds no new audio-thread calls.
-    pub fn poll_latency_change_ms(&self, timeout: Duration) -> Result<Option<f64>, String> {
+    pub fn poll_latency_change(&self, timeout: Duration) -> Result<Option<LatencyChange>, String> {
         self.with_control(timeout, |plugin| match plugin.poll_latency_change()? {
-            Some(_) => Ok(Some(plugin.latency_ms())),
+            Some(_) => Ok(Some(LatencyChange {
+                latency_ms: plugin.latency_ms(),
+                latency_frames: plugin.latency_samples() as usize,
+            })),
             None => Ok(None),
         })
     }
@@ -913,11 +1026,20 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
     ) {
         let n = num_samples.min(MAX_BUFFER);
 
-        // Convert MidiNoteEvent → (u8, u8, i16, bool) using a stack array — no Vec alloc.
+        // Convert MidiNoteEvent → HostMidiEvent using a stack array — no Vec
+        // alloc. The engine's per-event frame offset travels with the note:
+        // dropping it here would collapse a block's timing onto its first
+        // frame, whatever the wrapper below does with it.
         let count = midi_events.len().min(MAX_MIDI_EVENTS);
-        let mut event_buf = [(0u8, 0u8, 0i16, false); MAX_MIDI_EVENTS];
-        for (i, e) in midi_events.iter().enumerate().take(count) {
-            event_buf[i] = (e.note, e.velocity, e.channel, e.is_note_on);
+        let mut event_buf = [HostMidiEvent::default(); MAX_MIDI_EVENTS];
+        for (slot, event) in event_buf.iter_mut().zip(midi_events).take(count) {
+            *slot = HostMidiEvent {
+                note: event.note,
+                velocity: event.velocity,
+                channel: event.channel,
+                is_note_on: event.is_note_on,
+                frame_offset: event.frame_offset,
+            };
         }
 
         let host_transport = host_transport_from(transport);
@@ -951,6 +1073,10 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
         }
     }
 
+    fn apply_parameter_on_audio_thread(&mut self, id: u32, value: f64) -> bool {
+        self.plugin.enqueue_parameter_on_audio_thread(id, value)
+    }
+
     fn name(&self) -> &str {
         self.plugin.name()
     }
@@ -977,6 +1103,9 @@ impl<Runtime: HostedPluginRuntime + 'static> NativePlugin for HostedPluginSlot<R
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The engine's own figure, not the bridge's alias for it: the point of
+    // these specs is that the two agree.
+    use daw_engine::midi_fx::MIDI_EVENT_BUFFER_CAPACITY;
     use daw_plugin_host::{AudioPlugin, ClapWrapper};
 
     /// A backend that records only what the runtime owner asked of its editor.
@@ -1045,7 +1174,7 @@ mod tests {
             _inputs: &[&[f32]],
             _outputs: &mut [&mut [f32]],
             _num_samples: usize,
-            _midi_events: &[(u8, u8, i16, bool)],
+            _midi_events: &[HostMidiEvent],
             _parameter_updates: &[HostParameterUpdate],
         ) {
         }
@@ -1137,6 +1266,278 @@ mod tests {
         );
     }
 
+    /// A backend that records the parameter updates every process call is
+    /// handed — the only place a queued write becomes observable to the plugin.
+    /// One entry per call, so a write that arrives on the wrong block or not at
+    /// all is visible rather than merely absent from a total.
+    struct ProcessRecordingPlugin {
+        processing: Arc<ProcessingGate>,
+        processed: Arc<Mutex<Vec<Vec<(u32, f64)>>>>,
+    }
+
+    impl ProcessRecordingPlugin {
+        fn record(&self, updates: &[HostParameterUpdate]) {
+            self.processed.lock().expect("the process log").push(
+                updates
+                    .iter()
+                    .map(|update| (update.param_id, update.value))
+                    .collect(),
+            );
+        }
+    }
+
+    impl AudioPlugin for ProcessRecordingPlugin {
+        fn process(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+        ) {
+            self.record(&[]);
+        }
+
+        fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            "process-recording-fixture"
+        }
+    }
+
+    impl HostedPluginRuntime for ProcessRecordingPlugin {
+        fn is_activated(&self) -> bool {
+            true
+        }
+
+        fn processing_gate(&self) -> Arc<ProcessingGate> {
+            Arc::clone(&self.processing)
+        }
+
+        fn sync_processing_state(&mut self) {}
+
+        fn set_transport(&mut self, _transport: HostTransport) {}
+
+        fn process_with_parameter_updates(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            parameter_updates: &[HostParameterUpdate],
+        ) {
+            self.record(parameter_updates);
+        }
+
+        fn process_with_midi_and_parameters(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _midi_events: &[HostMidiEvent],
+            parameter_updates: &[HostParameterUpdate],
+        ) {
+            self.record(parameter_updates);
+        }
+
+        fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
+
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+            Ok(None)
+        }
+
+        fn latency_ms(&self) -> f64 {
+            0.0
+        }
+
+        fn latency_samples(&self) -> u32 {
+            0
+        }
+
+        fn tail_samples(&self) -> u32 {
+            0
+        }
+    }
+
+    fn process_recording_slot() -> (
+        HostedPluginSlot<ProcessRecordingPlugin>,
+        Arc<SharedHostedPlugin<ProcessRecordingPlugin>>,
+        Arc<Mutex<Vec<Vec<(u32, f64)>>>>,
+    ) {
+        let processed = Arc::new(Mutex::new(Vec::new()));
+        let shared = Arc::new(SharedHostedPlugin::new(ProcessRecordingPlugin {
+            processing: Arc::new(ProcessingGate::default()),
+            processed: Arc::clone(&processed),
+        }));
+        (
+            HostedPluginSlot::new(Arc::clone(&shared)),
+            shared,
+            processed,
+        )
+    }
+
+    fn render_one_block(slot: &mut HostedPluginSlot<ProcessRecordingPlugin>) {
+        let mut left = [0.0f32; 8];
+        let mut right = [0.0f32; 8];
+        slot.process_audio(&mut left, &mut right, 8);
+    }
+
+    /// The scheduler lands a stamped automation write on the audio thread, so
+    /// the write has to reach the plugin without the control path's lock. It
+    /// must arrive on the very next process call: queued a block late, the
+    /// parameter moves after the audio it was written for.
+    #[test]
+    fn an_audio_thread_parameter_write_reaches_the_next_process() {
+        let (mut slot, _shared, processed) = process_recording_slot();
+
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.75));
+        render_one_block(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(3, 0.75)]]
+        );
+    }
+
+    /// Two producers now write the same queue. A parameter the user is holding
+    /// and an automation lane writing the same id before one process call must
+    /// reach the plugin as one value — the later of the two — rather than as
+    /// two updates the plugin applies in whatever order the slots happen to sit
+    /// in.
+    #[test]
+    fn an_audio_thread_write_coalesces_with_a_control_write_by_sequence() {
+        let (mut slot, shared, processed) = process_recording_slot();
+
+        shared
+            .enqueue_parameter(3, 0.1)
+            .expect("the pending queue has room");
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.9));
+        render_one_block(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(3, 0.9)]]
+        );
+    }
+
+    /// A non-finite value is refused before it can occupy a slot. A `NaN` handed
+    /// to a plugin is a parameter the host can never move back, and the queue
+    /// would carry it as readily as any other bit pattern.
+    #[test]
+    fn an_audio_thread_write_refuses_a_non_finite_value() {
+        let (mut slot, _shared, processed) = process_recording_slot();
+
+        assert!(!slot.apply_parameter_on_audio_thread(3, f64::NAN));
+        render_one_block(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![Vec::new()],
+            "the refused write reached neither the queue nor the plugin"
+        );
+    }
+
+    /// Coalescing keeps the later sequence, not the later arrival. The two
+    /// producers take their sequence numbers before they reach a slot, so a
+    /// write can arrive after one already issued behind it; folding it in
+    /// regardless would hand the plugin a value the automation had already
+    /// moved past. The pending write here carries a sequence the queue has not
+    /// even issued yet, so the arriving one is unambiguously older.
+    #[test]
+    fn coalesce_keeps_the_newer_sequence_over_a_later_arrival() {
+        let (mut slot, shared, processed) = process_recording_slot();
+        let queue = &shared.pending_parameters;
+
+        queue.slots[0].param_id.store(3, Ordering::Relaxed);
+        queue.slots[0]
+            .value_bits
+            .store(0.9f64.to_bits(), Ordering::Relaxed);
+        queue.slots[0].sequence.store(
+            queue.next_sequence.load(Ordering::Relaxed) + 1,
+            Ordering::Relaxed,
+        );
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        assert!(slot.apply_parameter_on_audio_thread(3, 0.1));
+        render_one_block(&mut slot);
+
+        assert_eq!(
+            *processed.lock().expect("the process log"),
+            vec![vec![(3, 0.9)]],
+            "the newer sequence's value survives the write that arrived after it"
+        );
+    }
+
+    /// `clear` drops accepted writes; it must not drop a slot's *address*. A
+    /// slot mid-publish belongs to the producer that won the CAS into it, and
+    /// freeing that slot lets the next producer claim it while its owner is
+    /// still storing a value — the owner's value then lands under the new
+    /// producer's parameter id, and the plugin is moved on a parameter nobody
+    /// wrote.
+    #[test]
+    fn clear_leaves_a_slot_mid_write_to_its_owner() {
+        let queue = PendingParameterQueue::new();
+
+        // The audio-thread producer wins slot 0 and stores its id: exactly the
+        // state `enqueue` is in between claiming a slot and publishing it.
+        let mid_write_sequence = queue.next_sequence.fetch_add(1, Ordering::Relaxed);
+        assert!(queue.slots[0]
+            .state
+            .compare_exchange(
+                PENDING_PARAMETER_EMPTY,
+                PENDING_PARAMETER_WRITING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok());
+        queue.slots[0].param_id.store(7, Ordering::Relaxed);
+
+        queue.clear();
+        assert!(queue.enqueue(9, 0.1).is_ok());
+
+        // The interrupted producer finishes its publish.
+        queue.slots[0]
+            .value_bits
+            .store(0.9f64.to_bits(), Ordering::Relaxed);
+        queue.slots[0]
+            .sequence
+            .store(mid_write_sequence, Ordering::Relaxed);
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        assert_eq!(
+            queue.drain(&mut drained),
+            2,
+            "the mid-write slot and the write made after the clear are both delivered"
+        );
+        assert_eq!(
+            drained[..2],
+            [
+                PendingParameterUpdate {
+                    param_id: 7,
+                    value: 0.9,
+                },
+                PendingParameterUpdate {
+                    param_id: 9,
+                    value: 0.1,
+                },
+            ]
+        );
+    }
+
     #[test]
     fn pending_parameter_queue_coalesces_and_drains_latest_value() {
         let queue = PendingParameterQueue::new();
@@ -1156,6 +1557,40 @@ mod tests {
             }
         );
         assert_eq!(queue.drain(&mut drained), 0);
+    }
+
+    /// Repeated writes to one parameter must occupy one slot, not one each.
+    /// Two producers now write this queue between drains — a held knob and an
+    /// automation lane can both be moving the same parameter — and a queue that
+    /// spent a slot per write would fill from a single gesture and refuse every
+    /// other parameter until the next block drained it.
+    #[test]
+    fn pending_parameter_queue_folds_repeated_writes_into_one_slot() {
+        let queue = PendingParameterQueue::new();
+
+        for index in 0..=PENDING_PARAMETER_CAPACITY {
+            assert!(queue.enqueue(7, index as f64).is_ok(), "write {index}");
+        }
+        assert!(
+            queue.enqueue(9, 0.5).is_ok(),
+            "the repeated writes left no room for another parameter"
+        );
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        assert_eq!(queue.drain(&mut drained), 2);
+        assert_eq!(
+            drained[..2],
+            [
+                PendingParameterUpdate {
+                    param_id: 7,
+                    value: PENDING_PARAMETER_CAPACITY as f64,
+                },
+                PendingParameterUpdate {
+                    param_id: 9,
+                    value: 0.5,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -1614,13 +2049,15 @@ mod tests {
         let (tx, rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
-        let mut engine = CrumbsEngine::new(48_000.0);
+        let metering = Arc::new(CrumbsMetering::default());
+        let mut engine = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
         engine.enable_commit_handoff();
         let slot = CrumbsPluginSlot {
             engine,
             command_rx: rx,
             commit_tx,
             recycle_rx,
+            metering,
         };
         (slot, tx, commit_rx, recycle_tx)
     }
@@ -1910,6 +2347,125 @@ mod tests {
         .unwrap();
     }
 
+    /// A sample the slot can sound, with no note pressed: the engine holds it
+    /// and answers a later note-on with a voice.
+    fn queue_a_loaded_sample(tx: &mut rtrb::Producer<CrumbsCommand>) {
+        use daw_dsp::crumbs::sample::SampleData;
+
+        tx.push(CrumbsCommand::AddSample {
+            id: 1,
+            data: Arc::new(SampleData::from_mono(vec![0.1; 4800], 48_000)),
+        })
+        .unwrap();
+        tx.push(CrumbsCommand::SetActiveSample(1)).unwrap();
+    }
+
+    /// A note the engine stamps for a frame inside the block sounds from that
+    /// frame, not from the block's head.
+    ///
+    /// The slot is the built-in sampler's whole render path, so a block whose
+    /// events are all dispatched before the render puts every note up to a
+    /// buffer early — audible timing the engine's own delivery took care to
+    /// get right, thrown away at the last hop.
+    #[test]
+    fn a_crumbs_note_scheduled_inside_the_block_sounds_from_its_offset() {
+        const FRAMES: usize = 512;
+        const ONSET: usize = 300;
+
+        let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
+        queue_a_loaded_sample(&mut tx);
+
+        let mut left = vec![0.0f32; FRAMES];
+        let mut right = vec![0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[engine_note(60, 100, 0, true, ONSET as u32)],
+            &TransportState::default(),
+        );
+
+        assert!(
+            left[..ONSET].iter().all(|&sample| sample == 0.0)
+                && right[..ONSET].iter().all(|&sample| sample == 0.0),
+            "nothing sounds before the frame the note was written for"
+        );
+        assert!(
+            left[ONSET..].iter().any(|&sample| sample != 0.0),
+            "the note sounds from its own frame, or this test proves nothing"
+        );
+    }
+
+    /// A block rendered in segments must publish the peak of the whole block,
+    /// not the peak of any one segment.
+    ///
+    /// `CrumbsEngine::process_block` measures and publishes only the slice it
+    /// was just handed. Splitting a block at each MIDI event's offset calls it
+    /// once per segment, so the raw per-segment publish leaves the atomics
+    /// holding only the last-rendered segment's own peak. Three events put
+    /// the block's loudest audio in the second of four segments — neither the
+    /// first loop iteration nor, crucially, the *last* one — which no single
+    /// segment's own peak can stand in for. A publish that merely tracks the
+    /// final segment rendered (whether that segment comes from the in-loop
+    /// render or the unconditional tail) would pass a test whose loudest
+    /// segment happened to be that last one; putting the loudest segment in
+    /// the middle of the loop is what makes the assertion mean something.
+    #[test]
+    fn a_segmented_crumbs_block_publishes_the_peak_of_the_whole_block() {
+        const FRAMES: usize = 512;
+        const NOTE_ON_OFFSET: usize = 100;
+        const NOTE_OFF_OFFSET: usize = 300;
+        const REDUNDANT_NOTE_OFF_OFFSET: usize = 450;
+
+        let (mut slot, mut tx, _commit, _recycle) = crumbs_slot_with_rings();
+        // Loaded but not pressed, so the first segment is silent and the note
+        // sounds from the offset the note-on names.
+        queue_a_loaded_sample(&mut tx);
+
+        let mut left = vec![0.0f32; FRAMES];
+        let mut right = vec![0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[
+                engine_note(60, 100, 0, true, NOTE_ON_OFFSET as u32),
+                engine_note(60, 100, 0, false, NOTE_OFF_OFFSET as u32),
+                // A second note-off on the same note, already releasing:
+                // `CrumbsEnvelope::note_off` only moves a non-idle envelope
+                // into `Release`, so this is a no-op on the audio. Its only
+                // job is to split the decaying tail into two loop segments,
+                // so the loudest segment (the sustain plateau above) sits
+                // before the *last* loop iteration rather than being it.
+                engine_note(60, 100, 0, false, REDUNDANT_NOTE_OFF_OFFSET as u32),
+            ],
+            &TransportState::default(),
+        );
+
+        let peak_of = |slice: &[f32]| slice.iter().fold(0.0f32, |peak, &s| peak.max(s.abs()));
+        let block_peak = peak_of(&left);
+        let head_peak = peak_of(&left[..NOTE_ON_OFFSET]);
+        let sustain_peak = peak_of(&left[NOTE_ON_OFFSET..NOTE_OFF_OFFSET]);
+        let decay_peak = peak_of(&left[NOTE_OFF_OFFSET..REDUNDANT_NOTE_OFF_OFFSET]);
+        let tail_peak = peak_of(&left[REDUNDANT_NOTE_OFF_OFFSET..]);
+
+        assert_eq!(
+            sustain_peak, block_peak,
+            "the loudest audio must sit in the sustain segment, or this test proves nothing"
+        );
+        assert!(
+            head_peak < block_peak && decay_peak < block_peak && tail_peak < block_peak,
+            "only the sustain segment may reach the block's peak, or this test proves \
+             nothing"
+        );
+        assert_eq!(
+            slot.engine.read_peak_left(),
+            block_peak,
+            "a segmented block must publish the peak of the whole block, not the peak of \
+             any one segment"
+        );
+    }
+
     /// The slot is one member of the native master chain, and
     /// `CrumbsEngine::process_block` sums into the buffers it is handed. It
     /// must never zero them: on the master chain they carry what every member
@@ -1983,6 +2539,217 @@ mod tests {
             );
         }
     }
+
+    /// A backend that records what each note the runtime is handed carries, so
+    /// a field the bridge drops on the way in is visible as a wrong figure
+    /// rather than as a missing note.
+    struct MidiRecordingPlugin {
+        processing: Arc<ProcessingGate>,
+        notes: Arc<Mutex<Vec<RecordedNote>>>,
+    }
+
+    /// Every field the bridge copies out of an engine event, in the order the
+    /// host type declares them: note, velocity, channel, note-on, frame
+    /// offset. A field the packing crossed with another is a wrong figure
+    /// here rather than a note that still arrives.
+    type RecordedNote = (u8, u8, i16, bool, u32);
+
+    impl AudioPlugin for MidiRecordingPlugin {
+        fn process(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+        ) {
+        }
+
+        fn set_parameter(&mut self, _param_id: u32, _value: f64) {}
+
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+
+        fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn get_name(&self) -> &str {
+            "midi-recording-fixture"
+        }
+    }
+
+    impl HostedPluginRuntime for MidiRecordingPlugin {
+        fn is_activated(&self) -> bool {
+            true
+        }
+
+        fn processing_gate(&self) -> Arc<ProcessingGate> {
+            Arc::clone(&self.processing)
+        }
+
+        fn sync_processing_state(&mut self) {}
+
+        fn set_transport(&mut self, _transport: HostTransport) {}
+
+        fn process_with_parameter_updates(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            _parameter_updates: &[HostParameterUpdate],
+        ) {
+        }
+
+        fn process_with_midi_and_parameters(
+            &mut self,
+            _inputs: &[&[f32]],
+            _outputs: &mut [&mut [f32]],
+            _num_samples: usize,
+            midi_events: &[HostMidiEvent],
+            _parameter_updates: &[HostParameterUpdate],
+        ) {
+            self.notes
+                .lock()
+                .expect("the note log")
+                .extend(midi_events.iter().map(|event| {
+                    (
+                        event.note,
+                        event.velocity,
+                        event.channel,
+                        event.is_note_on,
+                        event.frame_offset,
+                    )
+                }));
+        }
+
+        fn apply_host_parameter_write_to_editor(&mut self, _param_id: u32, _value: f64) {}
+
+        fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+            Ok(None)
+        }
+
+        fn latency_ms(&self) -> f64 {
+            0.0
+        }
+
+        fn latency_samples(&self) -> u32 {
+            0
+        }
+
+        fn tail_samples(&self) -> u32 {
+            0
+        }
+    }
+
+    /// One note as the engine stamps it for a block. Every field the bridge
+    /// copies takes a value of its own, so a packing that read one field into
+    /// another shows up as a wrong figure rather than as a note that happens
+    /// to match.
+    fn engine_note(
+        note: u8,
+        velocity: u8,
+        channel: i16,
+        is_note_on: bool,
+        frame_offset: u32,
+    ) -> MidiNoteEvent {
+        MidiNoteEvent {
+            note,
+            velocity,
+            channel,
+            is_note_on,
+            frame_offset,
+            probability_cutoff: u64::from(u32::MAX) + 1,
+            project_probability_seed: 0,
+            clip_id_hash: 0,
+            event_id_hash: 0,
+            absolute_occurrence_index: 0,
+        }
+    }
+
+    /// A slot over a fixture that records what each note it is handed carries.
+    fn recording_slot() -> (
+        HostedPluginSlot<MidiRecordingPlugin>,
+        Arc<Mutex<Vec<RecordedNote>>>,
+    ) {
+        let notes = Arc::new(Mutex::new(Vec::new()));
+        let shared = Arc::new(SharedHostedPlugin::new(MidiRecordingPlugin {
+            processing: Arc::new(ProcessingGate::default()),
+            notes: Arc::clone(&notes),
+        }));
+        (HostedPluginSlot::new(shared), notes)
+    }
+
+    /// The bridge packs the engine's events into the host's own event type on
+    /// the audio thread, and every field has to survive that packing. A frame
+    /// offset lost there sounds the note on the block boundary rather than on
+    /// the frame it was written for — timing jitter of up to a whole buffer —
+    /// and a velocity, channel or note-on flag crossed with another field is a
+    /// note at the wrong loudness, on the wrong part, or never released.
+    #[test]
+    fn process_with_events_carries_each_notes_frame_offset_into_the_host_event() {
+        const FRAMES: usize = 64;
+
+        let (mut slot, notes) = recording_slot();
+        let mut left = [0.0f32; FRAMES];
+        let mut right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[
+                engine_note(60, 100, 0, true, 0),
+                engine_note(64, 33, 5, true, 17),
+                engine_note(67, 0, 9, false, 63),
+            ],
+            &TransportState::default(),
+        );
+
+        assert_eq!(
+            *notes.lock().expect("the note log"),
+            vec![
+                (60, 100, 0, true, 0),
+                (64, 33, 5, true, 17),
+                (67, 0, 9, false, 63),
+            ]
+        );
+    }
+
+    /// The engine hands over one fixed buffer of events per block, and the
+    /// bridge's packing array is the far side of it. Sized under that buffer
+    /// the packing drops the block's tail — the notes latest inside it —
+    /// silently, so a dense passage loses its end rather than reporting
+    /// anything.
+    #[test]
+    fn a_full_engine_block_of_midi_events_reaches_the_host_intact() {
+        const FRAMES: usize = 256;
+
+        let (mut slot, notes) = recording_slot();
+        let scheduled: Vec<MidiNoteEvent> = (0..MIDI_EVENT_BUFFER_CAPACITY)
+            .map(|index| engine_note(60, 100, 0, true, index as u32))
+            .collect();
+
+        let mut left = [0.0f32; FRAMES];
+        let mut right = [0.0f32; FRAMES];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &scheduled,
+            &TransportState::default(),
+        );
+
+        let received = notes.lock().expect("the note log");
+        assert_eq!(received.len(), MIDI_EVENT_BUFFER_CAPACITY);
+        let offsets: Vec<u32> = received.iter().map(|note| note.4).collect();
+        assert_eq!(
+            offsets,
+            (0..MIDI_EVENT_BUFFER_CAPACITY as u32).collect::<Vec<u32>>()
+        );
+    }
 }
 
 /// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
@@ -2002,6 +2769,10 @@ pub struct CrumbsPluginSlot {
     pub command_rx: Consumer<CrumbsCommand>,
     pub commit_tx: rtrb::Producer<PendingRecordingCommit>,
     pub recycle_rx: Consumer<RecordBufferPair>,
+    /// The same `Arc` the engine publishes into (`CrumbsEngine::with_metering`).
+    /// `process_block_internal` overwrites it with the whole block's peak once
+    /// every segment has rendered — see `publish_block_peak`.
+    pub metering: Arc<CrumbsMetering>,
 }
 
 impl CrumbsPluginSlot {
@@ -2039,24 +2810,40 @@ impl CrumbsPluginSlot {
             self.engine.handle_command(cmd);
         }
 
-        // Forward MIDI events to the engine
+        // Render up to each event's own frame before dispatching it, so a note
+        // sounds on the sample it was written for rather than at the head of
+        // the block that carried it. Dispatching the whole list first puts
+        // every note up to a buffer early, which is a timing no DAW invents.
+        // The engine stamps its events non-decreasing, so the cursor only ever
+        // moves forward.
+        let mut cursor = 0;
+        let mut peak_left = 0.0f32;
+        let mut peak_right = 0.0f32;
         for event in midi_events {
-            if event.is_note_on {
-                self.engine.handle_command(CrumbsCommand::NoteOn {
-                    note: event.note,
-                    velocity: event.velocity,
-                });
-            } else {
-                self.engine
-                    .handle_command(CrumbsCommand::NoteOff { note: event.note });
+            let offset = (event.frame_offset as usize).min(num_samples);
+            if offset > cursor {
+                self.render_segment(left, right, cursor, offset);
+                peak_left = peak_left.max(self.engine.read_peak_left());
+                peak_right = peak_right.max(self.engine.read_peak_right());
+                cursor = offset;
             }
+            self.dispatch_note(event);
         }
 
+        // The tail runs unconditionally, empty or not: `process_block` is what
+        // publishes this slot's metering, and a block that happened to end on
+        // an event still owes that publication.
+        //
         // The slice is the block the scheduler asked for, because
         // `process_block` measures its own work from the slice length rather
         // than from a frame count.
-        self.engine
-            .process_block(&mut left[..num_samples], &mut right[..num_samples]);
+        self.engine.process_block(
+            &mut left[cursor..num_samples],
+            &mut right[cursor..num_samples],
+        );
+        peak_left = peak_left.max(self.engine.read_peak_left());
+        peak_right = peak_right.max(self.engine.read_peak_right());
+        self.publish_block_peak(peak_left, peak_right);
 
         // Forward any committed take to the command side over the SPSC ring.
         // The engine did only pointer moves; the clone + pool insertion
@@ -2069,6 +2856,43 @@ impl CrumbsPluginSlot {
                 sample_rate: self.engine.sample_rate() as u32,
             });
         }
+    }
+
+    /// Render `from..to` of the block through the engine, which sums into
+    /// whatever the buffers already carry.
+    fn render_segment(&mut self, left: &mut [f32], right: &mut [f32], from: usize, to: usize) {
+        self.engine
+            .process_block(&mut left[from..to], &mut right[from..to]);
+    }
+
+    /// Overwrite the shared metering with the whole block's peak.
+    ///
+    /// Every `process_block` call — one per segment — measures and publishes
+    /// only the peak of the slice it just rendered, so a block split at MIDI
+    /// event offsets otherwise leaves the atomics holding just the tail
+    /// segment's peak. The meter owes the block's peak, not its last slice's,
+    /// so this replaces it with the maximum this caller tracked across every
+    /// segment, tail included.
+    fn publish_block_peak(&self, peak_left: f32, peak_right: f32) {
+        self.metering
+            .peak_left
+            .store(peak_left.to_bits(), Ordering::Relaxed);
+        self.metering
+            .peak_right
+            .store(peak_right.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Hand one engine event to the sampler as the command it names.
+    fn dispatch_note(&mut self, event: &MidiNoteEvent) {
+        if event.is_note_on {
+            self.engine.handle_command(CrumbsCommand::NoteOn {
+                note: event.note,
+                velocity: event.velocity,
+            });
+            return;
+        }
+        self.engine
+            .handle_command(CrumbsCommand::NoteOff { note: event.note });
     }
 }
 

@@ -49,6 +49,7 @@ vi.mock('../../../useCases/analyzeMix', () => ({
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
     ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: vi.fn(),
 }));
 
 function create_track_level(input: Partial<TrackLevel> & Pick<TrackLevel, 'trackId'>): TrackLevel {

@@ -135,6 +135,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // No native engine here: the cursor these seams are about follows the
     // scheduler's own integration.
     readNativeEnginePlayheadSeconds: (): number | null => null,
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 /**
  * The observation point. Typed to the four arguments the assertions read, so

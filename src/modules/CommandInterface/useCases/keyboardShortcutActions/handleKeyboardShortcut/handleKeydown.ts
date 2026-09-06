@@ -468,9 +468,9 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
      *   • Otherwise, delete the currently selected clip(s) through the
      *     registered `removeClip` action, whose inverse restores each clip
      *     with its MIDI notes and satellite state (automation lanes, gain
-     *     envelope, warp markers) and whose semantics are ripple-aware.
-     *     Per-gesture undo grouping is not expressible on that route —
-     *     tracked in issue #3622.
+     *     envelope, warp markers) and whose semantics are ripple-aware. Each
+     *     gesture mints one undo group shared by its per-clip dispatches, so
+     *     one keypress deletes as one undo step (#3622).
      * Returns `true` when the caller should `preventDefault()`. Returns
      * `false` when there is nothing to delete, so the browser default
      * (caret backspace in inputs etc.) is preserved — handleKeydown
@@ -511,8 +511,10 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             return false;
         }
 
+        const groupId = `keyboard-delete-${crypto.randomUUID()}`;
+        const groupLabel = `Delete ${deletedClips.length} clip${deletedClips.length === 1 ? '' : 's'}`;
         for (const clip of deletedClips) {
-            void executeUserAppAction({ type: 'removeClip', payload: { clipId: clip.id } });
+            void executeUserAppAction({ type: 'removeClip', payload: { clipId: clip.id } }, { groupId, groupLabel });
         }
         clearClipSelection();
         return true;

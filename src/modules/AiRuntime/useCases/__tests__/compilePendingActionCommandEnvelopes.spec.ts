@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -28,6 +29,20 @@ function compileTempoGraph(dependenciesByActionIndex: readonly (readonly number[
             group: { groupId: 'group-tempo-graph', groupLabel: 'Set tempo twice' },
             projectRevision: 'revision-graph',
         });
+}
+
+function registerDeviceHandlers(): void {
+    registerHandlerMap(getArrangementHandlers());
+}
+
+function parseCommands(commands: readonly string[]) {
+    return commands.map((command) => {
+        const parsed = parseVersionedCommandEnvelope(command);
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        return parsed.envelope;
+    });
 }
 
 describe('compilePendingActionCommandEnvelopes', () => {
@@ -108,6 +123,168 @@ describe('compilePendingActionCommandEnvelopes', () => {
                 },
             },
         });
+    });
+
+    it.each([
+        {
+            name: 'declared graph',
+            actionCommandGraph: {
+                dependenciesByActionIndex: [[], [0], [1], [0]],
+                batchLocalBindings: [],
+            },
+            expectedParameterDependencyIndexes: [1, 0],
+        },
+        {
+            name: 'absent graph',
+            actionCommandGraph: undefined,
+            expectedParameterDependencyIndexes: [0, 1],
+        },
+    ])(
+        'adds same-track structural device prerequisites with an $name',
+        ({ actionCommandGraph, expectedParameterDependencyIndexes }) => {
+            registerDeviceHandlers();
+            const actions = [
+                {
+                    type: 'addTrack',
+                    payload: {
+                        id: 'track-lead',
+                        name: 'Lead',
+                        kind: 'midi',
+                        color: '#456789',
+                        initialDeviceId: 'device-synth',
+                    },
+                },
+                {
+                    type: 'addDevice',
+                    payload: {
+                        trackId: 'track-lead',
+                        deviceType: 'builtin-filter',
+                        deviceId: 'device-filter-a',
+                        expectedDeviceIds: ['device-synth'],
+                        expectedFrozen: false,
+                    },
+                },
+                {
+                    type: 'setDeviceParameter',
+                    payload: {
+                        deviceId: 'device-filter-a',
+                        paramId: 'filter-type',
+                        value: 1,
+                        expectedTrackId: 'track-lead',
+                        expectedDeviceType: 'builtin-filter',
+                        expectedDeviceIds: ['device-synth', 'device-filter-a'],
+                        expectedValue: 0,
+                        expectedTrackFrozen: false,
+                    },
+                },
+                {
+                    type: 'addDevice',
+                    payload: {
+                        trackId: 'track-lead',
+                        deviceType: 'builtin-filter',
+                        deviceId: 'device-filter-b',
+                        expectedDeviceIds: ['device-synth', 'device-filter-a'],
+                        expectedFrozen: false,
+                    },
+                },
+            ] satisfies AppAction[];
+
+            const parsed = parseCommands(
+                compilePendingActionCommandEnvelopes({
+                    actions,
+                    ...(actionCommandGraph === undefined ? {} : { actionCommandGraph }),
+                    actionLabels: actions.map((action) => action.type),
+                    group: { groupId: 'group-device-graph', groupLabel: 'Create device chain' },
+                    projectRevision: 'revision-device-graph',
+                })
+            );
+
+            expect(parsed.map((command) => command.operation)).toEqual([
+                'addTrack',
+                'addDevice',
+                'setDeviceParameter',
+                'addDevice',
+            ]);
+            expect(parsed[1]?.dependencyIds).toEqual([parsed[0]?.commandId]);
+            expect(parsed[2]?.dependencyIds).toEqual(
+                expectedParameterDependencyIndexes.map((index) => parsed[index]?.commandId)
+            );
+            expect(parsed[3]?.dependencyIds).toEqual([parsed[0]?.commandId, parsed[1]?.commandId]);
+            expect(parsed[0]?.arguments).toMatchObject({ id: 'track-lead', initialDeviceId: 'device-synth' });
+            expect(parsed[1]?.arguments).toMatchObject({ deviceId: 'device-filter-a', trackId: 'track-lead' });
+            expect(parsed[3]?.arguments).toMatchObject({ deviceId: 'device-filter-b', trackId: 'track-lead' });
+        }
+    );
+
+    it('does not invent producers for existing devices or device guards on another track', () => {
+        registerDeviceHandlers();
+        const actions = [
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: 'device-existing',
+                    paramId: 'gain',
+                    value: 0.5,
+                    expectedTrackId: 'track-existing',
+                    expectedDeviceType: 'builtin-gain',
+                    expectedDeviceIds: ['device-existing'],
+                    expectedValue: 0.25,
+                    expectedTrackFrozen: false,
+                },
+            },
+            {
+                type: 'addTrack',
+                payload: {
+                    id: 'track-lead',
+                    name: 'Lead',
+                    kind: 'midi',
+                    color: '#456789',
+                    initialDeviceId: 'device-lead-synth',
+                },
+            },
+            {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-lead',
+                    deviceType: 'builtin-filter',
+                    deviceId: 'device-lead-filter',
+                    expectedDeviceIds: ['device-lead-synth'],
+                    expectedFrozen: false,
+                },
+            },
+            {
+                type: 'addTrack',
+                payload: {
+                    id: 'track-reference',
+                    name: 'Reference',
+                    kind: 'midi',
+                    color: '#654321',
+                    initialDeviceId: 'device-reference-synth',
+                },
+            },
+            {
+                type: 'addDevice',
+                payload: {
+                    trackId: 'track-reference',
+                    deviceType: 'builtin-filter',
+                    deviceId: 'device-reference-filter',
+                    expectedDeviceIds: ['device-reference-synth', 'device-lead-filter'],
+                    expectedFrozen: false,
+                },
+            },
+        ] satisfies AppAction[];
+
+        const parsed = parseCommands(
+            compilePendingActionCommandEnvelopes({
+                actions,
+                actionLabels: actions.map((action) => action.type),
+                group: { groupId: 'group-isolated-device-graph', groupLabel: 'Keep device tracks isolated' },
+                projectRevision: 'revision-isolated-device-graph',
+            })
+        );
+
+        expect(parsed[0]?.dependencyIds).toEqual([]);
+        expect(parsed[4]?.dependencyIds).toEqual([parsed[3]?.commandId]);
     });
 
     it('rejects a command graph whose dependency rows do not exactly match the action batch', () => {

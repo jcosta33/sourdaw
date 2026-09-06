@@ -26,12 +26,6 @@ const nativePayload = {
     effectIdCollisions: 3,
     unsupportedEffectAdditions: 4,
     unmappedSetParamCalls: 5,
-    bridgeOutputBlocksDropped: 6,
-    unmatchedBridgeBlocks: 7,
-    bridgeBacklogBlocksShed: 8,
-    bridgeBlocksPassedChainBound: 15,
-    callbackFramesOverBridgeReach: 9,
-    bridgeInputBlocksRefused: 10,
     captureConsumerRefusals: 11,
     captureBlocksDropped: 12,
     captureInputUnderruns: 13,
@@ -62,7 +56,7 @@ describe('getEngineRtDiagnostics', () => {
         expect(desktopInvoke).not.toHaveBeenCalled();
         expect(diagnostics.running).toBe(false);
         expect(diagnostics.events).toEqual([]);
-        expect(diagnostics.bridgeInputBlocksRefused).toBe(0);
+        expect(diagnostics.captureConsumerRefusals).toBe(0);
     });
 
     it('reads a stopped engine as not running rather than as an absent reading', async () => {
@@ -133,7 +127,7 @@ describe('getEngineRtDiagnostics', () => {
 
         expect(diagnostics.running).toBe(true);
         expect(diagnostics.unmappedSetParamCalls).toBe(0);
-        expect(diagnostics.bridgeInputBlocksRefused).toBe(0);
+        expect(diagnostics.captureConsumerRefusals).toBe(0);
         expect(diagnostics.events).toEqual([]);
     });
 });

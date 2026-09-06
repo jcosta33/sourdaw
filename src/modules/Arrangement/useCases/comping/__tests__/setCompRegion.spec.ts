@@ -19,6 +19,7 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

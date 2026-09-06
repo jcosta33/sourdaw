@@ -61,8 +61,8 @@ import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import {
     type AudioGraphAddSendCommand,
     type AudioGraphCommand,
+    type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
-    type AudioGraphStripParameterTarget,
 } from '../../models/AudioGraphBackend';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
@@ -72,8 +72,13 @@ import {
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
+// Project truth spells a built-in's parameters as the ids a panel authors; the
+// native mapper resolves them against the engine's own vocabulary and refuses
+// the whole batch, by strip, over one it cannot name (#3893).
+import { projectDeviceForNativeBody } from '../livePlayback/projectDeviceForNativeBody';
 
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
+import { automationWriteCommand } from './automationWriteCommand';
 import { checkCancel } from './checkCancel';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
@@ -123,10 +128,10 @@ type ProgrammeConversion =
     | Readonly<{ outcome: 'declined'; reason: string }>;
 
 function writeCommands(
-    target: AudioGraphStripParameterTarget,
+    target: AudioGraphParameterTarget,
     writes: readonly AudioGraphParameterWrite[]
 ): AudioGraphCommand[] {
-    return writes.map((write): AudioGraphCommand => ({ kind: 'write-parameter', target, write }));
+    return writes.map((write) => automationWriteCommand(target, write));
 }
 
 /**
@@ -206,13 +211,14 @@ export async function renderOfflineWithNativeEngine(
             soloGated: soloGatedByTrackId.get(track.id) ?? false,
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
         };
+        const devices = track.devices.map(projectDeviceForNativeBody);
         return track.kind === 'bus'
             ? {
                   kind: 'create-bus-strip',
                   busId: track.id,
                   name: track.name,
                   state,
-                  devices: track.devices,
+                  devices,
                   honorMuted: true,
                   contributesAudio: scheduledTrackIds.has(track.id),
               }
@@ -221,7 +227,7 @@ export async function renderOfflineWithNativeEngine(
                   trackId: track.id,
                   name: track.name,
                   state,
-                  devices: track.devices,
+                  devices,
                   honorMuted: true,
                   contributesAudio: scheduledTrackIds.has(track.id),
               };

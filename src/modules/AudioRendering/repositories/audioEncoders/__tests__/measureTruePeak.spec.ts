@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 
 import { measureTruePeak } from '../measureTruePeak';
 
+const TRUE_PEAK_TAIL_FRAMES = 11;
+
+function withTrailingZeros(channel: Float32Array): Float32Array {
+    const padded = new Float32Array(channel.length + TRUE_PEAK_TAIL_FRAMES);
+    padded.set(channel);
+    return padded;
+}
+
+function expectMatchesZeroPaddedOracle(channels: readonly Float32Array[], length: number): void {
+    const logicalChannels = channels.map((channel) => channel.slice(0, length));
+    const paddedChannels = logicalChannels.map(withTrailingZeros);
+    const expected = measureTruePeak({ channels: paddedChannels, length: length + TRUE_PEAK_TAIL_FRAMES });
+
+    expect(measureTruePeak({ channels, length })).toBeCloseTo(expected, 12);
+}
+
 describe('measureTruePeak', () => {
     it('returns 0 for empty input (no samples)', () => {
         const result = measureTruePeak({ channels: [new Float32Array(0)], length: 0 });
@@ -40,6 +56,48 @@ describe('measureTruePeak', () => {
         // The filter should not amplify an impulse above the input level
         // significantly (ringing is bounded).
         expect(result).toBeLessThan(1.0);
+    });
+
+    it('matches an independently zero-padded oracle for impulses at either buffer boundary', () => {
+        const leading = new Float32Array(48);
+        leading[0] = 1;
+        const trailing = new Float32Array(48);
+        trailing[trailing.length - 1] = 1;
+
+        expectMatchesZeroPaddedOracle([leading], leading.length);
+        expectMatchesZeroPaddedOracle([trailing], trailing.length);
+    });
+
+    it.each(Array.from({ length: TRUE_PEAK_TAIL_FRAMES }, (_, index) => index + 1))(
+        'matches an independently zero-padded oracle for a %i-frame buffer',
+        (length) => {
+            const samples = new Float32Array(length);
+            samples[length - 1] = 0.25 + length / 20;
+
+            expectMatchesZeroPaddedOracle([samples], length);
+        }
+    );
+
+    it('drains every channel while preserving silence and non-finite sanitization', () => {
+        const quietTrailing = new Float32Array(7);
+        quietTrailing[quietTrailing.length - 1] = 0.25;
+        const loudTrailing = new Float32Array(7);
+        loudTrailing[loudTrailing.length - 1] = 0.9;
+        const invalid = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0]);
+        const silence = new Float32Array(7);
+
+        expectMatchesZeroPaddedOracle([quietTrailing, loudTrailing, invalid, silence], quietTrailing.length);
+        expect(measureTruePeak({ channels: [silence], length: silence.length })).toBe(0);
+        expect(Number.isFinite(measureTruePeak({ channels: [invalid], length: invalid.length }))).toBe(true);
+    });
+
+    it('uses explicit zeros after the logical length instead of reading the channel backing array', () => {
+        const backing = new Float32Array(16);
+        backing[3] = 0.5;
+        backing[4] = 100;
+        backing[5] = -100;
+
+        expectMatchesZeroPaddedOracle([backing], 4);
     });
 
     it('measures inter-sample peaks that exceed the sample peak', () => {

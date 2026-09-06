@@ -125,6 +125,7 @@ export type ProjectContextSection = {
 export type ProjectContextAvailableDeviceType = {
     id: string;
     name: string;
+    parameters?: ProjectContextDeviceParameter[];
 };
 
 export type ProjectContextAutomationPoint = {

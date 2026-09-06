@@ -32,12 +32,11 @@ const mocks = vi.hoisted(
         commitInlineAutomationPaint: ReturnType<typeof vi.fn>;
         commitInlineMidiNoteMove: ReturnType<typeof vi.fn>;
         pushUndoEntry: ReturnType<typeof vi.fn>;
+        executeUserAppAction: ReturnType<typeof vi.fn>;
         selectTrack: ReturnType<typeof vi.fn>;
         addClip: ReturnType<typeof vi.fn>;
         removeClip: ReturnType<typeof vi.fn>;
         moveClip: ReturnType<typeof vi.fn>;
-        trimClipStart: ReturnType<typeof vi.fn>;
-        trimClipEnd: ReturnType<typeof vi.fn>;
         buildTimelineRenderModel: ReturnType<typeof vi.fn>;
         getTrackAtY: ReturnType<typeof vi.fn>;
         canvasXToBeat: ReturnType<typeof vi.fn>;
@@ -91,12 +90,11 @@ const mocks = vi.hoisted(
         commitInlineAutomationPaint: vi.fn(),
         commitInlineMidiNoteMove: vi.fn(),
         pushUndoEntry: vi.fn(),
+        executeUserAppAction: vi.fn(),
         selectTrack: vi.fn(),
         addClip: vi.fn(),
         removeClip: vi.fn(),
         moveClip: vi.fn(),
-        trimClipStart: vi.fn(),
-        trimClipEnd: vi.fn(),
         buildTimelineRenderModel: vi.fn(),
         getTrackAtY: vi.fn(),
         canvasXToBeat: vi.fn((x) => x / 100),
@@ -223,6 +221,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('#/modules/MIDI/stores', async () => {
@@ -249,8 +248,6 @@ vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: 
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
 vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: mocks.removeClip }));
 vi.mock('../../../useCases/clip/moveClip', () => ({ moveClip: mocks.moveClip }));
-vi.mock('../../../useCases/clipEditing/trimClipStart', () => ({ trimClipStart: mocks.trimClipStart }));
-vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({ trimClipEnd: mocks.trimClipEnd }));
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: mocks.buildTimelineRenderModel,
 }));
@@ -465,19 +462,30 @@ describe('useTimelineInteractions', () => {
             name: 'trim start',
             mode: 'trim-start',
             edge: 'left',
-            lowerUseCase: mocks.trimClipStart,
-            expectedLabel: 'Trim clip start',
+            // Release back at the grab point: previewed start 0 == original 0.
+            unmovedReleaseClientX: 0,
+            expectedAction: { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
         },
         {
             name: 'trim end',
             mode: 'stretch',
             edge: 'right',
-            lowerUseCase: mocks.trimClipEnd,
-            expectedLabel: 'Trim clip end',
+            // Release at the original end (x=400 → beat 4): the 0.25 minimum keeps
+            // x=0 a real move, so only the true no-op position proves the guard.
+            unmovedReleaseClientX: 400,
+            expectedAction: { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 2 } },
         },
     ] as const;
 
-    const commitTrimPreview = ({ mode, edge }: Pick<(typeof trimCases)[number], 'mode' | 'edge'>) => {
+    const commitTrimPreview = ({
+        mode,
+        edge,
+        releaseClientX = 200,
+    }: {
+        mode: (typeof trimCases)[number]['mode'];
+        edge: (typeof trimCases)[number]['edge'];
+        releaseClientX?: number;
+    }) => {
         mocks.trackStoreValue.value = {
             tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }] }],
         };
@@ -497,33 +505,31 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
         });
         act(() => {
-            result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+            result.current.handleMouseMove({ clientX: releaseClientX, clientY: 20 } as any);
         });
         act(() => {
-            result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
+            result.current.handleMouseUp({ clientX: releaseClientX, clientY: 20 } as any);
         });
     };
 
     it.each(trimCases)(
-        '$name publishes no callback undo entry after a rejected write',
-        ({ mode, edge, lowerUseCase }) => {
-            lowerUseCase.mockReturnValue(false);
+        '$name dispatches the registered trim action with the previewed beat',
+        ({ mode, edge, expectedAction }) => {
             commitTrimPreview({ mode, edge });
 
-            expect(lowerUseCase).toHaveBeenCalledWith('clip-1', 2);
+            expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(expectedAction);
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         }
     );
 
     it.each(trimCases)(
-        '$name preserves callback undo publication after a committed write',
-        ({ mode, edge, lowerUseCase, expectedLabel }) => {
-            lowerUseCase.mockReturnValue(true);
-            commitTrimPreview({ mode, edge });
+        '$name dispatches nothing when the trim gesture releases without movement',
+        ({ mode, edge, unmovedReleaseClientX }) => {
+            commitTrimPreview({ mode, edge, releaseClientX: unmovedReleaseClientX });
 
-            expect(lowerUseCase).toHaveBeenCalledWith('clip-1', 2);
-            expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
-            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(expectedLabel, expect.any(Function), expect.any(Function));
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         }
     );
 
@@ -740,12 +746,11 @@ describe('useTimelineInteractions', () => {
         expect(mocks.setWorkspaceMode).toHaveBeenCalledWith('clip');
     });
 
-    it('draws a clip via the draw tool and pushes a non-ripple undo entry', () => {
+    it('draws a clip via the draw tool by dispatching drawClip with ripple off', () => {
         mocks.workspaceStoreValue.value = { activeTool: 'draw', selectedClipIds: [], automationVisibility: 'hidden' };
         mocks.handleDrawTool.mockImplementation((_x, _y, _beat, ref) => {
             ref.current = { trackId: 't1', startBeat: 2, clipType: 'audio' };
         });
-        mocks.addClip.mockReturnValue({ id: 'drawn-1' });
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -755,15 +760,26 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 500, clientY: 50 } as any);
         });
 
-        // startBeat 2, endBeat ceil(5.0)=5 → length max(1, 3) = 3.
-        expect(mocks.addClip).toHaveBeenCalledWith(
-            expect.objectContaining({ trackId: 't1', startBeat: 2, endBeat: 5, type: 'audio' })
-        );
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Draw clip', expect.any(Function), expect.any(Function));
-        expect(mocks.planRippleInsert).not.toHaveBeenCalled();
+        // startBeat 2, endBeat ceil(5.0)=5 → length max(1, 3) = 3. The gesture
+        // dispatches and never writes or records history itself; the handler
+        // owns the addClip write and the undo entry.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'drawClip',
+            payload: {
+                trackId: 't1',
+                startBeat: 2,
+                endBeat: 5,
+                name: 'Clip 2',
+                type: 'audio',
+                ripple: false,
+            },
+        });
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('draws a clip with ripple editing enabled and inserts shifted clips', () => {
+    it('dispatches drawClip with ripple on so the handler ripple-inserts', () => {
         mocks.workspaceStoreValue.value = {
             activeTool: 'draw',
             selectedClipIds: [],
@@ -773,8 +789,6 @@ describe('useTimelineInteractions', () => {
         mocks.handleDrawTool.mockImplementation((_x, _y, _beat, ref) => {
             ref.current = { trackId: 't1', startBeat: 2, clipType: 'midi' };
         });
-        mocks.addClip.mockReturnValue({ id: 'drawn-1' });
-        mocks.planRippleInsert.mockReturnValue({ shiftedClips: [{ clipId: 'other', deltaBeat: 3 }] });
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -784,15 +798,24 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 500, clientY: 50 } as any);
         });
 
-        expect(mocks.rippleInsertClip).toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
-            'Draw clip (ripple)',
-            expect.any(Function),
-            expect.any(Function)
-        );
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'drawClip',
+            payload: {
+                trackId: 't1',
+                startBeat: 2,
+                endBeat: 5,
+                name: 'Clip 2',
+                type: 'midi',
+                ripple: true,
+            },
+        });
+        // Planning, shifting, and history belong to the handler now.
+        expect(mocks.planRippleInsert).not.toHaveBeenCalled();
+        expect(mocks.rippleInsertClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('draws with ripple enabled but no shifted clips falls back to a plain draw undo', () => {
+    it('passes ripple on even when the shift set turns out empty — the handler degrades to a plain draw', () => {
         mocks.workspaceStoreValue.value = {
             activeTool: 'draw',
             selectedClipIds: [],
@@ -802,8 +825,6 @@ describe('useTimelineInteractions', () => {
         mocks.handleDrawTool.mockImplementation((_x, _y, _beat, ref) => {
             ref.current = { trackId: 't1', startBeat: 2, clipType: 'audio' };
         });
-        mocks.addClip.mockReturnValue({ id: 'drawn-1' });
-        mocks.planRippleInsert.mockReturnValue({ shiftedClips: [] });
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -811,16 +832,21 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 500, clientY: 50 } as any);
         });
 
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'drawClip',
+                payload: expect.objectContaining({ ripple: true }),
+            })
+        );
         expect(mocks.rippleInsertClip).not.toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Draw clip', expect.any(Function), expect.any(Function));
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('does not push an undo entry when the drawn clip add returns nothing', () => {
+    it('dispatches drawClip exactly once and never writes from the gesture', () => {
         mocks.workspaceStoreValue.value = { activeTool: 'draw', selectedClipIds: [], automationVisibility: 'hidden' };
         mocks.handleDrawTool.mockImplementation((_x, _y, _beat, ref) => {
             ref.current = { trackId: 't1', startBeat: 2, clipType: 'audio' };
         });
-        mocks.addClip.mockReturnValue(undefined);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -828,10 +854,12 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 500, clientY: 50 } as any);
         });
 
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.removeClip).not.toHaveBeenCalled();
     });
 
-    it('slip-edits clip content on Ctrl+Shift+drag and commits the new offset', () => {
+    it('slip-edits clip content on Ctrl+Shift+drag and dispatches slipClipContent', () => {
         mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
         mocks.trackStoreValue.value = {
             tracks: [
@@ -859,13 +887,15 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 250, clientY: 50 } as any);
         });
 
-        // 150px / 100ppb = 1.5 beats delta → new offset 1.5.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
-            'Slip clip content',
-            expect.any(Function),
-            expect.any(Function)
-        );
+        // 150px / 100ppb = 1.5 beats delta → new offset 1.5, dispatched to the
+        // registered action; the gesture never writes or records history itself.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+        });
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('does not commit a slip when the drag delta is sub-threshold', () => {
@@ -894,10 +924,11 @@ describe('useTimelineInteractions', () => {
         });
 
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('commits a clip move to a new track position with a plain undo entry', () => {
+    it('dispatches the registered moveClip action for a single-clip move', () => {
         mocks.trackStoreValue.value = {
             tracks: [
                 { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
@@ -921,6 +952,98 @@ describe('useTimelineInteractions', () => {
             ],
             tempo: 120,
         });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 300, clientY: 120 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 300, clientY: 120 } as any);
+        });
+
+        // Release at x=300 → beat 3: the dispatch carries the exact previewed
+        // geometry, and the gesture itself neither writes nor records history.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'moveClip',
+            payload: { clipId: 'c1', trackId: 't2', startBeat: 3 },
+        });
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('dispatches nothing when a single-clip move releases without movement', () => {
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'move',
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 0, clientY: 20 } as any);
+        });
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('commits a multi-clip move through the callback loop, not the registered action', () => {
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 0, endBeat: 4 },
+                    ],
+                },
+                { id: 't2', clips: [] },
+            ],
+        };
+        mocks.clipSelectionStoreValue.value = {
+            selectedClipId: 'c1',
+            selectedClipIds: ['c1', 'c2'],
+            marqueeSelection: null,
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'move',
+        });
+        mocks.getTrackAtY.mockReturnValue({ index: 1 });
+        mocks.buildTimelineRenderModel.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    height: 100,
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 0, endBeat: 4 },
+                    ],
+                },
+                { id: 't2', height: 100, clips: [] },
+            ],
+            tempo: 120,
+        });
         // moveClip reports whether the write landed; history only follows a real mutation.
         mocks.moveClip.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
@@ -935,11 +1058,24 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 300, clientY: 120 } as any);
         });
 
-        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't2', expect.any(Number), 0);
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith('Move clip', expect.any(Function), expect.any(Function));
+        // One registered moveClips dispatch carries the whole group gesture;
+        // the gesture writes nothing and pushes no history itself.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'moveClips',
+            payload: {
+                moves: [
+                    { clipId: 'c1', trackId: 't2', startBeat: 3 },
+                    { clipId: 'c2', trackId: 't2', startBeat: 3 },
+                ],
+                ripple: false,
+            },
+        });
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('commits an Alt+drag duplicate with a duplicate undo entry', () => {
+    it('commits an Alt+drag duplicate as per-clip duplicateClipAt dispatches sharing one groupId', () => {
         mocks.trackStoreValue.value = {
             tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
         };
@@ -957,9 +1093,6 @@ describe('useTimelineInteractions', () => {
             tracks: [{ id: 't1', height: 100, clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
             tempo: 120,
         });
-        // duplicateClipCore reports whether the copy was created; the undo
-        // entry is keyed on the pre-allocated copy id, not a store scan.
-        mocks.duplicateClipCore.mockReturnValue(true);
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -972,12 +1105,21 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 300, clientY: 20 } as any);
         });
 
-        expect(mocks.duplicateClipCore).toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
-            'Duplicate 1 clip',
-            expect.any(Function),
-            expect.any(Function)
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'duplicateClipAt',
+                payload: {
+                    clipId: 'c1',
+                    destinationTrackId: 't1',
+                    startBeat: 3,
+                    targetClipId: expect.any(String),
+                },
+            },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 1 clip' }
         );
+        expect(mocks.duplicateClipCore).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('selects clips intersecting a finished rubber-band and clears the marquee', () => {
@@ -1088,7 +1230,10 @@ describe('useTimelineInteractions', () => {
         });
 
         // 150px / 100ppb = 1.5 beats from a base offset of 0.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+        });
     });
 
     it('defaults a missing midi offset to 0 when starting a slip drag on a midi clip', () => {
@@ -1115,7 +1260,10 @@ describe('useTimelineInteractions', () => {
         });
 
         // 100px / 100ppb = 1.0 beats from a base offset of 0.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('cm', 'midi', 1);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'slipClipContent',
+            payload: { clipId: 'cm', clipType: 'midi', offset: 1 },
+        });
     });
 
     it('broadcasts cursor presence to collaborators while dragging (throttled)', () => {
@@ -1226,42 +1374,19 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 300, clientY: 120 } as any);
         });
 
-        // Only c1 (which has an original) is moved; c2 is skipped silently.
-        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't2', expect.any(Number), 0);
-        expect(mocks.moveClip).not.toHaveBeenCalledWith('c2', expect.anything(), expect.anything(), expect.anything());
+        // Only c1 (which has an original) enters the dispatch; c2 is skipped silently.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'moveClips',
+            payload: {
+                moves: [{ clipId: 'c1', trackId: 't2', startBeat: 3 }],
+                ripple: false,
+            },
+        });
+        expect(mocks.moveClip).not.toHaveBeenCalled();
     });
 
-    it('re-inserts the clip via the draw-ripple redo callback', () => {
-        mocks.workspaceStoreValue.value = {
-            activeTool: 'draw',
-            selectedClipIds: [],
-            automationVisibility: 'hidden',
-            rippleEditing: true,
-        };
-        mocks.handleDrawTool.mockImplementation((_x, _y, _beat, ref) => {
-            ref.current = { trackId: 't1', startBeat: 2, clipType: 'midi' };
-        });
-        // First addClip (draw) returns a clip; the redo's addClip returns a clip too.
-        mocks.addClip.mockReturnValue({ id: 'drawn-1' });
-        mocks.planRippleInsert.mockReturnValue({ shiftedClips: [{ clipId: 'other', deltaBeat: 3 }] });
-        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
-
-        act(() => {
-            result.current.handleMouseDown({ button: 0, clientX: 200, clientY: 50 } as any);
-            result.current.handleMouseUp({ clientX: 500, clientY: 50 } as any);
-        });
-
-        // The redo callback (3rd arg) must re-add the clip and replay the ripple insert.
-        const redo = mocks.pushUndoEntry.mock.calls.at(-1)![2] as () => void;
-        mocks.rippleInsertClip.mockClear();
-        mocks.addClip.mockClear();
-        act(() => redo());
-
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1' }));
-        expect(mocks.rippleInsertClip).toHaveBeenCalled();
-    });
-
-    it('commits a same-track move with ripple editing and replays undo/redo', () => {
+    it('dispatches a ripple same-track move through moveClips and never writes from the gesture', () => {
         mocks.workspaceStoreValue.value = {
             activeTool: 'select',
             selectedClipIds: [],
@@ -1303,23 +1428,6 @@ describe('useTimelineInteractions', () => {
             ],
             tempo: 120,
         });
-        // Ripple move produces a plan that closes a gap on c2.
-        mocks.planRippleMove.mockReturnValue({
-            gapClosedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],
-            destinationOpenedClips: [],
-        });
-        // Undo reads getTrackStoreState to restore shifted clips.
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                {
-                    id: 't1',
-                    clips: [
-                        { id: 'c1', startBeat: 2, endBeat: 6 },
-                        { id: 'c2', startBeat: 6, endBeat: 10 },
-                    ],
-                },
-            ],
-        });
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
 
         act(() => {
@@ -1332,27 +1440,19 @@ describe('useTimelineInteractions', () => {
             result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
         });
 
-        // Ripple move committed: rippleMoveClip ran and an undo entry was pushed.
-        expect(mocks.rippleMoveClip).toHaveBeenCalled();
-        const rippleCall = mocks.pushUndoEntry.mock.calls.find((call) => call[0] === 'Move clip (ripple)');
-        expect(rippleCall).toBeTruthy();
-
-        // Undo restores the moved clip and the ripple-shifted sibling.
-        mocks.moveClip.mockClear();
-        mocks.setTrackState.mockClear();
-        const undo = rippleCall![1] as () => void;
-        act(() => undo());
-        expect(mocks.moveClip).toHaveBeenCalledWith('c1', 't1', expect.any(Number));
-        expect(mocks.setTrackState).toHaveBeenCalled();
-
-        // Redo replays the ripple move.
-        mocks.rippleMoveClip.mockClear();
-        mocks.planRippleMove.mockReturnValue({
-            gapClosedClips: [],
-            destinationOpenedClips: [],
+        // The gesture carries intent only: the handler plans the ripple move,
+        // writes it, and records the 'Move clip (ripple)' history entry.
+        expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'moveClips',
+            payload: {
+                moves: [{ clipId: 'c1', trackId: 't1', startBeat: 2 }],
+                ripple: true,
+            },
         });
-        const redo = rippleCall![2] as () => void;
-        act(() => redo());
-        expect(mocks.planRippleMove).toHaveBeenCalled();
+        expect(mocks.planRippleMove).not.toHaveBeenCalled();
+        expect(mocks.rippleMoveClip).not.toHaveBeenCalled();
+        expect(mocks.moveClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 });

@@ -54,6 +54,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    discardDecodedAudioFile: vi.fn(),
     cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({ sampleRate: 44_100 })),
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
@@ -83,7 +86,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),

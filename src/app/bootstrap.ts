@@ -15,7 +15,9 @@ import {
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import {
+    acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
+    clampExternalPluginAutomationValue,
     getAllTracks,
     getAutomationParameterRange,
     getPluginById,
@@ -50,6 +52,7 @@ import {
     configureOfflineYeastMidiProcessing,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    recordNativeChainReleases,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -77,7 +80,7 @@ import {
     commandBatchPreviewPort,
     configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
-    executeAppAction,
+    executeUserAppAction,
     getExecutableAppActionGroundingCatalog,
     registerProductionCommandHandlers,
     productionBriefAdmissionPort,
@@ -131,7 +134,10 @@ import {
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
-import { getExternalPluginContractVersionForCommand } from '#/modules/PluginHost/useCases';
+import {
+    getExternalPluginContractVersionForCommand,
+    registerReleasedStripReportSink,
+} from '#/modules/PluginHost/useCases';
 import {
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
@@ -251,12 +257,15 @@ configureOfflineMidiEventProjection({
     evaluateAutomationValue: getAutomationValueAtBeat,
     resolveArticulationId: resolveMidiNoteArticulationId,
 });
-// The offline render enforces the same device-parameter law the live apply path
-// does; only the composition root sees both Arrangement and the audio engine.
+// The offline render and the native live automation producer enforce the same
+// device-parameter law the live apply path does; only the composition root sees
+// both Arrangement and the audio engine.
 configureOfflineDeviceParameterLaw({
     isAutomatable: isDeviceParameterAutomatable,
     clampValue: clampDeviceParameterValue,
     quantiseValue: quantiseDeviceParameterValue,
+    acceptsExternalPluginParameter: acceptsExternalPluginAutomationParameter,
+    clampExternalPluginValue: clampExternalPluginAutomationValue,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
@@ -268,9 +277,13 @@ setOfflineRenderDependencies({
     createChordPitchProjector,
 });
 setVcaRuntimeProjectionDependencies({ reconcileVcaRuntimeGain });
-setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
+setToasterGrooveAssignmentExecutor({ execute: executeUserAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
+// An unload changes native strip state with no batch of its own to report it,
+// so PluginHost forwards the strips its own release touched here, the one
+// place that may cross from PluginHost's contract into AudioEngine's.
+registerReleasedStripReportSink(recordNativeChainReleases);
 setCommandEventBus(eventBus);
 setSetlistEventBus(eventBus);
 setVoiceToggleEventBus(eventBus);

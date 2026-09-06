@@ -16,6 +16,8 @@ export type BatchLocalActionIdentity =
     | {
           actionOrdinal: number;
           actionType: 'addTrack';
+          /** Application-owned identity of the canonical default Synth on a MIDI track. */
+          initialDeviceId?: string;
           trackId: string;
       }
     | {

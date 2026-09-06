@@ -47,6 +47,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 // actually does to undo is pinned on the other side, in
 // `Command/useCases/__tests__/resetActionReplayAuthority.spec.ts`.
 vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: vi.fn(),
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
 }));
 

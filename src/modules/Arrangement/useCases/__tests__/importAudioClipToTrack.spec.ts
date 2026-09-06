@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
     const transport: { value: { tempo: number } | undefined } = { value: { tempo: 120 } };
     return {
         decodeAudioFile: vi.fn<(file: File) => Promise<{ id: string; buffer: AudioBuffer }>>(),
+        discardDecodedAudioFile: vi.fn(),
         notifyUser: vi.fn(),
         getTrackById: vi.fn<(id: string) => { clips: { id: string; endBeat: number }[] } | undefined>(),
         addClip: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: (file: File) => mocks.decodeAudioFile(file),
+    discardDecodedAudioFile: mocks.discardDecodedAudioFile,
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
@@ -47,6 +49,7 @@ describe('importAudioClipToTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.transport.value = { tempo: 120 };
+        mocks.addClip.mockReturnValue({ id: 'clip-imported' });
     });
 
     it('appends an audio clip after the last clip end, sized to the buffer duration', async () => {
@@ -58,7 +61,7 @@ describe('importAudioClipToTrack', () => {
             ],
         });
 
-        await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'));
+        await subject.importAudioClipToTrack('t1', new File([], 'loop.wav'), { shouldContinue: () => true });
 
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         const input = mocks.addClip.mock.calls[0]?.[0] as {
@@ -84,7 +87,7 @@ describe('importAudioClipToTrack', () => {
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(2) });
         mocks.getTrackById.mockReturnValue({ clips: [] });
 
-        await subject.importAudioClipToTrack('t1', new File([], 'kick.mp3'));
+        await subject.importAudioClipToTrack('t1', new File([], 'kick.mp3'), { shouldContinue: () => true });
 
         const input = mocks.addClip.mock.calls[0]?.[0] as { startBeat: number; endBeat: number; name: string };
         // 2s at 120 BPM => ceil(4) = 4 beats.
@@ -99,7 +102,7 @@ describe('importAudioClipToTrack', () => {
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(4) });
         mocks.getTrackById.mockReturnValue({ clips: [] });
 
-        await subject.importAudioClipToTrack('t1', new File([], 'a.wav'));
+        await subject.importAudioClipToTrack('t1', new File([], 'a.wav'), { shouldContinue: () => true });
 
         // 4s at 60 BPM => ceil(4) = 4 beats.
         const input = mocks.addClip.mock.calls[0]?.[0] as { endBeat: number };
@@ -109,7 +112,7 @@ describe('importAudioClipToTrack', () => {
     it('notifies and aborts when the file cannot be decoded', async () => {
         mocks.decodeAudioFile.mockRejectedValue(new Error('bad'));
 
-        await subject.importAudioClipToTrack('t1', new File([], 'corrupt.wav'));
+        await subject.importAudioClipToTrack('t1', new File([], 'corrupt.wav'), { shouldContinue: () => true });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('corrupt.wav'), 'error');
         expect(mocks.addClip).not.toHaveBeenCalled();
@@ -119,9 +122,10 @@ describe('importAudioClipToTrack', () => {
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(4) });
         mocks.getTrackById.mockReturnValue(undefined);
 
-        await subject.importAudioClipToTrack('ghost', new File([], 'a.wav'));
+        await subject.importAudioClipToTrack('ghost', new File([], 'a.wav'), { shouldContinue: () => true });
 
         expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('buf-1');
     });
 
     it('falls back to 120 BPM when transport has no tempo', async () => {
@@ -129,10 +133,33 @@ describe('importAudioClipToTrack', () => {
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-1', buffer: fakeBuffer(4) });
         mocks.getTrackById.mockReturnValue({ clips: [] });
 
-        await subject.importAudioClipToTrack('t1', new File([], 'a.wav'));
+        await subject.importAudioClipToTrack('t1', new File([], 'a.wav'), { shouldContinue: () => true });
 
         const input = mocks.addClip.mock.calls[0]?.[0] as { endBeat: number };
         // 4s at default 120 BPM => 8 beats.
         expect(input.endBeat).toBe(8);
+    });
+
+    it('discards the decoded buffer and does not touch a reused track id after the project changes', async () => {
+        let resolveDecode!: (value: { id: string; buffer: AudioBuffer }) => void;
+        mocks.decodeAudioFile.mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveDecode = resolve;
+            })
+        );
+        let current = true;
+        mocks.getTrackById.mockReturnValue({ clips: [] });
+
+        const importPromise = subject.importAudioClipToTrack('same-track-id', new File([], 'stale.wav'), {
+            shouldContinue: () => current,
+        });
+        current = false;
+        resolveDecode({ id: 'audio-stale', buffer: fakeBuffer(2) });
+
+        await expect(importPromise).resolves.toBe('superseded');
+        expect(mocks.getTrackById).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).toHaveBeenCalledWith('audio-stale');
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });

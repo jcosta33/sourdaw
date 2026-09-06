@@ -37,6 +37,8 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 // stubbed AudioContext cannot build. The subject here is what project truth holds after
 // undo, so the engine seam is stubbed rather than exercised.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    mirrorDeviceChainDelta: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
+    nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
     applyRuntimeGraphDelta: vi.fn(),
@@ -64,7 +66,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     removeSend: vi.fn(),
     removeTrackStrip: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
     reportLatency: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
     setBusGain: vi.fn(),
@@ -79,6 +80,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceBypass: vi.fn(),
     updateDeviceParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
+    isDeviceCarriedByNativeSession: () => false,
+    sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
 const noActionHistoryMetadataPort = {

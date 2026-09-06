@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
     defaultExternalPluginActivationState,
@@ -10,7 +10,6 @@ import {
     writeExternalPluginParameterSnapshot,
     type ExternalPluginParameter,
 } from '../../../stores/externalPluginParameterStore';
-import { externalBridgeFramesReporters } from '../externalBridgeFramesReporters';
 import { markExternalPluginEngineAttached } from '../markExternalPluginEngineAttached';
 
 /**
@@ -43,15 +42,12 @@ describe('markExternalPluginEngineAttached', () => {
     beforeEach(() => {
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
-        externalBridgeFramesReporters.clear();
     });
 
-    it('records the attachment, clears the degraded note and reports the bridge depth', () => {
+    it('records the attachment and clears the degraded note', () => {
         seedDormantInstance('inst-1');
-        const reportBridgeFrames = vi.fn<(frames: number) => void>();
-        externalBridgeFramesReporters.set('inst-1', reportBridgeFrames);
 
-        markExternalPluginEngineAttached({ instanceId: 'inst-1', bridgeRoundTripFrames: 512 });
+        markExternalPluginEngineAttached({ instanceId: 'inst-1' });
 
         expect(externalPluginParameterStore.value?.byInstanceId['inst-1']).toEqual({
             engineAttached: true,
@@ -61,7 +57,6 @@ describe('markExternalPluginEngineAttached', () => {
             parameters: [PARAMETER],
         });
         expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({ status: 'active' });
-        expect(reportBridgeFrames).toHaveBeenCalledExactlyOnceWith(512);
     });
 
     it('is idempotent for an instance that is already attached', () => {
@@ -70,14 +65,14 @@ describe('markExternalPluginEngineAttached', () => {
         const parameters = externalPluginParameterStore.value;
         const activation = externalPluginActivationStore.value;
 
-        markExternalPluginEngineAttached({ instanceId: 'inst-1', bridgeRoundTripFrames: 512 });
+        markExternalPluginEngineAttached({ instanceId: 'inst-1' });
 
         expect(externalPluginParameterStore.value).toBe(parameters);
         expect(externalPluginActivationStore.value).toBe(activation);
     });
 
     it('writes nothing for an instance this process never activated', () => {
-        markExternalPluginEngineAttached({ instanceId: 'ghost', bridgeRoundTripFrames: 512 });
+        markExternalPluginEngineAttached({ instanceId: 'ghost' });
 
         expect(externalPluginParameterStore.value).toEqual(defaultExternalPluginParameterState);
         expect(externalPluginActivationStore.value).toEqual(defaultExternalPluginActivationState);
@@ -89,7 +84,7 @@ describe('markExternalPluginEngineAttached', () => {
             byInstanceId: { 'inst-1': { status: 'error', message: 'the plugin crashed on load' } },
         });
 
-        markExternalPluginEngineAttached({ instanceId: 'inst-1', bridgeRoundTripFrames: 512 });
+        markExternalPluginEngineAttached({ instanceId: 'inst-1' });
 
         expect(externalPluginActivationStore.value?.byInstanceId['inst-1']).toEqual({
             status: 'error',

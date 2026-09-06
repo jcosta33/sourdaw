@@ -19,7 +19,6 @@
         "test:health-gates": "pnpm test:run scripts/__tests__/healthGatesWorkflow.spec.ts && sh scripts/test-health-gate-scripts.sh",
         "test:health-gates:record": "node scripts/recordHealthGateWorkflowSnapshot.ts",
         "harness:plugin:install": "node scripts/installHarnessPlugin.ts",
-        "health:web:full": "sh scripts/health-gates-web.sh",
         "health:server:full": "sh scripts/health-gates-server.sh",
         "test:run": "node scripts/runVitestZeroTestGuard.ts",
         "test:collection-scope": "node scripts/checkVitestCollectionScope.ts",

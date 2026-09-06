@@ -611,9 +611,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
             expect(added).toBe(true);
             expect(workletInstances).toHaveLength(meterWorkletCount);
-            expect(workletInstances.some((node) => node.processorName === 'native-plugin-bridge-processor')).toBe(
-                false
-            );
             // No pending load registered, so nothing has to settle first.
             expect(track.getDeviceLoadState('ext-1')).toBe('ready');
             const device = track.strip.deviceNodes.find((candidate) => candidate.deviceId === 'ext-1');

@@ -4133,7 +4133,6 @@ describe('release inventory', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-worklet-provenance-'));
         const worklets = join(root, 'public/audio/worklets');
         mkdirSync(worklets, { recursive: true });
-        writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'native');
         writeFileSync(join(worklets, 'sidechain-compressor-processor.js'), 'sidechain');
 
         try {
@@ -4141,7 +4140,7 @@ describe('release inventory', () => {
             expect(before.kind).toBe('project-source');
             expect(before.revisions).toEqual(['not-applicable:direct-project-source']);
 
-            writeFileSync(join(worklets, 'native-plugin-bridge-processor.js'), 'changed');
+            writeFileSync(join(worklets, 'sidechain-compressor-processor.js'), 'changed');
             expect(audioWorkletReleaseInventoryContract(root).digests[0]).not.toBe(before.digests[0]);
         } finally {
             removeTemporaryDirectory(root);

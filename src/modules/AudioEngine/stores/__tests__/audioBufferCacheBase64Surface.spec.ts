@@ -74,11 +74,19 @@ const ENCODED_PCM = encodeFloat32(PCM);
  * that is what stops the census from going blind.
  */
 function buildInvocations(): Record<string, () => unknown> {
+    let checkpointOwnershipToken: string | undefined;
     return {
         get: () => audioBufferCache.get('pcm'),
         set: () => audioBufferCache.set('pcm-2', makeAudioBuffer([PCM])),
         remove: () => audioBufferCache.remove('pcm-2'),
         has: () => audioBufferCache.has('pcm'),
+        ensureDurable: async () => {
+            const result = await audioBufferCache.ensureDurable(['pcm']);
+            if (result.status === 'durable') {
+                result.release();
+            }
+            return result.status;
+        },
         persistPreparedBuffer: () =>
             audioBufferCache.persistPreparedBuffer({
                 id: 'prepared-pcm',
@@ -97,6 +105,27 @@ function buildInvocations(): Record<string, () => unknown> {
                 leaseId: 'prepared-lease',
                 disposition: 'discard',
             }),
+        acquireCheckpointRetention: async () => {
+            const ownership = await audioBufferCache.acquireCheckpointRetention({
+                checkpointId: 'base64-surface-checkpoint',
+                projectOwnerId: 'base64-surface-project',
+                bufferIds: ['pcm'],
+            });
+            checkpointOwnershipToken = ownership.ownershipToken;
+            return ownership;
+        },
+        releaseCheckpointRetention: async () => {
+            if (checkpointOwnershipToken === undefined) {
+                throw new Error('Checkpoint retention acquisition did not produce an ownership token');
+            }
+            const released = await audioBufferCache.releaseCheckpointRetention({
+                checkpointId: 'base64-surface-checkpoint',
+                projectOwnerId: 'base64-surface-project',
+                ownershipToken: checkpointOwnershipToken,
+            });
+            expect(released).toBe(true);
+            return released;
+        },
         getWaveformPeaks: () => audioBufferCache.getWaveformPeaks('pcm', 4),
         restoreFromIdb: () => audioBufferCache.restoreFromIdb({ context: makeContext() }),
         prepareFromIdb: () => audioBufferCache.prepareFromIdb({ context: makeContext() }),

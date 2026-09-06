@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
+import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { describeDetectedKey, detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -394,7 +395,7 @@ describe('ClipContextMenu', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Normalize' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'normalizeClip', payload: { clipId: 'clip1' } });
         expect(normalizeClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
     });
@@ -404,9 +405,85 @@ describe('ClipContextMenu', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Reverse' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'reverseClip', payload: { clipId: 'clip1' } });
         expect(reverseClip).not.toHaveBeenCalled();
         expect(mockOnClose).toHaveBeenCalled();
+    });
+    it('fires the AI failure toast on a refused action, not the success toast', async () => {
+        // An admission refusal rejects the bare dispatch; runAiActionWithToast
+        // consumes that rejection and fires the failure toast. Wrapping the
+        // dispatch in executeUserAppAction would resolve the conflict instead,
+        // routing the same refusal into the success toast — the exact defect
+        // this pin exists to catch.
+        const refusal = Object.assign(new Error('Action conflicts with current project state: variationMidi'), {
+            name: 'AppActionConflictError',
+        });
+        vi.mocked(executeAppAction).mockRejectedValueOnce(refusal);
+        // Load the real wrapper (its module graph is light; the barrel itself stays
+        // mocked) so the failure path under test is the shipped one, not a stub.
+        // The shape is spelled inline: a typeof-import here would be a deep
+        // cross-module edge the boundary gate rightly refuses.
+        const actual = await vi.importActual<{
+            runAiActionWithToast: (
+                action: () => Promise<void>,
+                messages: { startMsg: string; successMsg: string; successDetails: string[]; failMsg: string }
+            ) => Promise<void>;
+        }>('#/modules/AiRuntime/useCases/runAiActionWithToast');
+        vi.mocked(runAiActionWithToast).mockImplementationOnce(actual.runAiActionWithToast);
+
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Generate Variation' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'variationMidi',
+            payload: { clipId: 'midi1', amount: 0.3 },
+        });
+        await waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                expect.stringMatching(/^MIDI variation failed:/),
+                'error'
+            )
+        );
+    });
+    it('routes audio-to-MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+
+        const action = { type: 'audioToMidi', payload: { clipId: 'clip1' } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes Continue MIDI through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Continue MIDI…' }));
+
+        const action = { type: 'completeMidi', payload: { clipId: 'midi1', bars: 4 } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes the wilder variation through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Regenerate (different style)' }));
+
+        const action = { type: 'variationMidi', payload: { clipId: 'midi1', amount: 0.6 } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
+    });
+
+    it('routes the bassline generation through the toast wrapper, not the user dispatch wrapper', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Generate Bassline from Clip' }));
+
+        const action = { type: 'generateBassline', payload: { clipId: 'midi1', style: 'root-fifth' } };
+        expect(executeAppAction).toHaveBeenCalledWith(action);
+        expect(executeUserAppAction).not.toHaveBeenCalledWith(action);
     });
 
     it('does not dispatch denoise for a clip without an audioBufferId', () => {
@@ -427,15 +504,41 @@ describe('ClipContextMenu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
         expect(executeUserAppAction).toHaveBeenCalledTimes(2);
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'removeClip',
-            payload: { clipId: 'clip1' },
-        });
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'removeClip',
-            payload: { clipId: 'clip2' },
-        });
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'removeClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+        );
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'removeClip', payload: { clipId: 'clip2' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 2 clips' }
+        );
+        // One gesture is one undo group: both per-clip dispatches share it.
+        const [firstOptions, secondOptions] = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]);
+        expect(secondOptions?.groupId).toBe(firstOptions?.groupId);
         expect(removeClip).not.toHaveBeenCalled();
+    });
+
+    it('mints a fresh undo group id per delete gesture', () => {
+        clipSelectionStore.set({
+            ...defaultClipSelectionState,
+            selectedClipIds: ['clip1', 'clip2'],
+        });
+        const firstGesture = render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
+        firstGesture.unmount();
+
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+        fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
+
+        const groupIds = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]?.groupId);
+        expect(groupIds).toHaveLength(4);
+        // Within one gesture the id is shared; across two gestures it is fresh,
+        // so each gesture is its own undo step.
+        expect(groupIds[0]).toBe(groupIds[1]);
+        expect(groupIds[2]).toBe(groupIds[3]);
+        expect(groupIds[0]).not.toBe(groupIds[2]);
     });
 
     it('duplicates every selected clip on multi-select duplicate', () => {
@@ -446,14 +549,18 @@ describe('ClipContextMenu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Duplicate/ }));
         expect(executeUserAppAction).toHaveBeenCalledTimes(2);
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'duplicateClip',
-            payload: { clipId: 'clip1' },
-        });
-        expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
-            type: 'duplicateClip',
-            payload: { clipId: 'clip2' },
-        });
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'duplicateClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 2 clips' }
+        );
+        expect(executeUserAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'duplicateClip', payload: { clipId: 'clip2' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 2 clips' }
+        );
+        const [firstOptions, secondOptions] = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]);
+        expect(secondOptions?.groupId).toBe(firstOptions?.groupId);
         expect(duplicateClip).not.toHaveBeenCalled();
     });
 
@@ -582,12 +689,13 @@ describe('ClipContextMenu', () => {
     it('deletes only the targeted clip when a single clip is selected', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
-        // Single selection → one dispatch for just the one clip.
+        // Single selection → one dispatch for just the one clip, still grouped
+        // so the gesture is one undo step.
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'removeClip',
-            payload: { clipId: 'clip1' },
-        });
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'removeClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Delete 1 clip' }
+        );
         expect(removeClip).not.toHaveBeenCalled();
     });
 
@@ -597,10 +705,10 @@ describe('ClipContextMenu', () => {
         // main Duplicate button by its exact accessible name.
         fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'duplicateClip',
-            payload: { clipId: 'clip1' },
-        });
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            { type: 'duplicateClip', payload: { clipId: 'clip1' } },
+            { groupId: expect.any(String), groupLabel: 'Duplicate 1 clip' }
+        );
         expect(duplicateClip).not.toHaveBeenCalled();
     });
 
@@ -670,21 +778,21 @@ describe('ClipContextMenu', () => {
         expect(input.value).toBe('');
     });
 
-    it('dispatches invertNotes through executeAppAction and closes the menu', () => {
+    it('dispatches invertNotes through executeUserAppAction and closes the menu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Invert Pitch' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
 
-    it('dispatches retrogradeNotes through executeAppAction and closes the menu', () => {
+    it('dispatches retrogradeNotes through executeUserAppAction and closes the menu', () => {
         render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Reverse (Retrograde)' }));
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
         expect(mockOnClose).toHaveBeenCalled();
     });
 });

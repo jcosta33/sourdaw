@@ -1,11 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
+
 const runtime = vi.hoisted(() => ({
     stopPlayback: vi.fn(),
     resetAudioGraph: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
     loadPlugin: vi.fn(),
-    unloadPlugin: vi.fn(),
+    unloadPlugin: vi.fn<typeof unloadPluginRepoSignature>(),
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
@@ -55,10 +57,9 @@ describe('Project session PluginHost retirement boundary', () => {
             parameters: [],
             latency_samples: 0,
             latency_ms: 0,
-            bridge_round_trip_frames: 0,
             engine_plugin_id: 1,
         });
-        runtime.unloadPlugin.mockReset().mockResolvedValue([[], []]);
+        runtime.unloadPlugin.mockReset().mockResolvedValue({ unloadedInstanceIds: [], errors: [], reports: [] });
     });
 
     it('keeps native activation fenced after Project reports successful session retirement', async () => {

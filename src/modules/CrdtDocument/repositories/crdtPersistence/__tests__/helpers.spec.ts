@@ -74,7 +74,7 @@ describe('crdt persistence database helper', () => {
         await expect(secondOpen).resolves.toBe(secondDatabase);
     });
 
-    it('creates the document store during the initial upgrade', async () => {
+    it('creates the document and checkpoint stores during the initial upgrade', async () => {
         const database = createMockDatabase();
         database.objectStoreNames.contains = () => false;
         const request = createMockRequest(database);
@@ -85,6 +85,27 @@ describe('crdt persistence database helper', () => {
         request.onupgradeneeded?.();
 
         expect(database.createObjectStore).toHaveBeenCalledWith('documents');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-artifacts');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-catalog');
+        request.onsuccess?.();
+
+        await expect(openPromise).resolves.toBe(database);
+    });
+
+    it('adds checkpoint stores when upgrading an existing document database', async () => {
+        const database = createMockDatabase();
+        database.objectStoreNames.contains = (name) => name === 'documents';
+        const request = createMockRequest(database);
+        open.mockReturnValue(request);
+        const { openDatabase } = await import('../helpers');
+
+        const openPromise = openDatabase();
+        request.onupgradeneeded?.();
+
+        expect(open).toHaveBeenCalledWith('sourdaw-crdt-docs', 2);
+        expect(database.createObjectStore).not.toHaveBeenCalledWith('documents');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-artifacts');
+        expect(database.createObjectStore).toHaveBeenCalledWith('checkpoint-catalog');
         request.onsuccess?.();
 
         await expect(openPromise).resolves.toBe(database);

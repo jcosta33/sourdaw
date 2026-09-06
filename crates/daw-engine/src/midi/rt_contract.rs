@@ -78,6 +78,7 @@ fn note_on(note: u8, channel: i16) -> MidiNoteEvent {
         clip_id_hash: 0,
         event_id_hash: 0,
         absolute_occurrence_index: 0,
+        frame_offset: 0,
     }
 }
 
@@ -110,6 +111,7 @@ fn scheduler_event_overflow_reports_exact_count_and_preserves_accepted_prefix() 
                 received_event_count: Arc::clone(&received_event_count),
                 received_channel_sum: Arc::clone(&received_channel_sum),
             }),
+            None,
         ))
         .expect("plugin command should fit");
 
@@ -154,6 +156,7 @@ fn arpeggiator_exhaustion_publishes_through_scheduler_reader() {
                 received_event_count: Arc::clone(&received_event_count),
                 received_channel_sum,
             }),
+            None,
         ))
         .expect("plugin command should fit");
     command_tx
@@ -225,14 +228,11 @@ fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
         effect_id_collisions: u64::MAX,
         unsupported_effect_additions: u64::MAX,
         unmapped_set_param_calls: u64::MAX,
-        bridge_output_blocks_dropped: u64::MAX,
-        unmatched_bridge_blocks: u64::MAX,
-        bridge_backlog_blocks_shed: u64::MAX,
-        bridge_blocks_passed_chain_bound: u64::MAX,
-        callback_frames_over_bridge_reach: u64::MAX,
         capture_consumer_refusals: u64::MAX,
         capture_blocks_dropped: u64::MAX,
         capture_input_underruns: u64::MAX,
+        midi_note_batches_refused: u64::MAX,
+        late_midi_notes: u64::MAX,
     };
     let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
@@ -246,22 +246,16 @@ fn active_runtime_diagnostic_aggregation_saturates_every_counter() {
     diagnostics.record_unsupported_effect_addition(1);
     diagnostics.record_unmapped_set_param_call(u64::MAX);
     diagnostics.record_unmapped_set_param_call(1);
-    diagnostics.record_bridge_output_blocks_dropped(u64::MAX);
-    diagnostics.record_bridge_output_blocks_dropped(1);
-    diagnostics.record_unmatched_bridge_blocks(u64::MAX);
-    diagnostics.record_unmatched_bridge_blocks(1);
-    diagnostics.record_bridge_backlog_blocks_shed(u64::MAX);
-    diagnostics.record_bridge_backlog_blocks_shed(1);
-    diagnostics.record_bridge_blocks_passed_chain_bound(u64::MAX);
-    diagnostics.record_bridge_blocks_passed_chain_bound(1);
-    diagnostics.record_callback_frames_over_bridge_reach(u64::MAX);
-    diagnostics.record_callback_frames_over_bridge_reach(1);
     diagnostics.record_capture_consumer_refusal(u64::MAX);
     diagnostics.record_capture_consumer_refusal(1);
     diagnostics.record_capture_blocks_dropped(u64::MAX);
     diagnostics.record_capture_blocks_dropped(1);
     diagnostics.record_capture_input_underrun(u64::MAX);
     diagnostics.record_capture_input_underrun(1);
+    diagnostics.record_midi_note_batch_refusal(u64::MAX);
+    diagnostics.record_midi_note_batch_refusal(1);
+    diagnostics.record_late_midi_notes(u64::MAX);
+    diagnostics.record_late_midi_notes(1);
 
     assert_eq!(diagnostics.snapshot(), maximum);
 }

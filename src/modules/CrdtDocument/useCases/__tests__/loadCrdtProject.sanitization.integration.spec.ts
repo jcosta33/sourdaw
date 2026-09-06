@@ -16,7 +16,7 @@ vi.mock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () 
 vi.mock('../../repositories/crdtPersistence/saveAllToIdb', () => ({
     saveAllToIdb: mocks.saveAllToIdb,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn(), executeUserAppAction: vi.fn() }));
 
 vi.stubGlobal(
     'Worker',

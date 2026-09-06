@@ -10,9 +10,11 @@ import { openPluginGui } from '../openPluginGui';
 import { pluginLifecycleScheduler } from '../serializePluginLifecycle';
 import { unloadPlugin } from '../unloadPlugin';
 
+import type { unloadPlugin as unloadPluginRepoSignature } from '../../../repositories/pluginBridge/unloadPlugin';
+
 const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn(),
-    unloadPluginRepo: vi.fn(),
+    unloadPluginRepo: vi.fn<typeof unloadPluginRepoSignature>(),
     openPluginGuiRepo: vi.fn(),
 }));
 
@@ -55,7 +57,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.clear();
         mocks.loadPluginRepo.mockResolvedValue(pluginInstance);
         mocks.unloadPluginRepo.mockImplementation((instanceId?: string) =>
-            Promise.resolve([instanceId ? [instanceId] : [], []])
+            Promise.resolve({ unloadedInstanceIds: instanceId ? [instanceId] : [], errors: [], reports: [] })
         );
     });
 
@@ -66,7 +68,7 @@ describe('Plugin Lifecycle Use Cases', () => {
 
     it('rejects mismatched keyed unload ownership', async () => {
         loadedExternalInstances.add('inst1');
-        mocks.unloadPluginRepo.mockResolvedValueOnce([['other'], []]);
+        mocks.unloadPluginRepo.mockResolvedValueOnce({ unloadedInstanceIds: ['other'], errors: [], reports: [] });
         await expect(unloadPlugin('inst1')).rejects.toThrow('Invalid keyed unload_plugin response');
         expect([...loadedExternalInstances]).toEqual(['inst1']);
     });
@@ -74,12 +76,16 @@ describe('Plugin Lifecycle Use Cases', () => {
     it('reconciles partial native bulk unload before rejecting', async () => {
         loadedExternalInstances.add('removed');
         loadedExternalInstances.add('survivor');
-        mocks.unloadPluginRepo.mockResolvedValueOnce([['removed'], ['survivor failed']]);
+        mocks.unloadPluginRepo.mockResolvedValueOnce({
+            unloadedInstanceIds: ['removed'],
+            errors: ['survivor failed'],
+            reports: [],
+        });
         await expect(unloadPlugin()).rejects.toThrow('survivor failed');
         expect([...loadedExternalInstances]).toEqual(['survivor']);
     });
     it('serializes unload then load for the same instance', async () => {
-        const unloaded = [['ordered-instance'], []];
+        const unloaded = { unloadedInstanceIds: ['ordered-instance'], errors: [], reports: [] };
         const unloading = Promise.withResolvers<typeof unloaded>();
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
@@ -110,7 +116,7 @@ describe('Plugin Lifecycle Use Cases', () => {
             order.push('outer-start');
             nestedResult = loadPlugin('p1', 'reentrant-instance', 44_100);
             order.push('outer-return');
-            return Promise.resolve([['reentrant-instance'], []]);
+            return Promise.resolve({ unloadedInstanceIds: ['reentrant-instance'], errors: [], reports: [] });
         });
         mocks.loadPluginRepo.mockImplementationOnce(() => {
             order.push('nested-run');

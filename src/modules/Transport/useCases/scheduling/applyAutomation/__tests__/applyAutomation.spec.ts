@@ -4,6 +4,8 @@ import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } fro
 import {
     getCompensationDelay,
     getCurrentTime,
+    holdWebFallbackDeviceParam,
+    isDeviceCarriedByNativeSession,
     scheduleSendAutomation,
     scheduleTrackGain,
     scheduleTrackPan,
@@ -74,6 +76,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         scheduleTrackPan: vi.fn(),
         getCurrentTime: vi.fn(() => 5),
         getCompensationDelay: vi.fn(() => 0),
+        holdWebFallbackDeviceParam: vi.fn(),
+        isDeviceCarriedByNativeSession: vi.fn(() => false),
         updateDeviceParam: vi.fn(),
         updateMidiFxParam: vi.fn(),
     };
@@ -96,6 +100,7 @@ type SeedDevice = {
     id: string;
     type: string;
     parameterValues: Record<string, number>;
+    bypassed?: boolean;
 };
 
 const EQ_A = { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
@@ -134,6 +139,63 @@ function seedDeviceLane(options: {
     };
 }
 
+type SnapshotTrack = { devices: SeedDevice[] };
+
+/**
+ * Toggle a device's bypass the way the project actually commits one.
+ *
+ * `bypassDevice` rebuilds every track through `mapAllTracks`, so the store gets
+ * a new state object holding a new device object. Setting `bypassed` on the
+ * device already inside `trackStore.value` leaves the snapshot identity
+ * unchanged — a move no use case makes, and the one that hides whether
+ * `applyAutomation` survives a replaced snapshot with its bypass ledger intact.
+ */
+function commitBypass(deviceId: string, bypassed: boolean): void {
+    const tracks = mutableTrackStore.value.tracks as SnapshotTrack[];
+    mutableTrackStore.value = {
+        tracks: tracks.map((track) => ({
+            ...track,
+            devices: track.devices.map((device) => (device.id === deviceId ? { ...device, bypassed } : device)),
+        })),
+    };
+}
+
+/**
+ * Replace the track snapshot with a different device list, the way any project
+ * edit that adds or removes a device commits one — a new state object holding
+ * new device objects, which is what `mapAllTracks` produces.
+ */
+function replaceDevices(devices: SeedDevice[]): void {
+    const tracks = mutableTrackStore.value.tracks as SnapshotTrack[];
+    mutableTrackStore.value = { tracks: tracks.map((track) => ({ ...track, devices })) };
+}
+
+/** One device carrying two lanes of its own, which is what a plugin usually looks like. */
+function seedTwoLanesOnOneDevice(device: SeedDevice): void {
+    mutableTrackStore.value = {
+        tracks: [
+            {
+                id: 'track-1',
+                kind: 'audio',
+                automationMode: 'read',
+                clips: [],
+                midiFx: [],
+                devices: [device],
+                sends: [],
+            },
+        ],
+    };
+    mutableAutomationStore.value = {
+        lanes: Object.keys(device.parameterValues).map((paramId) => ({
+            id: `lane-${paramId}`,
+            trackId: 'track-1',
+            parameterId: `${device.id}:${paramId}`,
+            minValue: 0,
+            points: [{ beat: 0, value: 0.75 }],
+        })),
+    };
+}
+
 describe('applyAutomation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -143,6 +205,7 @@ describe('applyAutomation', () => {
         vi.mocked(getCurrentTime).mockReturnValue(5);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(deriveVcaMultiplier).mockReturnValue(1);
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
     });
 
     it('should export applyAutomation', () => {
@@ -517,6 +580,254 @@ describe('applyAutomation', () => {
 
             expect(updateDeviceParam).not.toHaveBeenCalled();
             expect(updateMidiFxParam).not.toHaveBeenCalled();
+        });
+
+        // The native session stamps a carried device's parameters from the
+        // engine's own queue, block-accurately and ahead of the playhead
+        // (#3568). The tick-grid IPC write is then a second, later writer on one
+        // parameter: it lands after the stamp it duplicates and drags the value
+        // back to where the curve was a tick ago.
+        it.each([
+            [true, 0],
+            [false, 1],
+        ])(
+            'writes a moving device parameter over IPC only while the native session is not carrying it (carried: %s)',
+            (carried, expectedWrites) => {
+                seedDeviceLane({
+                    devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
+                    laneParameterId: 'device-eq1:eq-low-gain',
+                });
+                vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(carried);
+
+                vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+                applyAutomation(0);
+                applyAutomation(1);
+
+                expect(updateDeviceParam).toHaveBeenCalledTimes(expectedWrites);
+                // The gate asks whether the *device on this lane's track* is
+                // carried. Handing the two ids the other way round asks about a
+                // track named by a device id, which no session ever carries —
+                // so every carried device would keep its doubled IPC writer.
+                expect(isDeviceCarriedByNativeSession).toHaveBeenCalledWith('track-1', 'device-eq1');
+            }
+        );
+
+        it('restates a carried device’s parameter once when it comes back from bypass, and not again', () => {
+            // The engine drops a stamp due at a bypassed effect, so a plugin
+            // switched back in holds whatever it held before the bypass — and a
+            // curve sitting still stamps nothing to correct it. This one write
+            // is the exception the carried gate makes; repeating it every tick
+            // afterwards would be the doubled writer the gate exists to stop.
+            const device: SeedDevice = {
+                id: 'device-eq1',
+                type: 'builtin-eq',
+                parameterValues: { 'eq-low-gain': 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-eq1:eq-low-gain' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+            // The curve moves across the bypass. What the restatement owes the
+            // plugin is where the lane is *now*, not the value it held when the
+            // engine stopped stamping it — and the un-bypass replaced the track
+            // snapshot, which drops the slew, so "now" is the curve value
+            // itself rather than one tick of glide toward it.
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
+
+            applyAutomation(0);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+
+            commitBypass(device.id, false);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', 0.8);
+
+            applyAutomation(2);
+
+            expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        });
+
+        it('restates every lane on a carried device that comes back from bypass, not only the first', () => {
+            // A plugin commonly carries several lanes. The release is one fact
+            // about the device per tick, so consuming it where the first lane
+            // reaches the device leaves every later lane reading a device that
+            // was never bypassed — and its parameter stays where the bypass
+            // left it, with no curve movement coming to correct it.
+            const device: SeedDevice = {
+                id: 'device-eq1',
+                type: 'builtin-eq',
+                parameterValues: { 'eq-low-gain': 0, 'eq-high-gain': 0 },
+                bypassed: true,
+            };
+            seedTwoLanesOnOneDevice(device);
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            applyAutomation(0);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+
+            commitBypass(device.id, false);
+            applyAutomation(1);
+
+            expect(vi.mocked(updateDeviceParam).mock.calls.map((call) => call[2])).toEqual([
+                'eq-low-gain',
+                'eq-high-gain',
+            ]);
+
+            // And still exactly once each: the edge is spent for the tick after
+            // it is resolved, not re-offered on every tick that follows.
+            applyAutomation(2);
+
+            expect(updateDeviceParam).toHaveBeenCalledTimes(2);
+        });
+
+        it('forgets a bypassed device’s state once the device leaves the snapshot', () => {
+            // The ledger deliberately survives a replaced snapshot, because the
+            // un-bypass *is* a replaced snapshot. What it must not survive is
+            // the device leaving the project: an id that comes back belongs to
+            // a device nobody bypassed — a plugin re-added, or another project
+            // loaded onto the same ids — and a stale `true` would restate its
+            // parameter over IPC on the first tick that reached it, doubling
+            // the writer the carried gate exists to stop.
+            const device: SeedDevice = {
+                id: 'device-eq9',
+                type: 'builtin-eq',
+                parameterValues: { 'eq-low-gain': 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-eq9:eq-low-gain' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            applyAutomation(0);
+
+            replaceDevices([]);
+            applyAutomation(1);
+
+            // Back under the same id, live, on a lane that is not moving:
+            // nothing here is a release from bypass.
+            replaceDevices([{ ...device, bypassed: false }]);
+            applyAutomation(2);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        // A carried built-in is stamped from the engine's queue like a carried
+        // plugin, but unlike a plugin its Web Audio node is the strip's own
+        // fallback carrier — silent only while the session holds the gate
+        // closed, and heard again the moment Stop reopens it. So the tick grid
+        // still has one thing to do for it: keep that node on the curve,
+        // without letting the value reach the engine.
+        it('holds a carried built-in’s Web Audio fallback on a moving tick instead of writing the engine', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
+                laneParameterId: 'device-k1:shift_semitones',
+            });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-k1',
+                'shift_semitones',
+                slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
+            );
+        });
+
+        it('restates a carried built-in through the full door on release from bypass, not the fallback hold', () => {
+            const device: SeedDevice = {
+                id: 'device-k1',
+                type: 'knead',
+                parameterValues: { shift_semitones: 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-k1:shift_semitones' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
+
+            applyAutomation(0);
+            commitBypass(device.id, false);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.8);
+            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('writes an uncarried built-in through the full door and holds nothing', () => {
+            seedDeviceLane({
+                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
+                laneParameterId: 'device-k1:shift_semitones',
+            });
+
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-k1',
+                'shift_semitones',
+                slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
+            );
+            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
+        });
+
+        // The Fermenter's fallback node answers to the instrument's snake_case
+        // name, which is what `applyFermenterRuntimeParam` would have handed it
+        // — the hold takes the same door and owes the same translation.
+        it('holds a carried Fermenter’s fallback under the instrument’s own name', () => {
+            // Its own device id: the per-parameter slew is module state keyed by
+            // it, and a ride left behind by another spec would make this one's
+            // first tick a movement it never made.
+            seedDeviceLane({
+                devices: [{ id: 'device-f2', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
+                laneParameterId: 'device-f2:filterCutoff',
+            });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+
+            // Hertz, both inside the declared cutoff range, so the first tick
+            // rests where the curve already is and the value that lands on the
+            // second is the slew's own rather than a clamp to the range floor.
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(5_000).mockReturnValue(10_000);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(applyFermenterRuntimeParam).not.toHaveBeenCalled();
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith(
+                'track-1',
+                'device-f2',
+                'cutoff',
+                slewStep(5_000, 10_000, AUTOMATION_SLEW_ALPHA)
+            );
+        });
+
+        it('restates a carried Fermenter through the runtime use case on release from bypass', () => {
+            const device: SeedDevice = {
+                id: 'device-f1',
+                type: 'fermenter',
+                parameterValues: { filterCutoff: 0 },
+                bypassed: true,
+            };
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-f1:filterCutoff' });
+            vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(1_000).mockReturnValue(5_000);
+
+            applyAutomation(0);
+            commitBypass(device.id, false);
+            applyAutomation(1);
+
+            // The un-bypass replaced the track snapshot, which drops the slew,
+            // so the restatement owes the curve value itself.
+            expect(applyFermenterRuntimeParam).toHaveBeenCalledWith(
+                expect.objectContaining({ deviceId: 'device-f1', paramId: 'filterCutoff', value: 5_000 })
+            );
+            expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
         });
     });
 

@@ -1,6 +1,6 @@
 import { type Store } from '#/infra/store/types';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
@@ -123,7 +123,7 @@ export function dispatchGrandBouleParam({
         return;
     }
 
-    void executeAppAction({
+    void executeUserAppAction({
         type: 'setDeviceParameter',
         payload: { deviceId, paramId, value },
     }).then(

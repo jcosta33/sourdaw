@@ -10,9 +10,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { type Clip, type Track } from '#/modules/Arrangement/stores';
+import { type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
+import {
+    REFUSE_DEVICE_AUTOMATION,
+    type StripAutomationDeviceEntry,
+} from '../../offlineRender/projectStripAutomationWrites';
 import { projectLiveAutomationWrites, type LiveAutomationWritesInput } from '../projectLiveAutomationWrites';
 
 function createTrack(overrides?: Partial<Track>): Track {
@@ -95,6 +99,10 @@ const baseInput: Omit<LiveAutomationWritesInput, 'stripTracks' | 'lanes' | 'regi
         vcaMultiplierByTrackId: new Map(),
         slewTickSeconds: 0.01,
         resolveLaneCeiling: (candidate) => candidate.maxValue,
+        // A session carrying nothing natively, held to the refusing law: what
+        // every spec below this line inherits, and what main's behaviour was.
+        carriedDeviceEntries: () => [],
+        deviceParameterLaw: REFUSE_DEVICE_AUTOMATION,
     };
 
 describe('projectLiveAutomationWrites — region clipping', () => {
@@ -495,5 +503,180 @@ describe('projectLiveAutomationWrites — dropped-send exclusion', () => {
         expect(
             result.entries.some((entry) => entry.target.kind === 'track-send-level' && entry.target.busId === 'bus-x')
         ).toBe(false);
+    });
+});
+
+/**
+ * The three outcomes a device lane can have on the live producer (#3568), and
+ * why they are three rather than two. A lane the native session carries is
+ * projected into a `device-parameter` entry. A hosted lane on a device this
+ * session does *not* carry is omitted in silence, because Web Audio is driving
+ * that plugin over IPC and naming it excluded would report a working parameter
+ * as broken. Anything else keeps the #3124 exclusion it has always had.
+ */
+describe('projectLiveAutomationWrites — hosted device lanes', () => {
+    const hostedDevice: Device = {
+        id: 'plugin-1',
+        name: 'Compressor',
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalInstanceId: 'instance-1',
+    };
+
+    const builtinDevice: Device = {
+        id: 'grinder-1',
+        name: 'Grinder',
+        type: 'grinder',
+        bypassed: false,
+        parameterValues: { cutoff: 0.4 },
+    };
+
+    const carriedEntry: StripAutomationDeviceEntry = {
+        deviceId: hostedDevice.id,
+        deviceType: hostedDevice.type,
+        externalInstanceId: 'instance-1',
+    };
+
+    /** Accepts this one plugin's parameter 7 and refuses everything else. */
+    const hostedLaw: LiveAutomationWritesInput['deviceParameterLaw'] = {
+        acceptsAutomation: ({ deviceId, parameterId }) => deviceId === hostedDevice.id && parameterId === '7',
+        clampValue: ({ value }) => value,
+        quantiseValue: ({ value }) => value,
+    };
+
+    it('projects a lane on a carried hosted device into a device-parameter entry', () => {
+        const track = createTrack({ devices: [hostedDevice] });
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: (stripId) => (stripId === track.id ? [carriedEntry] : []),
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes: [lane({ trackId: track.id, parameterId: 'plugin-1:7', points: [point(0, 0.3, 'step')] })],
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        const entry = result.entries.find((candidate) => candidate.target.kind === 'device-parameter');
+        expect(entry?.target).toEqual({
+            kind: 'device-parameter',
+            trackId: track.id,
+            deviceId: hostedDevice.id,
+            parameterId: '7',
+        });
+        expect(entry?.writes.length).toBeGreaterThan(0);
+        expect(entry?.writes.every((write) => write.shape === 'step')).toBe(true);
+    });
+
+    it('omits a lane on a hosted device this session does not carry, without excluding it', () => {
+        // The plugin is on the strip and its parameter is automatable; what is
+        // missing is the native body. Web Audio is writing it over IPC, so the
+        // lane is carried — just not here.
+        const track = createTrack({ devices: [hostedDevice] });
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: () => [],
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes: [lane({ trackId: track.id, parameterId: 'plugin-1:7', points: [point(0, 0.3, 'step')] })],
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        expect(result.entries.some((entry) => entry.target.kind === 'device-parameter')).toBe(false);
+    });
+
+    it('still excludes a built-in device lane on a strip whose hosted device is carried', () => {
+        const track = createTrack({ devices: [builtinDevice, hostedDevice] });
+        const builtinLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            points: [point(0, 0.3, 'step')],
+        });
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            carriedDeviceEntries: () => [carriedEntry],
+            deviceParameterLaw: hostedLaw,
+            stripTracks: [track],
+            lanes: [builtinLane],
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([
+            {
+                stripId: track.id,
+                subjectId: builtinLane.id,
+                reason: 'device parameter automation has no native body yet (#3124)',
+            },
+        ]);
+    });
+});
+
+/**
+ * A built-in the engine builds a body for is in the same position a hosted
+ * plugin is (#3893): the session may not be carrying it yet, but the engine
+ * *can* carry it, so an uncarried lane on one is omitted in silence rather than
+ * reported as automation with nowhere to go. A device the engine builds no body
+ * for keeps the exclusion it has always had.
+ */
+describe('projectLiveAutomationWrites — native built-in device lanes', () => {
+    const fermenter: Device = {
+        id: 'fermenter-1',
+        name: 'Fermenter',
+        type: 'fermenter',
+        bypassed: false,
+        parameterValues: { filterCutoff: 0.4 },
+    };
+
+    const crust: Device = {
+        id: 'crust-1',
+        name: 'Crust',
+        type: 'crust',
+        bypassed: false,
+        parameterValues: { drive: 0.4 },
+    };
+
+    /** Accepts every parameter, so admission turns on the device rather than the id. */
+    const permissiveLaw: LiveAutomationWritesInput['deviceParameterLaw'] = {
+        acceptsAutomation: () => true,
+        clampValue: ({ value }) => value,
+        quantiseValue: ({ value }) => value,
+    };
+
+    function projectBothLanes(): ReturnType<typeof projectLiveAutomationWrites> {
+        const track = createTrack({ devices: [fermenter, crust] });
+        return projectLiveAutomationWrites({
+            ...baseInput,
+            // The engine is carrying nothing on this strip: what separates the
+            // two lanes below is only whether the engine has a body to carry.
+            carriedDeviceEntries: () => [],
+            deviceParameterLaw: permissiveLaw,
+            stripTracks: [track],
+            lanes: [
+                lane({ trackId: track.id, parameterId: 'fermenter-1:filterCutoff', points: [point(0, 0.3, 'step')] }),
+                lane({ trackId: track.id, parameterId: 'crust-1:drive', points: [point(0, 0.3, 'step')] }),
+            ],
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+    }
+
+    it('does not exclude an uncarried lane on a device the engine builds a body for', () => {
+        expect(projectBothLanes().exclusions.map((exclusion) => exclusion.subjectId)).not.toContain(
+            'lane-track-1-fermenter-1:filterCutoff'
+        );
+    });
+
+    it('still excludes a lane on a device the engine builds no body for', () => {
+        expect(projectBothLanes().exclusions).toEqual([
+            {
+                stripId: 'track-1',
+                subjectId: 'lane-track-1-crust-1:drive',
+                reason: 'device parameter automation has no native body yet (#3124)',
+            },
+        ]);
     });
 });

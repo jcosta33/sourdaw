@@ -35,6 +35,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     executeVersionedCommandBatchEnvelope: mocks.executeBatch,
 }));
 

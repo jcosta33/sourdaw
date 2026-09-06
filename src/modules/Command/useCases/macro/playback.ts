@@ -2,7 +2,6 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
-import { findSingletonBatchAction } from '../findSingletonBatchAction';
 import { generateGroupId } from '../generateGroupId';
 
 type ReplayIdMappings = {
@@ -241,6 +240,16 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'duplicateClipAt') {
+        // The recorded copy id was consumed by the recorded gesture's undo: on
+        // replay the copy still exists, so the pinned id would make the handler
+        // no-write and the step would silently vanish. Clear it so the handler
+        // mints a fresh copy, like every create branch above.
+        delete replayAction.payload.targetClipId;
+        await executeAppAction(replayAction, options);
+        return;
+    }
+
     if (replayAction.type === 'addAdjustmentRegion') {
         replayAction.payload.layerId = remapLayerId(replayAction.payload.layerId, mappings);
         const recordedRegionId = replayAction.payload.regionId;
@@ -323,11 +332,11 @@ export async function playMacro(macroId: string): Promise<void> {
         return;
     }
 
-    const singletonAction = findSingletonBatchAction(macro.actions);
-    if (singletonAction) {
-        throw new Error(`Action must execute as a singleton batch: ${singletonAction.type}`);
-    }
-
+    // Singleton-marked actions (domain-singleton handlers such as drawClip and
+    // moveClips) replay through this same per-action loop — the individual
+    // dispatch path they are defined for — instead of being refused. The kernel
+    // drops the group id for them, so each lands as its own undo entry; every
+    // batch-capable action still shares the macro's group below.
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const replayIdMappings: ReplayIdMappings = {
         automationLaneIds: new Map(),

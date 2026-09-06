@@ -159,6 +159,18 @@ describe('ArrangementBar', () => {
         expect(screen.getByText('Delete')).toBeInTheDocument();
     });
 
+    // The global shortcut layer gates Delete / Backspace on
+    // closest('[role="menu"]') (#3618): without a menu-role ancestor a Delete
+    // from inside the open menu deletes the arrangement clips behind it.
+    it('section context menu items sit inside a [role="menu"] surface', () => {
+        setSections([section({ id: 's1', name: 'Intro', startBeat: 0, endBeat: 16 })]);
+        const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);
+        const bar = container.querySelector('[role="region"]')!;
+        fireEvent.contextMenu(bar, { clientX: 50, clientY: 10 });
+
+        expect(screen.getByText('Rename').closest('[role="menu"]')).not.toBeNull();
+    });
+
     it('starts rename, commits the trimmed name on blur, and clears editing', () => {
         setSections([section({ id: 's1', name: 'Intro', startBeat: 0, endBeat: 16 })]);
         const { container } = render(<ArrangementBar pixelsPerBeat={12} scrollX={0} />);

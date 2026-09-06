@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createEmptyTree } from '../../models/UndoTree';
+import { undoTreeStore, type UndoTreeStoreState } from '../../stores/undoTree';
 import { captureUndoHistory } from '../captureUndoHistory';
 
 const { undoStoreValue } = vi.hoisted(() => ({
@@ -33,7 +35,7 @@ describe('captureUndoHistory', () => {
 
         const snapshot = captureUndoHistory();
 
-        expect(snapshot).toEqual({ past: [entry], future: [] });
+        expect(snapshot).toEqual({ past: [entry], future: [], undoTree: undoTreeStore.value });
         // Defensive copy: the returned arrays must not be the store's own array
         // objects, or a later push onto the store's `past`/`future` would also
         // mutate an already-captured snapshot.
@@ -61,6 +63,18 @@ describe('captureUndoHistory', () => {
     it('falls back to empty stacks when the store has no value', () => {
         undoStoreValue.mockReturnValue(null);
 
-        expect(captureUndoHistory()).toEqual({ past: [], future: [] });
+        expect(captureUndoHistory()).toEqual({ past: [], future: [], undoTree: undoTreeStore.value });
+    });
+
+    it('captures the tree mirror state alongside the stacks', () => {
+        undoStoreValue.mockReturnValue({ past: [], future: [] });
+        const mirrorState: UndoTreeStoreState = { tree: createEmptyTree(), enabled: true };
+        undoTreeStore.set(mirrorState);
+
+        const snapshot = captureUndoHistory();
+
+        // The mirror rides along by reference, so a later store write cannot
+        // retroactively change what the snapshot captured.
+        expect(snapshot.undoTree).toBe(mirrorState);
     });
 });

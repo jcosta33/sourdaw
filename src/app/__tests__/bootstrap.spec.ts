@@ -113,6 +113,10 @@ const {
     sessionUndoWitnessStampPortMock,
     stampSessionUndoWitnessMock,
     composeGrandBouleMock,
+    toasterGrooveExecutorMock,
+    executeUserAppActionBinding,
+    recordNativeChainReleasesMock,
+    registerReleasedStripReportSinkMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -165,6 +169,10 @@ const {
         // registration assertion pins these by reference, so rewiring bootstrap
         // to another barrel's exports has to change what reaches that call.
         setTrackGainMock: vi.fn(),
+        // Same distinction for the Toaster groove executor wiring: its assertion
+        // pins the registered dispatcher by reference against the barrel binding.
+        toasterGrooveExecutorMock: vi.fn(),
+        executeUserAppActionBinding: vi.fn(),
         setTrackPanMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
@@ -189,6 +197,12 @@ const {
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
         stampSessionUndoWitnessMock: vi.fn(),
         composeGrandBouleMock: vi.fn(),
+        // Distinguishable from the shared noop for the same reason as the
+        // Toaster and MIDI-learn bindings above: the sink-wiring assertion
+        // pins this exact reference, so registering some other function in
+        // its place — or dropping the registration outright — fails here.
+        recordNativeChainReleasesMock: vi.fn(),
+        registerReleasedStripReportSinkMock: vi.fn<(sink: (reports: readonly unknown[]) => void) => void>(),
     };
 });
 
@@ -222,7 +236,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    acceptsExternalPluginAutomationParameter: noop,
     clampDeviceParameterValue: noop,
+    clampExternalPluginAutomationValue: noop,
     isDeviceParameterAutomatable: noop,
     quantiseDeviceParameterValue: noop,
     getDeviceContractVersionForCommand: () => 'descriptor-v1:test',
@@ -267,6 +283,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     compileAudioGraphTopology: noop,
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
+    recordNativeChainReleases: recordNativeChainReleasesMock,
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -312,6 +329,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    executeUserAppAction: executeUserAppActionBinding,
     getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,
     getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
@@ -423,6 +441,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     getExternalPluginContractVersionForCommand: () => 'external-plugin-v1:test',
     getPluginHostHandlers: sentinelHandlers('PluginHost'),
+    registerReleasedStripReportSink: registerReleasedStripReportSinkMock,
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
@@ -481,7 +500,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterSubscribers: noop,
     initToasterKitPersistence: noop,
     setToasterEventBus: noop,
-    setToasterGrooveAssignmentExecutor: noop,
+    setToasterGrooveAssignmentExecutor: toasterGrooveExecutorMock,
     prepareOfflineToaster: noop,
 }));
 
@@ -643,6 +662,16 @@ describe('bootstrap', () => {
             canExecute: canExecuteCommandBatchMock,
         });
     });
+    it('wires the Toaster groove executor to the user dispatch wrapper', async () => {
+        // Identity pin: the executor ToasterPanel gestures flow through must be
+        // the barrel's executeUserAppAction binding, so an admission refusal on
+        // a groove assignment reaches the user as a notification. Rewiring to
+        // the bare executeAppAction changes the reference and fails this test.
+        const registered = toasterGrooveExecutorMock.mock.calls[0]?.[0];
+        expect(registered).toBeDefined();
+        const { executeUserAppAction } = await import('#/modules/Command/useCases');
+        expect(registered?.execute).toBe(executeUserAppAction);
+    });
 
     it('gives Collaboration only Project-owned settled identity reads', () => {
         expect(configureCollaborationAssetOwnerMock).toHaveBeenCalledExactlyOnceWith({
@@ -791,6 +820,18 @@ describe('bootstrap', () => {
         expect(setAutomationParameterRangeResolverMock).toHaveBeenCalledExactlyOnceWith(
             getAutomationParameterRangeMock
         );
+    });
+
+    /**
+     * An unload changes native strip state with no batch of its own to carry
+     * it, so PluginHost's own release reports have no route to AudioEngine's
+     * session mirror except the sink the composition root wires here (#3793).
+     * Pinned by reference, like the Toaster and MIDI-learn bindings above:
+     * registering some other function, or dropping the registration outright,
+     * leaves an unload's released strips with nowhere to narrow the mirror.
+     */
+    it('wires an unload plugin release report to narrow the native chain session AudioEngine holds', () => {
+        expect(registerReleasedStripReportSinkMock).toHaveBeenCalledExactlyOnceWith(recordNativeChainReleasesMock);
     });
 
     /**

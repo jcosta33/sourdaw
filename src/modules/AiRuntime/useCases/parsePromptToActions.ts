@@ -244,7 +244,7 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
 /**
  * Prompt parsing order:
  * 1. Non-executable recognition for explicitly denied action intents
- * 2. Fast-path: fuzzy-match against executable preset action registry
+ * 2. Fast-path: unique exact label or declared command alias in the preset registry
  * 3. Parameterized fast-path: regex for commands that need values (tempo N, transpose N)
  * 4. Compound fast-path: multi-track creation etc.
  * 5. Provider-neutral LLM tool path: tool calls cross a strict app-owned action bridge
@@ -262,6 +262,7 @@ const planPromptIntent = inject({ logger })(
             onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
         ): Promise<IntentResult> {
             const normalized = prompt.toLowerCase().trim();
+            const trimmedPrompt = prompt.trim();
 
             const deniedActionType = findDeniedPromptIntent(normalized);
             if (deniedActionType !== null) {
@@ -273,7 +274,7 @@ const planPromptIntent = inject({ logger })(
                 };
             }
 
-            // 2. Try executable preset actions via fuzzy match
+            // 2. Try complete executable preset commands via unique exact match
             const presetCtx = buildPresetContext(context);
             const presetResult = tryPresetMatch(normalized, presetCtx);
             if (presetResult.length > 0) {
@@ -281,13 +282,13 @@ const planPromptIntent = inject({ logger })(
             }
 
             // 3. Try parameterized patterns (need value extraction)
-            const paramResult = tryParameterizedPath(normalized, context);
+            const paramResult = tryParameterizedPath(trimmedPrompt, context);
             if (paramResult.length > 0) {
                 return createFastPathResult({ actions: paramResult, context, prompt });
             }
 
             // 4. Try compound fast path (multi-track creation etc.)
-            const compoundResult = tryCompoundFastPath(normalized, context);
+            const compoundResult = tryCompoundFastPath(trimmedPrompt, context);
             if (compoundResult !== null) {
                 return createFastPathResult({ actions: compoundResult, context, prompt });
             }

@@ -1,6 +1,6 @@
 use crate::host::native_bridge::SharedHostedPlugin;
 use crate::host::ui_thread::UiThread;
-use daw_engine::audio_bridge::{PluginAudioBridgeHandle, MAX_BLOCK_FRAMES};
+use daw_engine::timeline::DeviceKind;
 use daw_engine::EngineHandle;
 use daw_plugin_host::scanner::ScannedPlugin;
 // The trait, the resizer and the raw handle are how a plugin's editor is
@@ -17,7 +17,6 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 #[cfg(test)]
 use std::ffi::c_void;
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
@@ -35,11 +34,15 @@ use std::time::Duration;
 /// `name`, `parameters` and `has_gui` mirror `EnginePluginInstanceData`: they
 /// are what the load read off the plugin, and the attach registers the instance
 /// under exactly those rather than asking a plugin that has since been edited.
+/// `chain_kind` mirrors it too: read once off the registry entry the load
+/// resolved, and carried through the attach so the strip splice matches what
+/// the load already decided.
 pub struct PluginInstanceData {
     pub plugin: HostedRuntime,
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
+    pub chain_kind: DeviceKind,
 }
 
 impl PluginInstanceData {
@@ -48,36 +51,17 @@ impl PluginInstanceData {
     /// The load path spells the three fields out instead, from the values it
     /// already read while the plugin was in its hands — it is the load's own
     /// reading that the attach must register under. This is for the tests that
-    /// park a fixture runtime and care about none of them.
+    /// park a fixture runtime and care about none of them, so `chain_kind`
+    /// defaults to `Effect` rather than reading a registry entry no such test
+    /// resolves.
     #[cfg(test)]
     pub fn dormant_fixture(plugin: HostedRuntime) -> Self {
         Self {
             name: plugin.get_name().to_string(),
             parameters: plugin.get_parameters(),
             has_gui: plugin.has_gui(),
+            chain_kind: DeviceKind::Effect,
             plugin,
-        }
-    }
-}
-
-/// Preallocated de-interleave scratch for one instance's worklet↔engine relay.
-///
-/// `process_plugin_audio` runs once per render quantum per bridged plugin, so a
-/// `Vec` allocated inside it is allocator churn on the path that services the
-/// audio relay. Both buffers are sized once to the largest block the bridge
-/// accepts (`MAX_BLOCK_FRAMES`) and refilled in place: the relay clears and
-/// pushes, never grows. A block larger than that capacity is refused by
-/// `push_input` anyway, so the relay never has a reason to reallocate.
-pub struct PluginRelayScratch {
-    pub left: Vec<f32>,
-    pub right: Vec<f32>,
-}
-
-impl Default for PluginRelayScratch {
-    fn default() -> Self {
-        Self {
-            left: Vec::with_capacity(MAX_BLOCK_FRAMES),
-            right: Vec::with_capacity(MAX_BLOCK_FRAMES),
         }
     }
 }
@@ -88,14 +72,13 @@ pub struct EnginePluginInstanceData {
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub has_gui: bool,
-    /// Main-thread end of this instance's audio bridge.
-    ///
-    /// Held on the instance record, not in a second map keyed by engine plugin
-    /// id, so the relay resolves an instance id to its ring in one lock and one
-    /// lookup — and so the ring cannot outlive, or go missing from, the record
-    /// that owns it.
-    pub bridge: Option<PluginAudioBridgeHandle>,
-    pub relay_scratch: PluginRelayScratch,
+    /// How this instance splices into a strip chain — read once off the
+    /// registry entry the load resolved (`PluginRegistryEntry::chain_kind`)
+    /// and registered under exactly that, the same way `name` is: frozen at
+    /// load, and no rescan updates it. `map_device` (`commands/graph.rs`)
+    /// reads it back at splice time so an instrument replaces nothing and a
+    /// plain effect still does.
+    pub chain_kind: DeviceKind,
     /// The queue this plugin writes its own parameter edits into.
     ///
     /// Cloned off the runtime once at load and held here rather than reached
@@ -290,11 +273,6 @@ pub struct AppState {
     /// the scheduler has released its own `Arc` — see that method for the
     /// invariant.
     pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedHostedPlugin>>>>,
-    /// Input blocks `process_plugin_audio` could not hand to a bridge because
-    /// its input ring was full. Each one is audio the hosted plugin never saw,
-    /// so the refusal is counted and reported through `engine_rt_diagnostics`
-    /// rather than discarded with the block.
-    pub bridge_input_blocks_refused: Arc<AtomicU64>,
     /// Decoded timeline material, keyed by the app's stable source id.
     ///
     /// This is the native realisation of `AudioGraphClipSource.sourceId`
@@ -509,6 +487,11 @@ pub struct PluginRegistryEntry {
     pub num_outputs: u32,
     pub has_custom_ui: bool,
     pub capability_metadata_reason: Option<String>,
+    /// How this plugin splices into a native strip chain — [`DeviceKind::Generator`]
+    /// for an instrument, [`DeviceKind::Effect`] for everything else. Read once
+    /// at load (`commands::plugins::load_plugin`) and carried onto the
+    /// instance record so a chain splice never has to re-read the registry.
+    pub chain_kind: DeviceKind,
 }
 
 impl PluginRegistryEntry {
@@ -533,7 +516,25 @@ impl PluginRegistryEntry {
             num_outputs: plugin.num_outputs,
             has_custom_ui: plugin.has_custom_ui,
             capability_metadata_reason: plugin.capability_metadata_reason.clone(),
+            chain_kind: chain_kind_for_category(&plugin.category),
         }
+    }
+}
+
+/// The chain splice a scanned category resolves to.
+///
+/// The browser routes on the category string; the native chain splices on
+/// this kind. Both read the same scan answer so they cannot disagree about
+/// what one plugin is. `"instrument"` is the one category the scanner emits
+/// for CLAP's `instrument`/`synthesizer`/`sampler` features and VST3's
+/// `Instrument` sub-categories (`scanner.rs`, `vst3_scanner.rs`); every other
+/// category — including a note effect or an unqueried default — replaces the
+/// chain signal rather than joining it.
+fn chain_kind_for_category(category: &str) -> DeviceKind {
+    if category == "instrument" {
+        DeviceKind::Generator
+    } else {
+        DeviceKind::Effect
     }
 }
 
@@ -564,7 +565,6 @@ impl Default for AppState {
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
-            bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),
             timeline_samples: Arc::new(Mutex::new(TimelineSamplePool::default())),
             graph: Arc::new(Mutex::new(crate::commands::graph::GraphRegistry::default())),
             graph_mapping_sessions: Arc::new(Mutex::new(
@@ -1291,8 +1291,7 @@ mod tests {
                     name: "Live Fixture".to_string(),
                     parameters: Vec::new(),
                     has_gui: false,
-                    bridge: None,
-                    relay_scratch: PluginRelayScratch::default(),
+                    chain_kind: DeviceKind::Effect,
                     parameter_events: None,
                 },
             );
@@ -1353,6 +1352,54 @@ mod tests {
                     .expect("retirement lock")
                     .is_empty(),
                 "cycling load/unload must not accumulate retired runtimes"
+            );
+        }
+    }
+
+    fn scanned_plugin_with_category(category: &str) -> ScannedPlugin {
+        ScannedPlugin {
+            id: "scanned-instance".to_string(),
+            name: "Scanned Plugin".to_string(),
+            vendor: "Vendor".to_string(),
+            format: "clap".to_string(),
+            category: category.to_string(),
+            path: "/plugins/scanned-instance.clap".to_string(),
+            version: "1.0.0".to_string(),
+            descriptor_id: "com.sourdaw.scanned-instance".to_string(),
+            num_inputs: 2,
+            num_outputs: 2,
+            num_parameters: 0,
+            has_custom_ui: false,
+            parameters: None,
+            parameter_metadata_reason: None,
+            capability_metadata_reason: None,
+        }
+    }
+
+    /// The browser's `"instrument"` category is the one scan answer that must
+    /// splice as a generator: nothing else in `from_scanned` reads it, so a
+    /// dropped mapping here would leave every instrument replacing its strip's
+    /// signal instead of joining it.
+    #[test]
+    fn an_instrument_registry_entry_splices_as_a_generator() {
+        let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category("instrument"));
+
+        assert_eq!(entry.chain_kind, DeviceKind::Generator);
+    }
+
+    /// Every category besides `"instrument"` — a plain effect, a specific
+    /// effect type, and the empty string a scan that read no category leaves
+    /// behind — must default to `Effect`, or a chain would splice something
+    /// other than an instrument as if it produced signal of its own.
+    #[test]
+    fn an_effect_registry_entry_splices_as_an_effect() {
+        for category in ["effect", "reverb", ""] {
+            let entry = PluginRegistryEntry::from_scanned(&scanned_plugin_with_category(category));
+
+            assert_eq!(
+                entry.chain_kind,
+                DeviceKind::Effect,
+                "category '{category}' must not splice as a generator"
             );
         }
     }

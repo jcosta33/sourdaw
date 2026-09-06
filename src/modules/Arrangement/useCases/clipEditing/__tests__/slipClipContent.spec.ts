@@ -46,4 +46,12 @@ describe('slipClipContent', () => {
         const result = updater(makeClip({ id: 'c1', midiOffsetBeats: 0 }));
         expect(result.midiOffsetBeats).toBe(1.0);
     });
+
+    it('reports whether the write landed', () => {
+        vi.mocked(updateClip).mockReturnValueOnce(true);
+        expect(slipClipContent('c1', 'audio', 2.5)).toBe(true);
+
+        vi.mocked(updateClip).mockReturnValueOnce(false);
+        expect(slipClipContent('c1', 'audio', 2.5)).toBe(false);
+    });
 });

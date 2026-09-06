@@ -789,10 +789,7 @@ function trackedSetSha256(
     return trackedFilesSha256(root, files, readFile, budget);
 }
 
-export const AUDIO_WORKLET_SOURCES = [
-    'public/audio/worklets/native-plugin-bridge-processor.js',
-    'public/audio/worklets/sidechain-compressor-processor.js',
-] as const;
+export const AUDIO_WORKLET_SOURCES = ['public/audio/worklets/sidechain-compressor-processor.js'] as const;
 
 const PUBLIC_WASM_ROOT = 'public/wasm';
 const WASM_MANIFEST_PATH = `${PUBLIC_WASM_ROOT}/manifest.json`;

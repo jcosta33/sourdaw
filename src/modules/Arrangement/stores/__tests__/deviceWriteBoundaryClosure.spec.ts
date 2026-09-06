@@ -161,6 +161,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // the option replicates. The file compiles automation points into timed
         // events and writes nothing.
         // 'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': removed (0),
+        // Count provenance: new file, measured 1 — the single
+        // `audioEngine.updateDeviceParam` call. Web Audio half of the door for a
+        // built-in the native session carries, reached only from the guard-listed
+        // automation tick path. Engine-only, reaches no document (#3893).
+        'src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts': 1,
         // Count provenance: measured 2 in code — the function declaration plus
         // its one `audioEngine.updateDeviceParam` call, the single door every
         // device-param write reaches the DSP through, where the declared-range

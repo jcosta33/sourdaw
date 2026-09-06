@@ -166,7 +166,7 @@ export const MorphPanel = ({
 
     return (
         <DawPluginSectionCard
-            className="grand-boule-window"
+            className="grand-boule-window shrink-0"
             title="Morph"
             detail="Blend between piano models."
             titleClassName="text-neutral-400/80"

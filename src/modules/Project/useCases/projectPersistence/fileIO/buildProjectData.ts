@@ -1,3 +1,4 @@
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import {
     adjustmentLayerStore,
     gainEnvelopeStore,
@@ -10,6 +11,7 @@ import {
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import {
     chordTrackStore,
@@ -102,12 +104,14 @@ function collectOrdinaryBufferIds(trackState: TrackStoreState | null | undefined
     return ids;
 }
 
-/** Result of serializing the live project: the `ProjectData` snapshot plus the
- * count of referenced audio buffers that could not be embedded (so the export
- * UX can warn the user; the in-app save snapshot ignores it). */
+/** Result of serializing the live project: the `ProjectData` snapshot, the
+ * referenced audio ids that must remain durable, and the count that could not
+ * be embedded (so the export UX can warn the user). */
 export type BuiltProjectData = {
     data: ProjectData;
     missingBufferCount: number;
+    requiredAudioBufferIds: readonly string[];
+    snapshotRevision: string;
 };
 
 type BuildProjectDataInput = {
@@ -145,6 +149,8 @@ export async function buildProjectData({
     }
 
     syncCurrentArrangementToStore();
+    flushAutomergeStorageWrites();
+    const snapshotRevision = captureProjectRevision();
 
     const tracks = trackStore.value;
     const transport = transportStore.value;
@@ -194,7 +200,8 @@ export async function buildProjectData({
     const audioBuffers: Record<string, ProjectExportedAudioBuffer> = includeAudioBuffers
         ? await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] })
         : {};
-    if (agentProjectRepairStateStore.value !== null) {
+    flushAutomergeStorageWrites();
+    if (agentProjectRepairStateStore.value !== null || captureProjectRevision() !== snapshotRevision) {
         return null;
     }
     for (const id of frozenBufferIds) {
@@ -327,5 +334,5 @@ export async function buildProjectData({
         history: { checkpoints: [] },
     };
 
-    return { data, missingBufferCount };
+    return { data, missingBufferCount, requiredAudioBufferIds: [...allBufferIds], snapshotRevision };
 }

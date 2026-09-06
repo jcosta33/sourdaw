@@ -5,12 +5,12 @@
  * bar while a plugin is sounding, and what does the native engine report
  * underneath it?
  *
- * This is the pre-cutover baseline instrument for #3070. Before the native
- * audio path takes over playback, the numbers the app itself publishes have to
- * exist as a recorded figure taken on a real machine from a real packaged
- * build. Otherwise "the cutover improved latency" is a claim with nothing on
- * the other side of the comparison, and a dropout the cutover introduced is
- * indistinguishable from one that was always there.
+ * This is the instrument behind #3070's cutover comparison, and it takes both
+ * sides of it. Each side has to be a recorded figure taken on a real machine
+ * from a real packaged build: without one, "the cutover improved latency" is a
+ * claim with nothing opposite it, and a dropout the cutover introduced is
+ * indistinguishable from one that was always there. One run answers for one
+ * head, so two records differ only in the head each was taken on.
  *
  * It measures the shipped artefact, not a paraphrase of it: the
  * `electron-builder` output, launched as the user launches it, driven over the
@@ -59,19 +59,21 @@
  *   redraw and meter updates every frame. The generator lives in
  *   `desktopLatencyUiLoad.ts`.
  *
- * Dropouts under load are RECORDED, never a failure — pre-cutover
- * --------------------------------------------------------------
- * Before the native cutover the plugin renders through Web Audio and the
- * worklet bridge; the native master carries no plugin audio yet. A bridge
- * counter or a stream error seen here therefore describes the pre-cutover
- * arrangement, which is the thing this record exists to capture, and failing on
- * it would mean the baseline could not be taken at all. The one outcome that
- * *is* a failure is the plugin never reaching the meter, because then the run
- * measured a silent app and every number in it is about nothing.
+ * Dropouts under load are RECORDED, never a failure
+ * -------------------------------------------------
+ * The plugin strip is carried natively: the native engine sounds it, and the
+ * master level the status bar shows is the native engine's own master meter
+ * taken against Web Audio's, whichever is louder. A bridge counter or a stream
+ * error seen here therefore describes the arrangement this record exists to
+ * capture, and failing on it would mean the record could not be taken at all.
+ * The one outcome that *is* a failure is plugin audio never reaching the native
+ * master, because then the run measured a silent app and every number in it is
+ * about nothing.
  *
  *   0  MEASURED     — the run held; the record is the result.
  *   1  FAILED       — the master level never exceeded the audible floor after
- *                     the plugin was loaded. Plugin audio never arrived.
+ *                     the plugin was loaded. Plugin audio never reached the
+ *                     native master.
  *   2  NOT MEASURED — a precondition, a UI step, or finishing the record did
  *                     not hold. Nothing was measured and nothing is claimed.
  *                     Every path out of `main()` and every otherwise-uncaught
@@ -195,13 +197,13 @@ async function main(): Promise<number> {
 
     process.stdout.write(`\nVERDICT ${verdict.toUpperCase()} — ${reason}\n`);
     process.stdout.write(
-        'Dropouts and stream errors above are recorded, not failed: pre-cutover the plugin renders through Web Audio\n' +
-            'and the worklet bridge, and the native master carries no plugin audio yet.\n'
+        'Dropouts and stream errors above are recorded, not failed: the plugin strip is carried natively, and the\n' +
+            "master level read here is the native engine's own master meter taken against Web Audio's.\n"
     );
 
     if (verdict !== 'measured') {
         if (args.jsonPath !== null) {
-            process.stdout.write('\nno record written — a failed run is not a baseline\n');
+            process.stdout.write('\nno record written — a failed run measured nothing to record\n');
         }
         return EXIT_FAILED;
     }

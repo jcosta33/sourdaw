@@ -49,6 +49,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: vi.fn(),
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
 }));
 vi.mock('../compileAgentActionExecution', () => ({

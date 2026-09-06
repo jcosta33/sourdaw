@@ -11,8 +11,9 @@ type PluginStub = { id: string; name: string };
 
 const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
-    executeAppAction: vi.fn(),
+    executeUserAppAction: vi.fn(),
     executeAddDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied', deviceId: 'device-added' })),
+    executeRemoveDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied' })),
     compileReorderDevicesAction: vi.fn(),
     getPlatformPlugins: vi.fn<() => PluginStub[]>(() => []),
     openInspector: vi.fn(),
@@ -22,11 +23,13 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     selectTrack: mocks.selectTrack,
     compileReorderDevicesAction: mocks.compileReorderDevicesAction,
     executeAddDeviceAction: mocks.executeAddDeviceAction,
+    executeRemoveDeviceAction: mocks.executeRemoveDeviceAction,
     getPlatformPlugins: mocks.getPlatformPlugins,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: mocks.executeAppAction,
+    executeAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: vi.fn(),
 }));
 
@@ -102,23 +105,20 @@ describe('DeviceChainSection', () => {
 
         // The bypassDevice action is undoable; the raw use-case write this
         // replaced never entered history.
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'bypassDevice',
             payload: { deviceId: 'dev-9', bypassed: true },
         });
     });
 
-    it('removes a device via its remove button through the action boundary', () => {
+    it('consumes the removeDevice outcome from its remove button', () => {
         const track: Track = { ...baseTrack, devices: [makeDevice({ id: 'dev-9', name: 'Chorus' })] };
         render(<DeviceChainSection track={track} />);
 
         fireEvent.click(screen.getByLabelText('Remove Chorus'));
 
-        // removeDevice is undoable via its restoreDevice inverse.
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'removeDevice',
-            payload: { deviceId: 'dev-9' },
-        });
+        expect(mocks.executeRemoveDeviceAction).toHaveBeenCalledWith('dev-9');
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeDevice' }));
     });
 
     it('routes a device rack drag through the compiled reorder action', () => {
@@ -146,7 +146,7 @@ describe('DeviceChainSection', () => {
         fireEvent.drop(target, { dataTransfer });
 
         expect(mocks.compileReorderDevicesAction).toHaveBeenCalledWith('track-1', 'dev-1', 'dev-2');
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(action);
     });
 
     it('lists built-in plugins and MIDI FX after "+ add", dispatches the addDevice action on choice, and closes on cancel without dispatching', () => {

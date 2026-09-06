@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { scheduleBuiltinSynthNote } from '../scheduleBuiltinSynthNote';
 
-type ParamEvent = { method: string; value: number; time: number };
+type ParamEvent = { method: string; value: number; time: number; param?: string };
 
-function makeParam(events: ParamEvent[]) {
+function makeParam(events: ParamEvent[], param?: string) {
     return {
         value: 0,
-        setValueAtTime: (value: number, time: number) => events.push({ method: 'setValueAtTime', value, time }),
+        setValueAtTime: (value: number, time: number) =>
+            events.push({ method: 'setValueAtTime', value, time, ...(param ? { param } : {}) }),
         linearRampToValueAtTime: (value: number, time: number) =>
-            events.push({ method: 'linearRampToValueAtTime', value, time }),
+            events.push({ method: 'linearRampToValueAtTime', value, time, ...(param ? { param } : {}) }),
         exponentialRampToValueAtTime: (value: number, time: number) =>
-            events.push({ method: 'exponentialRampToValueAtTime', value, time }),
-        setTargetAtTime: (value: number, time: number) => events.push({ method: 'setTargetAtTime', value, time }),
+            events.push({ method: 'exponentialRampToValueAtTime', value, time, ...(param ? { param } : {}) }),
+        setTargetAtTime: (value: number, time: number) =>
+            events.push({ method: 'setTargetAtTime', value, time, ...(param ? { param } : {}) }),
     };
 }
 
@@ -21,7 +23,7 @@ function makeFakeContext() {
 
     function makeGain() {
         return {
-            gain: makeParam(events),
+            gain: makeParam(events, 'gain'),
             connect: (destination: unknown) => destination,
             disconnect: () => {},
         };
@@ -43,7 +45,7 @@ function makeFakeContext() {
     function makeFilter() {
         return {
             type: 'lowpass',
-            frequency: makeParam(events),
+            frequency: makeParam(events, 'filterFrequency'),
             Q: makeParam(events),
             connect: (destination: unknown) => destination,
             disconnect: () => {},
@@ -166,6 +168,126 @@ describe('scheduleBuiltinSynthNote pitch-bend depth', () => {
     });
 });
 
+describe('scheduleBuiltinSynthNote filter velocity sensitivity', () => {
+    function getFilterCutoff(events: ParamEvent[]): number {
+        const event = events.find(
+            (candidate) => candidate.param === 'filterFrequency' && candidate.method === 'setValueAtTime'
+        );
+        return event?.value ?? 0;
+    }
+
+    it('disables velocity sensitivity when filterVelocitySensitivity is 0 (cutoff invariant across velocities)', () => {
+        const low = makeFakeContext();
+        const high = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx: low.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0 },
+            clipGain: 1,
+        });
+
+        scheduleBuiltinSynthNote({
+            ctx: high.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 127,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0 },
+            clipGain: 1,
+        });
+
+        const cutoffLow = getFilterCutoff(low.events);
+        const cutoffHigh = getFilterCutoff(high.events);
+
+        expect(cutoffLow).toBe(5000);
+        expect(cutoffHigh).toBe(5000);
+        expect(cutoffLow).toBe(cutoffHigh);
+    });
+
+    it('scales filter cutoff linearly with velocity when filterVelocitySensitivity is 1', () => {
+        function cutoffForVelocity(velocity: number): number {
+            const { ctx, events } = makeFakeContext();
+            scheduleBuiltinSynthNote({
+                ctx,
+                destination,
+                pitch: 69,
+                startTime: 0,
+                duration: 1,
+                velocity,
+                params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 1 },
+                clipGain: 1,
+            });
+            return getFilterCutoff(events);
+        }
+
+        expect(cutoffForVelocity(0)).toBe(0);
+        expect(cutoffForVelocity(32)).toBeCloseTo(5000 * (32 / 127), 6);
+        expect(cutoffForVelocity(63.5)).toBe(2500);
+        expect(cutoffForVelocity(127)).toBe(5000);
+    });
+
+    it('is continuous near zero sensitivity without jumping down at 0', () => {
+        const zeroSens = makeFakeContext();
+        const nearZeroSens = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx: zeroSens.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0 },
+            clipGain: 1,
+        });
+
+        scheduleBuiltinSynthNote({
+            ctx: nearZeroSens.ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: { ...baseBuiltinSynthParams, filterCutoff: 5000, filterVelocitySensitivity: 0.001 },
+            clipGain: 1,
+        });
+
+        const cutoffZero = getFilterCutoff(zeroSens.events);
+        const cutoffNearZero = getFilterCutoff(nearZeroSens.events);
+
+        expect(Math.abs(cutoffNearZero - cutoffZero)).toBeLessThan(10);
+    });
+
+    it('preserves legacy velocity scaling when filterVelocitySensitivity is undefined', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1,
+            velocity: 32,
+            params: {
+                ...baseBuiltinSynthParams,
+                filterCutoff: 5000,
+                filterVelocitySensitivity: undefined as unknown as number,
+            },
+            clipGain: 1,
+        });
+
+        const cutoff = getFilterCutoff(events);
+        const expected = 5000 * (0.3 + 0.7 * (32 / 127));
+        expect(cutoff).toBeCloseTo(expected, 6);
+    });
+});
+
 describe('scheduleBuiltinSynthNote', () => {
     const startTime = 10;
 
@@ -214,5 +336,167 @@ describe('scheduleBuiltinSynthNote', () => {
         scheduleWithVelocity(maximum.ctx, 127, startTime);
 
         expect(over.events).toEqual(maximum.events);
+    });
+});
+
+describe('scheduleBuiltinSynthNote envelope note-off interruption', () => {
+    it('ends attack at note-off without scheduling future attack peak when released during attack', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 0.1,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 2.0,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
+                gain: 0.3,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.03, time: 0.1, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 0.4, param: 'gain' },
+        ]);
+        expect(gainEvents.some((event) => event.time === 1.0)).toBe(false);
+        expect(gainEvents.some((event) => event.value === 0.3)).toBe(false);
+        expect(gainEvents.some((event) => event.value === 0.21)).toBe(false);
+        const maxGain = Math.max(...gainEvents.map((event) => event.value));
+        expect(maxGain).toBe(0.03);
+    });
+
+    it('interpolates decay level at note-off when released during decay', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 0.35,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 0.5,
+                decay: 0.5,
+                sustain: 0.2,
+                release: 0.4,
+                gain: 1.0,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 1.0, time: 0.25, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: expect.closeTo(0.84), time: 0.35, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 0.75, param: 'gain' },
+        ]);
+        expect(gainEvents.some((event) => event.value === 0.2)).toBe(false);
+    });
+
+    it('holds at sustain and schedules full ADSR when note duration exceeds decayEnd', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 2.0,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 0.5,
+                decay: 0.5,
+                sustain: 0.4,
+                release: 0.3,
+                gain: 1.0,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 1.0, time: 0.25, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.4, time: 0.75, param: 'gain' },
+            { method: 'setValueAtTime', value: 0.4, time: 2.0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 2.3, param: 'gain' },
+        ]);
+    });
+
+    it('does not let later attack peak interrupt release when release is long', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 0.1,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 2.0,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 2.0,
+                gain: 0.3,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.03, time: 0.1, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 2.1, param: 'gain' },
+        ]);
+        expect(gainEvents.some((event) => event.time === 1.0)).toBe(false);
+    });
+
+    it('schedules a single ramp to peak gain without duplicate ramps when released exactly at attackEnd', () => {
+        const { ctx, events } = makeFakeContext();
+
+        scheduleBuiltinSynthNote({
+            ctx,
+            destination,
+            pitch: 69,
+            startTime: 0,
+            duration: 1.0,
+            velocity: 127,
+            params: {
+                ...baseBuiltinSynthParams,
+                attack: 2.0,
+                decay: 0.2,
+                sustain: 0.7,
+                release: 0.3,
+                gain: 0.3,
+            },
+            clipGain: 1,
+        });
+
+        const gainEvents = events.filter((event) => event.param === 'gain');
+
+        expect(gainEvents).toEqual([
+            { method: 'setValueAtTime', value: 0, time: 0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0.3, time: 1.0, param: 'gain' },
+            { method: 'linearRampToValueAtTime', value: 0, time: 1.3, param: 'gain' },
+        ]);
     });
 });

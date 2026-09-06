@@ -43,13 +43,23 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphParameterWrite, type AudioGraphStripParameterTarget } from '../../models/AudioGraphBackend';
+import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
 /** How far ahead of the engine's own clock one pump admits writes. */
 export const AUTOMATION_WINDOW_SECONDS = 0.1;
 
 /** `AUTOMATION_QUEUE_CAPACITY` in `crates/daw-engine/src/timeline.rs`. */
 export const AUTOMATION_QUEUE_CAPACITY = 8;
+
+/**
+ * `DEVICE_PARAM_QUEUE_CAPACITY` in `crates/daw-engine/src/timeline.rs`.
+ *
+ * Not a second automation queue: one queue per *effect*, shared by every
+ * parameter of the plugin in it — so the mirror charges every device slot of
+ * one `(trackId, deviceId)` against this one ceiling, not against a ceiling
+ * each (`QueueBudgets::charge_device_param` keys per effect).
+ */
+export const DEVICE_PARAM_QUEUE_CAPACITY = 64;
 
 /**
  * One slot this side never fills. The mirror releases on the echoed playhead,
@@ -95,7 +105,8 @@ export type LiveAutomationQueuedStamp = {
      * when the backend reports no fence (a mapping or an in-process renderer
      * has none), which is what the anchor's fallback answers for. Both the
      * playhead and seam release proofs in `provenPopped` require `batchesApplied >=
-     * admittedBatch` (matching `crates/sourdaw-native/src/commands/graph.rs:913-920, 950`).
+     * admittedBatch` (matching `proven_popped` in
+     * `crates/sourdaw-native/src/commands/graph.rs`).
      */
     admittedBatch: number | null;
     /**
@@ -114,7 +125,7 @@ export type LiveAutomationQueuedStamp = {
 
 /** One parameter's share of the pass: its curve, how much of it has landed, and what the engine still holds. */
 export type LiveAutomationWriterTarget = {
-    target: AudioGraphStripParameterTarget;
+    target: AudioGraphParameterTarget;
     /** This target's writes for its span, ascending by start time. */
     writes: readonly AudioGraphParameterWrite[];
     /** How many of {@link writes} the engine has accepted. */
@@ -135,10 +146,14 @@ export type LiveAutomationWriterTarget = {
  */
 export type LiveAutomationWriterPass = {
     /**
-     * The strips the session's topology actually built. Held rather than
-     * re-read, because a write addressed to a strip the engine does not hold
-     * refuses the whole batch — and a re-arm after a seek must not start
-     * naming strips a later project edit added.
+     * The strips the session's topology actually built.
+     *
+     * The set of them is held rather than re-read, because a write addressed to
+     * a strip the engine does not hold refuses the whole batch — so a re-arm
+     * must not start naming strips a later project edit added. Each strip's
+     * *contents* are re-read at every re-arm
+     * (`rearmNativeLiveAutomationWriterInPlace`): a chain edit is exactly what
+     * one of them answers.
      */
     stripTracks: readonly Track[];
     sampleRate: number;
@@ -188,6 +203,15 @@ export type LiveAutomationWriterPass = {
     wrapFloorFrame: number | null;
     /** Whether this pass has already reported the engine's queue full. */
     queueFullReported: boolean;
+    /**
+     * The ledger groups this pass has already reported saturated.
+     *
+     * A saturated group is not a refusal — the writes it did admit go out — so
+     * nothing downstream latches it, and a plugin whose parameters outrun their
+     * shared queue would say so on every animation frame for as long as the
+     * curve moves. One line per group per pass is what a reader can act on.
+     */
+    saturatedGroups: Set<string>;
 };
 
 export const nativeLiveAutomationWriter: {
@@ -207,11 +231,33 @@ export const nativeLiveAutomationWriter: {
      * recomputed.
      */
     reportedExclusions: string | null;
+    /**
+     * A re-read the pass owes, recorded rather than taken (#3568).
+     *
+     * A plugin the engine takes mid-roll is spliced into its chain by a route
+     * the pump itself can reach — an automation batch reports the attach, and
+     * the splice answers it. The pass must be re-read once that splice lands,
+     * because the projection could not see a device the chain did not hold; but
+     * a splice that armed the writer directly would make the writer's own pump
+     * reach back into the arm that starts it, which is a cycle in the module
+     * graph and a re-entrant arm at runtime.
+     *
+     * So the splice states what it needs and the playhead feed takes it, on the
+     * next reading, immediately before the pump that would have sent the pass.
+     * The engine position that reading carries is fresher than anything the
+     * splice could have supplied, and the pump behind it is the same one.
+     *
+     * The request belongs to the pass that owed it, so every arm and every
+     * disarm clears it: an arm has already re-read everything the request was
+     * about, and a disarm ends the world whose fence the request names.
+     */
+    pendingRearm: Readonly<{ provenAfterBatch: number | null }> | null;
 } = {
     epoch: 0,
     inFlightEpoch: null,
     pass: null,
     reportedExclusions: null,
+    pendingRearm: null,
 };
 
 /** Where a write's trajectory is anchored: a ramp's start, any other shape's own stamp. */

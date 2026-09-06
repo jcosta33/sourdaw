@@ -43,6 +43,7 @@ export const AutomationContextMenu = ({
                     left: Math.min(x, window.innerWidth - 200),
                     ...(y > window.innerHeight - 300 ? { bottom: window.innerHeight - y } : { top: y }),
                 }}
+                role="menu"
             >
                 {section !== 'shape' ? (
                     <>

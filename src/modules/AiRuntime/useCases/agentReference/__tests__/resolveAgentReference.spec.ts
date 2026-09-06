@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { resolveAgentReference } from '../resolveAgentReference';
+import { resolveCompleteClipReference } from '../resolveCompleteClipReference';
 
 function createProjectState(): ProjectContext {
     const tracks = [
@@ -95,6 +96,16 @@ function resolveClip(prompt: string, assertedId: string, project = createClipPro
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-clip', context: project });
 }
 
+function resolveCompleteClip(referenceText: string, assertedId: string, project = createClipProjectState()) {
+    return resolveCompleteClipReference({
+        prompt: `rename clip ${referenceText}`,
+        referenceText,
+        assertedId,
+        capability: 'editable-clip',
+        context: project,
+    });
+}
+
 function resolveMidiClip(prompt: string, assertedId: string, project = createClipProjectState()) {
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-midi-clip', context: project });
 }
@@ -150,6 +161,170 @@ function resolveAutomationLane(prompt: string, assertedId: string, project = cre
 }
 
 describe('resolveAgentReference', () => {
+    it('requires a rename source reference to consume its complete text', () => {
+        const project = createClipProjectState();
+        const vocals = project.tracks[0]!;
+        const roadToNowhere = {
+            ...vocals.clips[0]!,
+            id: 'clip-road-to-nowhere',
+            name: 'Road to Nowhere',
+            startBeat: 48,
+            endBeat: 56,
+        };
+        const context = {
+            ...project,
+            tracks: [
+                { ...vocals, clipCount: vocals.clipCount + 1, clips: [...vocals.clips, roadToNowhere] },
+                ...project.tracks.slice(1),
+            ],
+        };
+
+        expect(resolveCompleteClip('Intro', 'clip-intro', context)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('clip-intro', 'clip-intro', context)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'literal-id',
+        });
+        expect(resolveCompleteClip('Intro to Road', 'clip-intro', context)).toEqual({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveCompleteClip('Road to Nowhere', roadToNowhere.id, context)).toEqual({
+            status: 'resolved',
+            id: roadToNowhere.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('"Road to Nowhere"', roadToNowhere.id, context)).toEqual({
+            status: 'resolved',
+            id: roadToNowhere.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('selected clip', 'clip-intro', context)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'selection',
+        });
+    });
+
+    it('consumes an exact owner qualification while retaining duplicate-name ambiguity', () => {
+        expect(resolveCompleteClip('Verse on Vocals', 'clip-vocals-verse')).toEqual({
+            status: 'resolved',
+            id: 'clip-vocals-verse',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('Verse on Bass', 'clip-bass-verse')).toEqual({
+            status: 'resolved',
+            id: 'clip-bass-verse',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('Verse on track-vocals', 'clip-vocals-verse')).toEqual({
+            status: 'resolved',
+            id: 'clip-vocals-verse',
+            evidence: 'exact-name',
+        });
+        expect(resolveCompleteClip('Verse', 'clip-vocals-verse')).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it.each([
+        {
+            reference: 'selected midi clip',
+            assertedId: 'clip-midi',
+            selectedId: 'clip-midi',
+            expected: { status: 'resolved', id: 'clip-midi', evidence: 'selection' },
+        },
+        {
+            reference: 'selected midi clip',
+            assertedId: 'clip-empty-midi',
+            selectedId: 'clip-empty-midi',
+            expected: { status: 'resolved', id: 'clip-empty-midi', evidence: 'selection' },
+        },
+        {
+            reference: 'selected audio clip',
+            assertedId: 'clip-intro',
+            selectedId: 'clip-intro',
+            expected: { status: 'resolved', id: 'clip-intro', evidence: 'selection' },
+        },
+        {
+            reference: 'selected clip "Lead"',
+            assertedId: 'clip-intro',
+            selectedId: 'clip-intro',
+            expected: { status: 'rejected', reason: 'ungrounded-target' },
+        },
+        {
+            reference: '"Lead"',
+            assertedId: 'clip-lead',
+            selectedId: 'clip-intro',
+            expected: { status: 'resolved', id: 'clip-lead', evidence: 'exact-name' },
+        },
+    ])('accounts for the complete reference $reference', ({ reference, assertedId, selectedId, expected }) => {
+        const project = createClipProjectState();
+        const vocals = project.tracks[0]!;
+        const lead = {
+            ...vocals.clips[0]!,
+            id: 'clip-lead',
+            name: 'Lead',
+            startBeat: 48,
+            endBeat: 56,
+        };
+        const withLead = {
+            ...project,
+            tracks: [
+                { ...vocals, clipCount: vocals.clipCount + 1, clips: [...vocals.clips, lead] },
+                ...project.tracks.slice(1),
+            ],
+        };
+        const context = {
+            ...withLead,
+            selectedClipId: selectedId,
+            selectedClipIds: [selectedId],
+        };
+
+        expect(resolveCompleteClip(reference, assertedId, context)).toEqual(expected);
+    });
+
+    it.each([
+        { reference: 'selected midi clip', selectedId: 'clip-intro', selectedType: 'audio' },
+        { reference: 'selected audio clip', selectedId: 'clip-midi', selectedType: 'midi' },
+    ])('rejects $reference when the selected clip is $selectedType', ({ reference, selectedId, selectedType }) => {
+        const context = {
+            ...createClipProjectState(),
+            selectedClipId: selectedId,
+            selectedClipIds: [selectedId],
+        };
+        const selectedClip = context.tracks.flatMap((track) => track.clips).find((clip) => clip.id === selectedId);
+        expect(selectedClip?.type).toBe(selectedType);
+
+        expect(resolveCompleteClip(reference, selectedId, context).status).toBe('rejected');
+    });
+
+    it('treats a quoted media-selection phrase as an exact clip name', () => {
+        const project = createClipProjectState();
+        const vocals = project.tracks[0]!;
+        const literalClip = { ...vocals.clips[0]!, id: 'clip-literal-midi', name: 'selected midi clip' };
+        const context = {
+            ...project,
+            tracks: [
+                { ...vocals, clipCount: vocals.clipCount + 1, clips: [...vocals.clips, literalClip] },
+                ...project.tracks.slice(1),
+            ],
+        };
+        expect(literalClip.type).toBe('audio');
+        expect(context.selectedClipIds).toEqual(['clip-intro']);
+
+        expect(resolveCompleteClip('"selected midi clip"', literalClip.id, context)).toEqual({
+            status: 'resolved',
+            id: literalClip.id,
+            evidence: 'exact-name',
+        });
+    });
+
     it('grounds devices from canonical descriptors instead of mutable display names', () => {
         const project = createProjectState();
         const bass = project.tracks.find((track) => track.id === 'track-bass');
@@ -256,6 +431,31 @@ describe('resolveAgentReference', () => {
             status: 'resolved',
             id: 'track-vocals',
             evidence: 'selection',
+        });
+    });
+
+    it('treats quoted reserved track references as literal names', () => {
+        const project = createProjectState();
+        const bass = project.tracks[1];
+        if (!bass) {
+            throw new Error('Expected Bass track fixture');
+        }
+        project.tracks = [...project.tracks, { ...bass, id: 'track-literal-selected', name: 'Selected Track' }];
+
+        expect(resolveTrack('mute selected track', 'track-vocals', project)).toEqual({
+            status: 'resolved',
+            id: 'track-vocals',
+            evidence: 'selection',
+        });
+        expect(resolveTrack('mute "Selected Track"', 'track-literal-selected', project)).toEqual({
+            status: 'resolved',
+            id: 'track-literal-selected',
+            evidence: 'exact-name',
+        });
+        expect(resolveTrack('mute “Selected Track”', 'track-literal-selected', project)).toEqual({
+            status: 'resolved',
+            id: 'track-literal-selected',
+            evidence: 'exact-name',
         });
     });
 
@@ -788,6 +988,70 @@ describe('resolveAgentReference', () => {
             status: 'resolved',
             id: 'clip-intro',
             evidence: 'selection',
+        });
+    });
+
+    it('treats quoted reserved clip references as literal names without masking apostrophes', () => {
+        const project = createClipProjectState();
+        const track = project.tracks[0];
+        if (!track) {
+            throw new Error('Expected Vocals track fixture');
+        }
+        const literalSelectedClip = {
+            ...track.clips[0]!,
+            id: 'clip-literal-selected',
+            name: 'Selected Clip',
+            startBeat: 24,
+            endBeat: 32,
+        };
+        const apostropheClip = {
+            ...track.clips[0]!,
+            id: 'clip-drummer-cut',
+            name: "Drummer's Cut",
+            startBeat: 32,
+            endBeat: 40,
+        };
+        const curlyApostropheClip = {
+            ...track.clips[0]!,
+            id: 'clip-curly-selected',
+            name: 'Drummer’s Selected Clip',
+            startBeat: 40,
+            endBeat: 48,
+        };
+        project.tracks = [
+            {
+                ...track,
+                clipCount: track.clipCount + 3,
+                clips: [...track.clips, literalSelectedClip, apostropheClip, curlyApostropheClip],
+            },
+            ...project.tracks.slice(1),
+        ];
+
+        expect(resolveClip('rename selected clip', 'clip-intro', project)).toEqual({
+            status: 'resolved',
+            id: 'clip-intro',
+            evidence: 'selection',
+        });
+        expect(resolveClip('rename "Selected Clip"', literalSelectedClip.id, project)).toEqual({
+            status: 'resolved',
+            id: literalSelectedClip.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveClip("rename Drummer's Cut", apostropheClip.id, project)).toEqual({
+            status: 'resolved',
+            id: apostropheClip.id,
+            evidence: 'exact-name',
+        });
+        expect(resolveClip('rename ‘Drummer’s Selected Clip’ to Bridge Solo', curlyApostropheClip.id, project)).toEqual(
+            {
+                status: 'resolved',
+                id: curlyApostropheClip.id,
+                evidence: 'exact-name',
+            }
+        );
+        expect(resolveClip('rename ‘Drummer’s Selected Clip’ to Bridge Solo', 'clip-intro', project)).toMatchObject({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
         });
     });
 

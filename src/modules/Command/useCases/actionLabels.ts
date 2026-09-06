@@ -5,6 +5,8 @@
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { humanizeActionType } from './humanizeActionType';
+
 export const ACTION_LABELS: Record<string, string> = {
     addTrack: 'Add track',
     removeTrack: 'Remove track',
@@ -13,14 +15,17 @@ export const ACTION_LABELS: Record<string, string> = {
     muteTrack: 'Mute/unmute',
     soloTrack: 'Solo/unsolo',
     setSoloSafe: 'Set solo safe',
+    clearSolos: 'Clear solos',
     armTrack: 'Arm/disarm',
     reorderTrack: 'Reorder track',
     setTempo: 'Set tempo',
     togglePlayback: 'Play/pause',
     setPlayback: 'Set playback',
     stopPlayback: 'Stop',
-    toggleRecording: 'Record',
+    toggleRecording: 'Toggle recording',
+    toggleMetronome: 'Toggle metronome',
     setLoopRegion: 'Set loop',
+    toggleLoop: 'Toggle loop',
     addClip: 'Add clip',
     addDevice: 'Add device',
     setDeviceParameter: 'Set parameter',
@@ -28,14 +33,30 @@ export const ACTION_LABELS: Record<string, string> = {
     setTrackPan: 'Set pan',
     setTrackColor: 'Set color',
     setWorkspaceMode: 'Switch view',
+    saveProject: 'Save project',
     openPreferencesDialog: 'Open preferences',
     toggleSidebar: 'Toggle sidebar',
     toggleInspector: 'Toggle inspector',
+    toggleChatPanel: 'Toggle chat panel',
     setEditingTool: 'Set tool',
+    zoomToFit: 'Zoom to fit',
+    zoomToSelection: 'Zoom to selection',
+    zoomTracksVertical: 'Zoom tracks',
     duplicateClip: 'Duplicate clip',
+    cutClip: 'Cut clip',
+    copyClip: 'Copy clip',
+    pasteClip: 'Paste clip',
+    duplicateClipToNextBar: 'Duplicate clip to next bar',
     removeClip: 'Remove clip',
     trimClipStart: 'Trim start',
     trimClipEnd: 'Trim end',
+    slipClipContent: 'Slip clip content',
+    drawClip: 'Draw clip',
+    duplicateClipAt: 'Duplicate clip at destination',
+    moveClips: 'Move clips',
+    discardDrawnClip: 'Discard drawn clip',
+    restoreDrawnClip: 'Restore drawn clip',
+    restoreClipMoves: 'Restore clip moves',
     quantizeNotes: 'Quantize',
     removeShortMidiOverlaps: 'Remove short MIDI overlaps',
     copyMidiArticulations: 'Copy MIDI articulations',
@@ -43,6 +64,10 @@ export const ACTION_LABELS: Record<string, string> = {
     humanizeNotes: 'Humanize',
     invertNotes: 'Invert notes',
     retrogradeNotes: 'Retrograde',
+    generateBassline: 'Generate bassline',
+    generateDrumPattern: 'Generate drum pattern',
+    generateMelody: 'Generate melody',
+    generateChordProgression: 'Generate chord progression',
     createBus: 'Create bus',
     createFolder: 'Create folder',
     addSection: 'Add section',
@@ -52,54 +77,6 @@ export const ACTION_LABELS: Record<string, string> = {
     undo: 'Undo',
     redo: 'Redo',
 };
-
-// Domain acronyms that must survive camelCase→words humanization with their
-// canonical casing instead of being lower-cased ("midi" → "MIDI"). Keyed by
-// the lower-cased token the splitter produces.
-const ACRONYMS: Record<string, string> = {
-    midi: 'MIDI',
-    mpe: 'MPE',
-    vca: 'VCA',
-    cv: 'CV',
-    rave: 'RAVE',
-    crdt: 'CRDT',
-    daw: 'DAW',
-    cc: 'CC',
-    ai: 'AI',
-    bpm: 'BPM',
-};
-
-/**
- * Humanize a camelCase action type into a sentence-case label. This is the
- * total fallback used for any action type not in `ACTION_LABELS`, so that the
- * UI never displays a raw enum string (e.g. `setMasterGain` → "Set master
- * gain", `freezeTrack` → "Freeze track", `audioToMidi` → "Audio to MIDI").
- */
-function humanizeActionType(type: string): string {
-    // Split camelCase / PascalCase into tokens; also split letter↔digit runs
-    // (e.g. `duplicateClipToNextBar`, `setRaveBlend`).
-    const tokens = type
-        .replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2')
-        .replaceAll(/([A-Za-z])([0-9])/g, '$1 $2')
-        .replaceAll(/([0-9])([A-Za-z])/g, '$1 $2')
-        .split(/\s+/)
-        .filter((token) => token.length > 0);
-    if (tokens.length === 0) {
-        return type;
-    }
-    const words = tokens.map((token, index) => {
-        const lower = token.toLowerCase();
-        const acronym = ACRONYMS[lower];
-        if (acronym) {
-            return acronym;
-        }
-        if (index === 0) {
-            return lower.charAt(0).toUpperCase() + lower.slice(1);
-        }
-        return lower;
-    });
-    return words.join(' ');
-}
 
 /**
  * Produce a human-readable summary for a single action.

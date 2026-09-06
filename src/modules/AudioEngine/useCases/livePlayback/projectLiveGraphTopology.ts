@@ -84,6 +84,7 @@ import {
 } from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
 
+import { projectDeviceForNativeBody } from './projectDeviceForNativeBody';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
 
@@ -126,6 +127,14 @@ export type LiveGraphTopologyInput = Readonly<{
     transport: LiveGraphTransportState;
     /** Whether this session's engine may reach the speakers at all. */
     monitor: LiveGraphMonitorMode;
+    /**
+     * Where the master fader stands, as a clamped linear amplitude.
+     *
+     * A strip this engine carries leaves through the native device and never
+     * crosses the Web Audio master fader, so the level has to travel with the
+     * topology or the two carriers play the same project at two levels.
+     */
+    masterGain: number;
     /** What each strip plays, from {@link projectLiveGraphProgramme}. */
     programme: LiveGraphProgramme;
     /**
@@ -163,7 +172,9 @@ function createStripCommand(input: {
 }): AudioGraphCommand {
     const { track, state, programme, carriers } = input;
     // A bake replaces the chain rather than feeding it — see the header.
-    const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id) ? [] : track.devices;
+    const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id)
+        ? []
+        : track.devices.map(projectDeviceForNativeBody);
     // Live playback always honours a mute the engineer pressed; only an
     // export chooses otherwise, and only for stems.
     const shared = { name: track.name, state, devices, honorMuted: true } as const;
@@ -237,6 +248,12 @@ function routingCommands(input: {
  * — every strip left at the engine's default. Locating first is the only order
  * under which the state a strip declares survives the batch that declares it.
  *
+ * The master level rides in the same opening group, behind the monitor gate: it
+ * is what every strip in this batch will be heard through, so it is stated
+ * before anything can sound. Its position in the batch is otherwise free — the
+ * engine takes it as a target for a smoother rather than as a stamped write, so
+ * no locate can cancel it and no order can strand it.
+ *
  * Then every strip before any route, because a send names a bus that has to
  * exist by the time it is read; then the programme, which names a strip for the
  * same reason. Clip placement is in absolute timeline frames and a seek touches
@@ -253,6 +270,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
         attachedInstanceIds,
         transport,
         monitor,
+        masterGain,
         programme,
         inputMonitoredTrackIds,
     } = input;
@@ -298,6 +316,7 @@ export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonl
             playing: transport.playing,
             positionSeconds: transport.positionSeconds,
         },
+        { kind: 'set-master-gain', gain: masterGain },
         ...strips,
         ...routes,
         ...playbacks,
