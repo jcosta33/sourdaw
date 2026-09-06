@@ -19,21 +19,59 @@ const TARGET_SNAPSHOT = { tag: 'target-snap' };
 
 const docs: Record<string, unknown> = {};
 
+function createEmptyUndoSnapshot(): UndoSnapshot {
+    return { past: [], future: [], undoTree: null };
+}
+
 function createUndoSnapshot(id: string): UndoSnapshot {
+    const pastEntry: UndoSnapshot['past'][number] = {
+        id,
+        kind: 'callback',
+        label: 'Move feature clip',
+        timestamp: 1,
+        source: 'manual',
+        undo: () => {},
+        redo: () => undefined,
+    };
+    const futureEntry: UndoSnapshot['future'][number] = {
+        id: `${id}-redo`,
+        kind: 'callback',
+        label: 'Restore feature clip',
+        timestamp: 2,
+        source: 'manual',
+        undo: () => {},
+        redo: () => undefined,
+    };
     return {
-        past: [
-            {
-                id,
-                kind: 'callback',
-                label: 'Move feature clip',
-                timestamp: 1,
-                source: 'manual',
-                undo: () => {},
-                redo: () => undefined,
+        past: [pastEntry],
+        future: [futureEntry],
+        undoTree: {
+            enabled: true,
+            tree: {
+                nodes: {
+                    [pastEntry.id]: {
+                        id: pastEntry.id,
+                        entry: pastEntry,
+                        parentId: null,
+                        children: [futureEntry.id],
+                        activeBranch: 0,
+                        createdAt: 1,
+                        branchLabel: 'Captured feature edits',
+                    },
+                    [futureEntry.id]: {
+                        id: futureEntry.id,
+                        entry: futureEntry,
+                        parentId: pastEntry.id,
+                        children: [],
+                        activeBranch: 0,
+                        createdAt: 2,
+                    },
+                },
+                currentNodeId: pastEntry.id,
+                rootId: 'undo-root',
+                nextId: 3,
             },
-        ],
-        future: [],
-        undoTree: null,
+        },
     };
 }
 
@@ -46,9 +84,10 @@ const mocks = vi.hoisted(() => ({
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
     removeDoc: vi.fn(),
-    clearUndoHistory: vi.fn(),
-    captureUndoHistory: vi.fn<() => UndoSnapshot>(() => ({ past: [], future: [], undoTree: null })),
-    restoreUndoHistory: vi.fn(),
+    clearUndoHistory: vi.fn<() => void>(),
+    captureUndoHistory: vi.fn<() => UndoSnapshot>(),
+    restoreUndoHistory: vi.fn<(snapshot: UndoSnapshot) => void>(),
+    undoHistory: createEmptyUndoSnapshot(),
     storeValue: {
         branches: [
             { branchId: 'main', rootDocId: 'root' },
@@ -136,6 +175,14 @@ describe('switchBranch', () => {
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.loadCrdtProject.mockResolvedValue(true);
         mocks.runCrdtPersistenceOperation.mockResolvedValue(undefined);
+        mocks.undoHistory = createEmptyUndoSnapshot();
+        mocks.captureUndoHistory.mockImplementation(() => mocks.undoHistory);
+        mocks.clearUndoHistory.mockImplementation(() => {
+            mocks.undoHistory = createEmptyUndoSnapshot();
+        });
+        mocks.restoreUndoHistory.mockImplementation((snapshot) => {
+            mocks.undoHistory = snapshot;
+        });
         mocks.storeValue = {
             branches: [
                 { branchId: 'main', rootDocId: 'root' },
@@ -229,7 +276,7 @@ describe('switchBranch', () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
         const preSwitchSnapshot = createUndoSnapshot('undo-1');
-        mocks.captureUndoHistory.mockReturnValueOnce(preSwitchSnapshot);
+        mocks.undoHistory = preSwitchSnapshot;
 
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
 
@@ -240,6 +287,7 @@ describe('switchBranch', () => {
         expect(mocks.captureUndoHistory).toHaveBeenCalledOnce();
         expect(mocks.restoreUndoHistory).toHaveBeenCalledOnce();
         expect(mocks.restoreUndoHistory.mock.calls[0]?.[0]).toBe(preSwitchSnapshot);
+        expect(mocks.undoHistory).toBe(preSwitchSnapshot);
         expect(mocks.storeValue.activeBranchId).toBe('feat');
         expect(docs.root).toEqual(ROOT_LIVE_DOC);
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
@@ -259,7 +307,7 @@ describe('switchBranch', () => {
         });
         const outgoingSnapshot = createUndoSnapshot('undo-outgoing-feat');
         const originalState = mocks.storeValue;
-        mocks.captureUndoHistory.mockReturnValueOnce(outgoingSnapshot);
+        mocks.undoHistory = outgoingSnapshot;
         mocks.runCrdtPersistenceOperation.mockRejectedValueOnce(persistenceFailure);
         mocks.loadCrdtProject.mockImplementationOnce(() => {
             docs.root = TARGET_SNAPSHOT;
@@ -273,12 +321,35 @@ describe('switchBranch', () => {
         expect(mocks.storeValue.activeBranchId).toBe('other');
         expect(docs.root).toEqual(TARGET_SNAPSHOT);
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
+    });
+
+    it('does not restore outgoing undo when durable recovery changes only branch ownership', async () => {
+        const persistenceFailure = createCrdtPersistenceRootLineageConflictError({
+            localRootLineage: 'feat',
+            durableRootLineage: 'other',
+        });
+        const outgoingSnapshot = createUndoSnapshot('undo-outgoing-same-content');
+        const capturedDocumentHeads = Object.fromEntries(Object.keys(docs).map((id) => [id, mocks.getHeads(id)]));
+        mocks.undoHistory = outgoingSnapshot;
+        mocks.runCrdtPersistenceOperation.mockRejectedValueOnce(persistenceFailure);
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.storeValue.activeBranchId).toBe('other');
+        expect(Object.keys(docs)).toEqual(Object.keys(capturedDocumentHeads));
+        expect(Object.fromEntries(Object.keys(docs).map((id) => [id, mocks.getHeads(id)]))).toEqual(
+            capturedDocumentHeads
+        );
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('does not restore outgoing undo history when recovered root heads changed on the same branch', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-root-change'));
+        mocks.undoHistory = createUndoSnapshot('undo-before-root-change');
         mocks.loadCrdtProject.mockImplementationOnce(() => {
             docs.root = { tag: 'root-recovered-change' };
             return Promise.resolve(true);
@@ -289,13 +360,14 @@ describe('switchBranch', () => {
         expect(mocks.storeValue.activeBranchId).toBe('feat');
         expect(docs.root).toEqual({ tag: 'root-recovered-change' });
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('does not restore outgoing undo history when recovered child heads changed on the same branch', async () => {
         const persistenceFailure = new Error('compaction failed');
         docs.child = { tag: 'child-before' };
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-child-change'));
+        mocks.undoHistory = createUndoSnapshot('undo-before-child-change');
         mocks.loadCrdtProject.mockImplementationOnce(() => {
             docs.child = { tag: 'child-after' };
             return Promise.resolve(true);
@@ -305,12 +377,13 @@ describe('switchBranch', () => {
 
         expect(mocks.storeValue.activeBranchId).toBe('feat');
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('does not restore outgoing undo history when recovered document membership changed on the same branch', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-membership-change'));
+        mocks.undoHistory = createUndoSnapshot('undo-before-membership-change');
         mocks.loadCrdtProject.mockImplementationOnce(() => {
             docs.child = { tag: 'recovered-child' };
             return Promise.resolve(true);
@@ -320,12 +393,13 @@ describe('switchBranch', () => {
 
         expect(mocks.storeValue.activeBranchId).toBe('feat');
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('does not restore outgoing undo history when the recovered branch reference is unavailable', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-missing-reference'));
+        mocks.undoHistory = createUndoSnapshot('undo-before-missing-reference');
         mocks.loadCrdtProject.mockImplementationOnce(() => {
             delete docs.root;
             return Promise.resolve(true);
@@ -335,12 +409,13 @@ describe('switchBranch', () => {
 
         expect(mocks.storeValue.activeBranchId).toBe('feat');
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('preserves the transition failure and clears undo when the recovered reference cannot be inspected', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        mocks.captureUndoHistory.mockReturnValueOnce(createUndoSnapshot('undo-before-inspection-failure'));
+        mocks.undoHistory = createUndoSnapshot('undo-before-inspection-failure');
         mocks.getDocIds
             .mockImplementationOnce(() => Object.keys(docs))
             .mockImplementationOnce(() => {
@@ -351,14 +426,21 @@ describe('switchBranch', () => {
 
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
         expect(mocks.clearUndoHistory).toHaveBeenCalledTimes(2);
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('does not restore undo history when the switch succeeds', async () => {
+        mocks.undoHistory = createUndoSnapshot('undo-before-success');
+
         await switchBranch('other');
+
         expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('clears undo history when the root document is swapped', async () => {
+        mocks.undoHistory = createUndoSnapshot('undo-before-swap');
+
         await switchBranch('other');
 
         // The undo stack's inverse entries are recorded against the outgoing
@@ -367,13 +449,19 @@ describe('switchBranch', () => {
         // against a document that is no longer active. Same reasoning as
         // switchArrangement clearing undo history on snapshot load.
         expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.undoHistory).toEqual(createEmptyUndoSnapshot());
     });
 
     it('is a no-op when switching to the already-active branch', async () => {
+        const unchangedSnapshot = createUndoSnapshot('undo-before-no-op');
+        mocks.undoHistory = unchangedSnapshot;
+
         await switchBranch('feat');
+
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
         expect(mocks.storeSet).not.toHaveBeenCalled();
         expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.undoHistory).toBe(unchangedSnapshot);
     });
 
     it('rejects when the target branch does not exist', async () => {
