@@ -16,6 +16,13 @@ dispatch.
   to observe, not from whatever the code currently produces.
 - A diff that adds an export to a contract barrel, or adds a barrel import to production code,
   changes what every spec mocking that barrel must supply. Sweep them.
+- A test helper that names a production route in its doc — "one batch", "one drain", "the fenced
+  path" — must emit the same fence, ordering, or envelope that production entry emits; trace the
+  helper to the branch it actually drives, and a helper that reaches the loose branch while the spec
+  claims the fenced one is the finding.
+- When a spec pins a rule about repeated or overlapping events on one key, name the mutation that
+  inverts the rule (last occurrence decides instead of first, a note-on covers instead of a note-off)
+  and require the fixture to place the decisive event in the position that mutation would get wrong.
 
 ## Lessons from escapes
 
