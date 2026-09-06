@@ -535,6 +535,10 @@ export type AudioGraphScheduleMidiCommand = Readonly<{
  * Half-open, so a producer rewriting one bar clears exactly its span and the
  * note starting the next bar borders the window without being inside it.
  * `toTime` of `null` is the end of the store, so `0` with a null end clears it.
+ *
+ * A clear naming a device holding no note store is refused by name, on the
+ * same terms as `schedule-midi`, so a producer clears only devices it could
+ * have scheduled.
  */
 export type AudioGraphClearMidiCommand = Readonly<{
     kind: 'clear-midi';

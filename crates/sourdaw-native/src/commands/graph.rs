@@ -380,6 +380,12 @@ pub enum GraphCommandPayload {
     /// A batch variant for the reason
     /// [`GraphCommandPayload::ScheduleMidi`] states — the pair is the rewrite,
     /// and only one batch makes both visible to the callback at once.
+    ///
+    /// A device holding no note store refuses this by name, on the same
+    /// ownership fact `schedule-midi` reads. Left unrefused, the engine would
+    /// simply find no store to clear and drop the request in silence; naming
+    /// it here instead surfaces a producer's mistake rather than swallowing
+    /// it.
     #[serde(rename_all = "camelCase")]
     ClearMidi {
         track_id: String,
@@ -1376,21 +1382,25 @@ fn hosted_parameter_id(parameter_id: &str) -> Result<u32, String> {
 /// The same lookup and the same two refusals `write-device-parameter` makes,
 /// under whichever command name is asking: a device the registry does not hold,
 /// and one held on a different strip than the command claims. Then a third that
-/// command has no need of: a device with no instrument to sound the notes.
+/// command has no need of: a device holding no note store.
 ///
 /// That third one reads the registry's ownership fact because *store presence
-/// is decided at registration*. Every engine-owned device is registered through
+/// is decided at registration*, not what the device does with what lands in
+/// it. Every engine-owned device is registered through
 /// `EngineHandle::add_hosted_plugin`, which attaches a note store
-/// unconditionally; a built-in is an `AddDetachedEffect` and never gets one,
-/// and the crumbs capture slot is not in `registry.devices` at all. So
-/// `engine_owned == false` is exactly "holds no note store" today, and
-/// scheduling at one spends a whole batch the store side can answer only as a
-/// count on the audio thread.
+/// unconditionally — a hosted reverb or a CLAP note effect gets one exactly as
+/// an instrument does, and accepts scheduled notes into a store the plugin
+/// never reads, which is the plugin's own answer and not a refusal here. A
+/// built-in is an `AddDetachedEffect` and never gets one, and the crumbs
+/// capture slot is not in `registry.devices` at all. So `engine_owned ==
+/// false` is exactly "holds no note store" today, and scheduling at one
+/// spends a whole batch the store side can answer only as a count on the
+/// audio thread.
 ///
-/// A built-in instrument registered *with* a store (#3124) parts those two
-/// facts the moment it exists. It flips this test through an explicit note-sink
-/// flag on [`DeviceEntry`] written at registration, never by relaxing the
-/// ownership test into a guess about what a device can hold.
+/// A built-in with a store (#3124) parts those two facts the moment it
+/// exists, flipping this test through an explicit note-sink flag on
+/// [`DeviceEntry`] written at registration, never by relaxing the ownership
+/// test into a guess about what a device can hold.
 fn midi_device_plugin_id(
     registry: &GraphRegistry,
     track_id: &str,
@@ -1408,7 +1418,7 @@ fn midi_device_plugin_id(
     }
     if !device.engine_owned {
         return Err(format!(
-            "{command}: device '{device_id}' has no instrument to sound notes"
+            "{command}: device '{device_id}' holds no note store"
         ));
     }
     Ok(device.native_effect_id)
@@ -7215,7 +7225,7 @@ mod tests {
     /// puts it in the registry as a device the engine does not own, and so
     /// holding no note store.
     #[test]
-    fn schedule_midi_refuses_a_device_with_no_instrument() {
+    fn schedule_midi_refuses_a_device_holding_no_note_store() {
         let samples = sample_pool();
         let mut registry = GraphRegistry::default();
         map_unbound_batch(
@@ -7247,8 +7257,8 @@ mod tests {
         )
         .expect_err("a built-in has no note store to schedule into");
         assert!(
-            refusal.contains("schedule-midi: device 'd-knead' has no instrument to sound notes"),
-            "refusal must name the device that cannot sound the notes: {refusal}"
+            refusal.contains("schedule-midi: device 'd-knead' holds no note store"),
+            "refusal must name the device holding no note store: {refusal}"
         );
 
         let mut working = registry.clone();
@@ -7266,8 +7276,8 @@ mod tests {
         )
         .expect_err("a built-in has no note store to clear");
         assert!(
-            refusal.contains("clear-midi: device 'd-knead' has no instrument to sound notes"),
-            "refusal must name the device that cannot sound the notes: {refusal}"
+            refusal.contains("clear-midi: device 'd-knead' holds no note store"),
+            "refusal must name the device holding no note store: {refusal}"
         );
     }
 
