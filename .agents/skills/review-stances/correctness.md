@@ -25,6 +25,17 @@ the probe that would have caught it. Keep each lesson short enough to paste into
   behaviour (a `lostpointercapture` for a pointer the control never owned, a window or tab switch
   that never delivers `pointerup`) that the change must survive, and a stance that reads only the
   changed file re-derives, or misses, what a sibling already pinned.
+- When a change stores timed events for later delivery — notes, automation stamps, scheduled
+  commands — state its ordering rule, its release rule for every way playback leaves the timeline
+  (stop, locate, loop wrap, a clear of the window), and its per-occurrence rule for repeated keys;
+  a store that answers "is there a later note-off for this key" without "which occurrence does it
+  belong to" releases the wrong note. A clause with no enforcing route is the finding.
+- When a doc sentence calls two commands atomic, trace every command in the pair to the branch that
+  can refuse it after the fence has made them visible; visibility-atomic and success-atomic are
+  different claims, and the sentence must say which one holds and what a refusal leaves behind.
+- When a set or bitmap models the state of another thing one bit per key, ask what the model cannot
+  represent — two of one key, an order, a count — and whether the contract says so where a producer
+  of that state will read it.
 
 ## Lessons from escapes
 

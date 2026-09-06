@@ -107,13 +107,14 @@ vi.mock('#/modules/Transport/useCases', async () => {
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
-// switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority; executeAppAction is listed for live Transport/Arrangement barrel load, not switchArrangement; executeUserAppAction is stubbed for the same barrel load and never dispatched here.
+// switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority; executeAppAction is listed for live Transport/Arrangement barrel load, not switchArrangement; executeUserAppAction and executeAppActionBatch are stubbed for the same barrel load and never dispatched here.
 vi.mock('#/modules/Command/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
         clearUndoHistory: vi.fn(),
         resetActionReplayAuthority: actual.resetActionReplayAuthority,
         executeAppAction: actual.executeAppAction,
+        executeAppActionBatch: vi.fn(),
         executeUserAppAction: vi.fn(),
         isAppActionCommittedError: vi.fn(),
         pushUndoEntry: vi.fn(),
