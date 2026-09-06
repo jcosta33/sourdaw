@@ -7,7 +7,7 @@ use crate::audio_thread::MAX_CALLBACK_FRAMES;
 #[cfg(test)]
 use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
 use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
-use crate::midi::note_store::{MidiNoteStore, SoundingNotes, TimedMidiNote};
+use crate::midi::note_store::{MidiNoteStore, NoteAddressSet, TimedMidiNote};
 use crate::midi_fx::{
     Arpeggiator, MidiEventBuffer, MidiFx, MidiFxChain, MidiFxParam, ProbabilityEvaluator,
     VelocityScaler,
@@ -946,7 +946,7 @@ struct ActiveEffect {
     /// Written by delivery and emptied by [`Self::release_sounding_notes`].
     /// Empty for every device that carries no store, because only delivery
     /// from one ever sets a bit.
-    sounding: SoundingNotes,
+    sounding: NoteAddressSet,
     /// Sounding notes whose scheduled note-off a clear took out of the store
     /// during the drain now applying, awaiting settlement.
     ///
@@ -955,7 +955,7 @@ struct ActiveEffect {
     /// a release that was deleted from one that only moved — see
     /// [`Self::settle_stripped_note_offs`], which answers that against the
     /// store the whole drain left behind.
-    stripped: SoundingNotes,
+    stripped: NoteAddressSet,
     /// Frames of latency this device declares, as its host last read them.
     ///
     /// The figure the graph's compensation is computed from, kept exactly as
@@ -1555,8 +1555,8 @@ impl ActiveEffect {
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
             midi_notes: None,
-            sounding: SoundingNotes::default(),
-            stripped: SoundingNotes::default(),
+            sounding: NoteAddressSet::default(),
+            stripped: NoteAddressSet::default(),
             placement,
             home,
             pending_params: DeviceParamQueue::new(),
@@ -1823,14 +1823,15 @@ impl ActiveEffect {
     /// Answer the candidates a clear recorded, against the store the whole
     /// drain left behind.
     ///
-    /// A candidate the store still holds a note-off for ahead of the playhead
-    /// is released by that note-off, on the frame the rewrite put it on, so
-    /// nothing is owed here and the candidate is simply dropped. A candidate
-    /// with no such note-off is owed a release: the frames that carried it are
-    /// out of the arrangement, and the instrument would hold the key — the
-    /// same position a stop, a locate and a loop wrap leave a sounding note
-    /// in, and it gets the same answer, a note-off at the head of whatever
-    /// renders next.
+    /// A candidate the store still holds a note-off for ahead of the playhead,
+    /// before any note-on of the same key, is released by that note-off on the
+    /// frame the rewrite put it on, so nothing is owed here and the candidate
+    /// is simply dropped. A note-off past a later note-on belongs to that
+    /// later note and covers nothing. A candidate with no such note-off is
+    /// owed a release: the frames that carried it are out of the arrangement,
+    /// and the instrument would hold the key — the same position a stop, a
+    /// locate and a loop wrap leave a sounding note in, and it gets the same
+    /// answer, a note-off at the head of whatever renders next.
     ///
     /// A release the full buffer refuses leaves the note both sounding and a
     /// candidate, so it is owed again rather than lost.
@@ -1872,24 +1873,37 @@ impl ActiveEffect {
     }
 }
 
-/// Every note the store still holds a scheduled note-off for on `from_frame`
-/// or past it.
+/// Every note a note-off the store still holds would release, were the
+/// playhead to run on from `from_frame`.
 ///
-/// One pass over the entries from that frame on, into a set the same shape as
-/// the sounding bits: sixteen channels of a hundred and twenty-eight bits,
-/// stack-local and fixed, so building one allocates nothing on the callback.
-/// The store is frame-ordered, so the entries at or past a frame are its tail.
-fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> SoundingNotes {
+/// The first entry a note has from that frame on is the one that decides it: a
+/// note-off covers the note, and a note-on does not. A note-on standing
+/// between the playhead and the next note-off of that key means the note-off
+/// belongs to the later note the store presses there, not to the one sounding
+/// now — so the sounding note is owed its release, and the later pair is left
+/// whole to sound as its producer wrote it.
+///
+/// One pass over the entries from that frame on, into two sets the same shape
+/// as the sounding bits: sixteen channels of a hundred and twenty-eight bits,
+/// stack-local and fixed, so building them allocates nothing on the callback.
+/// The store is frame-ordered, so the entries at or past a frame are its tail
+/// in the order the playhead would meet them.
+fn scheduled_note_offs_from(store: &MidiNoteStore, from_frame: u64) -> NoteAddressSet {
     let entries = store.entries();
     let first = entries.partition_point(|entry| entry.at_frame < from_frame);
-    let mut note_offs = SoundingNotes::default();
+    let mut decided = NoteAddressSet::default();
+    let mut covered = NoteAddressSet::default();
     for entry in &entries[first..] {
-        if entry.event.is_note_on {
+        let event = &entry.event;
+        if decided.is_held(event.channel, event.note) {
             continue;
         }
-        note_offs.hold(entry.event.channel, entry.event.note);
+        decided.hold(event.channel, event.note);
+        if !event.is_note_on {
+            covered.hold(event.channel, event.note);
+        }
     }
-    note_offs
+    covered
 }
 
 /// The note-off that ends a note a store sounded, supplied by the engine
@@ -11813,6 +11827,59 @@ mod timeline_tests {
         );
     }
 
+    /// Deleting a sounding note releases it even when the same pitch is
+    /// scheduled again later in the arrangement.
+    ///
+    /// The later pair leaves a note-off for that key ahead of the playhead,
+    /// but a note-on stands in front of it, so it is the release of the later
+    /// note and nothing is going to end the one sounding now. Reading the tail
+    /// for any note-off of the key would find that one and hold the deleted
+    /// note down until the later note-on pressed the key again.
+    #[test]
+    fn deleting_a_sounding_note_releases_it_even_when_the_pitch_repeats_later() {
+        const BLOCK: usize = 128;
+        /// Half the run to the later pair: one callback renders at most
+        /// [`crate::audio_thread::MAX_CALLBACK_FRAMES`], so reaching frame
+        /// 5,200 from the head of the second block takes two of them.
+        const TAIL: usize = 2_700;
+        const LATER_ON: u64 = 5_000;
+        const LATER_OFF: u64 = 5_200;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[
+                (100, 60, true),
+                (300, 60, false),
+                (LATER_ON, 60, true),
+                (LATER_OFF, 60, false),
+            ],
+        ));
+
+        harness.render(BLOCK);
+        harness.send(GraphCommand::ClearMidiNotes {
+            plugin_id: 7,
+            from_frame: 200,
+            to_frame: 400,
+        });
+        harness.render(TAIL);
+        harness.render(TAIL);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![
+                (100, 60, true),
+                (BLOCK as u64, 60, false),
+                (LATER_ON, 60, true),
+                (LATER_OFF, 60, false),
+            ],
+            "the deleted note is released at the head of the block after the clear, and the \
+             later note keeps both of its own events"
+        );
+    }
+
     /// A stored note-off reaches the instrument whatever probability its
     /// producer wrote on it.
     ///
@@ -11848,6 +11915,42 @@ mod timeline_tests {
             received_notes(&received),
             vec![(NOTE_ON, 60, true), (NOTE_OFF, 60, false)],
             "the release reaches the instrument on the frame its producer wrote it for"
+        );
+    }
+
+    /// A stored note-on keeps the probability its producer wrote on it, so a
+    /// cutoff of zero rolls the note away.
+    ///
+    /// This is the other half of the rule above: delivery lifts the cutoff off
+    /// a stored note-off and must leave it on a stored note-on, because the
+    /// gate is what makes a probabilistic note probabilistic. Lifting it off
+    /// both would make every stored note certain and delete the feature.
+    #[test]
+    fn a_stored_note_on_with_a_zero_cutoff_is_rolled_away() {
+        const NOTE_ON: u64 = 100;
+        const NOTE_OFF: u64 = 1_000;
+        const BLOCK: usize = 1_024;
+
+        let mut harness = Harness::new(32);
+        let received = track_with_recording_instrument(&mut harness, 1, 7);
+        harness.playing();
+
+        let mut phrase = [timed_note(NOTE_ON, 60), timed_note(NOTE_OFF, 60)];
+        // The one cutoff the gate always rolls away.
+        phrase[0].event.probability_cutoff = 0;
+        phrase[1].event.is_note_on = false;
+        harness.send(GraphCommand::ScheduleMidiNotes {
+            plugin_id: 7,
+            notes: phrase.into(),
+        });
+
+        harness.render(BLOCK);
+
+        assert_eq!(
+            received_notes(&received),
+            vec![(NOTE_OFF, 60, false)],
+            "the note-on never reaches the instrument, and the note-off it would have earned \
+             is the harmless release of a key that never went down"
         );
     }
 

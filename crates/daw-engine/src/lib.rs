@@ -761,6 +761,15 @@ impl EngineHandle {
     /// plugin must be handed a block's events in non-decreasing time, and the
     /// sort allocates its scratch half — so it belongs on this side of the
     /// ring, and the store refuses a batch that arrives unordered.
+    ///
+    /// A rewrite is a [`Self::clear_midi_notes`] and this call together, and
+    /// the pair is atomic against the callback only through
+    /// [`Self::send_graph_batch`]. The clear releases nothing itself: it
+    /// records the sounding notes whose note-off it took away and answers them
+    /// against the store the drain leaves behind. Pushed one at a time the two
+    /// can land in different drains, and the clear then settles against a
+    /// store the replacement has not reached yet — releasing a note the
+    /// rewrite only meant to move.
     pub fn schedule_midi_notes(
         &mut self,
         plugin_id: usize,
@@ -772,6 +781,15 @@ impl EngineHandle {
 
     /// Drop an instrument's scheduled notes in the half-open frame window
     /// `from_frame..to_frame`; `0..u64::MAX` clears the store.
+    ///
+    /// A sounding note whose note-off this window takes away is not released
+    /// here. The callback records it and settles it once the whole drain has
+    /// applied, against the store that drain left — so a rewrite that moves
+    /// the note-off keeps the note sounding, and one that deletes it releases
+    /// the note at the head of whatever renders next. That settlement reads
+    /// the store the drain ends with, so a clear and its replacement batch
+    /// hold together only when they travel in one
+    /// [`Self::send_graph_batch`].
     pub fn clear_midi_notes(
         &mut self,
         plugin_id: usize,

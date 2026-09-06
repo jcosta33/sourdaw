@@ -179,11 +179,11 @@ fn merge_frame_ordered_runs(
     out.extend_from_slice(&arriving[arriving_index..]);
 }
 
-/// Whether every entry names a note [`SoundingNotes`] can address.
+/// Whether every entry names a note [`NoteAddressSet`] can address.
 fn is_addressable(notes: &[TimedMidiNote]) -> bool {
     notes
         .iter()
-        .all(|entry| SoundingNotes::address(entry.event.channel, entry.event.note).is_some())
+        .all(|entry| NoteAddressSet::address(entry.event.channel, entry.event.note).is_some())
 }
 
 /// MIDI channels a note can sound on.
@@ -192,22 +192,25 @@ const MIDI_CHANNELS: usize = 16;
 /// Notes one MIDI channel can carry.
 const NOTES_PER_CHANNEL: u8 = 128;
 
-/// Which notes an instrument's store has sounded and not yet released.
+/// A set of note addresses: one bit per note per channel, across sixteen
+/// channels and a hundred and twenty-eight notes.
 ///
-/// One bit per note per channel, inline and fixed: the audio thread sets and
-/// clears bits on every delivery and walks the whole set on a stop, a locate
-/// and a loop wrap, so a set that allocated or hashed would put that work
-/// inside the deadline (ADR 0020).
+/// Inline and fixed: the audio thread sets and clears bits on every delivery
+/// and walks a whole set on a stop, a locate and a loop wrap, so a set that
+/// allocated or hashed would put that work inside the deadline (ADR 0020).
 ///
-/// Only what the store delivered is tracked. A note played live has no
-/// timeline position and no scheduled release, so a key the player is holding
-/// stays held across a stop exactly as it does on hardware.
+/// The scheduler keeps one per device for the notes its store has sounded and
+/// not yet released, one for the releases a clear stripped, and builds them on
+/// the stack to answer questions about a store. Only what the store delivered
+/// ever reaches the sounding one: a note played live has no timeline position
+/// and no scheduled release, so a key the player is holding stays held across
+/// a stop exactly as it does on hardware.
 #[derive(Clone, Copy, Default)]
-pub struct SoundingNotes {
+pub struct NoteAddressSet {
     held: [u128; MIDI_CHANNELS],
 }
 
-impl SoundingNotes {
+impl NoteAddressSet {
     /// Mark a note held.
     pub fn hold(&mut self, channel: i16, note: u8) {
         let Some((index, mask)) = Self::address(channel, note) else {
