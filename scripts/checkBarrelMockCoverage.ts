@@ -16,8 +16,11 @@
  * What it checks. For every `vi.mock('<contract barrel>', factory)` whose factory
  * does not spread `importOriginal`, the mocked keys must cover every name the
  * spec's transitive module graph imports from that barrel. Modules the spec also
- * mocks are not traversed — their real imports never happen. A spread factory is
- * additive by construction and is not checked.
+ * mocks are not traversed — their real imports never happen — unless the factory
+ * itself loads the real module: awaiting `importOriginal` (or a `vi.importActual`
+ * call) without spreading it still makes vitest evaluate the real module and its
+ * graph (#3825), so the imports that graph makes from other mocked barrels are
+ * required too. A spread factory is additive by construction and is not checked.
  *
  * This is the static twin of what vitest raises at runtime ("No X export is defined
  * on the ... mock"), moved to the moment the export is added rather than the moment
@@ -252,6 +255,15 @@ export type MockedBarrel = {
      * signature minus the one line that does the work.
      */
     spreadsOriginal: boolean;
+    /**
+     * True when the factory body loads the real module — it calls its
+     * `importOriginal` parameter (directly or through a local alias) or makes a
+     * `vi.importActual` call. Broader than `spreadsOriginal`: awaiting the original
+     * without spreading it into the returned object still makes vitest evaluate the
+     * real module and its import graph (#3825), so such a factory does not cut the
+     * mocked module out of the graph either.
+     */
+    loadsOriginal: boolean;
 };
 
 export type FileFacts = {
@@ -459,30 +471,15 @@ function containsImportActualCall(node: ts.Node): boolean {
 }
 
 /**
- * True when the factory's returned object literal spreads a value that traces back
- * to the real module — the factory's first parameter (`...(await importOriginal())`
- * directly, or `const actual = await importOriginal(); return { ...actual, … }`
- * through a local), or a `vi.importActual(specifier)` call (inline in the spread,
- * or through a local the same way). Textual detection was wrong:
- * `factoryText.includes('importOriginal')` accepts a parameter that is declared and
- * never used, and accepts the word in a comment.
+ * Names in the factory's body that carry the real module: the factory's first
+ * parameter (`importOriginal`), plus locals initialised from a `vi.importActual`
+ * call or from another name already in the set. Two passes settle the chains that
+ * occur in practice (`const actual = await importOriginal()` and one alias of it).
+ * Shared by `detectOriginalSpread` and `factoryLoadsOriginalModule`.
  */
-function detectOriginalSpread(factory: ts.Node): boolean {
-    if (!ts.isArrowFunction(factory) && !ts.isFunctionExpression(factory)) {
-        return false;
-    }
-
-    const objectLiteral = findReturnedObjectLiteral(factory);
-    if (!objectLiteral) {
-        return false;
-    }
-
-    // Names that carry the original module: the `importOriginal` parameter, if the
-    // factory has one, plus locals initialised from anything already in the set.
-    // Two passes settle the chains that occur in practice (`const actual = await
-    // importOriginal()` and one alias of it).
-    const parameter = factory.parameters[0];
+function collectOriginalModuleNames(factory: ts.ArrowFunction | ts.FunctionExpression): Set<string> {
     const originNames = new Set<string>();
+    const parameter = factory.parameters[0];
     if (parameter && ts.isIdentifier(parameter.name)) {
         originNames.add(parameter.name.text);
     }
@@ -506,6 +503,66 @@ function detectOriginalSpread(factory: ts.Node): boolean {
         };
         collectAliases(factory);
     }
+    return originNames;
+}
+
+/**
+ * True when the factory body *loads* the real module it mocks — a call of an
+ * original-carrying name (see `collectOriginalModuleNames`) or any
+ * `vi.importActual` call, anywhere in the body. Distinct from
+ * `detectOriginalSpread`, which additionally requires that value to be spread into
+ * the returned object: `const actual = await importOriginal(); return { A, B }`
+ * spreads nothing, yet vitest still evaluates the real module and its import
+ * graph, so the real graph's own imports from other mocked barrels are demanded at
+ * runtime (#3825). A parameter merely declared, or the word in a comment, is not a
+ * call.
+ */
+function factoryLoadsOriginalModule(factory: ts.Node): boolean {
+    if (!ts.isArrowFunction(factory) && !ts.isFunctionExpression(factory)) {
+        return false;
+    }
+    if (containsImportActualCall(factory)) {
+        return true;
+    }
+    const originNames = collectOriginalModuleNames(factory);
+    let called = false;
+    const walk = (node: ts.Node): void => {
+        if (called) {
+            return;
+        }
+        if (ts.isCallExpression(node)) {
+            const callee = unwrapParenthesized(node.expression);
+            if (ts.isIdentifier(callee) && originNames.has(callee.text)) {
+                called = true;
+                return;
+            }
+        }
+        node.forEachChild(walk);
+    };
+    walk(factory);
+    return called;
+}
+
+/**
+ * True when the factory's returned object literal spreads a value that traces back
+ * to the real module — the factory's first parameter (`...(await importOriginal())`
+ * directly, or `const actual = await importOriginal(); return { ...actual, … }`
+ * through a local), or a `vi.importActual(specifier)` call (inline in the spread,
+ * or through a local the same way). Textual detection was wrong:
+ * `factoryText.includes('importOriginal')` accepts a parameter that is declared and
+ * never used, and accepts the word in a comment.
+ */
+function detectOriginalSpread(factory: ts.Node): boolean {
+    if (!ts.isArrowFunction(factory) && !ts.isFunctionExpression(factory)) {
+        return false;
+    }
+
+    const objectLiteral = findReturnedObjectLiteral(factory);
+    if (!objectLiteral) {
+        return false;
+    }
+
+    const originNames = collectOriginalModuleNames(factory);
 
     return objectLiteral.properties.some((property) => {
         if (!ts.isSpreadAssignment(property)) {
@@ -703,6 +760,7 @@ export function readFileFacts(absolutePath: string, contents: string): FileFacts
                         line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
                         keys: parseObjectKeys(factory),
                         spreadsOriginal: detectOriginalSpread(factory),
+                        loadsOriginal: factoryLoadsOriginalModule(factory),
                     });
                 }
             }
@@ -834,12 +892,16 @@ export function analyzeSpecs({
             }
             resolvedMockCount += 1;
 
-            // Only a factory that does *not* spread `importOriginal` cuts the module
-            // out of the graph. A spread factory loads the real module, so its own
-            // imports do execute and can still hit another barrel this spec mocks
-            // exhaustively — which means applying the spread repair to one mock used
-            // to shrink the gate's coverage of every other barrel in the same file.
-            if (!mock.spreadsOriginal) {
+            // Only a factory that never loads the real module cuts it out of the
+            // graph. A spread factory loads it, so its own imports do execute and
+            // can still hit another barrel this spec mocks exhaustively — which
+            // means applying the spread repair to one mock used to shrink the
+            // gate's coverage of every other barrel in the same file. A factory
+            // that awaits `importOriginal` (or calls `vi.importActual`) without
+            // spreading it loads the real module too (#3825): the real graph
+            // evaluates, so its imports of other mocked barrels are demanded at
+            // runtime and must be walked the same way.
+            if (!mock.spreadsOriginal && !mock.loadsOriginal) {
                 mockedPaths.add(resolved);
             }
 
@@ -866,8 +928,9 @@ export function analyzeSpecs({
         analyzedSpecCount += 1;
 
         // The mock replaces the module for the whole graph, so every module the
-        // spec can reach counts — except the ones the spec mocks *without* a
-        // spread, whose real imports never run.
+        // spec can reach counts — except the ones the spec mocks without loading
+        // the real module (no spread and no `importOriginal`/`vi.importActual`
+        // call), whose real imports never run.
         const visited = new Set<string>([specPath]);
         const queue: string[] = [specPath];
 

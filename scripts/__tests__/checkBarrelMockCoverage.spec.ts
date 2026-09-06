@@ -217,6 +217,85 @@ describe('checkBarrelMockCoverage — a spread mock does not hide the rest of th
     });
 });
 
+describe('checkBarrelMockCoverage — a non-spread factory that loads the real module opens its real graph', () => {
+    // #3825, the class PR #3821 swept ~100 factories for: awaiting `importOriginal`
+    // (or calling `vi.importActual`) without spreading still makes vitest evaluate
+    // the real module, so the real graph's own imports from a second non-spread
+    // mock are demanded at collection ("No export defined on the mock") — while the
+    // walk, stopping at the mocked boundary, saw none of it.
+    function importActualFixture(secondBarrelFactorySource: string): Fixture {
+        return buildFixture({
+            [barrel]: "export { Alpha } from './Alpha';\n",
+            [secondBarrel]: "export { Gamma } from './Gamma';\nexport { Delta } from './Delta';\n",
+            'src/modules/Widgets/presentations/views/Alpha.tsx': `import { Delta } from '${secondBarrelSpecifier}';\nexport const Alpha = () => Delta;\n`,
+            'src/modules/Host/presentations/views/HostPanel.tsx': `import { Alpha } from '${barrelSpecifier}';\nexport const HostPanel = () => Alpha;\n`,
+            'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': [
+                `vi.mock('${barrelSpecifier}', async () => { const actual = await vi.importActual('${barrelSpecifier}'); return { Alpha: actual.Alpha }; });`,
+                `vi.mock('${secondBarrelSpecifier}', ${secondBarrelFactorySource});`,
+                "import { HostPanel } from '../HostPanel';",
+                '',
+            ].join('\n'),
+        });
+    }
+
+    it('demands through the real graph what vitest demands at collection', () => {
+        expect(
+            violationsOf(importActualFixture('() => ({ Gamma: () => null })')).map((violation) => [
+                violation.barrel,
+                violation.missing,
+                violation.usedBy,
+            ])
+        ).toEqual([
+            [secondBarrelSpecifier, ['Delta'], join(repoRoot, 'src/modules/Widgets/presentations/views/Alpha.tsx')],
+        ]);
+    });
+
+    it('stays silent once the second factory provides the key — the compliant twin', () => {
+        expect(violationsOf(importActualFixture('() => ({ Gamma: () => null, Delta: () => null })'))).toEqual([]);
+    });
+
+    it('sees the importOriginal-parameter form awaited without a spread too', () => {
+        // The real-tree instance of #3825 (`mainRenderBeforeBootstrap.spec.tsx`):
+        // the factory signature carries `importOriginal` and awaits it, but the
+        // returned object is hand-written.
+        const fixture = buildFixture({
+            [barrel]: "export { Alpha } from './Alpha';\n",
+            [secondBarrel]: "export { Gamma } from './Gamma';\nexport { Delta } from './Delta';\n",
+            'src/modules/Widgets/presentations/views/Alpha.tsx': `import { Delta } from '${secondBarrelSpecifier}';\nexport const Alpha = () => Delta;\n`,
+            'src/modules/Host/presentations/views/HostPanel.tsx': `import { Alpha } from '${barrelSpecifier}';\nexport const HostPanel = () => Alpha;\n`,
+            'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': [
+                `vi.mock('${barrelSpecifier}', async (importOriginal) => { const actual = await importOriginal(); return { Alpha: actual.Alpha }; });`,
+                `vi.mock('${secondBarrelSpecifier}', () => ({ Gamma: () => null }));`,
+                "import { HostPanel } from '../HostPanel';",
+                '',
+            ].join('\n'),
+        });
+
+        expect(violationsOf(fixture).map((violation) => [violation.barrel, violation.missing])).toEqual([
+            [secondBarrelSpecifier, ['Delta']],
+        ]);
+    });
+
+    it('keeps a factory whose importOriginal parameter is declared but never called cut from the graph', () => {
+        // Declaring the parameter loads nothing; this boundary keeps the traversal
+        // from opening every mock that merely carries the signature.
+        const fixture = buildFixture({
+            [barrel]: "export { Alpha } from './Alpha';\n",
+            [secondBarrel]: "export { Gamma } from './Gamma';\nexport { Delta } from './Delta';\n",
+            'src/modules/Widgets/presentations/views/Alpha.tsx': `import { Delta } from '${secondBarrelSpecifier}';\nexport const Alpha = () => Delta;\n`,
+            'src/modules/Host/presentations/views/HostPanel.tsx': `import { Alpha } from '${barrelSpecifier}';\nexport const HostPanel = () => Alpha;\n`,
+            'src/modules/Host/presentations/views/__tests__/HostPanel.spec.tsx': [
+                `vi.mock('${barrelSpecifier}', async (importOriginal) => ({ Alpha: () => null }));`,
+                `vi.mock('${secondBarrelSpecifier}', () => ({ Gamma: () => null }));`,
+                "import { HostPanel } from '../HostPanel';",
+                '',
+            ].join('\n'),
+        });
+
+        expect(violationsOf(fixture)).toEqual([]);
+    });
+});
+
 describe('checkBarrelMockCoverage — spread detection is structural, not textual', () => {
     function factoryFixture(factorySource: string): Fixture {
         return buildFixture({

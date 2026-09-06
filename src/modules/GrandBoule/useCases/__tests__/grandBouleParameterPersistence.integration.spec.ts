@@ -71,7 +71,10 @@ vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {
 vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Knead/useCases')>();
     return {
+        captureClipPitchAnalysis: vi.fn(),
+        clearClipPitchAnalysis: vi.fn(),
         hydrateKneadFromTrackStore: actual.hydrateKneadFromTrackStore,
+        restoreClipPitchAnalysis: vi.fn(),
     };
 });
 
@@ -79,7 +82,40 @@ vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
+        adaptGrooveTemplateForConsumer: vi.fn(),
+        appendMidiNotes: vi.fn(),
+        arpeggiate: vi.fn(),
+        canPrepareMidiClipGlueState: vi.fn(),
+        downloadMidiFile: vi.fn(),
+        duplicateClipNotes: vi.fn(),
+        duplicateMidiClipData: vi.fn(),
+        getGrooveTemplate: vi.fn(),
+        getMidiInputTrack: vi.fn(),
+        getMidiInputTrackOwnerId: vi.fn(),
+        getMidiInputTrackRevision: vi.fn(),
+        getMidiStoreState: vi.fn(),
+        getScopedGrooveAssignment: vi.fn(),
+        getScopedGrooveConsumerId: vi.fn(),
+        getStraightGrooveTemplateId: vi.fn(),
+        hasActiveStepRecordingDependency: vi.fn(),
+        mergeImportedMidiClipNotes: vi.fn(),
+        midiClipGlueStateMatches: vi.fn(),
+        midiClipSplitStateMatches: vi.fn(),
+        prepareMidiClipGlueState: vi.fn(),
+        prepareMidiClipSplit: vi.fn(),
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        projectMidiNotesByClipIdThroughRestores: vi.fn(),
+        readMidiFile: vi.fn(),
+        removeMidiClipData: vi.fn(),
+        restoreGrooveAssignment: vi.fn(),
+        restoreMidiClipData: vi.fn(),
+        restoreMidiClipGlueState: vi.fn(),
+        restoreMidiClipNotes: vi.fn(),
+        restoreMidiClipSplitState: vi.fn(),
+        serializeMidiStateForClips: vi.fn(),
+        setMidiInputTrack: vi.fn(),
+        setNotesForClip: vi.fn(),
+        splitMidiNotesAtBeat: vi.fn(),
     };
 });
 
@@ -87,7 +123,19 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
     return {
+        addSidechainRouteSnapshot: vi.fn(),
+        ensureBusStrip: vi.fn(),
+        getAllSidechainRoutes: vi.fn(),
+        getSidechainRoutesForTrack: vi.fn(),
+        getSidechainTargetCapability: vi.fn(),
         hydrateSidechainRoutes: actual.hydrateSidechainRoutes,
+        removeSend: vi.fn(),
+        removeSidechainRoute: vi.fn(),
+        removeSidechainRouteSnapshot: vi.fn(),
+        restoreSidechainRoutes: vi.fn(),
+        setBusGain: vi.fn(),
+        setSend: vi.fn(),
+        wireSidechainRoutes: vi.fn(),
     };
 });
 
@@ -97,6 +145,55 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     ensureTrackStrip: () => ({ deviceNodes: [], analyserNode: null }),
     getAudioSampleRate: () => 44100,
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    audioEngine: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    discardDecodedAudioFile: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getAudioContext: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(),
+    mirrorDeviceChainDelta: vi.fn(),
+    nativeLiveGraphSessionSplice: vi.fn(),
+    removeBusStrip: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    removeSend: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 
 const noActionHistoryMetadataPort = {
