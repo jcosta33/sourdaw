@@ -438,7 +438,11 @@ export function startPlayheadScheduler(): void {
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     Promise.resolve(
-                        startAudioRecording(track.id, (buffer) => {
+                        startAudioRecording(track.id, (result) => {
+                            if (result.kind === 'failed') {
+                                return;
+                            }
+                            const { buffer } = result;
                             const bufferId = `rec-${crypto.randomUUID()}`;
                             cacheAudioBuffer({ buffer, bufferId });
                             if (recClip) {

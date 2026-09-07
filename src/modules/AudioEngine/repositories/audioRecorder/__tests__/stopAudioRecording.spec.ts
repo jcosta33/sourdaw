@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { audioRecordingStore } from '../../../stores/audioRecordingStore';
 import { audioEngine } from '../../createWebAudioEngine';
 import { cleanupNodesForRecordingSession } from '../cleanupNodesForRecordingSession';
@@ -96,6 +98,7 @@ describe('stopAudioRecording', () => {
 
     beforeEach(() => {
         vi.useFakeTimers();
+        vi.clearAllMocks();
         FakeWorker.last = null;
         FakeAudioWorkletNode.last = null;
         media_track_stop = vi.fn();
@@ -112,6 +115,8 @@ describe('stopAudioRecording', () => {
         vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(
             make_media_stream_source(source_disconnect)
         );
+        vi.mocked(audioEngine.context.decodeAudioData).mockReset();
+        vi.mocked(audioEngine.context.decodeAudioData).mockResolvedValue(make_audio_buffer());
         vi.stubGlobal('SharedArrayBuffer', ArrayBuffer);
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
@@ -127,12 +132,12 @@ describe('stopAudioRecording', () => {
 
     async function startAndArm(
         trackId: string,
-        onComplete: (buffer: AudioBuffer) => void = vi.fn()
+        onTerminal: Parameters<typeof startAudioRecording>[1] = vi.fn()
     ): Promise<{
         worker: FakeWorker;
         worklet: FakeAudioWorkletNode;
     }> {
-        await expect(startAudioRecording(trackId, onComplete)).resolves.toBe(true);
+        await expect(startAudioRecording(trackId, onTerminal)).resolves.toBe(true);
         await Promise.resolve();
         await Promise.resolve();
         const worker = FakeWorker.last;
@@ -143,6 +148,25 @@ describe('stopAudioRecording', () => {
         worker.emit({ type: 'ready' });
         return { worker, worklet };
     }
+
+    it('returns false without a terminal callback when setup fails after session registration', async () => {
+        class InitFailWorker extends FakeWorker {
+            override postMessage = vi.fn(() => {
+                throw new Error('worker init failed');
+            });
+        }
+        vi.stubGlobal('Worker', InitFailWorker);
+        const onTerminal = vi.fn();
+
+        await expect(startAudioRecording('track-init-fail', onTerminal)).resolves.toBe(false);
+
+        expect(onTerminal).not.toHaveBeenCalled();
+        expect(activeSessions.get('track-init-fail')).toBeUndefined();
+        expect(audioRecordingStore.value?.isRecording).toBe(false);
+        expect(FakeWorker.last?.terminate).toHaveBeenCalledOnce();
+        expect(source_disconnect).toHaveBeenCalledOnce();
+        expect(media_track_stop).toHaveBeenCalledOnce();
+    });
 
     it('waits for the captured producer stop acknowledgment before draining and releasing nodes', async () => {
         const { worker, worklet } = await startAndArm('track-stop');
@@ -173,11 +197,11 @@ describe('stopAudioRecording', () => {
         vi.mocked(audioEngine.context.decodeAudioData).mockReturnValue(decodePending);
         const decodedBuffer = make_audio_buffer();
         const deliveryOrder: string[] = [];
-        const onComplete = vi.fn((buffer: AudioBuffer) => {
-            expect(buffer).toBe(decodedBuffer);
+        const onTerminal = vi.fn((result: { kind: string; buffer?: AudioBuffer }) => {
+            expect(result).toEqual({ kind: 'completed', buffer: decodedBuffer });
             deliveryOrder.push('callback');
         });
-        const { worker, worklet } = await startAndArm('track-flush', onComplete);
+        const { worker, worklet } = await startAndArm('track-flush', onTerminal);
         const session = activeSessions.get('track-flush');
         if (!session) {
             throw new Error('Expected a recording session');
@@ -208,7 +232,7 @@ describe('stopAudioRecording', () => {
         await Promise.resolve();
 
         expect(audioEngine.context.decodeAudioData).toHaveBeenCalledWith(wav);
-        expect(onComplete).not.toHaveBeenCalled();
+        expect(onTerminal).not.toHaveBeenCalled();
         expect(settled).toBe(false);
         expect(activeSessions.get('track-flush')).toBe(session);
         expect(worker.terminate).not.toHaveBeenCalled();
@@ -220,8 +244,8 @@ describe('stopAudioRecording', () => {
         resolve(decodedBuffer);
         await stopping;
 
-        expect(onComplete).toHaveBeenCalledOnce();
-        expect(onComplete).toHaveBeenCalledWith(decodedBuffer);
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'completed', buffer: decodedBuffer });
         expect(deliveryOrder).toEqual(['callback', 'settled']);
         expect(settled).toBe(true);
         expect(activeSessions.get('track-flush')).toBeUndefined();
@@ -229,7 +253,8 @@ describe('stopAudioRecording', () => {
     });
 
     it('ignores a late ready event after stop has become terminal', async () => {
-        await expect(startAudioRecording('track-late-ready', vi.fn())).resolves.toBe(true);
+        const onTerminal = vi.fn();
+        await expect(startAudioRecording('track-late-ready', onTerminal)).resolves.toBe(true);
         const worker = FakeWorker.last;
         const worklet = FakeAudioWorkletNode.last;
         if (!worker || !worklet) {
@@ -245,12 +270,16 @@ describe('stopAudioRecording', () => {
 
         worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
         expect(worker.postMessage).toHaveBeenCalledWith({ type: 'stop', expectedFinalSampleCount: 0 });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(44) });
         await stopping;
+
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'empty-wav' });
     });
 
     it('terminates the worker when its recording session fails', async () => {
-        await expect(startAudioRecording('track-worker-error', vi.fn())).resolves.toBe(true);
+        const onTerminal = vi.fn();
+        await expect(startAudioRecording('track-worker-error', onTerminal)).resolves.toBe(true);
         const worker = FakeWorker.last;
         if (!worker) {
             throw new Error('Expected recording worker');
@@ -259,6 +288,8 @@ describe('stopAudioRecording', () => {
         worker.onerror?.({});
 
         expect(worker.terminate).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'worker-crash' });
     });
 
     it('removes the named temporary file when the worker abandons an integrity-failed take', async () => {
@@ -267,18 +298,22 @@ describe('stopAudioRecording', () => {
             configurable: true,
             value: { getDirectory: vi.fn().mockResolvedValue({ removeEntry }) },
         });
-        const { worker } = await startAndArm('track-worker-integrity-error');
+        const onTerminal = vi.fn();
+        const { worker } = await startAndArm('track-worker-integrity-error', onTerminal);
 
         worker.emit({ type: 'error', message: 'Recording ring overrun', tempFile: 'rec-tmp-123.pcm' });
         await Promise.resolve();
         await Promise.resolve();
 
         expect(worker.terminate).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'worker-error' });
         expect(removeEntry).toHaveBeenCalledWith('rec-tmp-123.pcm');
     });
 
     it('tears down the captured session when the producer never acknowledges stop', async () => {
-        const { worker, worklet } = await startAndArm('track-stall');
+        const onTerminal = vi.fn();
+        const { worker, worklet } = await startAndArm('track-stall', onTerminal);
 
         stopAudioRecording();
         expect(worker.terminate).not.toHaveBeenCalled();
@@ -288,6 +323,8 @@ describe('stopAudioRecording', () => {
         expect(worklet.disconnect).toHaveBeenCalledOnce();
         expect(source_disconnect).toHaveBeenCalledOnce();
         expect(media_track_stop).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'flush-timeout' });
 
         const restart = await startAndArm('track-stall');
         expect(restart.worker).toBeInstanceOf(FakeWorker);
@@ -314,12 +351,85 @@ describe('stopAudioRecording', () => {
 
         stopAudioRecording();
         worklet.emit({ type: 'stopped', publishedSampleCount: 0 });
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(44) });
         await Promise.resolve();
 
         const calls_after_flush = worker.terminate.mock.calls.length;
         vi.advanceTimersByTime(5_000);
         expect(worker.terminate.mock.calls.length).toBe(calls_after_flush);
+    });
+
+    it('settles a decode rejection once and releases the stopped session', async () => {
+        const decodeError = new Error('bad wav');
+        vi.mocked(audioEngine.context.decodeAudioData).mockRejectedValueOnce(decodeError);
+        const onTerminal = vi.fn();
+        const { worker, worklet } = await startAndArm('track-decode-failed', onTerminal);
+
+        const stopping = stopAudioRecording();
+        worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        await stopping;
+
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'decode-failed' });
+        expect(worker.terminate).toHaveBeenCalledOnce();
+        expect(activeSessions.get('track-decode-failed')).toBeUndefined();
+        expect(audioRecordingStore.value?.isRecording).toBe(false);
+        expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: decodeError }));
+    });
+
+    it('rejects a duplicate WAV while decode is pending without retiring the session', async () => {
+        let resolveDecode: ((buffer: AudioBuffer) => void) | undefined;
+        vi.mocked(audioEngine.context.decodeAudioData).mockReturnValueOnce(
+            new Promise<AudioBuffer>((resolve) => {
+                resolveDecode = resolve;
+            })
+        );
+        const decodedBuffer = make_audio_buffer();
+        const onTerminal = vi.fn();
+        const { worker, worklet } = await startAndArm('track-duplicate-wav', onTerminal);
+        const session = activeSessions.get('track-duplicate-wav');
+
+        const stopping = stopAudioRecording();
+        worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(60) });
+        await Promise.resolve();
+
+        expect(audioEngine.context.decodeAudioData).toHaveBeenCalledOnce();
+        expect(activeSessions.get('track-duplicate-wav')).toBe(session);
+        expect(onTerminal).not.toHaveBeenCalled();
+        expect(worker.terminate).not.toHaveBeenCalled();
+
+        const resolve = resolveDecode;
+        if (!resolve) {
+            throw new Error('Expected decode to be pending');
+        }
+        resolve(decodedBuffer);
+        await stopping;
+
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(onTerminal).toHaveBeenCalledWith({ kind: 'completed', buffer: decodedBuffer });
+        expect(worker.terminate).toHaveBeenCalledOnce();
+    });
+
+    it('cleans up and resolves stop when the terminal callback throws', async () => {
+        const callbackError = new Error('consumer failed');
+        const onTerminal = vi.fn(() => {
+            throw callbackError;
+        });
+        const { worker, worklet } = await startAndArm('track-callback-error', onTerminal);
+
+        const stopping = stopAudioRecording();
+        worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        await stopping;
+
+        expect(onTerminal).toHaveBeenCalledOnce();
+        expect(worker.terminate).toHaveBeenCalledOnce();
+        expect(activeSessions.get('track-callback-error')).toBeUndefined();
+        expect(audioRecordingStore.value?.isRecording).toBe(false);
+        expect(logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: callbackError }));
     });
 
     it('ignores a queued stale acknowledgment after the same track has a replacement session', async () => {
@@ -343,6 +453,58 @@ describe('stopAudioRecording', () => {
         expect(replacement.worklet.disconnect).not.toHaveBeenCalled();
         expect(activeSessions.get('track-stale-ack')).not.toBe(originalSession);
         expect(audioRecordingStore.value?.isRecording).toBe(true);
+    });
+
+    it('keeps a same-track successor when an obsolete decode settles after the original session fails', async () => {
+        let resolveDecode: ((buffer: AudioBuffer) => void) | undefined;
+        vi.mocked(audioEngine.context.decodeAudioData).mockReturnValueOnce(
+            new Promise<AudioBuffer>((resolve) => {
+                resolveDecode = resolve;
+            })
+        );
+        const originalOrder: string[] = [];
+        const originalTerminal = vi.fn(() => {
+            originalOrder.push('failed');
+        });
+        const original = await startAndArm('track-stale-decode', originalTerminal);
+        const originalSession = activeSessions.get('track-stale-decode');
+        if (!originalSession) {
+            throw new Error('Expected original recording session');
+        }
+
+        const originalStopping = stopAudioRecording().then(() => {
+            originalOrder.push('settled');
+        });
+        original.worklet.emit({ type: 'stopped', publishedSampleCount: 2 });
+        original.worker.emit({ type: 'wav', buffer: new ArrayBuffer(52) });
+        await Promise.resolve();
+        original.worker.onerror?.({});
+        await originalStopping;
+
+        const successor = await startAndArm('track-stale-decode');
+        const successorSession = activeSessions.get('track-stale-decode');
+        if (!successorSession) {
+            throw new Error('Expected successor recording session');
+        }
+        const resolve = resolveDecode;
+        if (!resolve) {
+            throw new Error('Expected original decode to be pending');
+        }
+        resolve(make_audio_buffer());
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(originalTerminal).toHaveBeenCalledOnce();
+        expect(originalTerminal).toHaveBeenCalledWith({ kind: 'failed', reason: 'worker-crash' });
+        expect(originalOrder).toEqual(['failed', 'settled']);
+        expect(activeSessions.get('track-stale-decode')).toBe(successorSession);
+        expect(audioRecordingStore.value?.isRecording).toBe(true);
+        expect(original.worker.terminate).toHaveBeenCalledOnce();
+        expect(original.worklet.disconnect).toHaveBeenCalledOnce();
+        expect(source_disconnect).toHaveBeenCalledOnce();
+        expect(media_track_stop).toHaveBeenCalledOnce();
+        expect(successor.worker.terminate).not.toHaveBeenCalled();
+        expect(successor.worklet.disconnect).not.toHaveBeenCalled();
     });
 
     it('does not let a stale captured timeout tear down a same-track successor', async () => {
