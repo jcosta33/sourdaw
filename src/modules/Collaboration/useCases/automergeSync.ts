@@ -598,6 +598,7 @@ export class AutomergeSync {
                         this.hooks.onSyncConverged?.({ peerId, docId });
                     }
                     await transition?.commit();
+                    this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
                 } catch (error) {
                     // Once exact persistence has started, the root may already
                     // be durable even if the operation reports a late failure.
@@ -625,6 +626,7 @@ export class AutomergeSync {
             if (converged) {
                 this.hooks.onSyncConverged?.({ peerId, docId });
             }
+            this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
             return;
         }
 
@@ -688,15 +690,16 @@ export class AutomergeSync {
                     this.hooks.onPersistError?.(error);
                     return;
                 }
-                if (!transition) {
-                    return;
+                if (transition) {
+                    try {
+                        await transition.commit();
+                    } catch (error) {
+                        logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
+                        this.hooks.onPostPersistError?.(error);
+                        return;
+                    }
                 }
-                try {
-                    await transition.commit();
-                } catch (error) {
-                    logger.warn('[AutomergeSync] Post-persist synchronization failed:', error);
-                    this.hooks.onPostPersistError?.(error);
-                }
+                this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
             });
             this.persistenceTail = persistence.finally(() => {
                 this.persistenceBarrierCount -= 1;
@@ -708,6 +711,7 @@ export class AutomergeSync {
         }
 
         publish();
+        this.scheduleAcceptedSyncProgress({ peerId, docId, documentChanged, generation });
         const persistence = this.persistenceTail.then(async () => {
             try {
                 await persistCrdtProject(docId === DOC_PREFIX_ROOT ? rootHeads : undefined);
@@ -717,6 +721,36 @@ export class AutomergeSync {
             }
         });
         this.persistenceTail = persistence;
+    }
+
+    /**
+     * Continue a successful Automerge exchange after the accepted document and
+     * its per-peer state are committed. Repository publication deliberately
+     * suppresses its own change notification while applying remote state, so
+     * the protocol reply and relay have to be scheduled here instead.
+     */
+    private scheduleAcceptedSyncProgress({
+        peerId,
+        docId,
+        documentChanged,
+        generation,
+    }: {
+        peerId: PeerId;
+        docId: string;
+        documentChanged: boolean;
+        generation: number;
+    }): void {
+        if (generation !== this.lifecycleGeneration) {
+            return;
+        }
+        if (documentChanged) {
+            this.sendDocSyncToAllPeers(docId, generation);
+            return;
+        }
+        if (!this.peerManager.getConnectedPeerIds().includes(peerId)) {
+            return;
+        }
+        this.queueDocSyncToPeer({ peerId, docId, generation, requireConnected: true });
     }
 
     /**
@@ -918,7 +952,17 @@ export class AutomergeSync {
      * against a state that is about to move — producing a duplicate message and
      * committing the two results out of order.
      */
-    private queueDocSyncToPeer({ peerId, docId }: { peerId: PeerId; docId: string }): void {
+    private queueDocSyncToPeer({
+        peerId,
+        docId,
+        generation,
+        requireConnected = false,
+    }: {
+        peerId: PeerId;
+        docId: string;
+        generation?: number;
+        requireConnected?: boolean;
+    }): void {
         const key = AutomergeSync.channelKey(peerId, docId);
         // Nothing is generated for a closed channel: this peer and this
         // document can no longer converge, so continuing to send is waste.
@@ -926,7 +970,15 @@ export class AutomergeSync {
             return;
         }
         const previous = this.sendQueues.get(key) ?? Promise.resolve();
-        const next = previous.then(() => this.sendDocSyncToPeer({ peerId, docId }));
+        const next = previous.then(async () => {
+            if (generation !== undefined && generation !== this.lifecycleGeneration) {
+                return;
+            }
+            if (requireConnected && !this.peerManager.getConnectedPeerIds().includes(peerId)) {
+                return;
+            }
+            await this.sendDocSyncToPeer({ peerId, docId });
+        });
         const settled = next.catch((error: unknown) => {
             logger.warn('[AutomergeSync] Sync generation failed', peerId, docId, error);
         });
@@ -1001,9 +1053,9 @@ export class AutomergeSync {
      * connected peers. Cuts per-edit work from O(peers × docs) to
      * O(peers × 1).
      */
-    private sendDocSyncToAllPeers(docId: string): void {
+    private sendDocSyncToAllPeers(docId: string, generation?: number): void {
         for (const peerId of this.peerManager.getConnectedPeerIds()) {
-            this.queueDocSyncToPeer({ peerId, docId });
+            this.queueDocSyncToPeer({ peerId, docId, generation, requireConnected: generation !== undefined });
         }
     }
 }
