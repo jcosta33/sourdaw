@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
-import { DEFAULT_PATCH } from '../../models/FermenterPatch';
+import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../stores/fermenterStore';
 import * as fermenterStoreModule from '../../stores/fermenterStore';
 import { hydrateFermenterFromProject } from '../hydrateFermenterFromProject';
@@ -217,7 +217,9 @@ describe('hydrateFermenterFromProject', () => {
 
         // 3. User adjusts macro 0 in store
         const currentPatch = getFermenterState(DEVICE_ID).patch;
-        loadFermenterPatch(DEVICE_ID, { ...currentPatch, macros: [0.8, ...currentPatch.macros.slice(1)] });
+        const editedMacros: FermenterPatch['macros'] = [...currentPatch.macros];
+        editedMacros[0] = 0.8;
+        loadFermenterPatch(DEVICE_ID, { ...currentPatch, macros: editedMacros });
         expect(getFermenterState(DEVICE_ID).patch.macros[0]).toBe(0.8);
 
         // 4. Runtime parameter update in trackStore (macro0 remains stale 0.5)
