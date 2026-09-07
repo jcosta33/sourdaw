@@ -1,0 +1,53 @@
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_87ab0a2f60ccf8::t_0474aab47148c6 248,307,350,364-366,375-377,434-448,482-484,748,753,761,764-766,1081-1083,1095,1117-1118
+  s_87ab0a2f60ccf8::t_b131be340131fe 305-306,308-309,1119
+  s_87ab0a2f60ccf8::t_70299ecb8816f4 834,1011-1012,1015-1018,1057-1059
+  s_87ab0a2f60ccf8::t_9ba523ad2f07b8 427-429
+  s_87ab0a2f60ccf8::t_e20afd59463eb8 1120
+src/modules/CrdtDocument/useCases/crdtBranching/mergeBranch.ts
+  s_87ab0a2f60ccf8::t_0474aab47148c6 56
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_87ab0a2f60ccf8::t_ad80dcdd32b60c 21-22,26
+src/modules/CrdtDocument/useCases/index.ts
+  s_87ab0a2f60ccf8::t_b131be340131fe 6
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/mergeBranch.spec.ts
+  s_87ab0a2f60ccf8::t_5d47f573430ac6 17,19,50-51,55,84-89,97,110,131-132,139-153
+  s_87ab0a2f60ccf8::t_afc88bc6cde867 103,114
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  s_87ab0a2f60ccf8::t_95f3f4e2f5fdb3 9-10,12-15
+  s_87ab0a2f60ccf8::t_37b4076ad53492 4,17-41,54,57-70,72-108,110-142,146-156,158-162,164-197,199-205,207-257,259-267
+  s_87ab0a2f60ccf8::t_788fc5a60f3540 1,71,109,143-145,198,206
+  s_87ab0a2f60ccf8::t_b131be340131fe 2-3,5-8,11,16,42-53,55-56,157,163,258,268-269
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkProjectBranch.spec.ts
+  s_87ab0a2f60ccf8::t_8facbe08b8cd3d 14,16,42-43,47,70-75,133,139
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_87ab0a2f60ccf8::t_0474aab47148c6 37,43-46
+  s_87ab0a2f60ccf8::t_b568607544249b 47-49,73,78,82,115,131
+src/modules/CrdtDocument/useCases/captureProjectRootIdentity.ts
+  s_87ab0a2f60ccf8::t_b131be340131fe 1-8,10
+  s_87ab0a2f60ccf8::t_920d32a5bb0e97 9
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchWritesUnderStoragePressure.spec.ts
+  s_87ab0a2f60ccf8::t_11439cd3f47c1c 13-14,18
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.worker.spec.ts
+  s_87ab0a2f60ccf8::t_25615e4a8171dd 1,89-96
+  s_87ab0a2f60ccf8::t_0a3e14f4d5931e 59-88,97-115
+  s_87ab0a2f60ccf8::t_3285bb262f5026 27-58
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_87ab0a2f60ccf8::t_9275f8faf20705 86,88,123-124,128,176-181,187,278,286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "26f3da9aecf19b01c64ae63d79235d88f9ffe30e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
