@@ -1,0 +1,29 @@
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_f21169d9b31bc0 55-57,64-65,105,144-148,160-165,179,183,196,201,255-257,272,278-286,289-294,308,321-390,818-821,889-890,2444-2445,2450,2458-2459,2495-2604,2606-2607
+crates/daw-engine/src/lib.rs
+  s_87ab0a2f60ccf8::t_26a613784abb15 159,616,1789-1828,2771
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "29634d6b2343c6564780f2193440ce6f1e7dac2e",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
