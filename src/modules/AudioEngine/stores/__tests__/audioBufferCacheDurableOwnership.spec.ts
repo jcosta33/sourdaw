@@ -314,6 +314,30 @@ describe('audioBufferCache durable ownership', () => {
             expect(controls.committedMeta.has('unowned')).toBe(false);
         });
 
+        it('a named-owned removal re-tracks pending persistence and remains usable after settlement', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['pending-owned']));
+            controls.pauseWriteSettlements();
+            routes.audioBufferCache.set('pending-owned', residentAudioBufferWithSample(0.6));
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+
+            routes.audioBufferCache.remove('pending-owned');
+            controls.releaseNextWriteSettlement();
+            controls.resumeWriteSettlements();
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            const durability = await routes.audioBufferCache.ensureDurable(['pending-owned']);
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                expect(durability.isCurrent()).toBe(true);
+                durability.release();
+            }
+            expect(controls.committed.has('pending-owned')).toBe(true);
+        });
+
         it('clear preserves named-owned durable rows and deletes unowned rows', async () => {
             routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['owned']));
             seedOrdinaryEntry(controls, 'owned', NOW);

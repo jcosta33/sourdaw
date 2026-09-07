@@ -623,6 +623,41 @@ function invalidateCachedAudioDurabilitySource(
     });
 }
 
+function rebindCachedAudioDurabilitySourceForRemoval(id: string): CachedAudioDurabilitySource {
+    const existing = durabilitySourceById.get(id);
+    const source: CachedAudioDurabilitySource = existing
+        ? {
+              attempt: undefined,
+              data: existing.data,
+              dataFactory: existing.dataFactory,
+              freezeProjectId: existing.freezeProjectId,
+              isAuthoritative: existing.isAuthoritative,
+              persistence: undefined,
+              revision: ++nextDurabilitySourceRevision,
+              status: existing.status,
+          }
+        : {
+              attempt: undefined,
+              data: undefined,
+              dataFactory: undefined,
+              freezeProjectId: undefined,
+              isAuthoritative: () => true,
+              persistence: undefined,
+              revision: ++nextDurabilitySourceRevision,
+              status: 'external',
+          };
+    durabilitySourceById.set(id, source);
+    if (source.status !== 'pending') {
+        return source;
+    }
+    if (!source.isAuthoritative() || !existing?.persistence) {
+        source.status = 'failed';
+        return source;
+    }
+    void trackCachedAudioDurabilityAttempt(id, source, existing.persistence);
+    return source;
+}
+
 function captureCachedAudioDurabilitySourceInvalidation(id: string): () => boolean {
     const source = durabilitySourceById.get(id);
     return () => {
@@ -1696,7 +1731,7 @@ export const audioBufferCache = {
     },
 
     remove(id: string): void {
-        const sourceAtRemoval = durabilitySourceById.get(id);
+        const sourceAtRemoval = rebindCachedAudioDurabilitySourceForRemoval(id);
         pinnedBufferIds.delete(id);
         evictCachedBuffer(id);
         void removeFromIdb(id, sourceAtRemoval);
