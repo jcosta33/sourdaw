@@ -4158,6 +4158,7 @@ mod tests {
     /// every instrument it holds the moment it attaches.
     #[test]
     fn a_dormant_instrument_attaches_as_a_generator() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4202,6 +4203,7 @@ mod tests {
     /// here parks the next batch behind a plugin's editor twice over.
     #[test]
     fn an_attach_installs_the_host_request_wake_with_the_engine_lock_free() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4275,6 +4277,7 @@ mod tests {
     /// follows a topology within one start sequence.
     #[test]
     fn the_attach_takes_no_more_instances_than_its_caller_reserved_room_for() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4722,6 +4725,7 @@ mod tests {
     /// engine holding nothing, on a batch that reserved room for one.
     #[test]
     fn a_refused_instance_does_not_spend_the_slot_reserved_for_another() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -6990,6 +6994,7 @@ mod tests {
 
     #[test]
     fn bulk_unload_waits_for_inflight_load_or_unload_access() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         crate::block_on_test(async {
             let state = AppState::default();
             let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
@@ -7004,6 +7009,7 @@ mod tests {
 
     #[test]
     fn unload_preserves_failed_engine_owner_and_cleans_command_owner() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
         let wrapper =

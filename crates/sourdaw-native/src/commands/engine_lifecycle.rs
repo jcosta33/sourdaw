@@ -238,8 +238,9 @@ async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> Draine
 /// `close_gui` found nothing to close, leaving a window record naming an
 /// instance whose final drop then runs `gui.destroy` on the napi worker. So the
 /// withdrawal happens here, inside the section that removed the record, the way
-/// a keyed unload and the quit cascade both do it. It costs two atomic stores
-/// and calls no plugin code, so nothing unbounded enters the guarded section.
+/// a keyed unload and the quit cascade both do it. It costs one atomic store
+/// and one compare-exchange, and calls no plugin code, so nothing unbounded
+/// enters the guarded section.
 ///
 /// `retire` and the retention stay with the caller: those follow the editor
 /// close, which is a plugin call and belongs outside every guard.
@@ -379,7 +380,15 @@ mod tests {
     /// gate, because every other holder of it lets go within its own test.
     const GATE_DEADLINE: Duration = Duration::from_secs(5);
 
-    /// How often either of those deadlines is re-asked.
+    /// How long that same test waits for the graph registry to become
+    /// lockable once the withdrawal is observed. The withdrawal happens under
+    /// the registry, and the drain releases it before the plugin call the
+    /// test is holding the retire in, so the registry frees within the
+    /// drain's own tail; reaching this deadline means the retire is still
+    /// holding the registry while it waits on that call.
+    const REGISTRY_DEADLINE: Duration = Duration::from_secs(5);
+
+    /// How often any of those deadlines is re-asked.
     const POLL_INTERVAL: Duration = Duration::from_millis(1);
 
     /// The budget the control hold gives its own claim on the RT access seam.
@@ -1140,12 +1149,14 @@ mod tests {
                 );
                 std::thread::sleep(POLL_INTERVAL);
             }
-            std::thread::sleep(CONTENTION_WINDOW);
-
-            assert!(
-                state.graph.try_lock().is_ok(),
-                "the registry held across a plugin call parks every batch, `create_crumbs` and `set_transport_maps` behind third-party code of unbounded length"
-            );
+            let registry_free_by = Instant::now() + REGISTRY_DEADLINE;
+            while state.graph.try_lock().is_err() {
+                assert!(
+                    Instant::now() < registry_free_by,
+                    "the registry held across a plugin call parks every batch, `create_crumbs` and `set_transport_maps` behind third-party code of unbounded length"
+                );
+                std::thread::sleep(POLL_INTERVAL);
+            }
             // Asked repeatedly, because this gate is process-global and any
             // other test's own load, unload or retire may hold it in read mode
             // as this one asks. What the claim needs is that the gate becomes
