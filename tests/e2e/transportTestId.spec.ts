@@ -17,11 +17,7 @@ test.describe('Transport — test-id targeted', () => {
 
         // Play.
         await play.click();
-        await page.waitForTimeout(600);
-
-        // Playhead must have advanced from 1.1.000.
-        const movingText = (await playhead.innerText()).trim();
-        expect(movingText).not.toMatch(/1\.1\.000/);
+        await expect(playhead).not.toHaveText(/1\.1\.000/);
 
         // Stop — playhead returns to start.
         await stop.click();

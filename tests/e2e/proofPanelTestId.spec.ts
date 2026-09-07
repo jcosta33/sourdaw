@@ -26,7 +26,6 @@ test.describe('Proof device — add to chain', () => {
 
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Proof$/ }).click();
-        await page.waitForTimeout(800);
 
         // A Proof device card is added — count rises by one and the bypass
         // toggle is present, where the panel-open guards used to hide a failure.

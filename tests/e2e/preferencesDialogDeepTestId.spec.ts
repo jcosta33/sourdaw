@@ -70,14 +70,19 @@ test.describe('Preferences dialog — section navigation deep', () => {
         await autoSave.click();
         await expect(autoSave).not.toHaveAttribute('aria-checked', initial ?? '');
 
-        await page.getByRole('dialog').getByRole('button', { name: /Reset Defaults/i }).click();
-        await page.waitForTimeout(300);
+        await page
+            .getByRole('dialog')
+            .getByRole('button', { name: /Reset Defaults/i })
+            .click();
         // After reset the toggle returns to its default-checked state.
         await expect(autoSave).toHaveAttribute('aria-checked', initial ?? '');
     });
 
     test('Done button closes the dialog', async ({ page }) => {
-        await page.getByRole('dialog').getByRole('button', { name: /^Done$/ }).click();
+        await page
+            .getByRole('dialog')
+            .getByRole('button', { name: /^Done$/ })
+            .click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
     });
 });

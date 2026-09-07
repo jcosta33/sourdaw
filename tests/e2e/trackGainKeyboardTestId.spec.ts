@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // Track gain keyboard response. Existing specs assert the gain slider EXISTS
 // (has a numeric aria-valuenow) but never test that keyboard changes the value.
@@ -19,8 +19,6 @@ test.describe('Inspector track gain — keyboard response', () => {
         await gain.focus();
         const before = Number(await gain.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await gain.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await gain.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });

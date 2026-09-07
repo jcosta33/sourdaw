@@ -46,7 +46,7 @@ test.describe('Onboarding tour — skip and finish dismiss the tour', () => {
         // Advance to the last step (Step 10 of 10). Next relabels to Finish there.
         for (let i = 0; i < 9; i += 1) {
             await tour.getByRole('button', { name: 'Next' }).click();
-            await page.waitForTimeout(100);
+            await expect(tour.getByText(`Step ${i + 2} of 10`)).toBeVisible();
         }
         await expect(tour.getByText('Step 10 of 10')).toBeVisible();
 

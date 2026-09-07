@@ -1,5 +1,6 @@
-import { test, expect } from '@playwright/test';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { expect, test } from '@playwright/test';
+
+import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 test.describe('EDM full cycle — playback, mixer, transport, tools', () => {
     test.beforeEach(async ({ page }) => {
@@ -15,11 +16,9 @@ test.describe('EDM full cycle — playback, mixer, transport, tools', () => {
         await page.getByTestId('transport-metronome').click();
         await expect(page.getByTestId('transport-metronome')).toHaveAttribute('aria-pressed', 'true');
 
-        await page.getByTestId('transport-play').click();
-        await page.waitForTimeout(800);
-
         const playhead = page.getByTestId('transport-playhead');
-        expect((await playhead.innerText()).trim()).not.toMatch(/1\.1\.000/);
+        await page.getByTestId('transport-play').click();
+        await expect(page.getByTestId('transport-playhead')).not.toHaveText(/1\.1\.000/);
 
         await page.getByTestId('transport-stop').click();
         await expect(playhead).toHaveText(/1\.1\.000/, { timeout: 5000 });
