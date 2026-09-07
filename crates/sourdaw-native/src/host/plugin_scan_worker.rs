@@ -808,7 +808,18 @@ mod tests {
         assert!(ScanWorkerCommand::from_json(r#"{"args":["/shell/scanWorker.js"]}"#).is_err());
     }
 
-    fn build_hostile_clap(test_name: &str) -> (PathBuf, PathBuf) {
+    struct HostileClapFixture {
+        root: PathBuf,
+        plugin_path: PathBuf,
+    }
+
+    impl Drop for HostileClapFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn build_hostile_clap(test_name: &str) -> HostileClapFixture {
         let root = std::env::temp_dir().join(format!(
             "sourdaw-hostile-clap-{test_name}-{}",
             std::process::id()
@@ -836,7 +847,7 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .status()
             .expect("rustc should compile the hostile CLAP fixture");
         assert!(status.success());
-        (root, plugin_path)
+        HostileClapFixture { root, plugin_path }
     }
     #[test]
     fn hostile_fixture_child() {
@@ -959,21 +970,19 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
 
     #[test]
     fn crashed_helper_does_not_take_down_the_supervisor() {
-        let (fixture_root, plugin_path) = build_hostile_clap("crash");
-        let mut command = hostile_command(&plugin_path);
-        let status = run_bounded(&mut command, Duration::from_secs(1))
-            .expect("the crashed child should still be observable");
-        let _ = fs::remove_dir_all(fixture_root);
+        let fixture = build_hostile_clap("crash");
+        let mut command = hostile_command(&fixture.plugin_path);
+        let status = run_bounded(&mut command, WORKER_TIMEOUT)
+            .expect("the crashed child should still be observable within the worker timeout");
         assert!(!status.success());
     }
     #[test]
     fn hung_helper_is_killed_at_the_deadline() {
-        let (fixture_root, plugin_path) = build_hostile_clap("hang");
-        let mut command = hostile_command(&plugin_path);
+        let fixture = build_hostile_clap("hang");
+        let mut command = hostile_command(&fixture.plugin_path);
         command.env("SOURDAW_TEST_PLUGIN_HANG", "1");
         let error = run_bounded(&mut command, Duration::from_millis(500))
             .expect_err("the hung child should exceed the deadline");
-        let _ = fs::remove_dir_all(fixture_root);
         assert_eq!(error, "Plugin scan helper timed out");
     }
     #[cfg(unix)]
