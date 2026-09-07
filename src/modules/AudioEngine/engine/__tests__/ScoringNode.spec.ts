@@ -295,4 +295,53 @@ describe('createScoringNode', () => {
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
+
+    it('importScala posts an import-scala message and resolves with result on response', async () => {
+        const node = await createScoringNode(makeCtx());
+        postMessage.mockClear();
+
+        const promise = node.importScala('! scala scale\n12\n100.0\n');
+        expect(postMessage).toHaveBeenCalledWith({
+            type: 'import-scala',
+            id: expect.stringMatching(/^scl-\d+$/),
+            text: '! scala scale\n12\n100.0\n',
+        });
+
+        const callArg = postMessage.mock.calls[0]?.[0] as { id: string };
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: callArg.id, ok: true, name: 'My Scale' },
+        } as MessageEvent);
+
+        await expect(promise).resolves.toEqual({ ok: true, name: 'My Scale' });
+    });
+
+    it('importTun posts an import-tun message and resolves with ok: false when rejected', async () => {
+        const node = await createScoringNode(makeCtx());
+        postMessage.mockClear();
+
+        const promise = node.importTun('[Tuning]\n');
+        expect(postMessage).toHaveBeenCalledWith({
+            type: 'import-tun',
+            id: expect.stringMatching(/^tun-\d+$/),
+            text: '[Tuning]\n',
+        });
+
+        const callArg = postMessage.mock.calls[0]?.[0] as { id: string };
+        node.workletNode.port.onmessage?.({
+            data: { type: 'scale-import-result', id: callArg.id, ok: false },
+        } as MessageEvent);
+
+        await expect(promise).resolves.toEqual({ ok: false, name: undefined });
+    });
+
+    it('destroy resolves pending import requests with ok: false', async () => {
+        const node = await createScoringNode(makeCtx());
+        const scalaPromise = node.importScala('...');
+        const tunPromise = node.importTun('...');
+
+        node.destroy();
+
+        await expect(scalaPromise).resolves.toEqual({ ok: false });
+        await expect(tunPromise).resolves.toEqual({ ok: false });
+    });
 });

@@ -22,6 +22,7 @@ export type TunerState = {
     noteName: string;
     active: boolean;
     mode: DisplayMode;
+    scaleName?: string;
 };
 
 export const DEFAULT_TUNER_STATE: TunerState = {

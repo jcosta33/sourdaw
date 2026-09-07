@@ -381,6 +381,11 @@ export type BuiltinDeviceNode = {
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
+    /** Controls for the Scoring tuner (microtonal scale import via MessagePort) */
+    scoringControls?: {
+        importScala: (text: string) => Promise<{ ok: boolean; name?: string }>;
+        importTun: (text: string) => Promise<{ ok: boolean; name?: string }>;
+    };
 };
 
 /**

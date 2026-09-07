@@ -1,6 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
-import { Activity, Waves } from 'lucide-react';
+import { Activity, FileUp, Waves } from 'lucide-react';
 
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
@@ -19,6 +19,7 @@ import {
     MIN_A4_REFERENCE_HZ,
 } from '../../models/A4Reference';
 import { tunerStore, getTunerState, type DisplayMode } from '../../stores/tunerStore';
+import { importTuningScale } from '../../useCases/importTuningScale';
 import { setA4Reference } from '../../useCases/setA4Reference';
 import { setDisplayMode } from '../../useCases/setDisplayMode';
 
@@ -109,6 +110,8 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     // gesture commits, the authoritative device row takes back over, so an undo
     // or a peer edit cannot be masked by a stale preview.
     const [previewA4Reference, setPreviewA4Reference] = useState<number | null>(null);
+    const [importError, setImportError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const a4Reference = previewA4Reference ?? storedA4Reference;
 
     const { noteName, octave, cents, confidence, active, mode, frequency } = state;
@@ -227,6 +230,61 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <div className="text-[10px] uppercase tracking-[0.22em] text-white/42">Concert A</div>
                     </div>
                 </SectionCard>
+
+                <SectionCard title="Tuning" detail={state.scaleName ? 'Microtonal' : 'Standard'}>
+                    <Stack gap={2}>
+                        <div className="text-center">
+                            <div
+                                className="font-mono text-[13px] text-white/88 truncate"
+                                title={state.scaleName || '12-TET (Standard)'}
+                            >
+                                {state.scaleName || '12-TET (Standard)'}
+                            </div>
+                            <div className="text-[10px] uppercase tracking-[0.22em] text-white/42">Temperament</div>
+                        </div>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".scl,.tun"
+                            className="hidden"
+                            onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) {
+                                    return;
+                                }
+                                try {
+                                    const text = await file.text();
+                                    const format = file.name.toLowerCase().endsWith('.tun') ? 'tun' : 'scala';
+                                    const result = await importTuningScale(deviceId, format, text);
+                                    if (!result.ok) {
+                                        setImportError('Failed to import scale: invalid or unrepresentable file');
+                                    } else {
+                                        setImportError(null);
+                                    }
+                                } catch {
+                                    setImportError('Failed to read scale file');
+                                } finally {
+                                    e.target.value = '';
+                                }
+                            }}
+                        />
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="scoring-window flex items-center justify-center gap-2 px-3 py-2 text-left text-[11px] font-medium text-white/88 hover:border-white/12 hover:bg-white/[0.02] transition-all"
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <FileUp className="h-3.5 w-3.5 text-[var(--color-accent-indigo)]" />
+                            <span>Import Scale (.scl, .tun)</span>
+                        </Button>
+                        {importError ? (
+                            <div role="alert" className="text-[10px] text-red-400">
+                                {importError}
+                            </div>
+                        ) : null}
+                    </Stack>
+                </SectionCard>
             </Stack>
 
             <Stack as="section" gap={3} grow className="min-w-0 overflow-y-auto pr-1">
@@ -322,6 +380,15 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 <Row justify="between" gap={2}>
                                     <span>Reference</span>
                                     <span className="font-mono text-white/84">{a4Reference} Hz</span>
+                                </Row>
+                                <Row justify="between" gap={2}>
+                                    <span>Tuning</span>
+                                    <span
+                                        className="font-mono text-white/84 truncate max-w-[110px]"
+                                        title={state.scaleName ?? '12-TET'}
+                                    >
+                                        {state.scaleName ?? '12-TET'}
+                                    </span>
                                 </Row>
                                 <Row justify="between" gap={2}>
                                     <span>Status</span>

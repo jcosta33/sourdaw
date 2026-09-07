@@ -5,6 +5,7 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 
 import { DEFAULT_A4_REFERENCE_HZ, MAX_A4_REFERENCE_HZ, MIN_A4_REFERENCE_HZ } from '../../../models/A4Reference';
 import { getTunerState } from '../../../stores/tunerStore';
+import { importTuningScale } from '../../../useCases/importTuningScale';
 import { setA4Reference } from '../../../useCases/setA4Reference';
 import { TunerPanel } from '../TunerPanel';
 
@@ -21,6 +22,7 @@ const { TUNER_STORE_SENTINEL, TRACK_STORE_SENTINEL, fixtureInstances, fixtureSta
             active: boolean;
             mode: 'needle' | 'strobe' | 'poly';
             frequency: number;
+            scaleName?: string;
         } = {
             noteName: 'A',
             octave: 4,
@@ -89,6 +91,10 @@ vi.mock('../../../useCases/setDisplayMode', () => ({
 
 vi.mock('../../../useCases/setA4Reference', () => ({
     setA4Reference: vi.fn<(...args: unknown[]) => unknown>(),
+}));
+
+vi.mock('../../../useCases/importTuningScale', () => ({
+    importTuningScale: vi.fn(),
 }));
 
 // Mock UI components
@@ -181,6 +187,10 @@ describe('TunerPanel', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        delete fixtureState.scaleName;
+        fixtureState.confidence = 0.95;
+        fixtureState.mode = 'needle';
+        fixtureState.active = true;
     });
 
     it('should render without crashing', () => {
@@ -198,7 +208,7 @@ describe('TunerPanel', () => {
     it('keeps sidebar cards from shrinking their controls into the next card hit area', () => {
         render(<TunerPanel deviceId={mockDeviceId} />);
 
-        expect(screen.getAllByTestId('section-card')).toHaveLength(4);
+        expect(screen.getAllByTestId('section-card')).toHaveLength(5);
         for (const card of screen.getAllByTestId('section-card')) {
             expect(card).toHaveClass('shrink-0');
         }
@@ -487,5 +497,56 @@ describe('TunerPanel', () => {
         expect(faceplate).not.toBeNull();
         expect(faceplate?.className).toContain('min-h-[440px]');
         expect(faceplate?.className).not.toContain('overflow-hidden');
+    });
+
+    it('displays default active temperament 12-TET (Standard) and 12-TET in quick read', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
+        expect(screen.getByText('12-TET (Standard)')).toBeInTheDocument();
+        expect(screen.getByText('12-TET')).toBeInTheDocument();
+        expect(screen.getByText('Standard')).toBeInTheDocument();
+    });
+
+    it('displays active temperament when state.scaleName is populated', () => {
+        fixtureState.scaleName = 'Werckmeister III';
+        try {
+            render(<TunerPanel deviceId={mockDeviceId} />);
+            expect(screen.getAllByText('Werckmeister III')).toHaveLength(2);
+            expect(screen.getByText('Microtonal')).toBeInTheDocument();
+        } finally {
+            delete fixtureState.scaleName;
+        }
+    });
+
+    it('triggers importTuningScale on file selection and clears error on success', async () => {
+        vi.mocked(importTuningScale).mockResolvedValue({ ok: true, name: 'Just Intonation' });
+        const { container } = render(<TunerPanel deviceId={mockDeviceId} />);
+
+        const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+        expect(fileInput).not.toBeNull();
+        expect(fileInput).toHaveAttribute('accept', '.scl,.tun');
+
+        const file = new File(['! scl file\n12\n'], 'scale.scl', { type: 'text/plain' });
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [file] } });
+        });
+
+        expect(importTuningScale).toHaveBeenCalledWith(mockDeviceId, 'scala', '! scl file\n12\n');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('displays role="alert" with error message when importTuningScale returns false', async () => {
+        vi.mocked(importTuningScale).mockResolvedValue({ ok: false });
+        const { container } = render(<TunerPanel deviceId={mockDeviceId} />);
+
+        const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+        const file = new File(['bad content'], 'test.tun', { type: 'text/plain' });
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [file] } });
+        });
+
+        expect(importTuningScale).toHaveBeenCalledWith(mockDeviceId, 'tun', 'bad content');
+        const alert = screen.getByRole('alert');
+        expect(alert).toBeInTheDocument();
+        expect(alert).toHaveTextContent(/failed to import scale/i);
     });
 });

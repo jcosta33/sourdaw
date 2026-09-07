@@ -27,6 +27,17 @@ impl ScalaScale {
         }
     }
 
+    pub fn description(&self) -> &str {
+        let len = self
+            .description
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(self.description.len());
+        std::str::from_utf8(&self.description[..len])
+            .unwrap_or("")
+            .trim()
+    }
+
     /// Parse a Scala .scl file from text content, or `None` when the text is
     /// not a well-formed .scl. Every rejection path here exists because the
     /// alternative is installing a silently wrong tuning: a defaulted pitch

@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:42025a2d92a929504c3593d074d04e0f75e758c1bc42c50d99e6a457bfb78a36
+// @wasm-bindgen-dts crate-source: sha256:fdc14d31c9aa73e443fdc521ea62860bea986719d33504f21a8af42df76f0aec
 /* tslint:disable */
 /* eslint-disable */
 
@@ -48,6 +48,7 @@ export class ScoringInstance {
     is_poly_string_active(idx: number): boolean;
     constructor(sample_rate: number);
     process(left_in: Float32Array, right_in: Float32Array, frames: number): number;
+    scale_description(): string;
     set_param(name: string, value: number): void;
 }
 
@@ -82,6 +83,7 @@ export interface InitOutput {
     readonly scoringinstance_is_poly_string_active: (a: number, b: number) => number;
     readonly scoringinstance_new: (a: number) => number;
     readonly scoringinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly scoringinstance_scale_description: (a: number) => [number, number];
     readonly scoringinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
