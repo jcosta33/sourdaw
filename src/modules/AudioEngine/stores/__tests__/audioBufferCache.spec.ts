@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
 import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
 
@@ -8,12 +10,20 @@ import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupp
 // per test — without the reset, every test after the first would keep talking to
 // the first test's double through the memoized connection.
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
+let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 
 beforeEach(async () => {
     vi.resetModules();
+    vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
     installTestAudioBufferConstructor();
-    ({ audioBufferCache } = await import('../audioBufferCache'));
+    [{ audioBufferCache }, { setDurableAudioBufferOwnershipProvider }] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+    ]);
+    setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
+
+afterEach(() => setDurableAudioBufferOwnershipProvider(null));
 
 function createAudioBuffer({ length, sampleRate }: { length: number; sampleRate: number }): AudioBuffer {
     const channels = Array.from({ length: 1 }, () => new Float32Array(length));

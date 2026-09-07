@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     flushIndexedDbTasks,
     installFakeAudioIndexedDb,
@@ -39,7 +41,11 @@ function storedRecord(channelData: Float32Array[], lastAccessed: number): Stored
 }
 
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
-    const module = await import('../audioBufferCache');
+    const [module, ownership] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+    ]);
+    ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
 }
 
@@ -49,6 +55,7 @@ describe('audioBufferCache write observation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         controls = installFakeAudioIndexedDb();
     });
 

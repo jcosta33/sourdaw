@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -19,6 +21,7 @@ import {
 
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
+let setDurableAudioBufferOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 
 const CURRENT_STORES = [BUFFER_STORE, META_STORE, RECOVERY_STORE] as const;
 
@@ -128,11 +131,15 @@ async function expectDurableReceipt(ids: readonly string[]) {
 
 beforeEach(async () => {
     vi.resetModules();
+    vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
     installTestAudioBufferConstructor();
-    ({ audioBufferCache, clearRuntimeAudioBufferCache } = await import('../audioBufferCache'));
+    [{ audioBufferCache, clearRuntimeAudioBufferCache }, { setDurableAudioBufferOwnershipProvider }] =
+        await Promise.all([import('../audioBufferCache'), import('../durableAudioBufferOwnership')]);
+    setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
 afterEach(() => {
+    setDurableAudioBufferOwnershipProvider(null);
     clearRuntimeAudioBufferCache();
     vi.unstubAllGlobals();
 });

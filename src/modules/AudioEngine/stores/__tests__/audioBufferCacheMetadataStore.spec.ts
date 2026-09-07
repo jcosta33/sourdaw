@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     META_STORE,
@@ -64,7 +66,11 @@ function legacyRecord({
 }
 
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
-    const module = await import('../audioBufferCache');
+    const [module, ownership] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+    ]);
+    ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
 }
 
@@ -74,6 +80,7 @@ describe('audioBufferCache metadata store', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         // The v1 schema. Anything beyond `buffers` has to be created by the
         // upgrade handler under test.
         controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE] });

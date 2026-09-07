@@ -73,6 +73,12 @@ Browser: CRDT-backed stores persist via the Automerge storage adapter (`src/infr
 
 **Why:** two formats, one document model — confusing them corrupts saves at the boundary.
 
+Navigation metadata is not durable project ownership. For persisted assets,
+trace the authoritative record read and its failure semantics, and keep a
+complete ownership census protected through the destructive transaction's
+commit or abort. Releasing protection after the read admits a stale-census
+delete while another renderer publishes the owner.
+
 ### 5. Transports vary; the document model does not
 
 Transport, session, and presence belong to the Collaboration module; the document belongs to CrdtDocument. That split, and the transports themselves, are canonical in [src/modules/Collaboration/AGENTS.md](../../../src/modules/Collaboration/AGENTS.md).

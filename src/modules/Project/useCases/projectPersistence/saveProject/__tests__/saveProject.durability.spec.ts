@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { installFakeIndexedDb } from '../../../../__tests__/fakeIndexedDb';
 
 import type { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
@@ -133,6 +135,7 @@ describe('saveProject durability', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         localStorage.clear();
         mocks.projectStoreValue.value = makeProject();
         mocks.persistCrdtProject.mockResolvedValue(undefined);

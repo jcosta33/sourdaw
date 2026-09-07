@@ -456,14 +456,6 @@ vi.mock('#/modules/Project/useCases', () => ({
     initGrooveTemplateDirtyTracking: noop,
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
-    migrateLegacyProjectSnapshots: () =>
-        Promise.resolve({
-            inspected: 0,
-            recovered: 0,
-            supersededByPrimary: 0,
-            mirrorsWithoutPrimary: 0,
-            failed: 0,
-        }),
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));

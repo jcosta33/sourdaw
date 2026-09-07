@@ -10,7 +10,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
     - `missingMediaStore` (`MissingMediaStoreState`, `defaultMissingMediaStoreState`, `MissingMediaItem`, `MissingMediaKind`)
     - `projectLoadFailureStore` (`ProjectLoadFailureState`)
 - `useCases`:
-    - **Lifecycle & Persistence**: `newProject`, `saveProject`, `loadProject`, `renameProject`, `markDirty`, `initProjectDirtyTracking`, `initGrooveTemplateDirtyTracking`, `migrateLegacyProjectSnapshots`, `captureProjectTransitionAuthority`, `setProjectIdentityTransitionDependencies`, `finishProjectLoading`.
+    - **Lifecycle & Persistence**: `newProject`, `saveProject`, `loadProject`, `renameProject`, `markDirty`, `initProjectDirtyTracking`, `initGrooveTemplateDirtyTracking`, `captureProjectTransitionAuthority`, `setProjectIdentityTransitionDependencies`, `finishProjectLoading`.
     - **Templates & Previews**: `createFromTemplate`, `getTemplates`, `getPreviewLoop`.
     - **Tuning & Scales**: `importSclFile`, `setProjectKeyRoot`, `setProjectScaleName`.
     - **Media & Files**: `pickFiles`, `verifyAudioBufferReferences`, `exportProjectFile`, `pickAndImportProjectFile`.

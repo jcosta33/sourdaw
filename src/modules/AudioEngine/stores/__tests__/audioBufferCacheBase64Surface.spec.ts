@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import { audioBufferCache } from '../audioBufferCache';
+import { setDurableAudioBufferOwnershipProvider } from '../durableAudioBufferOwnership';
 
 import { flushIndexedDbTasks, installFakeAudioIndexedDb } from './fakeAudioBufferIndexedDb';
 import { installTestAudioBufferConstructor } from './preparedAudioBufferTestSupport';
@@ -154,12 +157,15 @@ describe('audioBufferCache base64 surface (AC-5)', () => {
     let btoaSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
         installTestAudioBufferConstructor();
         installFakeAudioIndexedDb();
         realBtoa = globalThis.btoa.bind(globalThis);
     });
 
     afterEach(() => {
+        setDurableAudioBufferOwnershipProvider(null);
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });

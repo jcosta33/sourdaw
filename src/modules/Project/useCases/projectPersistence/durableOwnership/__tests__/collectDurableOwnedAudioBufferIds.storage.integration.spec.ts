@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
     type TransactionalIndexedDbInstallation,
@@ -60,6 +61,19 @@ function currentFormatSnapshot(bufferId: string): string {
             ],
         },
     });
+}
+
+function makeAudioBuffer(sample: number): AudioBuffer {
+    const channel = new Float32Array([sample]);
+    return {
+        copyFromChannel: () => undefined,
+        copyToChannel: () => undefined,
+        duration: 1 / 48_000,
+        getChannelData: () => channel,
+        length: 1,
+        numberOfChannels: 1,
+        sampleRate: 48_000,
+    };
 }
 
 async function importSubjectModules(): Promise<SubjectModules> {
@@ -148,17 +162,22 @@ describe('collectDurableOwnedAudioBufferIds storage integration', () => {
     let installation: TransactionalIndexedDbInstallation;
     let modules: SubjectModules;
     let getProjectDatabase: () => IDBDatabase | undefined;
+    let resetAudioOwnership: (() => void) | undefined;
 
     beforeEach(async () => {
         vi.resetModules();
+        resetAudioOwnership = undefined;
         window.localStorage.clear();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         installation = installTransactionalIndexedDb();
         getProjectDatabase = captureProjectDatabase();
         modules = await importSubjectModules();
     });
 
     afterEach(async () => {
+        resetAudioOwnership?.();
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
         await installation.dispose();
         window.localStorage.clear();
         vi.resetModules();
@@ -169,6 +188,7 @@ describe('collectDurableOwnedAudioBufferIds storage integration', () => {
         const snapshot = currentFormatSnapshot('buffer-unreadable-owner');
         await modules.writeNamedProjectJsonByKey(key, snapshot);
         await modules.storageSupport.initializeIndexedDb();
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-unreadable-owner']);
 
         const projectDatabase = getProjectDatabase();
         if (!projectDatabase) {
@@ -184,6 +204,42 @@ describe('collectDurableOwnedAudioBufferIds storage integration', () => {
         fault.restore();
         await expect(modules.readNamedProjectJson(key)).resolves.toBe(snapshot);
         await expect(outcome).resolves.toEqual({ status: 'rejected', error: expect.any(Error) });
+    });
+
+    it('a real provider storage abort makes the size collector delete no primary PCM', async () => {
+        const key = getProjectSnapshotKey(CREATED_AT);
+        const bufferId = 'buffer-provider-abort';
+        await modules.writeNamedProjectJsonByKey(key, currentFormatSnapshot(bufferId));
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([bufferId]);
+
+        const [audio, { audioBufferCache }] = await Promise.all([
+            import('#/modules/AudioEngine/useCases'),
+            import('#/modules/AudioEngine/stores'),
+        ]);
+        audio.configureDurableAudioBufferOwnership(modules.collectDurableOwnedAudioBufferIds);
+        resetAudioOwnership = () => audio.configureDurableAudioBufferOwnership(null);
+        audioBufferCache.set(bufferId, makeAudioBuffer(0.5));
+        const before = await audioBufferCache.ensureDurable([bufferId]);
+        expect(before.status).toBe('durable');
+        if (before.status === 'durable') {
+            before.release();
+        }
+
+        const projectDatabase = getProjectDatabase();
+        if (!projectDatabase) {
+            throw new Error('Expected the real project IndexedDB connection after the durable write.');
+        }
+        const fault = abortNextReadonlyTransaction(projectDatabase);
+        const collection = audio.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+        await fault.abortObserved;
+        fault.restore();
+
+        await expect(collection).resolves.toBe(0);
+        const after = await audioBufferCache.ensureDurable([bufferId]);
+        expect(after.status).toBe('durable');
+        if (after.status === 'durable') {
+            after.release();
+        }
     });
 
     it('rejects when a named durable record does not contain JSON text', async () => {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -114,11 +115,16 @@ describe('saveProject audio durability integration', () => {
     beforeEach(() => {
         clearHandlerRegistry();
         localStorage.clear();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
     });
 
     afterEach(async () => {
-        const { stopActiveAutoSave } = await import('../../helpers/stopActiveAutoSave');
+        const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
+            import('#/modules/AudioEngine/useCases'),
+            import('../../helpers/stopActiveAutoSave'),
+        ]);
+        configureDurableAudioBufferOwnership(null);
         stopActiveAutoSave();
         clearHandlerRegistry();
         Container.clear();
@@ -141,7 +147,14 @@ describe('saveProject audio durability integration', () => {
             return built;
         });
         const [
-            { audioEngine, clearRuntimeCachedAudioBuffers, getCachedAudioBuffer, restoreCachedAudioBuffersFromIdb },
+            {
+                audioEngine,
+                clearRuntimeCachedAudioBuffers,
+                configureDurableAudioBufferOwnership,
+                getCachedAudioBuffer,
+                restoreCachedAudioBuffersFromIdb,
+            },
+            { audioBufferCache },
             { getArrangementHandlers, importAudioFile, renameTrack, setArrangementEventBus },
             project,
             { projectStore },
@@ -150,8 +163,10 @@ describe('saveProject audio durability integration', () => {
             { resetModuleStoresToDefault },
             { createFreshProjectMetadata },
             { configureCollaborationAssetOwner },
+            { withProjectAudioStorageLock },
         ] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
+            import('#/modules/AudioEngine/stores'),
             import('#/modules/Arrangement/useCases'),
             import('#/modules/Project/useCases'),
             import('#/modules/Project/stores'),
@@ -160,6 +175,7 @@ describe('saveProject audio durability integration', () => {
             import('../../helpers/resetModuleStoresToDefault'),
             import('../../../createFreshProjectMetadata'),
             import('#/modules/Collaboration/useCases'),
+            import('#/infra/storage/withProjectAudioStorageLock'),
         ]);
         const context = audioEngine.context as AudioContext & {
             createBuffer: typeof createAudioBuffer;
@@ -173,6 +189,7 @@ describe('saveProject audio durability integration', () => {
 
         registerCrdtStorageRuntime();
         configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
+        configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetCrdtProjectAuthority('Durability');
         resetModuleStoresToDefault();
@@ -229,6 +246,16 @@ describe('saveProject audio durability integration', () => {
 
         expect(await project.saveProject()).toBe(true);
         expect(projectStore.value?.dirty).toBe(false);
+        expect(indexedDb.get('sourdaw-audio', 'buffers', bufferId)).toBeDefined();
+
+        audioBufferCache.remove(bufferId);
+        await withProjectAudioStorageLock(async () => undefined);
+        const protectedDurability = await audioBufferCache.ensureDurable([bufferId]);
+        expect(protectedDurability.status).toBe('durable');
+        if (protectedDurability.status === 'durable') {
+            protectedDurability.release();
+        }
+        expect(await project.saveProject()).toBe(true);
         expect(indexedDb.get('sourdaw-audio', 'buffers', bufferId)).toBeDefined();
 
         const pendingFrames = new Map<number, FrameRequestCallback>();

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     META_STORE,
@@ -88,13 +90,32 @@ function makeResidentAudioBuffer(): AudioBuffer {
     };
 }
 
+function residentAudioBufferWithSample(sample: number): AudioBuffer {
+    const channel = new Float32Array([sample]);
+    return {
+        ...makeResidentAudioBuffer(),
+        getChannelData: () => channel,
+    };
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let settle!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        settle = resolve;
+    });
+    return { promise, resolve: settle };
+}
+
 describe('audioBufferCache durable ownership', () => {
     let controls: FakeAudioIndexedDbControls;
     let routes: ProductionRoutes;
+    let lockManager: ReturnType<typeof createControlledLockManager>;
 
     beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         vi.spyOn(Date, 'now').mockReturnValue(NOW);
         controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE] });
         routes = await importProductionRoutes();
@@ -167,15 +188,18 @@ describe('audioBufferCache durable ownership', () => {
             );
         });
 
-        it('keeps today’s age rule for unowned entries when no provider is registered', async () => {
+        it('deletes nothing when no ownership provider is registered', async () => {
             seedOrdinaryEntry(controls, 'ancient', THIRTY_ONE_DAYS_AGO);
             seedOrdinaryEntry(controls, 'fresh', NOW);
 
             const deleted = await routes.garbageCollectCachedAudioBuffersByAge({ maxAgeDays: 30 });
 
-            expect(deleted).toBe(1);
-            expect(controls.committed.has('ancient')).toBe(false);
+            expect(deleted).toBe(0);
+            expect(controls.committed.has('ancient')).toBe(true);
             expect(controls.committed.has('fresh')).toBe(true);
+            expect(mocks.loggerWarn).toHaveBeenCalledWith(
+                '[audioBufferCache] Durable ownership provider is unavailable; deletion refused'
+            );
         });
     });
 
@@ -256,6 +280,118 @@ describe('audioBufferCache durable ownership', () => {
                 '[audioBufferCache] Durable ownership enumeration failed; collection aborted without deleting',
                 expect.objectContaining({ error: expect.anything() })
             );
+        });
+
+        it('deletes nothing when the cross-renderer storage lock is unavailable', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+            seedOrdinaryEntry(controls, 'unowned-middle', THIRTY_ONE_DAYS_AGO);
+            vi.stubGlobal('navigator', { ...navigator, locks: undefined });
+
+            const deleted = await routes.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+
+            expect(deleted).toBe(0);
+            expect(controls.committed.has('unowned-middle')).toBe(true);
+            expect(mocks.loggerWarn).toHaveBeenCalledWith(
+                '[audioBufferCache] Size-based collection failed',
+                expect.objectContaining({ error: expect.any(Error) })
+            );
+        });
+    });
+
+    describe('broad destructive operations', () => {
+        it('remove preserves named-owned durable rows and deletes an unowned row', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['owned']));
+            seedOrdinaryEntry(controls, 'owned', NOW);
+            seedOrdinaryEntry(controls, 'unowned', NOW);
+
+            routes.audioBufferCache.remove('owned');
+            routes.audioBufferCache.remove('unowned');
+            await flushIndexedDbTasks();
+
+            expect(controls.committed.has('owned')).toBe(true);
+            expect(controls.committedMeta.has('owned')).toBe(true);
+            expect(controls.committed.has('unowned')).toBe(false);
+            expect(controls.committedMeta.has('unowned')).toBe(false);
+        });
+
+        it('clear preserves named-owned durable rows and deletes unowned rows', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve(['owned']));
+            seedOrdinaryEntry(controls, 'owned', NOW);
+            seedOrdinaryEntry(controls, 'unowned', NOW);
+
+            routes.audioBufferCache.clear();
+            await flushIndexedDbTasks();
+
+            expect(controls.committed.has('owned')).toBe(true);
+            expect(controls.committedMeta.has('owned')).toBe(true);
+            expect(controls.committed.has('unowned')).toBe(false);
+            expect(controls.committedMeta.has('unowned')).toBe(false);
+        });
+
+        it('remove and clear delete no durable rows when ownership is unknown', async () => {
+            seedOrdinaryEntry(controls, 'remove-unknown', NOW);
+            seedOrdinaryEntry(controls, 'clear-unknown', NOW);
+
+            routes.audioBufferCache.remove('remove-unknown');
+            routes.audioBufferCache.clear();
+            await flushIndexedDbTasks();
+
+            expect(controls.committed.has('remove-unknown')).toBe(true);
+            expect(controls.committed.has('clear-unknown')).toBe(true);
+        });
+
+        it('a delayed old remove cannot delete or tombstone a newer replacement', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+            routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.1));
+            await flushIndexedDbTasks();
+            const held = deferred();
+            const holder = lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => held.promise
+            );
+
+            routes.audioBufferCache.remove('replacement-race');
+            routes.audioBufferCache.set('replacement-race', residentAudioBufferWithSample(0.9));
+            await flushIndexedDbTasks();
+            held.resolve();
+            await holder;
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            expect(controls.committed.get('replacement-race')?.channelData[0]).toEqual(new Float32Array([0.9]));
+            const durability = await routes.audioBufferCache.ensureDurable(['replacement-race']);
+            expect(durability.status).toBe('durable');
+            if (durability.status === 'durable') {
+                durability.release();
+            }
+        });
+
+        it('a delayed clear does not delete a newer replacement', async () => {
+            routes.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
+            seedOrdinaryEntry(controls, 'replacement-after-clear', NOW);
+            const held = deferred();
+            const holder = lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => held.promise
+            );
+
+            routes.audioBufferCache.clear();
+            routes.audioBufferCache.set('replacement-after-clear', residentAudioBufferWithSample(0.9));
+            await flushIndexedDbTasks();
+            held.resolve();
+            await holder;
+            await lockManager.locks.request(
+                'sourdaw:project-audio-storage',
+                { mode: 'exclusive' },
+                async () => undefined
+            );
+
+            expect(controls.committed.get('replacement-after-clear')?.channelData[0]).toEqual(new Float32Array([0.9]));
         });
     });
 });

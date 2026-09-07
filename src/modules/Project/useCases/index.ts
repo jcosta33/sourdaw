@@ -11,7 +11,6 @@ export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProjec
 export { initProjectDirtyTracking } from './projectPersistence/saveProject/initProjectDirtyTracking';
 export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/initPluginStateDirtyTracking';
 export { loadProject } from './projectPersistence/loadProject';
-export { migrateLegacyProjectSnapshots } from './projectPersistence/migrateLegacyProjectSnapshots';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
 export { whenProjectIdentityTransitionDependenciesConfigured } from './projectPersistence/whenProjectIdentityTransitionDependenciesConfigured';
 export { failProjectIdentityTransitionDependencies } from './projectPersistence/failProjectIdentityTransitionDependencies';

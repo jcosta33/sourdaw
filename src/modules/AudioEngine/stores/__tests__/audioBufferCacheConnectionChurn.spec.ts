@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -31,7 +33,11 @@ function makeAudioBuffer(channelData: Float32Array[], sampleRate = 48_000): Audi
 }
 
 async function importCache(): Promise<typeof import('../audioBufferCache').audioBufferCache> {
-    const module = await import('../audioBufferCache');
+    const [module, ownership] = await Promise.all([
+        import('../audioBufferCache'),
+        import('../durableAudioBufferOwnership'),
+    ]);
+    ownership.setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return module.audioBufferCache;
 }
 
@@ -53,6 +59,7 @@ describe('audioBufferCache connection churn (audit M-045)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         controls = installFakeAudioIndexedDb({ existingStores: [BUFFER_STORE, META_STORE, RECOVERY_STORE] });
     });
 

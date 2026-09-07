@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -65,7 +66,6 @@ export async function saveProject(): Promise<boolean> {
     // doesn't orphan the old key.
     const recentKey = getProjectSnapshotKey(project.createdAt);
 
-    let audioDurabilityReceipt: AudioDurabilityReceipt | undefined;
     try {
         await migrateActiveProjectIdentity();
 
@@ -114,7 +114,7 @@ export async function saveProject(): Promise<boolean> {
             throw new Error('[saveProject] Project snapshot could not be built');
         }
 
-        const assertSnapshotContinuation = (requiresAudioReceipt: boolean): void => {
+        const assertSnapshotContinuation = (audioDurabilityReceipt?: AudioDurabilityReceipt): void => {
             // A public project edit updates its store immediately but may defer
             // the corresponding Automerge write until the next animation frame.
             // Expose that write before every post-await authority check so the
@@ -127,46 +127,51 @@ export async function saveProject(): Promise<boolean> {
                 activeProject.createdAt !== persistedProject.createdAt ||
                 activeProject.projectId !== persistedProject.projectId ||
                 captureProjectRevision() !== built.snapshotRevision ||
-                (requiresAudioReceipt && !audioDurabilityReceipt?.isCurrent())
+                (audioDurabilityReceipt !== undefined && !audioDurabilityReceipt.isCurrent())
             ) {
                 throw new Error('[saveProject] Project or audio changed during snapshot persistence');
             }
         };
 
-        assertSnapshotContinuation(false);
-        const audioDurability = await ensureCachedAudioBuffersDurable(built.requiredAudioBufferIds);
-        if (audioDurability.status !== 'durable') {
-            throw new Error('[saveProject] Required audio PCM could not be made durable');
-        }
-        audioDurabilityReceipt = audioDurability;
-        assertSnapshotContinuation(true);
+        return await withProjectAudioStorageLock(async () => {
+            let audioDurabilityReceipt: AudioDurabilityReceipt | undefined;
+            try {
+                // Lock acquisition can wait behind collection in another
+                // renderer, so the serialized revision must still own the
+                // active project before any PCM is made durable for it.
+                assertSnapshotContinuation();
+                const audioDurability = await ensureCachedAudioBuffersDurable(built.requiredAudioBufferIds);
+                if (audioDurability.status !== 'durable') {
+                    throw new Error('[saveProject] Required audio PCM could not be made durable');
+                }
+                audioDurabilityReceipt = audioDurability;
+                assertSnapshotContinuation(audioDurabilityReceipt);
 
-        await persistCrdtProject();
-        assertSnapshotContinuation(true);
+                await persistCrdtProject();
+                assertSnapshotContinuation(audioDurabilityReceipt);
 
-        // Awaited, so a rejected transaction reaches the catch below rather
-        // than being reported as a successful save.
-        await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
-        assertSnapshotContinuation(true);
+                // Awaited, so a rejected transaction reaches the catch below
+                // rather than being reported as a successful save.
+                await writeNamedProjectJsonByKey(recentKey, JSON.stringify(built.data));
+                assertSnapshotContinuation(audioDurabilityReceipt);
 
-        // Only record the recent-projects entry once the snapshot write is
-        // observed to have committed for the exact revision it serialized.
-        // A newer edit leaves the stale snapshot unadvertised and the project
-        // dirty so the next save can replace it.
-        addToRecentProjects(persistedProject.name, recentKey);
-        assertSnapshotContinuation(true);
+                // Only record the recent-projects entry once the snapshot
+                // write committed for the exact revision it serialized.
+                addToRecentProjects(persistedProject.name, recentKey);
+                assertSnapshotContinuation(audioDurabilityReceipt);
 
-        // The CRDT snapshot and named project file above establish the same
-        // durable project identity and exact PCM set. Only this receipt may
-        // clear dirty; replacement, removal, or transition invalidates it.
-        const latest = projectStore.value!;
-        projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
-        return true;
+                // The CRDT snapshot and named project file establish the same
+                // durable project identity and exact PCM set.
+                const latest = projectStore.value!;
+                projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
+                return true;
+            } finally {
+                audioDurabilityReceipt?.release();
+            }
+        });
     } catch (error) {
         logger.warn('[saveProject] Project persistence failed:', error);
         notifyUser('Save failed — your latest changes could not be persisted.', 'error');
         return false;
-    } finally {
-        audioDurabilityReceipt?.release();
     }
 }
