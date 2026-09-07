@@ -1203,10 +1203,19 @@ fn member_channel(channel: i16) -> Option<u8> {
 /// instrument 128 frames at a time, and `receiveGrandBouleMessage` voices a
 /// framed message as soon as the block about to render is the one holding its
 /// frame — so a scheduled note sounds there from the start of the 128-frame
-/// block that holds it. The instrument takes no per-note sample offset, so the
-/// run length *is* the timing resolution, and the host splits a callback into
-/// runs this long to land a note where the worklet lands it, sample for
-/// sample.
+/// block that holds it, counted from the timeline's absolute frame 0. The
+/// instrument takes no per-note sample offset, so the run length *is* the
+/// timing resolution, and the host splits a callback into runs this long to
+/// land a note on the same run the worklet lands it on.
+///
+/// That parity holds exactly only when the span being split itself starts on
+/// the absolute 128-frame grid the worklet grids from — the host counts its
+/// own runs from the span's own frame 0, not from that absolute origin. A
+/// span starting off it, after a loop seam or under a device callback whose
+/// period does not divide 128, voices a note up to
+/// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
+/// because the instrument has no offset-aware note API to close the gap.
+/// Tracked as #3997.
 ///
 /// Well inside [`GRAND_BOULE_BLOCK_FRAMES`], the ceiling the instrument's own
 /// channel buffers impose: the run is the finer of the two figures, and the
@@ -1276,6 +1285,16 @@ impl GrandBouleBody {
     /// of the timing resolution available — and it is exactly the resolution
     /// the web runtime has, which is why the run is that runtime's quantum
     /// rather than the far longer block the instrument's buffers would allow.
+    ///
+    /// This block is one span, and the runs above are counted from that
+    /// span's own frame 0 — not from the timeline's absolute frame 0 the
+    /// worklet grids its own runs from. Parity with the worklet is exact only
+    /// when the span itself starts on the absolute 128-frame grid; a span
+    /// starting off it, after a loop seam or under a device callback whose
+    /// period does not divide [`GRAND_BOULE_RUN_FRAMES`], sounds a note up to
+    /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
+    /// it, because the instrument has no offset-aware note API to close the
+    /// gap (#3997).
     ///
     /// Nothing here allocates: the runs write into buffers the instrument
     /// already owns, and a note is a call rather than a queued message.
@@ -14126,10 +14145,14 @@ mod timeline_tests {
     const GRAND_BOULE_VELOCITY: u8 = 100;
 
     /// The velocity fraction the instrument is handed for a note the fixtures
-    /// stamp, spelled the way the body spells it so a reference render and the
-    /// hosted one cannot disagree about the dynamic by construction.
+    /// stamp.
+    ///
+    /// The divisor is the MIDI 7-bit full-scale literal, spelled independently
+    /// of [`MIDI_VELOCITY_FULL_SCALE`] rather than reusing it: reusing the
+    /// production constant would make this oracle agree with the body by
+    /// construction and pass even if the body's own divisor drifted.
     fn grand_boule_velocity() -> f32 {
-        f32::from(GRAND_BOULE_VELOCITY) / MIDI_VELOCITY_FULL_SCALE
+        f32::from(GRAND_BOULE_VELOCITY) / 127.0
     }
 
     /// Place a Grand Boule generator on a track, the way `commands/graph.rs`
@@ -14223,7 +14246,7 @@ mod timeline_tests {
     /// Two mutations red this: dividing the velocity by 100 rather than by
     /// [`MIDI_VELOCITY_FULL_SCALE`] sounds the reference note at a different
     /// dynamic, and delivering every event at the head of the callback rather
-    /// than at its own run moves the release off block eight.
+    /// than at its own run moves the release off run nine.
     #[test]
     fn a_hosted_grand_boule_renders_the_worklet_samples_for_the_same_programme() {
         const CALLBACK: usize = 256;
@@ -14232,7 +14255,7 @@ mod timeline_tests {
         const NOTE: u8 = 60;
         /// The run the release is stamped inside, chosen off a callback
         /// boundary so a body that only split at callbacks would miss it.
-        const RELEASE_RUN: usize = 8;
+        const RELEASE_RUN: usize = 9;
         const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
 
         let mut harness = Harness::new(32);
@@ -14320,6 +14343,162 @@ mod timeline_tests {
         assert_eq!(
             hosted_right, reference_right,
             "the hosted right channel is not the signal the worklet renders for this note"
+        );
+    }
+
+    /// A span the run size does not divide still renders its partial final
+    /// run, rather than stopping at the last whole one.
+    ///
+    /// [`GrandBouleBody::process`] computes
+    /// `run_end = rendered + (frames - rendered).min(GRAND_BOULE_RUN_FRAMES)`,
+    /// so 300 frames — two whole runs and a 44-frame remainder — walks a
+    /// third, shorter run rather than leaving `[256..300)` untouched. A body
+    /// whose outer loop instead required a full `GRAND_BOULE_RUN_FRAMES` to
+    /// start a run would render the first two runs identically and only go
+    /// silent on that tail, so the tail assertion below is what catches it —
+    /// without it, a silent tail would match a silent reference by accident.
+    #[test]
+    fn a_grand_boule_span_that_the_run_does_not_divide_renders_its_partial_tail() {
+        const FRAMES: usize = 300;
+        const NOTE: u8 = 60;
+        const STAMPED_FRAME: u32 = 200;
+        const TAIL_FRAMES: usize = FRAMES - 2 * GRAND_BOULE_RUN_FRAMES;
+
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut event = note_on(NOTE);
+        event.velocity = GRAND_BOULE_VELOCITY;
+        event.frame_offset = STAMPED_FRAME;
+        let mut hosted_left = vec![0.0_f32; FRAMES];
+        let mut hosted_right = vec![0.0_f32; FRAMES];
+        body.process(
+            &mut hosted_left,
+            &mut hosted_right,
+            FRAMES,
+            std::slice::from_ref(&event),
+        );
+
+        // The reference drives the instance the way the worklet would: two
+        // whole runs, with the stamped note (frame 200, inside the second
+        // run) delivered before that run renders, then the 44-frame tail.
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut reference_left = Vec::with_capacity(FRAMES);
+        let mut reference_right = Vec::with_capacity(FRAMES);
+        for (run, run_frames) in [GRAND_BOULE_RUN_FRAMES, GRAND_BOULE_RUN_FRAMES, TAIL_FRAMES]
+            .into_iter()
+            .enumerate()
+        {
+            if run == 1 {
+                instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+            }
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `run_frames` frames into the
+            // instance's own pair of buffers, which are
+            // `GRAND_BOULE_BLOCK_FRAMES` long — as
+            // `a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts`
+            // pins — and `run_frames` never exceeds that. Both pointers are
+            // read and copied here, before the instance is mutated again.
+            unsafe {
+                reference_left
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                reference_right
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+        }
+
+        assert!(
+            hosted_left[(2 * GRAND_BOULE_RUN_FRAMES)..]
+                .iter()
+                .any(|sample| sample.abs() > 0.0),
+            "the partial tail is silent, so a body that skipped it would match a silent \
+             reference by accident"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal the worklet renders across a partial \
+             final run"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal the worklet renders across a partial \
+             final run"
+        );
+    }
+
+    /// A note-off narrowed to one member channel on delivery releases only
+    /// that channel's voice, leaving a note held on another channel sounding.
+    ///
+    /// [`GrandBouleBody::deliver`] passes `channel.unwrap_or(0)` to
+    /// `note_on_with_channel`, so two notes stamped on different wire
+    /// channels must still sound as two separate voices rather than both
+    /// folding onto member channel 0 — a body that dropped the channel would
+    /// voice both notes on channel 0, and the channel-2 note-off would then
+    /// release both instead of one.
+    #[test]
+    fn a_grand_boule_note_off_on_a_channel_releases_only_that_channels_voice() {
+        const NOTE: u8 = 60;
+        const SPAN: usize = 4 * GRAND_BOULE_RUN_FRAMES;
+
+        let mut hosted_left = vec![0.0_f32; SPAN];
+        let mut hosted_right = vec![0.0_f32; SPAN];
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+
+        let mut note_on_channel_1 = note_on(NOTE);
+        note_on_channel_1.velocity = GRAND_BOULE_VELOCITY;
+        note_on_channel_1.channel = 1;
+        let mut note_on_channel_2 = note_on(NOTE);
+        note_on_channel_2.velocity = GRAND_BOULE_VELOCITY;
+        note_on_channel_2.channel = 2;
+        body.process(
+            &mut hosted_left[..GRAND_BOULE_RUN_FRAMES],
+            &mut hosted_right[..GRAND_BOULE_RUN_FRAMES],
+            GRAND_BOULE_RUN_FRAMES,
+            &[note_on_channel_1, note_on_channel_2],
+        );
+
+        let mut note_off_channel_2 = note_on(NOTE);
+        note_off_channel_2.is_note_on = false;
+        note_off_channel_2.channel = 2;
+        body.process(
+            &mut hosted_left[GRAND_BOULE_RUN_FRAMES..],
+            &mut hosted_right[GRAND_BOULE_RUN_FRAMES..],
+            SPAN - GRAND_BOULE_RUN_FRAMES,
+            std::slice::from_ref(&note_off_channel_2),
+        );
+
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut reference_left = Vec::with_capacity(SPAN);
+        let mut reference_right = Vec::with_capacity(SPAN);
+        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 1);
+        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 2);
+        for run in 0..4 {
+            if run == 1 {
+                instance.note_off_on_channel(NOTE, 2);
+            }
+            let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: as in the partial-tail spec above — the pointers name
+            // this run's fixed-length render into the instance's own
+            // buffers, copied before the instance is mutated again.
+            unsafe {
+                reference_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+                reference_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal a channel-narrowed release produces"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal a channel-narrowed release produces"
         );
     }
 
