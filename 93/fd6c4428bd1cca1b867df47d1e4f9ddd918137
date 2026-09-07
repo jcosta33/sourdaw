@@ -1,0 +1,32 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_9b530f08172a54::t_f41e84cc6c2e9c 132-141
+  s_9b530f08172a54::t_fb126ad616f488 463
+  s_9b530f08172a54::t_05e9d117d6d80b 436
+  s_9b530f08172a54::t_bb205aeced00a5 25
+  s_9b530f08172a54::t_e1fe2c6e8bfc4f 464-466
+  s_b98dcddbdf8002::t_52e41d85249ac4 467,474-478,566-570
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "93fd6c4428bd1cca1b867df47d1e4f9ddd918137",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b98dcddbdf8002": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07877-2908-7951-bc9f-4fa80ed1eba4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
