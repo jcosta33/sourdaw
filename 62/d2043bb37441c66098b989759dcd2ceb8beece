@@ -1,0 +1,49 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_9b530f08172a54::t_2d2288d752b4d0 120,179,291,852
+src/app/bootstrap.ts
+  s_87ab0a2f60ccf8::t_d2b55a89a6ec9e 56,346
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurableOwnership.spec.ts
+  s_9b530f08172a54::t_ff31085f5d8811 74-90,111-112,182-226
+src/modules/AudioEngine/useCases/configureDurableAudioBufferOwnership.ts
+  s_87ab0a2f60ccf8::t_7b401ee0739e83 1-4,6-15
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.spec.ts
+  s_9b530f08172a54::t_19a8ff760b2695 317-352
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_93db9bad745536::t_5b03219606a99a 2286-2289,2320,2332
+src/modules/AudioEngine/useCases/index.ts
+  s_87ab0a2f60ccf8::t_92c1bcfebd876f 23
+src/modules/Project/useCases/projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds.ts
+  s_87ab0a2f60ccf8::t_0e285dfcbcb551 3,61-67,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "62d2043bb37441c66098b989759dcd2ceb8beece",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_93db9bad745536": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07c49-ac8f-7b81-acc7-54eecc22ab83",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
