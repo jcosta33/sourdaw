@@ -32,11 +32,18 @@ export const activeSessions = createHmrPersistentState<Map<string, RecordingSess
 
 export const sharedStreamState = createHmrPersistentState<{
     stream: MediaStream | null;
-    usageCount: number;
-}>('audioRecorder.sharedStreamState', () => ({
-    stream: null,
-    usageCount: 0,
-}));
+    pendingRequest: Promise<MediaStream> | null;
+    streamUsage: Map<MediaStream, number>;
+}>(
+    // v2: the shape gained pendingRequest and per-stream usage; a dev session
+    // holding the v1 object would come back without streamUsage and crash.
+    'audioRecorder.sharedStreamState.v2',
+    () => ({
+        stream: null,
+        pendingRequest: null,
+        streamUsage: new Map(),
+    })
+);
 
 export const recordingLifecycleState = createHmrPersistentState<{
     startGeneration: number;

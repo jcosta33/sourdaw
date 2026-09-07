@@ -71,7 +71,7 @@ export const startAudioRecording = inject({ logger })(
 
                 mediaStream = await acquireSharedMediaStream(audioConstraints);
                 if (startGeneration !== recordingLifecycleState.startGeneration || activeSessions.has(trackId)) {
-                    releaseSharedMediaStream();
+                    releaseSharedMediaStream(mediaStream);
                     mediaStream = null;
                     return false;
                 }
@@ -158,7 +158,7 @@ export const startAudioRecording = inject({ logger })(
                     recordingWorker?.terminate();
                     recordingNode?.disconnect();
                     sourceNode?.disconnect();
-                    releaseSharedMediaStream();
+                    releaseSharedMediaStream(mediaStream);
                 }
                 return false;
             }
