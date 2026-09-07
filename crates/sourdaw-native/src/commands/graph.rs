@@ -4201,6 +4201,7 @@ pub async fn render_graph_offline(
 mod tests {
     use super::*;
     use crate::block_on_test;
+    use crate::commands::plugins::serialize_against_exclusive_gate_holds;
     use serde_json::json;
 
     /// Map a batch against an engine holding no hosted plugin instances — the
@@ -6487,6 +6488,7 @@ mod tests {
     /// no engine and no later event corrects that.
     #[test]
     fn the_first_batch_attaches_dormant_plugins_and_reports_them() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         park_dormant_plugin(&state, "attached-on-first-play");
 
@@ -6540,6 +6542,7 @@ mod tests {
     /// that missed here is spliced one play later rather than never.
     #[test]
     fn a_plugin_attached_by_a_batch_binds_on_the_next_one() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         park_dormant_plugin(&state, "bound-on-the-second-batch");
 
@@ -6645,6 +6648,7 @@ mod tests {
     /// pending and degraded there, and absent from every later batch's answer.
     #[test]
     fn a_rejected_batch_leaves_a_dormant_plugin_for_the_next_one() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         park_dormant_plugin(&state, "attached-after-a-refused-batch");
 
@@ -6718,6 +6722,7 @@ mod tests {
     /// sessions large enough to notice.
     #[test]
     fn a_batch_that_fills_the_command_ring_still_attaches_its_dormant_plugin() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         park_dormant_plugin(&state, "attached-behind-a-full-batch");
 

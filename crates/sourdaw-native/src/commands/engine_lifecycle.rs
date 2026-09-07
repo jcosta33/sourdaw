@@ -106,9 +106,10 @@ impl RetireNativeEngineResult {
 /// 1. the plugin-runtime gate in read mode, then the graph registry, and under
 ///    those two guards only the takes: the `is_rendering` verdict and the
 ///    handle's removal from the slot, the engine-owned plugin records out of
-///    `engine_plugins`, every attached crumbs instance back to dormant, and
-///    the registry's own reset. [`drain_the_lost_engine`] is that whole
-///    section, so returning from it is what releases both guards;
+///    `engine_plugins` with each one's `begin_unload` under the same lock that
+///    removed it, every attached crumbs instance back to dormant, and the
+///    registry's own reset. [`drain_the_lost_engine`] is that whole section, so
+///    returning from it is what releases both guards;
 /// 2. the registry is what makes that section atomic against the batch path,
 ///    because `apply_graph_commands` holds it across `start_into_empty_slot`,
 ///    its crumbs attach and the batch itself. Without it a batch already past
@@ -117,17 +118,20 @@ impl RetireNativeEngineResult {
 ///    then throw away the *new* engine's ledger. The gate is what keeps a
 ///    concurrent load or unload out of a runtime this drain is about to take;
 /// 3. outside both guards, on the records the drain took: each one's editor
-///    close, `begin_unload`, `retire`, and its retention. Every one of those
-///    reaches third-party code through `with_unload_control`, whose
-///    per-instance non-RT control wait is unbounded — an `open_gui` in flight
-///    holds that lock for however long the editor takes to build. Under the
-///    registry that wait would park every `apply_graph_commands`,
-///    `create_crumbs` and `set_transport_maps`, the batch booting the
-///    replacement engine among them, and under the fair gate it would make a
-///    queued writer wait behind it as well. Nothing races these records once
-///    they are out: `engine_plugins` no longer names them, so no batch can map
-///    a device onto one, and the registry is reset, so a batch that fills the
-///    empty slot boots an engine this pass never touches;
+///    close, `retire`, and its retention. Every one of those reaches
+///    third-party code through `with_unload_control`, whose per-instance non-RT
+///    control wait is unbounded — an `open_gui` in flight holds that lock for
+///    however long the editor takes to build. Under the registry that wait
+///    would park every `apply_graph_commands`, `create_crumbs` and
+///    `set_transport_maps`, the batch booting the replacement engine among
+///    them, and under the fair gate it would make a queued writer wait behind
+///    it as well. What fences these records out here is the take *plus* the
+///    lifecycle withdrawal it performs: no batch can map a device onto a
+///    record `engine_plugins` no longer names, and the registry is reset, so a
+///    batch that fills the empty slot boots an engine this pass never touches
+///    — but a control path that cloned a runtime's `Arc` out of the map before
+///    the take still holds it, and only the withdrawn lifecycle turns that
+///    clone's next `with_control` into a refusal;
 /// 4. the handle's drop, after that loop and with both guards long gone,
 ///    because the drop waits on the audio-owner thread and a lock held across
 ///    it would park every other claim for the shutdown timeout;
@@ -223,14 +227,32 @@ async fn drain_the_lost_engine(state: &AppState, crumbs: &CrumbsState) -> Draine
     }
 }
 
-/// Empty `engine_plugins`, handing its records to the caller.
+/// Empty `engine_plugins`, withdrawing each record's intent to process before
+/// the map's lock goes, and hand the records to the caller.
 ///
-/// The take is the whole of what the drain owes these records: once they are
-/// out of the map no batch can map a device onto one, so their retirement runs
-/// with every guard released.
+/// Emptying the map alone does not fence these records, because a control path
+/// clones a runtime's `Arc` out of the map and then works on the clone with the
+/// lock released — `plugin_gui::open_plugin_gui` does exactly that, and rechecks
+/// only the lifecycle before it opens an editor. A take that left the lifecycle
+/// `Active` would let such a clone open an editor *after* the drain's own
+/// `close_gui` found nothing to close, leaving a window record naming an
+/// instance whose final drop then runs `gui.destroy` on the napi worker. So the
+/// withdrawal happens here, inside the section that removed the record, the way
+/// a keyed unload and the quit cascade both do it. It costs two atomic stores
+/// and calls no plugin code, so nothing unbounded enters the guarded section.
+///
+/// `retire` and the retention stay with the caller: those follow the editor
+/// close, which is a plugin call and belongs outside every guard.
+/// [`close_editor_before_retiring`] still reaches the editor through
+/// `with_unload_control`, which asks the lifecycle for nothing.
 fn take_engine_owned_plugins(state: &AppState) -> Vec<(String, EnginePluginInstanceData)> {
     let mut engine_plugins = locked_or_poisoned(&state.engine_plugins);
-    std::mem::take(&mut *engine_plugins).into_iter().collect()
+    let drained: Vec<(String, EnginePluginInstanceData)> =
+        std::mem::take(&mut *engine_plugins).into_iter().collect();
+    for (_, instance) in &drained {
+        instance.runtime.begin_unload();
+    }
+    drained
 }
 
 /// Close each drained instance's editor, then hand its runtime to the
@@ -250,12 +272,15 @@ fn take_engine_owned_plugins(state: &AppState) -> Vec<(String, EnginePluginInsta
 /// `unload_plugin_runtime`: a record left in `plugin_windows` names a window
 /// for an instance the renderer has been told to reload.
 ///
-/// Then `begin_unload`, `retire`, retain — the order `shutdown.rs` keeps
-/// (`take_live_plugin_instances`, `retire_for_reclamation`): the withdrawal
-/// of the intent to process comes first so the stop is never missed, and the
-/// retention comes before this pass lets go of its own reference, so a
-/// scheduler or watcher thread can never become the final owner and run CLAP
-/// `destroy` on itself.
+/// Then `retire`, retain — the tail of the order `shutdown.rs` keeps
+/// (`take_live_plugin_instances`, `retire_for_reclamation`). Its head, the
+/// withdrawal of the intent to process, already ran: `begin_unload` is part of
+/// [`take_engine_owned_plugins`], under the lock that removed the record, so
+/// that nothing reaching one of these runtimes through an `Arc` cloned before
+/// the take can still be admitted as control while this loop makes its plugin
+/// calls. The retention comes before this pass lets go of its own reference,
+/// so a scheduler or watcher thread can never become the final owner and run
+/// CLAP `destroy` on itself.
 ///
 /// No `engine.remove_plugin`: the removal is a command onto a ring nothing
 /// drains, so it would pop nothing. The scheduler's own `Arc` is released
@@ -271,7 +296,6 @@ fn retire_engine_owned_plugins(
     let mut retired_instance_ids = Vec::with_capacity(instances.len());
     for (instance_id, instance) in instances {
         close_editor_before_retiring(&instance_id, &instance.runtime, windows_host, state);
-        instance.runtime.begin_unload();
         instance.runtime.retire();
         state.retain_retired_engine_plugin(instance.runtime);
         retired_instance_ids.push(instance_id);
@@ -311,6 +335,7 @@ fn close_editor_before_retiring(
 mod tests {
     use std::sync::{mpsc, Arc, Mutex};
     use std::thread::ThreadId;
+    use std::time::Instant;
 
     use daw_engine::engine_events::StreamErrorKind;
     use daw_engine::scheduler::GraphCommand;
@@ -319,7 +344,10 @@ mod tests {
 
     use crate::block_on_test;
     use crate::commands::graph::apply_graph_commands;
-    use crate::commands::plugins::hold_plugin_runtime_gate_exclusively;
+    use crate::commands::plugins::{
+        hold_plugin_runtime_gate_exclusively, serialize_against_exclusive_gate_holds,
+        try_hold_plugin_runtime_gate_exclusively,
+    };
     use crate::host::native_bridge::SharedHostedPlugin;
     use crate::host::plugin_window::{NoWindowHost, PluginEditorWindow};
     use crate::host::ui_thread::UiThread;
@@ -335,6 +363,28 @@ mod tests {
     /// window weakens the test rather than failing it, and each test's join
     /// proves the thread ran at all.
     const CONTENTION_WINDOW: Duration = Duration::from_millis(50);
+
+    /// How long [`a_retire_holds_no_guard_while_a_plugin_call_waits`] waits for
+    /// the retire to withdraw the intent to process.
+    ///
+    /// A *positive* claim rests on this one, so it is generous rather than
+    /// tight: reaching the deadline means a retire that got as far as its
+    /// plugin call — the held control lock is what parks it there — without
+    /// having withdrawn first, which is the defect the test exists for, and no
+    /// amount of machine load produces that.
+    const WITHDRAWAL_DEADLINE: Duration = Duration::from_secs(5);
+
+    /// How long that same test waits for the process-global plugin-runtime gate
+    /// to become takeable. Reaching it means a retire that never released the
+    /// gate, because every other holder of it lets go within its own test.
+    const GATE_DEADLINE: Duration = Duration::from_secs(5);
+
+    /// How often either of those deadlines is re-asked.
+    const POLL_INTERVAL: Duration = Duration::from_millis(1);
+
+    /// The budget the control hold gives its own claim on the RT access seam.
+    /// Nothing contends it here, so it is never spent.
+    const CONTROL_HOLD_TIMEOUT: Duration = Duration::from_secs(5);
 
     /// A window host that records the labels it was asked to destroy.
     ///
@@ -1013,5 +1063,121 @@ mod tests {
             .lock()
             .expect("engine_plugins lock")
             .is_empty());
+    }
+
+    /// What a retire in the middle of its plugin loop looks like from outside,
+    /// which is where both of this test's claims are read.
+    ///
+    /// One arrangement produces both: a background thread holds the drained
+    /// instance's non-RT control lock, so the retire reaches
+    /// [`close_editor_before_retiring`] and parks there with the rest of its
+    /// loop still to run. That is the moment the retire is at its most
+    /// exposed, and while it lasts —
+    ///
+    /// - the intent to process is already withdrawn, because the withdrawal
+    ///   runs under the take rather than after the editor close. A control path
+    ///   that cloned this runtime's `Arc` out of `engine_plugins` before the
+    ///   drain still holds it, and the withdrawn lifecycle is the only thing
+    ///   that refuses its next `with_control`;
+    /// - neither the registry nor the plugin-runtime gate is held, so a batch,
+    ///   a load or an unload runs beside a retire that is waiting on
+    ///   third-party code of unbounded length rather than behind it.
+    ///
+    /// The gate is process-global, so this test takes the serial lock: probing
+    /// it as a writer would otherwise turn a co-scheduled attach into an empty
+    /// answer.
+    #[test]
+    fn a_retire_holds_no_guard_while_a_plugin_call_waits() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
+        let state = AppState::default();
+        let crumbs_state = CrumbsState::default();
+        let _commands = fill_slot_with_capture_engine(&state);
+        let runtime = engine_owned_runtime("Retire Fixture");
+        // The clone a control path takes: out of `engine_plugins` before the
+        // drain, and worked on with that map's lock released, exactly as
+        // `plugin_gui::open_plugin_gui` does it.
+        let observed = Arc::clone(&runtime);
+        let holding = Arc::clone(&runtime);
+        insert_engine_owned_plugin(&state, "engine-instance", runtime);
+        stall_the_engine_in_the_slot(&state);
+
+        let retiring_state = &state;
+        let retiring_crumbs = &crumbs_state;
+        let result = std::thread::scope(|scope| {
+            // Both channels are owned by this closure, so a failing assertion
+            // below drops the release end while it unwinds: the hold then ends
+            // on its own, the retire it was parking finishes, and the scope
+            // joins. Owned by the test's own frame they would outlive the
+            // unwind, and a red assertion would hang instead of reporting.
+            let (control_held, control_holding) = mpsc::channel();
+            let (release_control, control_released) = mpsc::channel::<()>();
+
+            scope.spawn(move || {
+                holding
+                    .with_unload_control(CONTROL_HOLD_TIMEOUT, |_| {
+                        control_held
+                            .send(())
+                            .expect("the test thread waits for this");
+                        control_released
+                            .recv()
+                            .expect("the test thread releases this hold");
+                        Ok(())
+                    })
+                    .expect("the control hold takes the seam it is standing in for")
+            });
+            control_holding
+                .recv()
+                .expect("the control lock is held before the retire is let at it");
+
+            let retiring =
+                scope.spawn(move || retire(retiring_state, retiring_crumbs, &NoWindowHost));
+
+            let withdrawn_by = Instant::now() + WITHDRAWAL_DEADLINE;
+            while observed.processing_gate().wants_processing() {
+                assert!(
+                    Instant::now() < withdrawn_by,
+                    "the retire is parked in its editor close and has still not withdrawn: a withdrawal left until after that close admits control to a runtime already on its way out"
+                );
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            std::thread::sleep(CONTENTION_WINDOW);
+
+            assert!(
+                state.graph.try_lock().is_ok(),
+                "the registry held across a plugin call parks every batch, `create_crumbs` and `set_transport_maps` behind third-party code of unbounded length"
+            );
+            // Asked repeatedly, because this gate is process-global and any
+            // other test's own load, unload or retire may hold it in read mode
+            // as this one asks. What the claim needs is that the gate becomes
+            // takeable while the plugin call is still parked, and a retire
+            // holding it across that call never lets go of it at all.
+            let takeable_by = Instant::now() + GATE_DEADLINE;
+            while try_hold_plugin_runtime_gate_exclusively().is_none() {
+                assert!(
+                    Instant::now() < takeable_by,
+                    "the gate held across a plugin call parks the quit cascade's writer, and the fair gate then parks every reader queued behind it"
+                );
+                std::thread::sleep(POLL_INTERVAL);
+            }
+
+            release_control
+                .send(())
+                .expect("the control hold is still waiting");
+            retiring.join().expect("the retire thread finishes")
+        });
+
+        assert_eq!(
+            result.outcome,
+            RetireOutcome::Retired,
+            "the retire runs to completion once the control lock it was waiting on is free"
+        );
+        assert!(!slot_holds_an_engine(&state));
+        assert_eq!(
+            observed
+                .ensure_public_control_allowed()
+                .expect_err("a retired runtime admits no public control"),
+            "Engine-owned plugin instance 'Retire Fixture' has been retired",
+            "the loop still closes the lifecycle, and the withdrawal moving earlier must not leave it merely unloading"
+        );
     }
 }

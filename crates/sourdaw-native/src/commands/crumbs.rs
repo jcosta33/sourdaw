@@ -592,11 +592,15 @@ pub fn attach_dormant_crumbs(
 /// recording the musician performed and the session then silently lost. The
 /// drain lands it in `samples`, which is the command-side authority the next
 /// attach refills the new engine's pool from. Its mirror pushes are lost with
-/// the ring they land on: an rtrb push fails only on a full ring, and this one
-/// has no consumer left to fill it, so both halves report `Ok` and nothing
-/// parks in `pending_mirror`. Losing them costs nothing, because the pool they
-/// were mirroring into died with the slot and [`replay_parked_writes`] rebuilds
-/// the *new* engine's pool from `samples` on the next attach.
+/// the ring they land on, whichever way they go: the consumer is still alive
+/// here — the scheduler owning `command_rx` goes with the handle the retire
+/// drops after this drain — but a stalled engine has stopped draining, so the
+/// command ring may hold anything from nothing to its full capacity. A push
+/// lands while there is room and parks in `pending_mirror` once there is not.
+/// Either outcome costs nothing, because the ring, the pool it fed and the
+/// mirror parked against it all die with the slot, and
+/// [`replay_parked_writes`] rebuilds the *new* engine's pool from `samples` on
+/// the next attach.
 ///
 /// Takes the instances lock beneath the registry guard the retire's drain
 /// holds, which is the registry -> instances order `apply_graph_commands` and

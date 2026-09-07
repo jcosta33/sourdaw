@@ -134,6 +134,37 @@ pub(crate) async fn hold_plugin_runtime_gate(
     observe_gate_release(PLUGIN_RUNTIME_GATE.read().await)
 }
 
+/// Serialises the tests that take `PLUGIN_RUNTIME_GATE` exclusively against
+/// the tests whose batch has to attach a dormant instance, because
+/// [`attach_dormant_plugins`] only `try_read`s the process-global gate and so
+/// answers "nothing attached" rather than waiting while any writer is held.
+#[cfg(test)]
+static EXCLUSIVE_GATE_TEST_SERIAL: Mutex<()> = Mutex::new(());
+
+/// Take that serial lock: the first statement of any test that holds the gate
+/// exclusively, observes it exclusively, or asserts an attach.
+///
+/// Poisoning is ignored, because the lock guards a schedule rather than data —
+/// one panicking test must not turn every other one into a panic of its own.
+#[cfg(test)]
+pub(crate) fn serialize_against_exclusive_gate_holds() -> std::sync::MutexGuard<'static, ()> {
+    EXCLUSIVE_GATE_TEST_SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The exclusive hold a test takes: the gate's own writer, and the serial lock
+/// that keeps an attach out from under it.
+///
+/// Field order is drop order, and it is load bearing here: releasing the
+/// schedule first would let an attach through while the writer it must not
+/// race is still held.
+#[cfg(test)]
+pub(crate) struct ExclusiveGateHold {
+    _gate: tokio::sync::RwLockWriteGuard<'static, ()>,
+    _serial: std::sync::MutexGuard<'static, ()>,
+}
+
 /// Hold the gate in the exclusive mode [`unload_all_plugin_runtimes`] takes,
 /// for a test outside this module.
 ///
@@ -143,9 +174,23 @@ pub(crate) async fn hold_plugin_runtime_gate(
 /// which is the only way a test in another module can observe that a caller of
 /// [`hold_plugin_runtime_gate`] really waits.
 #[cfg(test)]
-pub(crate) async fn hold_plugin_runtime_gate_exclusively(
-) -> tokio::sync::RwLockWriteGuard<'static, ()> {
-    PLUGIN_RUNTIME_GATE.write().await
+pub(crate) async fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
+    let serial = serialize_against_exclusive_gate_holds();
+    ExclusiveGateHold {
+        _gate: PLUGIN_RUNTIME_GATE.write().await,
+        _serial: serial,
+    }
+}
+
+/// Answer whether the gate is free for a writer right now, without waiting.
+///
+/// For a test that already holds the serial lock, which is why this one never
+/// takes it: a `std` `Mutex` is not reentrant, so claiming it a second time on
+/// the same thread would deadlock rather than serialise anything.
+#[cfg(test)]
+pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
+) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
+    PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
 struct PluginLifecycleLease {
