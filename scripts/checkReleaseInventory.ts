@@ -1340,7 +1340,7 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     const data = JSON.parse(readFileSync(resolve(root, jsonPath), 'utf8')) as {
         sourceRevision?: string;
         sourceDigests?: Record<string, string>;
-        machine?: { gitSha?: string; workingTree?: string };
+        machine?: { gitSha?: string; workingTree?: string; takenAt?: string };
         options?: { measureQuanta?: number };
         rows?: Array<{
             id?: string;
@@ -1371,6 +1371,20 @@ export function assertGrandBouleMeasurementAdmission(root: string): void {
     } catch {
         throw new Error(
             `Grand Boule measurement source revision ${revision} cannot provide ${GRAND_BOULE_MEASUREMENT_SOURCE_FILES[0]}`
+        );
+    }
+    const commitDate = execFileSync('git', ['show', '-s', '--format=%cI', revision], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
+    const takenAt = data.machine?.takenAt;
+    if (!takenAt || Number.isNaN(Date.parse(takenAt))) {
+        throw new Error('Grand Boule measurement must carry a parseable takenAt timestamp');
+    }
+    if (Date.parse(takenAt) < Date.parse(commitDate)) {
+        throw new Error(
+            `Grand Boule measurement takenAt ${takenAt} predates its source revision ${revision} (${commitDate}) — ` +
+                'the measurement was re-stamped without re-measuring'
         );
     }
     for (const path of censusPaths) {
