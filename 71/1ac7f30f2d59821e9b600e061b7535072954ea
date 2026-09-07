@@ -1,0 +1,114 @@
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_ae0391badb4a8d 935-948
+  s_9b530f08172a54::t_1cb53acebe8934 1416
+  s_9b530f08172a54::t_553b0209365e7e 1129,1146,1200-1215,1223-1297,1299-1325,1327-1329,1331-1389
+  s_9b530f08172a54::t_b9e7038f6cc57c 256
+  s_9b530f08172a54::t_ecaee5bd25b6c2 267
+  s_9b530f08172a54::t_66128b84c72f1a 7032-7056,7073-7093
+  s_9b530f08172a54::t_1f761d1bcb4038 905
+  s_9b530f08172a54::t_d1aae938496392 1216-1222
+  s_9b530f08172a54::t_2af0212a44468a 1330
+  s_9b530f08172a54::t_e857602f3a01c8 1326
+  s_9b530f08172a54::t_de9750b4f2a258 14177-14180
+  s_9b530f08172a54::t_883f3a674029d5 4512-4517
+  s_9b530f08172a54::t_71fbae3ac93f57 26
+  s_9b530f08172a54::t_e41456b3efd861 1298
+  s_9b530f08172a54::t_32d2d331b13b54 7057-7072
+  s_9b530f08172a54::t_d22ce5c51af0a8 1415,14096-14176,14181-14364
+  s_9b530f08172a54::t_1a164bbdee9bf4 920
+  s_9b530f08172a54::t_3576b9934c831d 1394
+  s_9b530f08172a54::t_00ed58313a39b7 245
+  s_9b530f08172a54::t_c3bf037206f7d0 283
+  s_9b530f08172a54::t_cd12c8c6023794 1147
+  s_9b530f08172a54::t_4ed98916b83c2a 1412-1414
+  s_ad8a2b79748fea::t_ce534ba98f00a6 18-20,930,13329,13349,13357-13358,13364,13971,13978
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_9b530f08172a54::t_34611f0495185d 34-41
+  s_9b530f08172a54::t_c5a0830d3ea8b9 208
+  s_9b530f08172a54::t_6768ffbb3766c4 195-207,209-211
+  s_9b530f08172a54::t_7b55421c22c596 63-64
+release/open-source-inventory.json
+  s_9b530f08172a54::t_3eaa74e9b3cfa5 1337,1718
+  s_9b530f08172a54::t_d7a2a160d13d54 1331
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_9ca619fce2c507 10037-10068
+  s_9b530f08172a54::t_69a0fbee7d7109 2026-2029
+  s_9b530f08172a54::t_e10bb26d4e1528 8299-8300
+  s_9b530f08172a54::t_e62158d77db847 10162-10240
+  s_9b530f08172a54::t_47317db4e8dec1 8229-8230
+  s_9b530f08172a54::t_f310fc69c06ee4 1801-1802,1804,1810-1817,1819-1821
+  s_9b530f08172a54::t_d1f9305f08145b 7782,7801-7894
+  s_9b530f08172a54::t_83f63b21470e8b 2032-2044,2046-2049
+  s_9b530f08172a54::t_aa5f4d99a004be 1862
+  s_9b530f08172a54::t_228c151aa764a7 2045
+  s_9b530f08172a54::t_0c14222c54c164 1863
+  s_ad8a2b79748fea::t_6559740e7c8fb5 159-160,162,1872,1876,7771,7984,7987,10353
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_9b530f08172a54::t_9b610b80dc4ea1 134
+  s_9b530f08172a54::t_9a4f21e898db82 193-244
+  s_9b530f08172a54::t_6cd562590bc8e2 104-105,107-108,110
+  s_9b530f08172a54::t_75ed342b15b8d2 164
+  s_9b530f08172a54::t_b217021dd7c4ca 119
+  s_9b530f08172a54::t_3643a092f8d4e0 26
+src/modules/AudioEngine/models/__tests__/grandBouleDspParamNames.spec.ts
+  s_9b530f08172a54::t_957e01f120214a 1-42
+src/modules/AudioEngine/models/GrandBouleDspParamNames.ts
+  s_9b530f08172a54::t_7c58dc0044bdf7 39
+  s_9b530f08172a54::t_827b4151f983d2 1-38,40-49
+crates/daw-engine/src/timeline.rs
+  s_9b530f08172a54::t_29eea9cf114334 142-145,147,149-161
+  s_9b530f08172a54::t_d3caa2936f01ea 3397
+  s_9b530f08172a54::t_ae3bbd40405b73 3408
+  s_9b530f08172a54::t_36b2e5998e9f1d 3422
+  s_9b530f08172a54::t_a3f5b8677de1ac 240
+  s_9b530f08172a54::t_a50fd168767aac 3456
+  s_9b530f08172a54::t_536b55c6763829 3435,3439
+  s_9b530f08172a54::t_bbfd8c228d1f96 230
+  s_9b530f08172a54::t_eec6326ea2ccfc 231-232
+  s_9b530f08172a54::t_633ae4a0a0b33c 3409
+  s_9b530f08172a54::t_5f416198dd6962 3440
+  s_9b530f08172a54::t_3cf48695957471 3457
+  s_ad8a2b79748fea::t_d68c1a346f2d4c 179-180,184,192,195,198,219,248,3393,3395,3415,3428,3442,3460,3465,3470,3475,3480
+src/modules/AudioEngine/useCases/livePlayback/__tests__/soundsNativeNotes.spec.ts
+  s_9b530f08172a54::t_16ecef679498d1 14-15
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_9b530f08172a54::t_8085dfc84d8e54 124
+  s_9b530f08172a54::t_f65d2f32cbbadf 121-123,125-131,133-136
+  s_9b530f08172a54::t_11ee557c15ff01 42-43
+  s_9b530f08172a54::t_20f0aee925ec00 81-101
+  s_9b530f08172a54::t_007c157b8a4351 132
+crates/daw-engine/src/audio_thread.rs
+  s_ad8a2b79748fea::t_30374f4c2dc857 3507-3508,4077
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ad8a2b79748fea::t_2ebee642fef769 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ad8a2b79748fea::t_610b2ef3d97032 1
+public/wasm/manifest.json
+  s_ad8a2b79748fea::t_9c9ba7389f4752 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ad8a2b79748fea::t_4b9908c60ef3a0 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "711ac7f30f2d59821e9b600e061b7535072954ea",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ad8a2b79748fea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a44306f20d16178d3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
