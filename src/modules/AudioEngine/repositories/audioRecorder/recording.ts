@@ -24,6 +24,7 @@ import { audioEngine } from '../createWebAudioEngine';
 
 import { acquireSharedMediaStream } from './acquireSharedMediaStream';
 import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
+import { cleanupNodesForRecordingSession } from './cleanupNodesForRecordingSession';
 import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
 import { activeSessions, recordingLifecycleState, SAB_BYTES, type RecordingSession } from './recordingSession';
@@ -112,9 +113,28 @@ export const startAudioRecording = inject({ logger })(
                     status: 'starting',
                     onRecordingComplete: onComplete,
                     stopFlushTimer: null,
+                    producerStopAcknowledged: false,
                 };
                 registeredSession = session;
                 activeSessions.set(trackId, session);
+
+                readyRecordingNode.port.onmessage = ({ data }: MessageEvent): void => {
+                    const msg = data as { type?: string; publishedSampleCount?: number };
+                    if (
+                        msg.type !== 'stopped' ||
+                        activeSessions.get(trackId) !== session ||
+                        session.status !== 'stopping' ||
+                        session.producerStopAcknowledged
+                    ) {
+                        return;
+                    }
+                    session.producerStopAcknowledged = true;
+                    readyRecordingWorker.postMessage({
+                        type: 'stop',
+                        expectedFinalSampleCount: msg.publishedSampleCount,
+                    });
+                    cleanupNodesForRecordingSession(session);
+                };
 
                 // Wire up the PCM-complete handler before sending 'start'.
                 recordingWorker.onmessage = ({ data }: MessageEvent): void => {

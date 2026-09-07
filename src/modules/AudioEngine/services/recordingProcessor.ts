@@ -5,45 +5,57 @@
  * directly into a SharedArrayBuffer ring buffer. No allocations on the hot
  * path; no postMessage during capture.
  *
- * SAB layout:
- *   Bytes 0–3  : writeHead (Int32, monotonically increasing sample count)
- *   Bytes 4+   : ring data (Float32, length = (sab.byteLength - 4) / 4)
+ * SAB layout is shared with the worker through `RecordingRingProtocol`:
+ * a sequence word, unsigned low/high count words, then the Float32 ring.
  *
  * Port protocol:
  *   ← { type: 'init',  sab: SharedArrayBuffer }  wire up ring before start
  *   ← { type: 'start' }                           begin writing samples
  *   ← { type: 'stop'  }                           stop; ack with 'stopped'
- *   → { type: 'stopped', writeHead: number }      total samples written
+ *   → { type: 'stopped', publishedSampleCount: number } total samples written
  */
+
+import {
+    beginRecordingRingWrite,
+    completeRecordingRingWrite,
+    RECORDING_RING_CONTROL_BYTES,
+    RECORDING_RING_CONTROL_INTS,
+    storeRecordingSampleCount,
+} from '../models/RecordingRingProtocol';
 
 type RecordingMsg = { type: 'init'; sab: SharedArrayBuffer } | { type: 'start' } | { type: 'stop' };
 
 /**
  * Release-publish a block of samples into the SPSC ring.
  *
- * Writes every sample into the ring (with wrap-around), then advances the head
- * with `Atomics.add`. That atomic is the release fence: it is sequenced after
- * the ring writes, so a consumer that acquires the head with `Atomics.load`
- * before reading the ring can never observe a head increment without the
- * corresponding samples. Returns the new head for assertion.
+ * Marks publication in progress, writes every sample into the ring with
+ * wrap-around, publishes the full cumulative count, then marks publication
+ * complete. The sequence transition is the consumer's copy fence: a reader
+ * accepts PCM only when the same even sequence and cumulative count bracket
+ * the copy. Returns the new cumulative count for assertion.
  *
  * Hot-path safe: no allocation, no blocking; reused by `process`.
  */
-export function writeRingRelease(ring: Float32Array, writeHead: Int32Array, head: number, input: Float32Array): number {
+export function writeRingRelease(ring: Float32Array, control: Int32Array, head: number, input: Float32Array): number {
     const ringSize = ring.length;
-    // Data writes — must be sequenced-before the release store below.
+    const nextHead = head + input.length;
+    // An odd sequence invalidates any concurrent consumer copy before the
+    // producer can overwrite a ring slot.
+    beginRecordingRingWrite(control);
     for (let index = 0; index < input.length; index++) {
         ring[(head + index) % ringSize] = input[index] ?? 0;
     }
-    // Release fence: publish the samples atomically after they are all written.
-    Atomics.add(writeHead, 0, input.length);
-    return head + input.length;
+    storeRecordingSampleCount(control, nextHead);
+    // The even sequence release-publishes both the count words and samples.
+    completeRecordingRingWrite(control);
+    return nextHead;
 }
 
 class RecordingWorkletProcessor extends AudioWorkletProcessor {
-    _writeHead: Int32Array | null = null;
+    _control: Int32Array | null = null;
     _ring: Float32Array | null = null;
     _ringSize = 0;
+    _publishedSampleCount = 0;
     _active = false;
 
     constructor() {
@@ -52,9 +64,12 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
             switch (data.type) {
                 case 'init': {
                     const sab = data.sab;
-                    this._writeHead = new Int32Array(sab, 0, 1);
-                    this._ring = new Float32Array(sab, 4);
+                    this._control = new Int32Array(sab, 0, RECORDING_RING_CONTROL_INTS);
+                    this._ring = new Float32Array(sab, RECORDING_RING_CONTROL_BYTES);
                     this._ringSize = this._ring.length;
+                    this._publishedSampleCount = 0;
+                    Atomics.store(this._control, 0, 0);
+                    storeRecordingSampleCount(this._control, 0);
                     break;
                 }
                 case 'start':
@@ -62,8 +77,10 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
                     break;
                 case 'stop': {
                     this._active = false;
-                    const head = this._writeHead ? Atomics.load(this._writeHead, 0) : 0;
-                    this.port.postMessage({ type: 'stopped', writeHead: head });
+                    this.port.postMessage({
+                        type: 'stopped',
+                        publishedSampleCount: this._publishedSampleCount,
+                    });
                     break;
                 }
             }
@@ -71,7 +88,7 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
     }
 
     process(inputs: Float32Array[][]): boolean {
-        if (!this._active || !this._ring || !this._writeHead) {
+        if (!this._active || !this._ring || !this._control) {
             return true;
         }
         const input = inputs[0]?.[0];
@@ -79,8 +96,7 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const head = Atomics.load(this._writeHead, 0);
-        writeRingRelease(this._ring, this._writeHead, head, input);
+        this._publishedSampleCount = writeRingRelease(this._ring, this._control, this._publishedSampleCount, input);
         return true;
     }
 }

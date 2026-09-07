@@ -5,7 +5,10 @@ import { writeProjectJson } from '../../repositories/project/writeProjectJson';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
 import { replaceProjectData } from '../projectPersistence/helpers/replaceProjectData';
-import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
+import {
+    runProjectLoadTransaction,
+    type ProjectLoadTransaction,
+} from '../projectPersistence/helpers/runProjectLoadTransaction';
 
 /**
  * Why a recent-project load ended the way it did. Callers must distinguish
@@ -22,6 +25,12 @@ type LoadRecentProjectOptions = {
     /** A discard caller keeps this true only while its captured project authority is still current. */
     readonly shouldProceed?: () => boolean;
 };
+
+function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProceed?: () => boolean): boolean {
+    return (
+        transaction.signal.aborted || !transaction.canActivate() || (shouldProceed !== undefined && !shouldProceed())
+    );
+}
 
 export async function loadRecentProject(
     key: string,
@@ -63,21 +72,25 @@ export async function loadRecentProject(
         return 'aborted';
     }
 
-    const result = await replaceProjectData({
-        afterCommit: () => writeProjectJson(JSON.stringify(data)),
-        context: 'loadRecentProject',
-        data,
-        shouldProceed,
-        transaction,
-    });
+    let result: Awaited<ReturnType<typeof replaceProjectData>>;
+    try {
+        result = await replaceProjectData({
+            afterCommit: () => writeProjectJson(JSON.stringify(data)),
+            context: 'loadRecentProject',
+            data,
+            shouldProceed,
+            transaction,
+        });
+    } catch (error) {
+        logger.error(new Error('Failed to replace project data', { cause: error }));
+        return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
+    }
+
     if (result.status === 'committed') {
         return requireDurable && !result.durable ? 'failed' : 'committed';
     }
-    // Not 'aborted': that tells the caller a successor owns the project now and
-    // it should do nothing. A failed replacement means the previous session is
-    // gone and no successor is coming.
     if (result.status === 'failed') {
         return 'failed';
     }
-    return 'aborted';
+    return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
 }

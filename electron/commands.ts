@@ -81,6 +81,7 @@ export const EXPOSED_COMMANDS = [
     'read_file_bytes',
     'register_timeline_sample',
     'render_graph_offline',
+    'retire_native_engine',
     'scan_plugins',
     'send_push_midi',
     'set_crumbs_mode',

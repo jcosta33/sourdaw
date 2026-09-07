@@ -4,7 +4,7 @@ Flagship multi-engine synthesizer instrument (wavetable, virtual analog, FM, Kar
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `applyFermenterRuntimeParam`, `setFermenterDependencies`, `getFermenterFactoryPresets`, `mapFermenterParamToDspParam`, `FERMENTER_PARAMS`, `setFermenterMappedParam`.
+- **Use Cases** (`useCases/index.ts`): `applyFermenterRuntimeParam`, `setFermenterDependencies`, `getFermenterFactoryPresets`, `hydrateFermenterFromProject`, `mapFermenterParamToDspParam`, `FERMENTER_PARAMS`, `setFermenterMappedParam`.
 - **Stores** (`stores/index.ts`): `fermenterStore`, `setFermenterTelemetry`.
 - **Views** (`presentations/views/index.ts`): `FermenterPanel`.
 - **Events** (`events/index.ts`): No public events.

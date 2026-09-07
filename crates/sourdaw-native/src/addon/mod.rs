@@ -709,6 +709,31 @@ impl SourdawNative {
         )?)
     }
 
+    /// Empty the engine slot when the output stream behind it is gone, so the
+    /// next `apply_graph_commands` boots a fresh engine on the current default
+    /// device. Answers
+    /// `{ "outcome": "retired" | "no-engine" | "rendering", "retiredInstanceIds": string[] }`,
+    /// the latter naming the engine-owned plugin records the retire drained
+    /// (ascending, empty unless `outcome` is `"retired"`), and never errors:
+    /// every state the slot can be in is an outcome.
+    ///
+    /// Takes the window host for the same reason `unload_plugin` does: a
+    /// drained instance's editor is closed on the shell's UI thread before its
+    /// runtime is retired, so the format's own teardown never runs `gui.destroy`
+    /// on this worker.
+    #[napi]
+    pub async fn retire_native_engine(&self) -> Result<Value> {
+        let windows = self.window_host();
+        json(
+            commands::engine_lifecycle::retire_native_engine(
+                &self.singletons.app_state,
+                &self.singletons.crumbs,
+                windows.as_ref(),
+            )
+            .await,
+        )
+    }
+
     // ── Plugin GUI ─────────────────────────────────────────────────────
 
     #[napi]

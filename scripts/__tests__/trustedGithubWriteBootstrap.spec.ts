@@ -276,8 +276,10 @@ describe('trusted GitHub write snapshot launcher', () => {
                             'scripts/publishReview.ts',
                             [
                                 'export async function runPublishReviewCli() {',
+                                '  const keepAlive = setInterval(() => undefined, 10000);',
                                 `  setTimeout(() => process.kill(process.ppid, '${signal}'), 100);`,
                                 '  await new Promise(() => undefined);',
+                                '  clearInterval(keepAlive);',
                                 '  return 0;',
                                 '}',
                             ].join('\n'),
