@@ -1296,7 +1296,9 @@ export function writeGuardFailureReceipt(primaryRoot: string, receipt: GuardFail
     const dir = join(primaryRoot, GUARD_FAILURES_DIR);
     mkdirSync(dir, { recursive: true });
     const receiptPath = guardFailureReceiptPath(primaryRoot, receipt.lane);
-    writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+    const candidatePath = `${receiptPath}.candidate-${randomUUID()}`;
+    writeFileSync(candidatePath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+    renameSync(candidatePath, receiptPath);
 }
 
 export function clearGuardFailureReceipt(primaryRoot: string, laneName: string): boolean {
@@ -1311,16 +1313,18 @@ export function clearGuardFailureReceipt(primaryRoot: string, laneName: string):
 
 type CliInput = {
     profile: ResourceProfile;
+    explicitProfile: boolean;
     maxRssBytes?: number;
     requireTarget: boolean;
     showOutput: boolean;
+    recover: boolean;
     command: string;
     args: string[];
-    recover: boolean;
 };
 
 export function parseCliArgs(args: string[]): CliInput {
     let profile: ResourceProfile = 'focused';
+    let explicitProfile = false;
     let maxRssBytes: number | undefined;
     let requireTarget = false;
     let showOutput = false;
@@ -1342,6 +1346,7 @@ export function parseCliArgs(args: string[]): CliInput {
                 throw new Error('--profile requires focused, broad, or extended');
             }
             profile = value;
+            explicitProfile = true;
             index += 1;
             continue;
         }
@@ -1367,12 +1372,12 @@ export function parseCliArgs(args: string[]): CliInput {
     const command = args[index];
     if (command === undefined) {
         if (recover) {
-            return { profile, maxRssBytes, requireTarget, showOutput, command: '', args: [], recover };
+            return { profile, explicitProfile, maxRssBytes, requireTarget, showOutput, command: '', args: [], recover };
         }
         throw new Error('missing command after --');
     }
     const commandArgs = args.slice(index + 1);
-    return { profile, maxRssBytes, requireTarget, showOutput, command, args: commandArgs, recover };
+    return { profile, explicitProfile, maxRssBytes, requireTarget, showOutput, command, args: commandArgs, recover };
 }
 
 export async function main(
@@ -1410,11 +1415,14 @@ export async function main(
             const result = await runCommand({
                 command: receipt.command,
                 args: receipt.args,
-                profile: (receipt.profile as ResourceProfile) ?? input.profile,
+                profile: input.explicitProfile
+                    ? input.profile
+                    : ((receipt.profile as ResourceProfile) ?? input.profile),
                 maxRssBytes: input.maxRssBytes ?? receipt.maxRssBytes,
                 showOutput: input.showOutput,
             });
             if (result.code === 0 && result.reason === undefined) {
+                emitGuardedResult(receipt.command, result, input.showOutput);
                 clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
                 log(`guard: recovery succeeded; guard-failure receipt cleared for lane ${lane.laneName}`);
                 return 0;
@@ -1441,11 +1449,12 @@ export async function main(
         }
 
         const lane = detectLane(cwd);
+        let existingReceipt: GuardFailureReceipt | undefined;
         if (lane !== undefined) {
-            const receipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
-            if (receipt !== undefined && lane.headSha === receipt.headSha) {
+            existingReceipt = readGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+            if (existingReceipt !== undefined && lane.headSha === existingReceipt.headSha) {
                 throw new Error(
-                    `guard: refusing verification: active guard-failure receipt exists for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}'). A timeout, RSS kill, or memory-monitor failure is a stop. Commit a relevant change or run 'pnpm guard --recover' before re-verifying.`
+                    `guard: refusing verification: active guard-failure receipt exists for lane ${lane.laneName} (${existingReceipt.reason} at ${existingReceipt.headSha.slice(0, 9)} during '${existingReceipt.command} ${existingReceipt.args.join(' ')}'). A timeout, RSS kill, or memory-monitor failure is a stop. Commit a relevant change or run 'pnpm guard --recover' before re-verifying.`
                 );
             }
         }
@@ -1460,9 +1469,16 @@ export async function main(
 
         if (lane !== undefined) {
             if (result.code === 0 && result.reason === undefined) {
-                const cleared = clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
-                if (cleared) {
-                    log(`guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; receipt cleared`);
+                const matchesExisting =
+                    existingReceipt !== undefined &&
+                    existingReceipt.command === input.command &&
+                    existingReceipt.args.length === input.args.length &&
+                    existingReceipt.args.every((arg, index) => arg === input.args[index]);
+                if (matchesExisting) {
+                    const cleared = clearGuardFailureReceipt(lane.primaryRoot, lane.laneName);
+                    if (cleared) {
+                        log(`guard: failure resolved by committed change ${lane.headSha.slice(0, 9)}; receipt cleared`);
+                    }
                 }
             } else if (isGuardFailureReason(result.reason)) {
                 writeGuardFailureReceipt(lane.primaryRoot, {

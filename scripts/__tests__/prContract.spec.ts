@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,9 +11,11 @@ import {
     assertLaneSlug,
     assertPullRequestBody,
     canonicalIssueReferenceFromBody,
+    canonicalPath,
     composeDeliveryReceipt,
     composePublishBody,
     composeReviewCommentBody,
+    containsPath,
     fail,
     issueRelationshipFromBody,
     laneBranchName,
@@ -20,6 +26,7 @@ import {
     guardFailureReceiptPath,
     isGuardFailureReason,
     parseGuardFailureReceipt,
+    readGuardFailureReceipt,
     type GuardFailureReceipt,
     type ReviewCommentContent,
 } from '../prContract.ts';
@@ -805,5 +812,88 @@ describe('guard failure receipt contract', () => {
         expect(() => parseGuardFailureReceipt(JSON.stringify({ ...validReceipt, durationMs: NaN }))).toThrow(
             /durationMs must be a non-negative number/
         );
+    });
+
+    it('returns undefined when receipt file does not exist', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-prcontract-test-'));
+        try {
+            expect(readGuardFailureReceipt(primaryRoot, 'non-existent-lane')).toBeUndefined();
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('throws when receipt file exists but contains invalid JSON or schema violation', () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-prcontract-test-'));
+        const dir = join(primaryRoot, GUARD_FAILURES_DIR);
+        mkdirSync(dir, { recursive: true });
+        try {
+            // Invalid JSON
+            writeFileSync(join(dir, 'invalid-json.json'), 'not valid json', 'utf8');
+            expect(() => readGuardFailureReceipt(primaryRoot, 'invalid-json')).toThrow(/not valid JSON/);
+
+            // Schema violation: invalid reason
+            writeFileSync(
+                join(dir, 'schema-violation.json'),
+                JSON.stringify({ ...validReceipt, reason: 'invalid_reason' }),
+                'utf8'
+            );
+            expect(() => readGuardFailureReceipt(primaryRoot, 'schema-violation')).toThrow(/reason is invalid/);
+
+            // Valid receipt parses correctly
+            writeFileSync(join(dir, 'valid.json'), JSON.stringify(validReceipt), 'utf8');
+            expect(readGuardFailureReceipt(primaryRoot, 'valid')).toEqual(validReceipt);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('canonicalPath and containsPath', () => {
+    describe('containsPath', () => {
+        it('identifies exact match as contained', () => {
+            expect(containsPath('/repo/sub', '/repo/sub')).toBe(true);
+        });
+
+        it('identifies parent-child containment', () => {
+            expect(containsPath('/repo', '/repo/sub')).toBe(true);
+            expect(containsPath('/repo', '/repo/sub/deep/nested')).toBe(true);
+        });
+
+        it('rejects sibling and cousin paths', () => {
+            expect(containsPath('/repo/sub1', '/repo/sub2')).toBe(false);
+            expect(containsPath('/repo/sub', '/repo/sub-other')).toBe(false);
+            expect(containsPath('/repo/sub', '/other/repo/sub')).toBe(false);
+            expect(containsPath('/repo/sub/deep', '/repo/sub')).toBe(false);
+        });
+    });
+
+    describe('canonicalPath', () => {
+        it('resolves path through resolveExisting resolver', () => {
+            const resolved = canonicalPath('/some/path', (p) => `${p}/canonical`);
+            expect(resolved).toBe(resolve('/some/path/canonical'));
+        });
+
+        it('falls back to resolved absolute path when resolveExisting throws', () => {
+            const resolved = canonicalPath('relative/path', () => {
+                throw new Error('ENOENT');
+            });
+            expect(resolved).toBe(resolve('relative/path'));
+        });
+
+        it('resolves real symlinks on filesystem', () => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-canonical-test-'));
+            try {
+                const targetDir = join(root, 'target');
+                const linkDir = join(root, 'link');
+                mkdirSync(targetDir);
+                symlinkSync(targetDir, linkDir);
+
+                const canonical = canonicalPath(linkDir, realpathSync);
+                expect(canonical).toBe(realpathSync(targetDir));
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
     });
 });

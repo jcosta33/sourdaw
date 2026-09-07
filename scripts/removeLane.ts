@@ -68,6 +68,7 @@ export type LaneRemovalPort = {
     lock: (path: string, reason?: string) => void;
     unlock: (path: string) => void;
     remove: (path: string) => void;
+    clearGuardFailure: (laneName: string) => void;
 };
 
 export type ShellRunner = {
@@ -437,11 +438,7 @@ function validateOwnership(
     };
 }
 
-export function removeLane(
-    target: string,
-    port: LaneRemovalPort,
-    resolvePrimary: () => string = resolvePrimaryRoot
-): void {
+export function removeLane(target: string, port: LaneRemovalPort): void {
     port.fetch();
     const repository = port.repository();
     const lane = identifyLane(target, port);
@@ -460,7 +457,7 @@ export function removeLane(
         port.unlock(target);
         releaseOnFailure = false;
         port.remove(target);
-        clearGuardFailureReceipt(resolvePrimary(), laneName);
+        port.clearGuardFailure(laneName);
     } finally {
         if (releaseOnFailure) {
             port.unlock(target);
@@ -607,12 +604,7 @@ function refuseReceiptConflict(laneName: string, head: string, port: LaneStrandP
  * abandonment is auditable and the branch tip stays recoverable from the recorded head after the
  * force-delete.
  */
-export function strandLane(
-    target: string,
-    reason: string,
-    port: LaneStrandPort,
-    resolvePrimary: () => string = resolvePrimaryRoot
-): void {
+export function strandLane(target: string, reason: string, port: LaneStrandPort): void {
     port.fetch();
     const lane = identifyStrandLane(target, port);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
@@ -647,7 +639,7 @@ export function strandLane(
         if (final.branch !== null) {
             port.deleteBranch(final.branch);
         }
-        clearGuardFailureReceipt(resolvePrimary(), laneName);
+        port.clearGuardFailure(laneName);
         port.log(`stranded ${laneName}; receipt in ${STRAND_RECEIPTS_DIR}/${laneName}.json`);
     } finally {
         if (releaseOnFailure) {
@@ -691,6 +683,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
         return cachedRepository;
     };
+    const primaryRoot = resolvePrimaryRoot();
     return {
         fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
         repository,
@@ -863,15 +856,16 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         unlock: (path) => shell.run('git', ['worktree', 'unlock', path]),
         remove: (path) => shell.run('git', ['worktree', 'remove', path]),
         readReceipt: (laneName) => {
-            const path = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR, `${laneName}.json`);
+            const path = join(primaryRoot, STRAND_RECEIPTS_DIR, `${laneName}.json`);
             return existsSync(path) ? readFileSync(path, 'utf8') : undefined;
         },
         writeReceipt: (laneName, body) => {
-            const directory = join(resolvePrimaryRoot(), STRAND_RECEIPTS_DIR);
+            const directory = join(primaryRoot, STRAND_RECEIPTS_DIR);
             mkdirSync(directory, { recursive: true });
             writeFileSync(join(directory, `${laneName}.json`), body);
         },
         deleteBranch: (branch) => shell.run('git', ['branch', '-D', branch]),
+        clearGuardFailure: (laneName) => clearGuardFailureReceipt(primaryRoot, laneName),
         log: (message) => {
             console.log(message);
         },

@@ -702,12 +702,16 @@ export function guardFailureReceiptPath(primaryRoot: string, laneName: string): 
 
 export function readGuardFailureReceipt(primaryRoot: string, laneName: string): GuardFailureReceipt | undefined {
     const receiptPath = guardFailureReceiptPath(primaryRoot, laneName);
+    let content: string;
     try {
-        const content = readFileSync(receiptPath, 'utf8');
-        return parseGuardFailureReceipt(content);
-    } catch {
-        return undefined;
+        content = readFileSync(receiptPath, 'utf8');
+    } catch (error: unknown) {
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
     }
+    return parseGuardFailureReceipt(content, receiptPath);
 }
 
 export function canonicalPath(path: string, resolveExisting: (path: string) => string): string {

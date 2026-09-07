@@ -36,7 +36,7 @@ import {
     type ShellRunner,
     type Worktree,
 } from '../removeLane';
-import { writeGuardFailureReceipt } from '../resourceGuard.ts';
+import { clearGuardFailureReceipt, writeGuardFailureReceipt } from '../resourceGuard.ts';
 
 const root = '/repo';
 const target = '/repo/.agents/worktrees/feature';
@@ -137,6 +137,10 @@ function fakePort(input: FakeInput = {}) {
             locked = false;
         },
         remove: (path) => calls.push(`remove:${path}`),
+        clearGuardFailure: (laneName) => {
+            calls.push(`clearGuardFailure:${laneName}`);
+            clearGuardFailureReceipt(input.root ?? root, laneName);
+        },
     };
     return { port, calls };
 }
@@ -487,7 +491,13 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${target}`,
+            `unlock:${target}`,
+            `remove:${target}`,
+            'clearGuardFailure:feature',
+        ]);
     });
 
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
@@ -856,7 +866,14 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `unlock:${target}`, `lock:${target}`, `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `unlock:${target}`,
+            `lock:${target}`,
+            `unlock:${target}`,
+            `remove:${target}`,
+            'clearGuardFailure:feature',
+        ]);
     });
 
     it('removes an author-locked lane without dropping the lock on failure', () => {
@@ -878,7 +895,7 @@ describe('lane removal', () => {
 
         removeLane(target, port);
 
-        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`]);
+        expect(calls).toEqual(['fetch', `unlock:${target}`, `remove:${target}`, 'clearGuardFailure:feature']);
     });
 
     it.each([
@@ -899,7 +916,13 @@ describe('lane removal', () => {
 
         removeLane(lanePath, port);
 
-        expect(calls).toEqual(['fetch', `lock:${lanePath}`, `unlock:${lanePath}`, `remove:${lanePath}`]);
+        expect(calls).toEqual([
+            'fetch',
+            `lock:${lanePath}`,
+            `unlock:${lanePath}`,
+            `remove:${lanePath}`,
+            `clearGuardFailure:${laneName}`,
+        ]);
     });
 
     it('removes a real detached review worktree with matching merged PR', () => {
@@ -947,6 +970,7 @@ describe('lane removal', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
             };
 
             removeLane(resolvedLane, port);
@@ -1005,6 +1029,7 @@ describe('lane stranding', () => {
             `unlock:${target}`,
             `remove:${target}`,
             'branch:-D:feat/work',
+            'clearGuardFailure:feature',
             'log:stranded feature; receipt in .agents/lane-strands/feature.json',
         ]);
         const receipt = JSON.parse(receipts[0]?.body ?? '{}') as {
@@ -1211,6 +1236,7 @@ describe('lane stranding', () => {
                 deleteBranch: (branch) => {
                     git(['branch', '-D', branch]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
                 log: () => undefined,
             };
 
@@ -1493,6 +1519,7 @@ describe('lane-removal shell boundary', () => {
                 remove: (path) => {
                     git(['worktree', 'remove', path]);
                 },
+                clearGuardFailure: (laneName) => clearGuardFailureReceipt(repository, laneName),
             };
 
             writeFileSync(join(lane, '.env'), 'SECRET=keep\n');
@@ -1509,7 +1536,7 @@ describe('lane-removal shell boundary', () => {
             removeLane(resolvedLane, port);
             expect(existsSync(lane)).toBe(false);
         } finally {
-            rmSync(repository, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
         }
     });
 
@@ -1544,8 +1571,9 @@ describe('lane-removal shell boundary', () => {
             });
 
             try {
-                removeLane(targetPath, port, () => repo);
+                removeLane(targetPath, port);
                 expect(calls).toContain(`remove:${targetPath}`);
+                expect(calls).toContain('clearGuardFailure:feature');
                 expect(existsSync(receiptFile)).toBe(false);
             } finally {
                 rmSync(repo, { recursive: true, force: true });
@@ -1582,8 +1610,9 @@ describe('lane-removal shell boundary', () => {
             });
 
             try {
-                strandLane(targetPath, 'abandoned due to architectural pivot', strand.port, () => repo);
+                strandLane(targetPath, 'abandoned due to architectural pivot', strand.port);
                 expect(strand.calls).toContain(`remove:${targetPath}`);
+                expect(strand.calls).toContain('clearGuardFailure:feature');
                 expect(existsSync(receiptFile)).toBe(false);
             } finally {
                 rmSync(repo, { recursive: true, force: true });
