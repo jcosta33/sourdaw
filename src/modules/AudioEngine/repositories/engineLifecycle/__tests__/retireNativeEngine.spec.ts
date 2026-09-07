@@ -21,13 +21,22 @@ describe('retireNativeEngine', () => {
      * are hand-maintained, so a rename on either one has to fail here.
      */
     it.each(['retired', 'no-engine', 'rendering'])('reads the %s outcome', async (outcome) => {
-        vi.mocked(desktopInvoke).mockResolvedValue({ outcome });
+        vi.mocked(desktopInvoke).mockResolvedValue({ outcome, retiredInstanceIds: [] });
 
-        await expect(retireNativeEngine()).resolves.toBe(outcome);
+        await expect(retireNativeEngine()).resolves.toEqual({ outcome, retiredInstanceIds: [] });
+    });
+
+    it('parses the retired instance ids through', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ outcome: 'retired', retiredInstanceIds: ['a', 'b'] });
+
+        await expect(retireNativeEngine()).resolves.toEqual({
+            outcome: 'retired',
+            retiredInstanceIds: ['a', 'b'],
+        });
     });
 
     it('invokes the command with no arguments', async () => {
-        vi.mocked(desktopInvoke).mockResolvedValue({ outcome: 'retired' });
+        vi.mocked(desktopInvoke).mockResolvedValue({ outcome: 'retired', retiredInstanceIds: [] });
 
         await retireNativeEngine();
 
@@ -35,7 +44,7 @@ describe('retireNativeEngine', () => {
     });
 
     it('rejects an outcome this build does not know', async () => {
-        vi.mocked(desktopInvoke).mockResolvedValue({ outcome: 'restarted' });
+        vi.mocked(desktopInvoke).mockResolvedValue({ outcome: 'restarted', retiredInstanceIds: [] });
 
         await expect(retireNativeEngine()).rejects.toThrow('restarted');
     });
@@ -46,10 +55,16 @@ describe('retireNativeEngine', () => {
         await expect(retireNativeEngine()).rejects.toThrow('unrecognized retire_native_engine outcome');
     });
 
+    it('rejects a retiredInstanceIds list holding a non-string', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ outcome: 'retired', retiredInstanceIds: ['a', 1] });
+
+        await expect(retireNativeEngine()).rejects.toThrow('unrecognized retire_native_engine retiredInstanceIds');
+    });
+
     it('reports no engine off the desktop without reaching the bridge', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
 
-        await expect(retireNativeEngine()).resolves.toBe('no-engine');
+        await expect(retireNativeEngine()).resolves.toEqual({ outcome: 'no-engine', retiredInstanceIds: [] });
         expect(desktopInvoke).not.toHaveBeenCalled();
     });
 });

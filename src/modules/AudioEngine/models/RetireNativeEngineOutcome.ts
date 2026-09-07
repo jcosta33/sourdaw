@@ -18,3 +18,17 @@ const outcomes: readonly RetireNativeEngineOutcome[] = ['retired', 'no-engine', 
 export function isRetireNativeEngineOutcome(value: unknown): value is RetireNativeEngineOutcome {
     return typeof value === 'string' && outcomes.includes(value as RetireNativeEngineOutcome);
 }
+
+/**
+ * What `retireNativeEngine` resolves with: the outcome, and the UI instance
+ * ids of every engine-owned plugin record the retire drained.
+ *
+ * A drained record has no dormant counterpart to re-attach from (see
+ * `crates/sourdaw-native/src/commands/engine_lifecycle.rs`), so
+ * `retiredInstanceIds` is how the caller learns which plugins it must reload
+ * itself. Always empty unless `outcome` is `'retired'`.
+ */
+export type RetireNativeEngineResult = {
+    readonly outcome: RetireNativeEngineOutcome;
+    readonly retiredInstanceIds: readonly string[];
+};

@@ -32,6 +32,9 @@
 //! them, and re-instantiating an instance is the load path's business, not
 //! this command's. Crumbs instances do survive, because their engine side is
 //! rebuilt from command-side state (`crumbs::detach_from_retired_engine`).
+//! What the reply carries instead is which engine-owned records were
+//! drained — `retiredInstanceIds`, the UI instance ids, ascending — so the
+//! renderer knows exactly which plugins it must reload itself.
 
 use serde::{Deserialize, Serialize};
 
@@ -62,15 +65,24 @@ pub enum RetireOutcome {
 /// The reply `retire_native_engine` answers with. Never an error: every state
 /// the slot can be in has an outcome, and a caller deciding whether to re-arm
 /// must not have to tell a refusal apart from a transport failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RetireNativeEngineResult {
     pub outcome: RetireOutcome,
+    /// UI instance ids of every engine-owned plugin record the retire
+    /// drained, ascending for determinism. There is no dormant record left
+    /// behind for these (see the module doc), so this is how the renderer
+    /// knows which plugins it must reload itself. Empty for `no-engine` and
+    /// `rendering`, since neither one drains anything.
+    pub retired_instance_ids: Vec<String>,
 }
 
 impl RetireNativeEngineResult {
-    fn of(outcome: RetireOutcome) -> Self {
-        Self { outcome }
+    fn of(outcome: RetireOutcome, retired_instance_ids: Vec<String>) -> Self {
+        Self {
+            outcome,
+            retired_instance_ids,
+        }
     }
 }
 
@@ -104,19 +116,19 @@ pub async fn retire_native_engine(
     let retired_engine = {
         let mut slot = locked_or_poisoned(&state.engine);
         let Some(engine) = slot.as_ref() else {
-            return RetireNativeEngineResult::of(RetireOutcome::NoEngine);
+            return RetireNativeEngineResult::of(RetireOutcome::NoEngine, Vec::new());
         };
         // The watchdog's own verdict, the same one `apply_graph_commands`
         // admits a batch on: a `DeviceChanged` reroute the callback survived
         // leaves this true, and retiring on the *kind* of the last fault
         // would tear down a session that never stopped sounding.
         if engine.is_rendering() {
-            return RetireNativeEngineResult::of(RetireOutcome::Rendering);
+            return RetireNativeEngineResult::of(RetireOutcome::Rendering, Vec::new());
         }
         slot.take()
     };
 
-    retire_engine_owned_plugins(state);
+    let retired_instance_ids = retire_engine_owned_plugins(state);
     crumbs::detach_from_retired_engine(crumbs);
     locked_or_poisoned(&state.graph).reset_for_engine_restart();
 
@@ -128,7 +140,7 @@ pub async fn retire_native_engine(
     // next one, exactly as `sweep_retired_engine_plugins` intends.
     state.sweep_retired_engine_plugins();
 
-    RetireNativeEngineResult::of(RetireOutcome::Retired)
+    RetireNativeEngineResult::of(RetireOutcome::Retired, retired_instance_ids)
 }
 
 /// Empty `engine_plugins` and hand every runtime to the retirement vec.
@@ -147,17 +159,24 @@ pub async fn retire_native_engine(
 /// The plugin calls happen outside the store's critical section, because both
 /// of them reach into third-party code and a store held across one parks
 /// every other plugin command for its duration.
-fn retire_engine_owned_plugins(state: &AppState) {
-    let instances: Vec<EnginePluginInstanceData> = {
+///
+/// Returns the drained records' UI instance ids, sorted ascending: the
+/// renderer has no other way to learn which plugins it must reload.
+fn retire_engine_owned_plugins(state: &AppState) -> Vec<String> {
+    let instances: Vec<(String, EnginePluginInstanceData)> = {
         let mut engine_plugins = locked_or_poisoned(&state.engine_plugins);
-        std::mem::take(&mut *engine_plugins).into_values().collect()
+        std::mem::take(&mut *engine_plugins).into_iter().collect()
     };
 
-    for instance in instances {
+    let mut retired_instance_ids = Vec::with_capacity(instances.len());
+    for (instance_id, instance) in instances {
         instance.runtime.begin_unload();
         instance.runtime.retire();
         state.retain_retired_engine_plugin(instance.runtime);
+        retired_instance_ids.push(instance_id);
     }
+    retired_instance_ids.sort();
+    retired_instance_ids
 }
 
 #[cfg(test)]
@@ -284,7 +303,7 @@ mod tests {
 
         assert_eq!(
             serde_json::to_value(result).expect("the reply serializes"),
-            json!({ "outcome": "no-engine" }),
+            json!({ "outcome": "no-engine", "retiredInstanceIds": [] }),
             "an empty slot is an outcome, never an error the caller has to read as one"
         );
         assert!(!slot_holds_an_engine(&state));
@@ -306,8 +325,8 @@ mod tests {
 
         assert_eq!(
             serde_json::to_value(result).expect("the reply serializes"),
-            json!({ "outcome": "rendering" }),
-            "an engine whose callback still runs is not a lost one"
+            json!({ "outcome": "rendering", "retiredInstanceIds": [] }),
+            "an engine whose callback still runs is not a lost one, and nothing was drained to report"
         );
         assert!(
             slot_holds_an_engine(&state),
@@ -335,7 +354,7 @@ mod tests {
 
         assert_eq!(
             serde_json::to_value(result).expect("the reply serializes"),
-            json!({ "outcome": "retired" })
+            json!({ "outcome": "retired", "retiredInstanceIds": [] })
         );
         assert!(
             !slot_holds_an_engine(&state),
@@ -407,6 +426,23 @@ mod tests {
             retired_runtime_count(&state),
             0,
             "the release is the acknowledgment the reclamation waits for"
+        );
+    }
+
+    #[test]
+    fn a_retire_reports_the_engine_owned_instances_it_drained_in_ascending_order() {
+        let state = AppState::default();
+        let _commands = fill_slot_with_capture_engine(&state);
+        insert_engine_owned_plugin(&state, "b", engine_owned_runtime("Retire Fixture"));
+        insert_engine_owned_plugin(&state, "a", engine_owned_runtime("Retire Fixture"));
+        stall_the_engine_in_the_slot(&state);
+
+        let result = retire(&state, &CrumbsState::default());
+
+        assert_eq!(
+            result.retired_instance_ids,
+            vec!["a".to_string(), "b".to_string()],
+            "the renderer reloads exactly the engine-owned records the retire drained, sorted for determinism regardless of insertion order"
         );
     }
 
