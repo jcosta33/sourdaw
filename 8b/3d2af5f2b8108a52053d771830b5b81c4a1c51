@@ -1,0 +1,43 @@
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.storage.integration.spec.ts
+  s_87ab0a2f60ccf8::t_dd8042ff5e0979 19,38-56,66,80-97,187-197
+  s_87ab0a2f60ccf8::t_ff6022ca7370c5 1-18,20-37,57-65,67-79,98-149,151-155,157-172,174-186,198-199
+  s_87ab0a2f60ccf8::t_7450ec644f8ee5 150,156,173
+src/modules/Project/useCases/projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds.ts
+  s_87ab0a2f60ccf8::t_887f59303f4137 1-7,9-10,15,17-19,21-23,28,34-39,41-42,44-50,55-57,61-63
+src/modules/Project/repositories/project/storageSupport.ts
+  s_87ab0a2f60ccf8::t_a7048a43ee1bef 22-26,145-160,189
+src/modules/Project/repositories/project/listNamedProjectJsonRecords.ts
+  s_87ab0a2f60ccf8::t_767bee60bfb582 5
+  s_87ab0a2f60ccf8::t_f6305a8399f988 19
+  s_87ab0a2f60ccf8::t_a7048a43ee1bef 1-4,6-18,20-25
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.spec.ts
+  s_87ab0a2f60ccf8::t_79a663186ca0b5 18,25,29,38,272-273,281-299,321,338-340
+  s_87ab0a2f60ccf8::t_cc7a47b65c3925 220-231,235,274-280
+  s_87ab0a2f60ccf8::t_978547b0bdbd10 258-263,395-400
+  s_87ab0a2f60ccf8::t_76461644cd3cc7 3-7,13,47-48,53,67,218,244,248-251,300,305,362,389-391,407,413
+  s_9b530f08172a54::t_32133a93191dd5 219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "8b3d2af5f2b8108a52053d771830b5b81c4a1c51",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
