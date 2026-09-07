@@ -2717,8 +2717,12 @@ impl TimelineGraph {
         );
     }
 
-    /// Hold and publish every track's own strip peak, in mix order, and hand
-    /// back how many `out` now holds.
+    /// Hold and publish every track's own strip peak, in the tracks'
+    /// registration order, and hand back how many `out` now holds.
+    ///
+    /// That order carries no meaning of its own: it walks `self.tracks`
+    /// rather than `mix_order`, so a caller looks a strip up by its
+    /// `track_id` rather than by position.
     ///
     /// Each track accumulated its own callback peak across every chunk
     /// [`Self::render`] rendered this callback (see [`TimelineTrack`]'s

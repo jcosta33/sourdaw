@@ -36,3 +36,32 @@ impl PeakHold {
         self.held_peak
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_repeated_equal_peak_restarts_the_window_so_steady_material_never_decays_under_itself() {
+        let mut hold = PeakHold::default();
+        let hold_frames = 1000;
+        let frames = 400;
+
+        // Steady material at the same peak, spanning more than one window
+        // (4 * 400 = 1600 > 1000 frames): every repeated call must restart
+        // the window, so the level never decays while the signal itself
+        // never drops.
+        for _ in 0..4 {
+            assert_eq!(hold.hold(0.5, frames, hold_frames), 0.5);
+        }
+
+        // The window was restarted on the last of those calls, so silence
+        // now accumulates from zero: the hold survives while less than
+        // `hold_frames` of it has built up...
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.5);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.5);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.5);
+        // ...and releases once the accumulated silence reaches the window.
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.0);
+    }
+}

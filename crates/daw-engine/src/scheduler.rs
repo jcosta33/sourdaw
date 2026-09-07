@@ -186,8 +186,9 @@ pub struct StripPeak {
 }
 
 impl MeterSnapshot {
-    /// The strips this snapshot carries, in the order the timeline mixed
-    /// them.
+    /// The strips this snapshot carries, in the tracks' registration order.
+    /// That order carries no meaning of its own — look up a strip by its
+    /// `track_id`.
     pub fn strips(&self) -> &[StripPeak] {
         &self.strips[..self.strip_count]
     }
