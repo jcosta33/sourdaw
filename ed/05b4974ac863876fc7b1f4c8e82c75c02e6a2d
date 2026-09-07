@@ -1,0 +1,87 @@
+public/wasm/manifest.json
+  s_9b530f08172a54::t_874511b764388b 40,43-46,48-49
+public/wasm/scoring/scoring.d.ts
+  s_9b530f08172a54::t_77aa3022e4d0a5 1,51,86
+public/wasm/scoring/scoring.js
+  s_9b530f08172a54::t_bd2dfaf54d2886 171-185
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_9b530f08172a54::t_e89db2ca939478 1,24
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_9b530f08172a54::t_355e55852c3d0c 62-63,71-135,180,195-196,225
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  s_9b530f08172a54::t_8c55a2ad467990 298-346
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_9b530f08172a54::t_9364d76c4a62a3 1462-1463,1480-1488
+src/modules/AudioEngine/useCases/deviceControls/importScoringTuning.ts
+  s_9b530f08172a54::t_1ed242ca17f618 1-15
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_9b530f08172a54::t_2d2bdee8528e1d 1,51,86
+src/modules/AudioEngine/wasm/scoring.js
+  s_9b530f08172a54::t_11efe3f0c2e6be 348-362
+src/modules/Tuner/models/TunerState.ts
+  s_9b530f08172a54::t_835f61bcaeef71 25
+src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx
+  s_9b530f08172a54::t_a95cb9d37dbf71 8,25,96-99,190-193,211,501-551
+src/modules/Tuner/useCases/importTuningScale.ts
+  s_87ab0a2f60ccf8::t_2d03375910803c 1-28
+crates/scoring/src/lib.rs
+  s_9b530f08172a54::t_e21abd591ac033 454,466,561-566,604,607-611,1218-1266
+crates/scoring/src/preprocess.rs
+  s_9b530f08172a54::t_9307ebc083f557 2
+crates/scoring/src/scala.rs
+  s_9b530f08172a54::t_bf273b81ee7589 30-40
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_508b26cbd94d3d::t_dd55d3520ec31c 1555-1558,1584
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_508b26cbd94d3d::t_fb4ea91a97a0cf 384-388
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_508b26cbd94d3d::t_fb1d07b0d60bd0 26-28,78-88
+src/modules/AudioEngine/useCases/deviceControls/__tests__/importScoringTuning.spec.ts
+  s_508b26cbd94d3d::t_c5cdfb0773982b 1-73
+src/modules/AudioEngine/useCases/index.ts
+  s_c4e1152a103c21::t_7191c6e58697c7 74
+src/modules/Tuner/presentations/views/TunerPanel.tsx
+  s_87ab0a2f60ccf8::t_b100942aba2087 3,22,113-114,233-287,384-392
+src/modules/Tuner/useCases/__tests__/importTuningScale.spec.ts
+  s_87ab0a2f60ccf8::t_178a0e2770e5a8 1-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "ed05b4974ac863876fc7b1f4c8e82c75c02e6a2d",
+  "prompts": {},
+  "sessions": {
+    "s_508b26cbd94d3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7da11c439a5420d4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c4e1152a103c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a47e6f63dab01d3da",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
