@@ -208,7 +208,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         // end frame, which `advance_playhead`'s `next >= end` bounds it below
         // by. `null` when nothing wraps, which silences the seam half.
         wrapFloorFrame: spans.loop ? secondsToFrames(spans.loop.endSeconds, input.sampleRate) : null,
-        queueFullReported: false,
+        standingRefusalReported: false,
         saturatedGroups: new Set(),
     };
 

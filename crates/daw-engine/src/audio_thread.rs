@@ -114,15 +114,15 @@ pub(crate) struct RenderLivenessPolicy {
 /// negotiation hold that assumption. A negotiated `Fixed` period
 /// ([`negotiated_buffer_size`]) is clamped to at most `MAX_CALLBACK_FRAMES` —
 /// 4096 frames, about 93 ms at 44.1 kHz — an order of magnitude short of the
-/// window. A `Default` period, on a device whose range negotiation cannot
-/// help (its minimum already exceeds the limit), is still short of it: cpal
-/// itself ceilings a device's advertised buffer at 8192 frames, which even at
-/// the lowest rate this engine opens — 16 kHz — is about 512 ms, hundreds of
-/// milliseconds under the window. WASAPI's own reopen campaign for a
-/// device-invalidation recovery (`device::wasapi::backend`) budgets 5 s, so a
-/// recovered invalidation reads as a stall that clears itself once callbacks
-/// resume — which is the truth: the stream really did stop rendering for
-/// that long.
+/// window. A `Default` period is chosen by the device, and this engine does
+/// not bound it — cpal itself imposes no ceiling on an advertised buffer
+/// range — so the window is a judgement about the periods real devices run
+/// rather than a limit derived from the code: the longest in common use are
+/// tens of milliseconds, still well short of a second. WASAPI's own reopen
+/// campaign for a device-invalidation recovery (`device::wasapi::backend`)
+/// budgets 20 attempts at 250 ms apart — 5 s total — so a recovered
+/// invalidation reads as a stall that clears itself once callbacks resume —
+/// which is the truth: the stream really did stop rendering for that long.
 pub(crate) const RENDER_LIVENESS_POLICY: RenderLivenessPolicy = RenderLivenessPolicy {
     poll: Duration::from_millis(250),
     stall_after_polls: 4,

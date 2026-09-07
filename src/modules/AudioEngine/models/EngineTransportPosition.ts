@@ -11,9 +11,14 @@
 /** Where the native engine's transport stands, as of its last rendered block. */
 export type EngineTransportPosition = {
     /**
-     * False when no native engine has been started. Every number reads zero in
-     * that case too, so this flag is the only thing distinguishing a stopped
-     * engine from one parked at the song start.
+     * False when no native engine has been started, and also false for an
+     * engine that exists but whose output stream has produced no render
+     * callback within the engine's stall window — a handle existing is not
+     * the same as the device rendering it. In the first case every number
+     * reads zero, so this flag is the only thing distinguishing a stopped
+     * engine from one parked at the song start. In the second, the other
+     * fields are the last values the callback published before it stalled,
+     * not what anyone is currently hearing.
      */
     running: boolean;
     playing: boolean;
