@@ -1,0 +1,41 @@
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  s_9b530f08172a54::t_d2814c04736ca0 205-236
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_3afaa199e28a51::t_4367c86e250cca 459-460
+src/modules/Fermenter/presentations/views/__tests__/fermenterProjectHydration.spec.tsx
+  s_e038c869fb9ad2::t_3ccf2e54d42469 76-82,84
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  s_e038c869fb9ad2::t_87f0d7767a9ada 24-28,35,71,73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "dff40f9855de29f5e7897ae5296d3030517d613d",
+  "prompts": {},
+  "sessions": {
+    "s_3afaa199e28a51": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a46d9243b11af8d29",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e038c869fb9ad2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6388754514269ab6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
