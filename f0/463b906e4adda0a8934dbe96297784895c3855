@@ -1,0 +1,28 @@
+crates/daw-engine/src/audio_thread.rs
+  h_1228e573df1f42 55-57,64-65,105,131-141,143-148,152-170,178-179,182-183,188-207,219,235,237,243,247,254-258,260,268,271-272,277-286,289-294,307-308,321-391,563-570,819-822,890-891,1119-1135,1140-1143,1146-1166,1168-1201,1203-1214,1259-1260,1267-1275,1324,1334-1339,1341-1354,1360-1362,1371-1373,1398-1401,1404-1421,1455-1475,1627-1637,1640-1721,1725-1726,1730-1735,1738-1739,1741-1744,1746-1830,1834-1836,1839,1841-1844,1846,2084-2088,2301,2344,2361,2363,2402,2448,2511-2512,2517,2525-2526,2536,2562-2671,2673-2674
+crates/daw-engine/src/lib.rs
+  h_1228e573df1f42 92,159,236-243,246-251,254-274,282,619,1240-1249,1371,1441,1744-1831,2774
+release/open-source-inventory.json
+  h_1228e573df1f42 1197
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_1228e573df1f42 147,624-631,790,795-798,952,955-957,963-968
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  h_1228e573df1f42 1245,1262-1263,1269,1282-1375,1379-1380,1384
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngineBranches.spec.ts
+  h_1228e573df1f42 636,641-643,649,653-654
+src/modules/AudioEngine/repositories/__tests__/deviceContentReadinessTimeout.integration.spec.ts
+  h_1228e573df1f42 1-306
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  h_1228e573df1f42 2227-2248,2251-2253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f0463b906e4adda0a8934dbe96297784895c3855",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
