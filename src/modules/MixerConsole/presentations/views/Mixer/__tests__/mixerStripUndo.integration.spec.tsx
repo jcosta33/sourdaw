@@ -205,7 +205,8 @@ vi.mock('#/modules/Project/useCases', async () => {
         newProject: actual.newProject,
         pickFiles: actual.pickFiles,
         saveProject: actual.saveProject,
-    };
+        saveProjectBeforeReplacement: actual.saveProjectBeforeReplacement,
+};
 });
 // Non-spread listing of the Yeast name projectSlotProjections imports —
 // MixerConsole never imports Yeast/useCases.
