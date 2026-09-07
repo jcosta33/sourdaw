@@ -1,0 +1,14 @@
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  h_1228e573df1f42 6,220-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "31b141bcd453960db0af23aa011b9f819957f26f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
