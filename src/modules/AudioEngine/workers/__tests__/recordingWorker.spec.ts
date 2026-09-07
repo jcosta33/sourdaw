@@ -74,10 +74,12 @@ class FakeFileHandle {
 
 class FakeDirectory {
     handle = new FakeFileHandle();
+    removedEntries: string[] = [];
     getFileHandle(): Promise<FakeFileHandle> {
         return Promise.resolve(this.handle);
     }
-    removeEntry(): Promise<void> {
+    removeEntry(name: string): Promise<void> {
+        this.removedEntries.push(name);
         return Promise.resolve();
     }
 }
@@ -300,10 +302,13 @@ describe('recordingWorker ring overrun drop policy', () => {
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/overrun/i);
 
-        sendToWorker({ type: 'stop' });
-        await new Promise((resolve) => setTimeout(resolve, 80));
-        // The defined drop policy: the corrupted interval is never written to
-        // the OPFS history and no 'wav' is ever produced for the take.
+        // The main thread terminates the worker on 'error' — no graceful stop
+        // runs — so the abandon path itself must have discarded the temp file.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
+
+        // The corrupted interval is never written to the OPFS history and no
+        // 'wav' is ever produced for the take.
         expect(messages.some((m) => m.type === 'wav')).toBe(false);
         expect(fakeDir.handle.store.bytes.length).toBeLessThanOrEqual(mod.WAV_HEADER_BYTES);
     });
@@ -314,6 +319,12 @@ describe('recordingWorker ring overrun drop policy', () => {
 
         sendToWorker({ type: 'stop' });
         await waitFor('error');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        // Even though stopWorker runs here, the discard belongs to the abandon
+        // path: stop's terminate can land between the error post and any
+        // discard stopWorker would do itself.
+        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
         expect(messages.some((m) => m.type === 'wav')).toBe(false);
     });
 });

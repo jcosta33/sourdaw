@@ -177,10 +177,10 @@ async function drain(): Promise<void> {
 
 /**
  * Defined drop policy for a lapped reader: the overwritten interval can never
- * be recovered, so the take is abandoned. Stop draining and notify the main
- * thread on the established error channel — it tears the session down on
- * 'error'. No 'wav' is ever produced, so overwritten history is never
- * presented as a recording.
+ * be recovered, so the take is abandoned. Stop draining, discard this
+ * session's OPFS temp file, and notify the main thread on the established
+ * error channel — it tears the session down on 'error'. No 'wav' is ever
+ * produced, so overwritten history is never presented as a recording.
  */
 function abandonTake(currentWrite: number): void {
     takeAbandoned = true;
@@ -189,6 +189,12 @@ function abandonTake(currentWrite: number): void {
         clearTimeout(pollTimer);
         pollTimer = null;
     }
+    // Discard before posting the error: the main thread terminates this worker
+    // on 'error', so `stopWorker`'s own discard may never run. The abandon
+    // path owns the discard exactly once (the handle claim in
+    // `discardTempFile` keeps a racing stop from removing the entry twice).
+    // Best-effort, like every removeEntry here.
+    void discardTempFile();
     self.postMessage({
         type: 'error',
         message: `Recording ring overrun: ${currentWrite - localReadHead} samples from ${localReadHead} were overwritten before they could be drained; take abandoned`,
@@ -228,9 +234,8 @@ async function stopWorker(): Promise<void> {
     opfsWritable = null;
 
     if (takeAbandoned) {
-        // The overrun error was posted when the take was abandoned; never send
-        // a 'wav' for it.
-        await discardTempFile();
+        // The error was posted and the temp file discarded when the take was
+        // abandoned; never send a 'wav' for it.
         return;
     }
 
@@ -259,9 +264,16 @@ async function stopWorker(): Promise<void> {
     await discardTempFile();
 }
 
-/** Best-effort removal of this session's OPFS temp file. Non-fatal on failure. */
+/**
+ * Best-effort removal of this session's OPFS temp file. Claims the handle
+ * synchronously, before its first await, so a second caller racing the removal
+ * (stop arriving while the abandon path discards) can never remove the entry
+ * twice. Non-fatal on failure.
+ */
 async function discardTempFile(): Promise<void> {
-    if (!opfsFileHandle) {
+    const fileHandle = opfsFileHandle;
+    opfsFileHandle = null;
+    if (!fileHandle) {
         return;
     }
     try {
@@ -270,7 +282,6 @@ async function discardTempFile(): Promise<void> {
     } catch {
         // ignore
     }
-    opfsFileHandle = null;
 }
 
 type WorkerMessage =
