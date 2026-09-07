@@ -4634,6 +4634,7 @@ mod tests {
     /// whose sweep can reach it.
     #[test]
     fn the_quit_cascade_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -7474,6 +7475,7 @@ mod tests {
     /// it, each with an intermediate one.
     #[test]
     fn an_unkeyed_unload_reports_each_released_strip_once_with_its_final_chain() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture_with_id(&state, "inst-a", 301);
         insert_engine_owned_fixture_with_id(&state, "inst-b", 302);

@@ -601,11 +601,12 @@ pub fn attach_dormant_crumbs(
 /// slot, but `pending_mirror` is a field of this instance rather than of the
 /// slot, so it does not. Left alone it would carry a selection into the
 /// replacement engine that the panel never asked this attach for, so the
-/// detach below clears it once the drain above has moved every sample it
-/// named into `samples` — which sample is active afterward is the panel's to
-/// rewrite once a retire has happened, not a stale mirror's. `samples` is
-/// what [`replay_parked_writes`] rebuilds the *new* engine's pool from on the
-/// next attach.
+/// detach below clears it once every id the mirror names is already in
+/// `samples`, whether the drain above landed it there or a previous replay read
+/// it from there — which sample is active afterward is the panel's to rewrite
+/// once a retire has happened, not a stale mirror's. `samples` is what
+/// [`replay_parked_writes`] rebuilds the *new* engine's pool from on the next
+/// attach.
 ///
 /// Takes the instances lock beneath the registry guard the retire's drain
 /// holds, which is the registry -> instances order `apply_graph_commands` and

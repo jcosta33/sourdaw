@@ -6606,6 +6606,7 @@ mod tests {
     /// is processing audio when it is not.
     #[test]
     fn a_refused_attach_leaves_the_instance_dormant_and_the_batch_applied() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         fill_hosted_plugin_reserve(&state);
         park_dormant_plugin(&state, "refused-on-first-play");
@@ -6827,6 +6828,7 @@ mod tests {
     /// removal and never reaches this branch at all.
     #[test]
     fn an_instance_refused_after_it_leaves_the_store_is_parked_again() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         park_unactivated_dormant_plugin(&state, "reparked-on-first-play");
 
