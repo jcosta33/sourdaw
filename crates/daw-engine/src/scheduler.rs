@@ -300,6 +300,12 @@ pub enum GraphCommand {
     /// sounds notes ([`BuiltinEffectType::sounds_notes`]). A built-in
     /// instrument is scheduled against like any hosted one, and a store built
     /// anywhere but the control thread would be an allocation on the callback.
+    ///
+    /// A built-in that sounds notes is refused here rather than installed,
+    /// counted on [`crate::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot::unsupported_effect_additions`]:
+    /// the master chain is effects-only, so an instrument body belongs on a
+    /// track chain's generator pass instead. [`GraphCommand::AddDetachedEffect`]
+    /// followed by a track splice is its registration.
     AddEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     /// Register a built-in effect, already built control-side, detached from
     /// every chain.
@@ -945,6 +951,20 @@ impl PluginCore {
         let mut body = GrandBouleBody::new(sample_rate);
         body.load_patch(patch);
         Self::GrandBoule(Box::new(body))
+    }
+
+    /// The instance-side reading of [`BuiltinEffectType::sounds_notes`]: true
+    /// for a built-in body that turns notes into audio.
+    ///
+    /// A native plugin answers `false` here regardless of what it actually
+    /// plays, because its note handling is the plugin's own — `AddPlugin`
+    /// carries the store decision for it, made where the plugin is loaded,
+    /// not by this instance-side match.
+    pub fn sounds_notes(&self) -> bool {
+        match self {
+            Self::Fermenter(_) | Self::GrandBoule(_) => true,
+            Self::Knead(_) | Self::Native(_) => false,
+        }
     }
 }
 
@@ -2999,7 +3019,11 @@ impl AudioScheduler {
         {
             let retired = match cmd {
                 GraphCommand::AddEffect(id, instance, notes) => {
-                    self.add_builtin_effect(id, instance, notes, EffectPlacement::MasterChain)
+                    if instance.sounds_notes() {
+                        Some(self.refuse_master_chain_sink(id, instance, notes))
+                    } else {
+                        self.add_builtin_effect(id, instance, notes, EffectPlacement::MasterChain)
+                    }
                 }
                 GraphCommand::AddDetachedEffect(id, instance, notes) => {
                     self.add_builtin_effect(id, instance, notes, EffectPlacement::Detached)
@@ -3617,6 +3641,31 @@ impl AudioScheduler {
         }
         self.push_effect(effect);
         None
+    }
+
+    /// Refuse an `AddEffect` naming a note-sink built-in: the master insert
+    /// chain runs effects only, because its dry-line pass
+    /// (`feed_dry_delay`/`run_dry_delay`) is the effect contract, and an
+    /// instrument body under it shifts the chain signal by its declared
+    /// latency on every bypass toggle instead of being summed in place. A
+    /// track chain's generator pass is where a body belongs.
+    ///
+    /// Counted rather than silently dropped: nothing may be dropped on the
+    /// callback (ADR 0020), so the whole effect — the carried instance and
+    /// the note store the command shipped — retires over the same channel
+    /// `add_builtin_effect`'s own refusals use.
+    fn refuse_master_chain_sink(
+        &mut self,
+        id: usize,
+        instance: PluginCore,
+        notes: Option<Box<MidiNoteStore>>,
+    ) -> RetiredGraphObjects {
+        self.midi_rt_diagnostics
+            .record_unsupported_effect_addition(1);
+        RetiredGraphObjects::effect(
+            ActiveEffect::with_placement(id, instance, EffectPlacement::MasterChain)
+                .holding_midi_notes(notes),
+        )
     }
 
     /// Record where an effect now runs, after a chain has accepted it — or
@@ -5850,6 +5899,117 @@ mod tests {
             .expect("the refused built-in must hand its carried instance off")
             .effect
             .is_some());
+    }
+
+    /// A built-in that sounds notes is refused onto the master chain: the
+    /// master insert chain runs effects only, and an instrument body under
+    /// its dry-line contract would shift the chain signal by its declared
+    /// latency on every bypass toggle instead of being summed in place. The
+    /// refusal is counted on `unsupported_effect_additions` and retires the
+    /// whole effect exactly as `add_builtin_effect`'s own refusals do (ADR
+    /// 0020). A plain effect like Knead still lands, so the last assertion
+    /// proves the refusal is the note-sink and not `AddEffect` itself.
+    #[test]
+    fn a_note_sink_built_in_is_refused_onto_the_master_chain() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+
+        command_tx
+            .push(GraphCommand::AddEffect(
+                7,
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(
+            !scheduler.effect_id_exists(7),
+            "a note-sink built-in must not land on the master chain"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            1
+        );
+        let retired = retired_rx
+            .pop()
+            .expect("the refused instrument must hand its carried instance off");
+        assert_eq!(
+            retired
+                .effect
+                .as_ref()
+                .expect("the refusal retires an effect")
+                .id,
+            7,
+            "the retired effect must be the one the refused command carried"
+        );
+
+        command_tx
+            .push(GraphCommand::AddEffect(
+                9,
+                PluginCore::builtin(BuiltinEffectType::GrandBoule, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(
+            !scheduler.effect_id_exists(9),
+            "Grand Boule sounds notes too, and is refused the same way"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            2
+        );
+        retired_rx
+            .pop()
+            .expect("Grand Boule's refusal must also hand its carried instance off");
+
+        // A plain effect still lands: the refusal above is the note-sink,
+        // not `AddEffect` refusing every registration.
+        command_tx
+            .push(GraphCommand::AddEffect(8, knead_instance(), None))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(
+            scheduler.effect_id_exists(8),
+            "an effect that does not sound notes must still register"
+        );
+    }
+
+    /// `AddDetachedEffect` is not the master chain, so it still admits a
+    /// note-sink built-in — that is how a track's instrument reaches the
+    /// graph in the first place, spliced onto a track chain's generator pass
+    /// afterwards.
+    #[test]
+    fn a_note_sink_built_in_is_still_admitted_detached() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+
+        command_tx
+            .push(GraphCommand::AddDetachedEffect(
+                7,
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(
+            scheduler.effect_id_exists(7),
+            "a detached registration is not the master chain and must land"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            0
+        );
     }
 
     /// A full effect table refuses `AddHostedPlugin`. Without that guard the
@@ -13742,29 +13902,25 @@ mod timeline_tests {
         );
     }
 
-    /// A master-chain Fermenter renders no further than the pair it was
+    /// A track-chain Fermenter renders no further than the pair it was
     /// handed, whatever frame count the caller asks for.
     ///
     /// `process_block` is public, and its frame count is the caller's ask
     /// while the buffers are the truth — which is why it clamps the two
-    /// together at its head. Every stage the master chain runs indexes the
-    /// pair by the count it is given, so an ask past the buffers slices past
-    /// them and panics on the callback unless that clamped count is what
-    /// reaches all of them. The declared latency below puts the dry line's
-    /// own pass over the pair on that same path, ahead of the body.
+    /// together at its head. Every stage the chain runs indexes the pair by
+    /// the count it is given, so an ask past the buffers slices past them and
+    /// panics on the callback unless that clamped count is what reaches all
+    /// of them. The declared latency below puts the dry line's own pass over
+    /// the pair on that same path, ahead of the body.
     #[test]
-    fn a_master_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
+    fn a_track_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
         /// Shorter than the ask and not a whole number of runs, so the second
         /// run is the one that would reach past the buffer.
         const BUFFER: usize = 192;
         const OVER_ASK: usize = 512;
 
         let mut harness = Harness::new(32);
-        harness.send(GraphCommand::AddEffect(
-            7,
-            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
-            Some(MidiNoteStore::new()),
-        ));
+        track_with_fermenter(&mut harness, 1, 7);
         harness.send(set_latency(7, 64));
         harness.playing();
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
