@@ -13039,6 +13039,25 @@ mod timeline_tests {
         track_with_patched_fermenter(harness, track_id, effect_id, &[]);
     }
 
+    /// The commands that place a Fermenter generator on a track, the way
+    /// `commands/graph.rs` places a built-in instrument: registered detached
+    /// with its own note store, then spliced at the head of the chain.
+    fn fermenter_strip_commands(
+        track_id: usize,
+        effect_id: usize,
+        patch: &[(FermenterParamName, f32)],
+    ) -> Vec<GraphCommand> {
+        vec![
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::fermenter_with_patch(FERMENTER_RATE, patch),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ]
+    }
+
     /// The same strip, with `patch` written into the instrument before its
     /// body crosses the command ring — the shape the mapper builds a fermenter
     /// device in.
@@ -13048,13 +13067,9 @@ mod timeline_tests {
         effect_id: usize,
         patch: &[(FermenterParamName, f32)],
     ) {
-        harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
-        harness.send(GraphCommand::AddDetachedEffect(
-            effect_id,
-            PluginCore::fermenter_with_patch(FERMENTER_RATE, patch),
-            Some(MidiNoteStore::new()),
-        ));
-        harness.send(insert_track_device(track_id, generator(effect_id), 0));
+        for command in fermenter_strip_commands(track_id, effect_id, patch) {
+            harness.send(command);
+        }
     }
 
     /// One of the instrument's own parameter names, as the mapper resolves it.
@@ -13124,45 +13139,41 @@ mod timeline_tests {
 
     /// The command batch for a track carrying a Fermenter generator playing
     /// `events`, in the order both [`Harness`] and [`OfflineRenderer`] apply
-    /// commands: register the track, register the detached instrument with
-    /// its own note store, splice it into the chain, start the transport,
-    /// then schedule the phrase.
+    /// commands: the strip from [`fermenter_strip_commands`], then start the
+    /// transport, then schedule the phrase.
     fn fermenter_phrase_commands(
         track_id: usize,
         effect_id: usize,
         events: &[(u64, u8, bool)],
     ) -> Vec<GraphCommand> {
-        vec![
-            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
-            GraphCommand::AddDetachedEffect(
-                effect_id,
-                PluginCore::fermenter_with_patch(FERMENTER_RATE, &[]),
-                Some(MidiNoteStore::new()),
-            ),
-            insert_track_device(track_id, generator(effect_id), 0),
+        let mut commands = fermenter_strip_commands(track_id, effect_id, &[]);
+        commands.extend([
             GraphCommand::SetTransport(TransportState {
                 is_playing: true,
                 ..TransportState::default()
             }),
             schedule_phrase(effect_id, events),
-        ]
+        ]);
+        commands
     }
 
-    /// The live scheduler and the offline renderer produce the same samples
-    /// for the same Fermenter note.
-    ///
-    /// [`OfflineRenderer`]'s own contract is that it is the null-test oracle
-    /// for the live engine: the same commands over the same frame count are
-    /// bit-identical. The onset (frame 300) and the release (frame 1,100)
-    /// both sit off the live 128-frame block grid and the offline
-    /// [`crate::offline::OFFLINE_BLOCK_FRAMES`] 512-frame grid, so a body
-    /// that quantised either edge to either grid would diverge here.
+    /// The same phrase runs through the live harness at 128-frame blocks and
+    /// through [`OfflineRenderer`] at
+    /// [`crate::offline::OFFLINE_BLOCK_FRAMES`] (512-frame) blocks. The
+    /// note-on (frame 300: live block starts 256, offline block starts 0)
+    /// and the note-off (frame 900: live block starts 896, offline block
+    /// starts 512) each land in blocks that start at a different frame on
+    /// the two sides, so a delivery that depended on block phase would
+    /// diverge here. With whole-run callbacks the body's own output is
+    /// identical by [`FermenterBody`]'s own contract; its grain independence
+    /// from either grid is pinned separately by
+    /// [`a_hosted_fermenter_renders_the_worklet_samples_for_the_same_programme`].
     #[test]
     fn a_fermenter_note_renders_the_same_samples_live_and_offline() {
         const TRACK_ID: usize = 1;
         const EFFECT_ID: usize = 7;
         const NOTE_ON: u64 = 300;
-        const NOTE_OFF: u64 = 1_100;
+        const NOTE_OFF: u64 = 900;
         const EVENTS: [(u64, u8, bool); 2] = [(NOTE_ON, 60, true), (NOTE_OFF, 60, false)];
         const LIVE_BLOCK: usize = 128;
         const LIVE_CALLBACKS: usize = 12;
@@ -13182,11 +13193,20 @@ mod timeline_tests {
         let (offline_left, offline_right) = offline.render(RENDERED);
 
         assert!(
-            live_left[..onset].iter().all(|sample| *sample == 0.0)
-                && live_right[..onset].iter().all(|sample| *sample == 0.0)
-                && offline_left[..onset].iter().all(|sample| *sample == 0.0)
-                && offline_right[..onset].iter().all(|sample| *sample == 0.0),
-            "one of the renders carried signal before the note was written for"
+            live_left[..onset].iter().all(|sample| *sample == 0.0),
+            "the live left channel carried signal before the note-on frame"
+        );
+        assert!(
+            live_right[..onset].iter().all(|sample| *sample == 0.0),
+            "the live right channel carried signal before the note-on frame"
+        );
+        assert!(
+            offline_left[..onset].iter().all(|sample| *sample == 0.0),
+            "the offline left channel carried signal before the note-on frame"
+        );
+        assert!(
+            offline_right[..onset].iter().all(|sample| *sample == 0.0),
+            "the offline right channel carried signal before the note-on frame"
         );
         assert!(
             rms(&live_left[onset..NOTE_OFF as usize]) > 0.0,
