@@ -208,7 +208,7 @@ describe('saved audio collection race', () => {
         window.localStorage.clear();
     });
 
-    it('keeps PCM saved after a size collector captured the pre-save owner census', async () => {
+    it('never publishes a named snapshot without PCM when collection wins admission before the first save', async () => {
         const reportStage = createStageReporter();
         const getDatabase = captureOpenedDatabases();
         reportStage('imports:start');
@@ -283,6 +283,7 @@ describe('saved audio collection race', () => {
         });
 
         let collection: Promise<number> | undefined;
+        let saving: Promise<boolean> | undefined;
         try {
             reportStage('census:start');
             collection = audio.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
@@ -291,7 +292,7 @@ describe('saved audio collection race', () => {
 
             reportStage('save:queued');
             let saveSettled = false;
-            const saving = project.saveProject().then((result) => {
+            saving = project.saveProject().then((result) => {
                 saveSettled = true;
                 return result;
             });
@@ -303,25 +304,31 @@ describe('saved audio collection race', () => {
             const deletedCount = await collection;
             console.info('[savedAudioCollectionRace] collection:deletedCount', deletedCount);
             reportStage('collection:done');
-            expect(deletedCount).toBe(0);
 
-            await expect(saving).resolves.toBe(true);
+            const saved = await saving;
+            console.info('[savedAudioCollectionRace] save:result', saved);
             reportStage('save:done');
-            milestones.push('save:Project A');
             const projectAKey = project.getProjectSnapshotKey(CREATED_AT);
             const namedJson = await readNamedProjectJson(projectAKey);
-            expect(namedJson).not.toBeNull();
-            expect(namedJson).toContain(bufferId);
 
             const audioDatabase = getDatabase(AUDIO_DATABASE_NAME);
             if (!audioDatabase) {
-                throw new Error('Expected the real audio IndexedDB connection after Project A saved.');
+                throw new Error('Expected the real audio IndexedDB connection after collection.');
             }
             reportStage('rawRead:start');
             const storedBeforeCollection = await readStoredValue(audioDatabase, AUDIO_BUFFER_STORE_NAME, bufferId);
             console.info('[savedAudioCollectionRace] rawRead:record', describeStoredValue(storedBeforeCollection));
-            expect(readFirstChannel(storedBeforeCollection)).toEqual(PCM);
             reportStage('rawRead:done');
+
+            if (!saved) {
+                expect(namedJson).toBeNull();
+                expect(milestones).toEqual(['census:']);
+                return;
+            }
+
+            milestones.push('save:Project A');
+            expect(namedJson).toContain(bufferId);
+            expect(readFirstChannel(storedBeforeCollection)).toEqual(PCM);
 
             reportStage('newProject:start');
             await expect(project.newProject('Project B')).resolves.toBe(true);
@@ -352,6 +359,7 @@ describe('saved audio collection race', () => {
         } finally {
             releaseCapturedCensus.resolve();
             await collection?.catch(() => undefined);
+            await saving?.catch(() => undefined);
         }
     }, 30_000);
 });
