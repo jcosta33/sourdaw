@@ -1,0 +1,67 @@
+src/modules/DawInterchange/useCases/__tests__/pickAndImportDawProject.spec.ts
+  s_87ab0a2f60ccf8::t_44dff19407e6b8 1-53
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_9b530f08172a54::t_87c89750f91856 53,98,247-248,1102-1121,1123-1139,1159,1188,1219,1225
+src/modules/CommandInterface/useCases/commands/ProjectCommands.ts
+  s_3fef9a3d073863::t_db0de2034a3c54 1-6,19-28
+src/modules/CommandInterface/useCases/commands/__tests__/ProjectCommands.spec.ts
+  s_87ab0a2f60ccf8::t_e824bd612fc7dd 3-8,17,32,77,80-96
+src/modules/DawInterchange/useCases/pickAndImportDawProject.ts
+  s_90a8a4614f5f60::t_fe8ea1bddbbcfb 1,13-19
+src/modules/Project/useCases/index.ts
+  s_3fef9a3d073863::t_40de96a984c760 9
+src/modules/WorkspaceShell/handlers/workspace/__tests__/workspaceProjectHandlers.spec.ts
+  s_1e1c6954fb04db::t_4092536b4bf6c6 8,51,69,73,75-87
+src/modules/WorkspaceShell/handlers/workspace/handleNewProject.ts
+  s_90a8a4614f5f60::t_11bb81bce3724a 1,6-15
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_90a8a4614f5f60::t_8b62085eea65e4 20,51-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0be8eebb4383a1400890ce3f0f9a6af583ae6f4b",
+  "prompts": {},
+  "sessions": {
+    "s_1e1c6954fb04db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07d75-718e-7ca2-a5c7-e1c98b766c92",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3fef9a3d073863": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad7c9dbf6b57327ee",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_90a8a4614f5f60": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07d74-e195-74d0-9997-0956ba0fe8d5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
