@@ -1,0 +1,23 @@
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_9b530f08172a54::t_9c3db161d48092 382,408,411
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_9b530f08172a54::t_072330f40ffcf9 216,236,251-295
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_9b530f08172a54::t_b026712f1a3f06 8-11,29-34,75-88,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6b496b70edb5cd45c9742c3f591bc1f1bb987e8a",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
