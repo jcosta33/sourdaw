@@ -22,6 +22,7 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
     type AudioGraphClearMidiCommand,
+    type AudioGraphCommand,
     type AudioGraphCommandBatch,
     type AudioGraphMidiNoteEvent,
     type AudioGraphScheduleMidiCommand,
@@ -126,6 +127,16 @@ function clearsIn(index: number): AudioGraphClearMidiCommand[] {
     return (batches()[index]?.commands ?? []).filter(
         (command): command is AudioGraphClearMidiCommand => command.kind === 'clear-midi'
     );
+}
+
+/** The device every MIDI command in these batches names; nothing else ever travels in a writer batch. */
+function deviceIdsNamedIn(commands: readonly AudioGraphCommand[]): string[] {
+    return commands
+        .filter(
+            (command): command is AudioGraphClearMidiCommand | AudioGraphScheduleMidiCommand =>
+                command.kind === 'clear-midi' || command.kind === 'schedule-midi'
+        )
+        .map((command) => command.target.deviceId);
 }
 
 /** A macrotask, which drains the microtasks an apply's round trip settles on. */
@@ -422,7 +433,7 @@ describe('the live MIDI writer', () => {
         expect(clearsIn(2)).toEqual([
             { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'ferm' }, fromTime: 0, toTime: null },
         ]);
-        const secondBatchDeviceIds = (batches()[2]?.commands ?? []).map((command) => command.target.deviceId);
+        const secondBatchDeviceIds = deviceIdsNamedIn(batches()[2]?.commands ?? []);
         expect(secondBatchDeviceIds).not.toContain('plug');
         const scheduleCommands = (batches()[2]?.commands ?? []).filter(
             (command): command is AudioGraphScheduleMidiCommand => command.kind === 'schedule-midi'
@@ -449,20 +460,22 @@ describe('the live MIDI writer', () => {
 
         // From the second arm on: the first arm's own batch legitimately
         // names plug, since plug was the live target when it was sent.
-        const afterDrop = batches()
-            .slice(1)
-            .flatMap((batch) => batch.commands)
-            .map((command) => command.target.deviceId);
+        const afterDrop = deviceIdsNamedIn(
+            batches()
+                .slice(1)
+                .flatMap((batch) => batch.commands)
+        );
         expect(afterDrop).not.toContain('plug');
 
         // A further arm with the same targets: the owed entry was forgotten,
         // not merely skipped once, so nothing revives a clear naming it.
         await arm(0);
 
-        const afterSecondArm = batches()
-            .slice(1)
-            .flatMap((batch) => batch.commands)
-            .map((command) => command.target.deviceId);
+        const afterSecondArm = deviceIdsNamedIn(
+            batches()
+                .slice(1)
+                .flatMap((batch) => batch.commands)
+        );
         expect(afterSecondArm).not.toContain('plug');
     });
 
@@ -550,10 +563,11 @@ describe('the live MIDI writer', () => {
 
         // From the second arm on: the first arm's own batch legitimately
         // names plug, since plug was the live target when it was sent.
-        const deviceIds = batches()
-            .slice(1)
-            .flatMap((batch) => batch.commands)
-            .map((command) => command.target.deviceId);
+        const deviceIds = deviceIdsNamedIn(
+            batches()
+                .slice(1)
+                .flatMap((batch) => batch.commands)
+        );
         expect(deviceIds).not.toContain('plug');
     });
 
