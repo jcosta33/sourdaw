@@ -322,14 +322,19 @@ describe('audioBufferCache durable ownership', () => {
 
             routes.audioBufferCache.remove('pending-owned');
             controls.releaseNextWriteSettlement();
-            controls.resumeWriteSettlements();
-            await lockManager.locks.request(
+            const removalSettled = lockManager.locks.request(
                 'sourdaw:project-audio-storage',
                 { mode: 'exclusive' },
                 async () => undefined
             );
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+            controls.releaseNextWriteSettlement();
+            await removalSettled;
 
-            const durability = await routes.audioBufferCache.ensureDurable(['pending-owned']);
+            const durabilityPending = routes.audioBufferCache.ensureDurable(['pending-owned']);
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+            controls.releaseNextWriteSettlement();
+            const durability = await durabilityPending;
             expect(durability.status).toBe('durable');
             if (durability.status === 'durable') {
                 expect(durability.isCurrent()).toBe(true);
