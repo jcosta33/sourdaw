@@ -86,6 +86,12 @@ and keep the original flush deadline armed through acknowledgment. A missing
 acknowledgment or flush cleans that exact captured session without touching a
 successor for the same track.
 
+Recording artifacts need identity independent of wall-clock time. Generate one
+cryptographically unique temp-file name at worker initialization, then verify
+two isolated workers sharing a filename-keyed staged OPFS at one timestamp:
+each delivered WAV retains its own PCM and removing one staging entry cannot
+remove the other's.
+
 **Why:** a pre-copy cursor check can admit mixed PCM, and a signed or low-word
 rollover can make a full ring turn look empty. Clearing the stop deadline on
 the producer acknowledgment allows a stalled final drain to retain the input

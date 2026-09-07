@@ -260,14 +260,25 @@ describe('stopAudioRecording', () => {
 
     it('ignores a queued stale acknowledgment after the same track has a replacement session', async () => {
         const original = await startAndArm('track-stale-ack');
+        const originalSession = activeSessions.get('track-stale-ack');
+        if (!originalSession) {
+            throw new Error('Expected original recording session');
+        }
         stopAudioRecording();
         const queuedOriginalAck = original.worklet.port.onmessage;
+        const originalMessageCount = original.worker.postMessage.mock.calls.length;
         vi.advanceTimersByTime(5_000);
 
         const replacement = await startAndArm('track-stale-ack');
         queuedOriginalAck?.({ data: { type: 'stopped', publishedSampleCount: 42 } });
 
+        expect(original.worker.postMessage).toHaveBeenCalledTimes(originalMessageCount);
+        expect(originalSession.producerStopAcknowledged).toBe(false);
         expect(replacement.worker.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'stop' }));
+        expect(replacement.worker.terminate).not.toHaveBeenCalled();
+        expect(replacement.worklet.disconnect).not.toHaveBeenCalled();
+        expect(activeSessions.get('track-stale-ack')).not.toBe(originalSession);
+        expect(audioRecordingStore.value?.isRecording).toBe(true);
     });
 
     it('does not let a stale captured timeout tear down a same-track successor', async () => {

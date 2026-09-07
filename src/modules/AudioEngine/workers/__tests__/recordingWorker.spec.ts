@@ -8,6 +8,9 @@ import {
     RECORDING_RING_SEQUENCE_INDEX,
     storeRecordingSampleCount,
 } from '../../models/RecordingRingProtocol';
+import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../../models/RecordingWavLimits';
+
+const WAV_HEADER_BYTES = 44;
 
 /**
  * Tests for the recording OPFS worker.
@@ -32,6 +35,7 @@ import {
 type WritableInput = ArrayBuffer | ArrayBufferView | { type: 'write'; position: number; data: ArrayBuffer };
 
 let beforeWrite: ((input: WritableInput) => Promise<void>) | null = null;
+let beforeFilenameKeyedWrite: ((name: string, input: WritableInput) => Promise<void>) | null = null;
 
 class FakeWritable {
     private pos = 0;
@@ -102,7 +106,11 @@ type WorkerModule = typeof import('../recordingWorker');
 let mod: WorkerModule;
 let messages: Array<Record<string, unknown>>;
 
-async function loadWorker(): Promise<void> {
+async function loadWorker(maxWavSamples?: number): Promise<void> {
+    vi.doUnmock('../../models/RecordingWavLimits');
+    if (maxWavSamples !== undefined) {
+        vi.doMock('../../models/RecordingWavLimits', () => ({ MAX_MONO_FLOAT32_RIFF_SAMPLES: maxWavSamples }));
+    }
     vi.resetModules();
     messages = [];
     fakeDir = new FakeDirectory();
@@ -179,6 +187,257 @@ async function waitFor(type: string, timeoutMs = 1000): Promise<Record<string, u
     throw new Error(`timed out waiting for '${type}' message; saw: ${messages.map((m) => m.type).join(', ')}`);
 }
 
+type IsolatedWorker = {
+    handler: ((event: { data: unknown }) => void) | null;
+    messages: Array<Record<string, unknown>>;
+    waiters: Array<{ type: string; resolve: (message: Record<string, unknown>) => void }>;
+    self: {
+        onmessage: ((event: { data: unknown }) => void) | null;
+        postMessage: (message: Record<string, unknown>) => void;
+    };
+};
+
+class FilenameKeyedWritable {
+    private position = 0;
+    private staged: Uint8Array;
+
+    constructor(
+        private readonly directory: FilenameKeyedDirectory,
+        private readonly name: string,
+        existing: Uint8Array | null
+    ) {
+        this.staged = existing?.slice() ?? new Uint8Array(0);
+    }
+
+    async write(input: WritableInput): Promise<void> {
+        await beforeFilenameKeyedWrite?.(this.name, input);
+        let bytes: Uint8Array;
+        if (input instanceof ArrayBuffer) {
+            bytes = new Uint8Array(input);
+        } else if (ArrayBuffer.isView(input)) {
+            bytes = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+        } else {
+            this.position = input.position;
+            bytes = new Uint8Array(input.data);
+        }
+        const end = this.position + bytes.byteLength;
+        if (end > this.staged.byteLength) {
+            const expanded = new Uint8Array(end);
+            expanded.set(this.staged);
+            this.staged = expanded;
+        }
+        this.staged.set(bytes, this.position);
+        this.position = end;
+    }
+
+    async close(): Promise<void> {
+        this.directory.entries.set(this.name, this.staged.slice());
+    }
+}
+
+class FilenameKeyedFileHandle {
+    constructor(
+        private readonly directory: FilenameKeyedDirectory,
+        private readonly name: string
+    ) {}
+
+    createWritable(options?: { keepExistingData?: boolean }): Promise<FilenameKeyedWritable> {
+        const existing = options?.keepExistingData ? (this.directory.entries.get(this.name) ?? null) : null;
+        return Promise.resolve(new FilenameKeyedWritable(this.directory, this.name, existing));
+    }
+
+    getFile(): Promise<{ arrayBuffer: () => Promise<ArrayBuffer> }> {
+        const bytes = this.directory.entries.get(this.name);
+        if (!bytes) {
+            return Promise.reject(new Error(`Missing temp entry ${this.name}`));
+        }
+        const snapshot = bytes.slice();
+        return Promise.resolve({
+            arrayBuffer: () =>
+                Promise.resolve(snapshot.buffer.slice(snapshot.byteOffset, snapshot.byteOffset + snapshot.byteLength)),
+        });
+    }
+}
+
+class FilenameKeyedDirectory {
+    entries = new Map<string, Uint8Array>();
+    names: string[] = [];
+    removedEntries: string[] = [];
+
+    getFileHandle(name: string): Promise<FilenameKeyedFileHandle> {
+        this.names.push(name);
+        if (!this.entries.has(name)) {
+            this.entries.set(name, new Uint8Array(0));
+        }
+        return Promise.resolve(new FilenameKeyedFileHandle(this, name));
+    }
+
+    removeEntry(name: string): Promise<void> {
+        this.removedEntries.push(name);
+        this.entries.delete(name);
+        return Promise.resolve();
+    }
+}
+
+function activateIsolatedWorker(worker: IsolatedWorker): void {
+    Object.defineProperty(globalThis, 'self', { configurable: true, value: worker.self });
+}
+
+async function loadIsolatedWorker(directory: FilenameKeyedDirectory): Promise<IsolatedWorker> {
+    vi.doUnmock('../../models/RecordingWavLimits');
+    vi.resetModules();
+    const worker: IsolatedWorker = {
+        handler: null,
+        messages: [],
+        waiters: [],
+        self: {
+            get onmessage(): ((event: { data: unknown }) => void) | null {
+                return worker.handler;
+            },
+            set onmessage(handler: ((event: { data: unknown }) => void) | null) {
+                worker.handler = handler;
+            },
+            postMessage(message: Record<string, unknown>): void {
+                worker.messages.push(message);
+                const index = worker.waiters.findIndex((waiter) => waiter.type === message.type);
+                if (index >= 0) {
+                    const [waiter] = worker.waiters.splice(index, 1);
+                    waiter?.resolve(message);
+                }
+            },
+        },
+    };
+    (navigator as unknown as { storage: unknown }).storage = {
+        getDirectory: () => Promise.resolve(directory),
+    };
+    activateIsolatedWorker(worker);
+    await import('../recordingWorker');
+    return worker;
+}
+
+function sendToIsolatedWorker(worker: IsolatedWorker, data: unknown): void {
+    activateIsolatedWorker(worker);
+    worker.handler?.({ data });
+}
+
+function waitForIsolatedWorker(worker: IsolatedWorker, type: string): Promise<Record<string, unknown>> {
+    const existing = worker.messages.find((message) => message.type === type);
+    if (existing) {
+        return Promise.resolve(existing);
+    }
+    return new Promise((resolve) => {
+        worker.waiters.push({ type, resolve });
+    });
+}
+
+describe('recordingWorker temp-file isolation', () => {
+    it('gives independently loaded workers distinct files and removal isolation at one timestamp', async () => {
+        const directory = new FilenameKeyedDirectory();
+        const fixedNow = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+        vi.stubGlobal('crypto', {
+            randomUUID: vi.fn().mockReturnValueOnce('worker-a').mockReturnValueOnce('worker-b'),
+        });
+        let releaseAHeaderPatch: (() => void) | undefined;
+        let releaseBHeaderPatch: (() => void) | undefined;
+        let markAHeaderPatchStarted: (() => void) | undefined;
+        let markBHeaderPatchStarted: (() => void) | undefined;
+        const aHeaderPatchStarted = new Promise<void>((resolve) => {
+            markAHeaderPatchStarted = resolve;
+        });
+        const bHeaderPatchStarted = new Promise<void>((resolve) => {
+            markBHeaderPatchStarted = resolve;
+        });
+        const aHeaderPatchGate = new Promise<void>((resolve) => {
+            releaseAHeaderPatch = resolve;
+        });
+        const bHeaderPatchGate = new Promise<void>((resolve) => {
+            releaseBHeaderPatch = resolve;
+        });
+        let headerPatchNumber = 0;
+        beforeFilenameKeyedWrite = (_name, input) => {
+            if (!(typeof input === 'object' && !(input instanceof ArrayBuffer) && !ArrayBuffer.isView(input))) {
+                return Promise.resolve();
+            }
+            headerPatchNumber += 1;
+            if (headerPatchNumber === 1) {
+                markAHeaderPatchStarted?.();
+                return aHeaderPatchGate;
+            }
+            markBHeaderPatchStarted?.();
+            return bHeaderPatchGate;
+        };
+        async function waitForHeaderPatch(promise: Promise<void>, label: string): Promise<void> {
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            try {
+                await Promise.race([
+                    promise,
+                    new Promise<never>((_resolve, reject) => {
+                        timeout = setTimeout(() => {
+                            reject(
+                                new Error(
+                                    `${label} header patch did not start; observed ${String(headerPatchNumber)} patches for ${directory.names.join(', ')}`
+                                )
+                            );
+                        }, 250);
+                    }),
+                ]);
+            } finally {
+                if (timeout !== undefined) {
+                    clearTimeout(timeout);
+                }
+            }
+        }
+        try {
+            const a = await loadIsolatedWorker(directory);
+            const b = await loadIsolatedWorker(directory);
+            const aRing = makeRing(16);
+            const bRing = makeRing(16);
+            aRing.ring.set([0.125, -0.25]);
+            bRing.ring.set([0.75, -1]);
+            publishCount(aRing.control, 2);
+            publishCount(bRing.control, 2);
+
+            sendToIsolatedWorker(a, { type: 'init', sab: aRing.sab, sampleRate: 48000 });
+            await waitForIsolatedWorker(a, 'ready');
+            sendToIsolatedWorker(b, { type: 'init', sab: bRing.sab, sampleRate: 48000 });
+            await waitForIsolatedWorker(b, 'ready');
+
+            sendToIsolatedWorker(a, { type: 'stop', expectedFinalSampleCount: 2 });
+            await waitForHeaderPatch(aHeaderPatchStarted, 'A');
+            sendToIsolatedWorker(b, { type: 'stop', expectedFinalSampleCount: 2 });
+            await waitForHeaderPatch(bHeaderPatchStarted, 'B');
+
+            expect(directory.names).toEqual(['rec-tmp-worker-a.pcm', 'rec-tmp-worker-b.pcm']);
+            expect(directory.entries.has('rec-tmp-worker-a.pcm')).toBe(true);
+            expect(directory.entries.has('rec-tmp-worker-b.pcm')).toBe(true);
+
+            // Both PCM streams have committed before either header patch/read.
+            // Releasing A first proves that a distinct artifact cannot read or
+            // remove B's staged PCM.
+            activateIsolatedWorker(a);
+            releaseAHeaderPatch?.();
+            const aWav = await waitForIsolatedWorker(a, 'wav');
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            expect(Array.from(new Float32Array(aWav.buffer as ArrayBuffer, WAV_HEADER_BYTES))).toEqual([0.125, -0.25]);
+            expect(directory.removedEntries).toEqual(['rec-tmp-worker-a.pcm']);
+            expect(directory.entries.has('rec-tmp-worker-b.pcm')).toBe(true);
+
+            activateIsolatedWorker(b);
+            releaseBHeaderPatch?.();
+            const bWav = await waitForIsolatedWorker(b, 'wav');
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            expect(Array.from(new Float32Array(bWav.buffer as ArrayBuffer, WAV_HEADER_BYTES))).toEqual([0.75, -1]);
+            expect(directory.removedEntries).toEqual(['rec-tmp-worker-a.pcm', 'rec-tmp-worker-b.pcm']);
+            expect(directory.entries.size).toBe(0);
+        } finally {
+            beforeFilenameKeyedWrite = null;
+            fixedNow.mockRestore();
+            vi.unstubAllGlobals();
+        }
+    });
+});
+
 describe('buildWavHeader', () => {
     beforeEach(async () => {
         await loadWorker();
@@ -198,13 +457,13 @@ describe('buildWavHeader', () => {
     });
 
     it('accepts the largest representable mono float32 RIFF and rejects the next sample', () => {
-        const header = mod.buildWavHeader(mod.MAX_WAV_SAMPLES, 48000);
+        const header = mod.buildWavHeader(MAX_MONO_FLOAT32_RIFF_SAMPLES, 48000);
         const view = new DataView(header);
         expect(view.getUint32(4, true)).toBe(0xffff_fffc);
         expect(view.getUint32(40, true)).toBe(0xffff_ffd8);
-        expect(() => mod.buildWavHeader(mod.MAX_WAV_SAMPLES + 1, 48000)).toThrow(RangeError);
-        expect(mod.canAppendWavSamples(mod.MAX_WAV_SAMPLES - 1, 1)).toBe(true);
-        expect(mod.canAppendWavSamples(mod.MAX_WAV_SAMPLES, 1)).toBe(false);
+        expect(() => mod.buildWavHeader(MAX_MONO_FLOAT32_RIFF_SAMPLES + 1, 48000)).toThrow(RangeError);
+        expect(mod.canAppendWavSamples(MAX_MONO_FLOAT32_RIFF_SAMPLES - 1, 1)).toBe(true);
+        expect(mod.canAppendWavSamples(MAX_MONO_FLOAT32_RIFF_SAMPLES, 1)).toBe(false);
     });
 });
 
@@ -437,7 +696,7 @@ describe('recordingWorker ring overrun drop policy', () => {
         // The main thread terminates this worker on 'error', so the worker
         // cannot remove its own temp file — it must hand the name over for
         // main-thread removal.
-        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
+        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
 
         // The corrupted interval is never written to the OPFS history and no
         // 'wav' is ever produced for the take.
@@ -451,7 +710,7 @@ describe('recordingWorker ring overrun drop policy', () => {
 
         sendToWorker({ type: 'stop', expectedFinalSampleCount: 6 });
         const error = await waitFor('error');
-        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
+        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
         expect(messages.some((m) => m.type === 'wav')).toBe(false);
     });
 
@@ -472,7 +731,7 @@ describe('recordingWorker ring overrun drop policy', () => {
         // The worker owns cleanup on the normal path: the temp entry is gone
         // once the take has been delivered.
         await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-\d+\.pcm$/)]);
+        expect(fakeDir.removedEntries).toEqual([expect.stringMatching(/^rec-tmp-[\w-]+\.pcm$/)]);
     });
 
     it('waits for a pending PCM write before one final drain and finalizes only once', async () => {
@@ -526,7 +785,12 @@ describe('recordingWorker ring overrun drop policy', () => {
         const { sab, control, ring } = makeRing(64);
         ring[0] = 0.25;
         ring[1] = -0.5;
+        publishCount(control, 2);
         beginRecordingRingWrite(control);
+        ring[0] = 100;
+        ring[1] = 101;
+        ring[2] = 102;
+        ring[3] = 103;
         let firstHeaderWrite: (() => void) | undefined;
         const headerWriteStarted = new Promise<void>((resolve) => {
             firstHeaderWrite = resolve;
@@ -542,16 +806,54 @@ describe('recordingWorker ring overrun drop policy', () => {
         await waitFor('ready');
         sendToWorker({ type: 'start' });
         await headerWriteStarted;
-        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
-        storeRecordingSampleCount(control, 2);
+        // The producer is still odd after replacing ring slots. The worker may
+        // reserve a header, but it must not append uncertain PCM or advance its
+        // read cursor before the stable publication completes.
+        expect(fakeDir.handle.store.bytes.byteLength).toBe(mod.WAV_HEADER_BYTES);
+        expect(messages.some((message) => message.type === 'wav')).toBe(false);
+
+        storeRecordingSampleCount(control, 4);
         completeRecordingRingWrite(control);
 
         await new Promise((resolve) => setTimeout(resolve, 60));
-        sendToWorker({ type: 'stop', expectedFinalSampleCount: 2 });
+        sendToWorker({ type: 'stop', expectedFinalSampleCount: 4 });
         const wav = await waitFor('wav');
-        const pcm = new Float32Array(wav.buffer as ArrayBuffer, mod.WAV_HEADER_BYTES, 2);
-        expect(Array.from(pcm)).toEqual([0.25, -0.5]);
+        const pcm = new Float32Array(wav.buffer as ArrayBuffer, mod.WAV_HEADER_BYTES, 4);
+        expect(Array.from(pcm)).toEqual([100, 101, 102, 103]);
+    });
+
+    it('abandons an odd final publication even when the acknowledged count is zero', async () => {
+        const { sab, control } = makeRing(64);
+        beginRecordingRingWrite(control);
+
+        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        await waitFor('ready');
+        sendToWorker({ type: 'stop', expectedFinalSampleCount: 0 });
+
+        const error = await waitFor('error');
+        expect(String(error.message)).toMatch(/publication was unstable after the producer stopped/i);
+        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
+        expect(messages.some((message) => message.type === 'wav')).toBe(false);
+        expect(fakeDir.handle.store.bytes.byteLength).toBe(mod.WAV_HEADER_BYTES);
+    });
+
+    it('abandons before appending PCM when a small scoped RIFF limit is exceeded', async () => {
+        await loadWorker(2);
+        const { sab, control, ring } = makeRing(64);
+        ring.set([0.25, -0.5, 0.75]);
+        publishCount(control, 3);
+
+        sendToWorker({ type: 'init', sab, sampleRate: 48000 });
+        await waitFor('ready');
+        sendToWorker({ type: 'stop', expectedFinalSampleCount: 3 });
+
+        const error = await waitFor('error');
+        expect(String(error.message)).toMatch(/RIFF limit of 2 samples/i);
+        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
+        expect(messages.some((message) => message.type === 'wav')).toBe(false);
+        expect(fakeDir.handle.store.bytes.byteLength).toBe(mod.WAV_HEADER_BYTES);
     });
 
     it('abandons without WAV when the final stable drain does not match the stopped acknowledgment', async () => {
@@ -566,7 +868,7 @@ describe('recordingWorker ring overrun drop policy', () => {
 
         const error = await waitFor('error');
         expect(String(error.message)).toMatch(/stopped at 3 published samples but drained 2/i);
-        expect(error.tempFile).toMatch(/^rec-tmp-\d+\.pcm$/);
+        expect(error.tempFile).toMatch(/^rec-tmp-[\w-]+\.pcm$/);
         expect(messages.some((message) => message.type === 'wav')).toBe(false);
     });
 });

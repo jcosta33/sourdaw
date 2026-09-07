@@ -6,6 +6,7 @@ import {
     RECORDING_RING_CONTROL_BYTES,
     RECORDING_RING_CONTROL_INTS,
 } from '../models/RecordingRingProtocol';
+import { MAX_MONO_FLOAT32_RIFF_SAMPLES } from '../models/RecordingWavLimits';
 /**
  * Recording OPFS Worker — drains the SAB ring buffer to an OPFS temp file
  * during capture, then transfers the complete PCM Float32Array to the main
@@ -34,15 +35,13 @@ const POLL_MS = 50; // drain interval — plenty of margin ahead of worklet writ
 /** Canonical WAV/RIFF header size, in bytes. The PCM payload begins here so the
  *  header can be patched in place on stop without clobbering the first samples. */
 export const WAV_HEADER_BYTES = 44;
-export const MAX_WAV_SAMPLES = Math.floor((0xffff_ffff - 36) / Float32Array.BYTES_PER_ELEMENT);
-
 export function canAppendWavSamples(currentSamples: number, appendedSamples: number): boolean {
     return (
         Number.isInteger(currentSamples) &&
         currentSamples >= 0 &&
         Number.isInteger(appendedSamples) &&
         appendedSamples >= 0 &&
-        appendedSamples <= MAX_WAV_SAMPLES - currentSamples
+        appendedSamples <= MAX_MONO_FLOAT32_RIFF_SAMPLES - currentSamples
     );
 }
 
@@ -53,7 +52,7 @@ export function canAppendWavSamples(currentSamples: number, appendedSamples: num
  * Exported so the byte layout is verifiable independently of OPFS I/O.
  */
 export function buildWavHeader(totalSamples: number, sampleRate: number): ArrayBuffer {
-    if (!Number.isInteger(totalSamples) || totalSamples < 0 || totalSamples > MAX_WAV_SAMPLES) {
+    if (!Number.isInteger(totalSamples) || totalSamples < 0 || totalSamples > MAX_MONO_FLOAT32_RIFF_SAMPLES) {
         throw new RangeError(`WAV sample count ${String(totalSamples)} is outside the mono float32 RIFF range`);
     }
     const header = new ArrayBuffer(WAV_HEADER_BYTES);
@@ -196,7 +195,7 @@ async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<v
     takeAbandoned = false;
     stopRequested = false;
     workerSampleRate = sampleRate;
-    tmpName = `rec-tmp-${Date.now()}.pcm`;
+    tmpName = `rec-tmp-${crypto.randomUUID()}.pcm`;
 
     const root = await navigator.storage.getDirectory();
     opfsFileHandle = await root.getFileHandle(tmpName, { create: true });
@@ -241,7 +240,7 @@ async function drain(): Promise<DrainResult> {
     const chunkSamples = chunk.byteLength / Float32Array.BYTES_PER_ELEMENT;
     if (!canAppendWavSamples(totalSamplesWritten, chunkSamples)) {
         abandonTake(
-            `Recording exceeds the mono float32 RIFF limit of ${String(MAX_WAV_SAMPLES)} samples; take abandoned`
+            `Recording exceeds the mono float32 RIFF limit of ${String(MAX_MONO_FLOAT32_RIFF_SAMPLES)} samples; take abandoned`
         );
         return 'failed';
     }
