@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { fetchDurableOwnedAudioBufferIds } from './durableAudioBufferOwnership';
 import { createPreparedAudioBufferLifecycle } from './preparedAudioBufferLifecycle';
 import {
     isPreparedAudioRecoveryMigrationMarker,
@@ -1637,6 +1638,26 @@ async function ensureDurableAudioBuffers(ids: readonly string[]): Promise<Cached
     }
 }
 
+/** The durable owned-id set is fetched before any deletion decision in every
+ * collection run (issue #3777). No provider reads as "nothing durably owned"
+ * — the plain age/budget rules apply. A provider rejection aborts the run:
+ * with the owned set unknown, no entry can be proven unowned, so nothing is
+ * deleted. */
+async function readDurableOwnedIdsOrAbort(): Promise<Set<string> | null> {
+    const pending = fetchDurableOwnedAudioBufferIds();
+    if (pending === null) {
+        return new Set();
+    }
+    try {
+        return new Set(await pending);
+    } catch (error) {
+        logger.warn('[audioBufferCache] Durable ownership enumeration failed; collection aborted without deleting', {
+            error,
+        });
+        return null;
+    }
+}
+
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
@@ -2262,6 +2283,10 @@ export const audioBufferCache = {
 
     async garbageCollectFreezeFiles({ activeIds, projectId }: GarbageCollectFreezeFilesInput): Promise<void> {
         try {
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return;
+            }
             const db = await openDb();
             const tx = db.transaction([STORE_NAME, META_STORE_NAME, CHECKPOINT_RETENTION_STORE_NAME], 'readwrite');
             const store = tx.objectStore(STORE_NAME);
@@ -2292,6 +2317,7 @@ export const audioBufferCache = {
                 if (
                     typeof key !== 'string' ||
                     !key.startsWith('freeze-') ||
+                    durableOwnedIds.has(key) ||
                     activeIds.has(key) ||
                     freezeProjectId !== projectId
                 ) {
@@ -2303,6 +2329,7 @@ export const audioBufferCache = {
                 if (
                     key.startsWith('freeze-') &&
                     !activeIds.has(key) &&
+                    !durableOwnedIds.has(key) &&
                     !protectedKeys.has(key) &&
                     !checkpointRetainedIds.has(key) &&
                     !preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) &&
@@ -2328,6 +2355,10 @@ export const audioBufferCache = {
         const threshold = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
         let deletedCount = 0;
         try {
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return 0;
+            }
             const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({
                 staleBeforeMs: threshold,
             });
@@ -2361,6 +2392,7 @@ export const audioBufferCache = {
                 const meta = metas[index]!;
                 const key = keys[index]! as string;
                 if (
+                    durableOwnedIds.has(key) ||
                     checkpointRetainedIds.has(key) ||
                     preparedAudioBufferLifecycle.hasProjectCollectionReservation(key) ||
                     isProtectedFromCollection(meta)
@@ -2406,7 +2438,12 @@ export const audioBufferCache = {
                 if (migrationBytes >= LEGACY_MIGRATION_BYTE_BUDGET) {
                     break;
                 }
-                if (typeof key !== 'string' || migratedIds.has(key) || checkpointRetainedIds.has(key)) {
+                if (
+                    typeof key !== 'string' ||
+                    migratedIds.has(key) ||
+                    checkpointRetainedIds.has(key) ||
+                    durableOwnedIds.has(key)
+                ) {
                     continue;
                 }
                 const record = await awaitRequest(store.get(key) as IDBRequest<SerializedBuffer | undefined>);
@@ -2464,6 +2501,10 @@ export const audioBufferCache = {
     async garbageCollectBySize(maxSizeBytes: number): Promise<number> {
         let deletedCount = 0;
         try {
+            const durableOwnedIds = await readDurableOwnedIdsOrAbort();
+            if (durableOwnedIds === null) {
+                return 0;
+            }
             const recoveryCollection = await preparedAudioBufferLifecycle.collectRecoveries({ maxSizeBytes });
             deletedCount += recoveryCollection.count;
             const ordinarySizeBudget = Math.max(0, maxSizeBytes - recoveryCollection.remainingBytes);
@@ -2499,7 +2540,10 @@ export const audioBufferCache = {
                 .map((meta, index) => ({
                     id: keys[index]! as string,
                     lastAccessed: meta.lastAccessed,
-                    protected: checkpointRetainedIds.has(keys[index]! as string) || isProtectedFromCollection(meta),
+                    protected:
+                        durableOwnedIds.has(keys[index]! as string) ||
+                        checkpointRetainedIds.has(keys[index]! as string) ||
+                        isProtectedFromCollection(meta),
                     size: meta.sizeInBytes,
                 }))
                 .filter((entry) => typeof entry.lastAccessed === 'number' && typeof entry.size === 'number')
