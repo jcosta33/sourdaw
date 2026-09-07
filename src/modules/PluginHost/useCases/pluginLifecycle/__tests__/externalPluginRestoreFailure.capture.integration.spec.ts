@@ -29,6 +29,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { activateExternalPlugin } from '../activateExternalPlugin';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { hasUnresolvedExternalPluginRestoreFailure } from '../hasUnresolvedExternalPluginRestoreFailure';
+import { unloadPlugin } from '../unloadPlugin';
 
 // The native plugin bridge is the controlled boundary: real activation, real
 // capture, real command dispatch, and the real save/export persistence stack
@@ -38,12 +39,14 @@ const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn<(pluginId: string, instanceId: string, sampleRate: number) => Promise<unknown>>(),
     setPluginStateRepo: vi.fn<(instanceId: string, state: Uint8Array) => Promise<void>>(),
     getPluginStateRepo: vi.fn<(instanceId: string) => Promise<Uint8Array>>(),
+    unloadPluginRepo: vi.fn<() => Promise<{ unloadedInstanceIds: string[]; errors: string[]; reports: never[] }>>(),
     persistCrdtProject: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({ loadPlugin: mocks.loadPluginRepo }));
 vi.mock('../../../repositories/pluginBridge/setPluginState', () => ({ setPluginState: mocks.setPluginStateRepo }));
 vi.mock('../../../repositories/pluginBridge/getPluginState', () => ({ getPluginState: mocks.getPluginStateRepo }));
+vi.mock('../../../repositories/pluginBridge/unloadPlugin', () => ({ unloadPlugin: mocks.unloadPluginRepo }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -169,6 +172,12 @@ function persistedDeviceChunk(): string | undefined {
     return snapshot.arrangement?.tracks?.[0]?.devices?.[0]?.externalStateChunk;
 }
 
+function preservationWarningCount(): number {
+    return vi
+        .mocked(notifyUser)
+        .mock.calls.filter(([message, level]) => level === 'warning' && String(message).includes('preserved')).length;
+}
+
 function storedDeviceChunk(deviceIndex = 0): string | undefined {
     const device = trackStore.value?.tracks[0]?.devices[deviceIndex];
     if (!device) {
@@ -255,6 +264,7 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
         });
         mocks.setPluginStateRepo.mockResolvedValue(undefined);
         mocks.getPluginStateRepo.mockResolvedValue(bytesOf('plugin-defaults'));
+        mocks.unloadPluginRepo.mockResolvedValue({ unloadedInstanceIds: [], errors: [], reports: [] });
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         agentProjectInspectionPort.setProvider(() => ({
             audioGraphValid: true,
@@ -301,6 +311,118 @@ describe('external plugin state survives a failed restore (issue 3693)', () => {
 
         await exportProjectFile();
         expect(storedDeviceChunk()).toBe(ORIGINAL_CHUNK);
+    });
+
+    // Round 2: the warning is once per unresolved failure EPISODE, not once per
+    // save — an autosave tick every 30 seconds must not nag for the whole
+    // session — and a resolved-then-refailed instance is a new episode that
+    // warns again. Driven entirely through the real marker machinery.
+    it('warns once per unresolved failure episode and again for a new episode', async () => {
+        const instanceId = 'inst-episodes';
+        seedSavedProject(instanceId, ORIGINAL_CHUNK);
+        mocks.setPluginStateRepo.mockRejectedValue(new Error('state chunk rejected'));
+
+        await activateInstance(instanceId, ORIGINAL_CHUNK);
+        expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(true);
+
+        await exportProjectFile();
+        await exportProjectFile();
+        expect(preservationWarningCount()).toBe(1);
+
+        // The plugin accepts a retry of its saved chunk: the episode ends.
+        mocks.setPluginStateRepo.mockResolvedValue(undefined);
+        await expect(activateInstance(instanceId, ORIGINAL_CHUNK)).resolves.toEqual({ status: 'active' });
+        expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(false);
+
+        // A NEW episode: reload the instance and the plugin rejects again.
+        mocks.unloadPluginRepo.mockResolvedValue({
+            unloadedInstanceIds: [instanceId],
+            errors: [],
+            reports: [],
+        });
+        await unloadPlugin(instanceId);
+        mocks.setPluginStateRepo.mockRejectedValue(new Error('state chunk rejected again'));
+        await expect(activateInstance(instanceId, ORIGINAL_CHUNK)).resolves.toEqual({
+            status: 'failed',
+            stage: 'restore',
+            reason: 'Error: state chunk rejected again',
+        });
+        expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(true);
+
+        await exportProjectFile();
+        expect(preservationWarningCount()).toBe(2);
+    });
+
+    // The episode also ends when a deliberate replacement resolves it — and a
+    // rejected rebuild retry of the replacement opens a new one, with no unload
+    // in between. Deleting the warned-set removal at the replacement-clear site
+    // reds this test: the re-failed instance would stay silently unwarned.
+    it('warns again when a failure returns after an explicit replacement resolved the episode', async () => {
+        const instanceId = 'inst-re-episode';
+        seedSavedProject(instanceId, ORIGINAL_CHUNK);
+
+        // The controlled bridge doubles as the host: the replacement push lands.
+        let hostState = bytesOf('plugin-defaults');
+        mocks.setPluginStateRepo.mockRejectedValueOnce(new Error('state chunk rejected'));
+        mocks.setPluginStateRepo.mockImplementation((_instanceId: string, state: Uint8Array) => {
+            hostState = state;
+            return Promise.resolve();
+        });
+        mocks.getPluginStateRepo.mockImplementation(() => Promise.resolve(hostState));
+
+        await activateInstance(instanceId, ORIGINAL_CHUNK);
+        await exportProjectFile();
+        expect(preservationWarningCount()).toBe(1);
+
+        // Deliberate replacement resolves the episode: the host accepts the push.
+        await executeAppAction(
+            { type: 'setExternalPluginState', payload: { deviceId: DEVICE_ID, stateChunk: REPLACED_CHUNK } },
+            { skipMacroRecording: true }
+        );
+        expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(false);
+
+        // No unload, no teardown: the rebuild retry restores the replacement
+        // from project truth and the plugin rejects it AGAIN — a new episode.
+        mocks.setPluginStateRepo.mockRejectedValue(new Error('state chunk rejected again'));
+        await expect(activateInstance(instanceId, ORIGINAL_CHUNK)).resolves.toEqual({
+            status: 'failed',
+            stage: 'restore',
+            reason: 'Error: state chunk rejected again',
+        });
+        expect(hasUnresolvedExternalPluginRestoreFailure(instanceId)).toBe(true);
+
+        await exportProjectFile();
+        expect(preservationWarningCount()).toBe(2);
+    });
+
+    // Unloading an instance whose failure never resolved also ends the episode:
+    // a fresh instance failing again must warn, not inherit the old warning.
+    // Deleting the warned-set removal at the unload site reds this test.
+    it('warns again when an unresolved instance is unloaded and its replacement re-fails', async () => {
+        const instanceId = 'inst-unload-episode';
+        seedSavedProject(instanceId, ORIGINAL_CHUNK);
+        mocks.setPluginStateRepo.mockRejectedValue(new Error('state chunk rejected'));
+
+        await activateInstance(instanceId, ORIGINAL_CHUNK);
+        await exportProjectFile();
+        expect(preservationWarningCount()).toBe(1);
+
+        // Unloaded while still unresolved — no resolve ever happened.
+        mocks.unloadPluginRepo.mockResolvedValue({
+            unloadedInstanceIds: [instanceId],
+            errors: [],
+            reports: [],
+        });
+        await unloadPlugin(instanceId);
+
+        await expect(activateInstance(instanceId, ORIGINAL_CHUNK)).resolves.toEqual({
+            status: 'failed',
+            stage: 'restore',
+            reason: 'Error: state chunk rejected',
+        });
+
+        await exportProjectFile();
+        expect(preservationWarningCount()).toBe(2);
     });
 
     it('pushes a deliberate replacement to the host, and capture commits what the host then reports', async () => {

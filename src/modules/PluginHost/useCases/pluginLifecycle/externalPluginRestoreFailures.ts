@@ -13,3 +13,12 @@
  * chunk. Reading plugin state never clears it.
  */
 export const externalPluginRestoreFailures = new Set<string>();
+
+/**
+ * Instance ids whose failed restore already warned the user (via the save
+ * path's notification), so the warning fires exactly once per failure episode
+ * rather than on every autosave tick. Every marker-resolve site — restore
+ * success, explicit replacement acceptance, unload, graph teardown — drops the
+ * instance from here too, so a resolved-then-refailed instance warns again.
+ */
+export const warnedExternalPluginRestoreFailures = new Set<string>();

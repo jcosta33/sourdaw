@@ -32,6 +32,7 @@ export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin
 export { clearExternalPluginRestoreFailure } from './pluginLifecycle/clearExternalPluginRestoreFailure';
 export { hasUnresolvedExternalPluginRestoreFailure } from './pluginLifecycle/hasUnresolvedExternalPluginRestoreFailure';
 export { markExternalPluginEngineAttached } from './pluginLifecycle/markExternalPluginEngineAttached';
+export { shouldWarnExternalPluginRestoreFailure } from './pluginLifecycle/shouldWarnExternalPluginRestoreFailure';
 export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 export { resetExternalPluginRuntimeForGraphRebuild } from './pluginLifecycle/resetExternalPluginRuntimeForGraphRebuild';
 export { beginProjectSessionPluginRetirement } from './pluginLifecycle/beginProjectSessionPluginRetirement';

@@ -350,6 +350,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     findSupportedPlugin: vi.fn(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn(() => false),
     isFaustInstrumentModule: vi.fn(),
+    shouldWarnExternalPluginRestoreFailure: vi.fn(() => false),
     observeExternalPluginParameterEdits: vi.fn(),
     readPluginState: vi.fn(),
     registerFaustDSP: vi.fn(),

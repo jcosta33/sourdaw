@@ -1,6 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { hasUnresolvedExternalPluginRestoreFailure, readPluginState } from '#/modules/PluginHost/useCases';
+import {
+    hasUnresolvedExternalPluginRestoreFailure,
+    readPluginState,
+    shouldWarnExternalPluginRestoreFailure,
+} from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { capturedNativePluginStateCache } from './capturedNativePluginStateCache';
@@ -23,8 +27,10 @@ import { capturedNativePluginStateCache } from './capturedNativePluginStateCache
  * failure stands unresolved, the stored chunk stays authoritative for the slot
  * and the host is not read at all; a later successful restore or an explicit
  * `setExternalPluginState` replacement (which pushes the chunk to the host)
- * clears the marker and capture resumes. The skip is never silent: each save
- * or export that suppresses a slot names the plugin and says so.
+ * clears the marker and capture resumes. The skip is never silent — but it
+ * warns exactly once per failure episode: autosave ticks on a plugin that
+ * keeps rejecting its chunk must not nag every 30 seconds, while a
+ * resolved-then-refailed instance warns again.
  *
  * The write is gated on whether THIS peer's own host state changed since its last
  * capture (`capturedNativePluginStateCache`), not on whether the stored chunk
@@ -53,10 +59,13 @@ export async function captureExternalPluginStates(): Promise<void> {
             // The plugin rejected its saved state, so its current runtime state
             // is defaults. Preserve the stored original chunk by leaving the
             // slot untouched until authoritative state exists again — and say
-            // so, because a save that silently drops the plugin's edits reads
-            // as success to the musician.
+            // so, once per failure episode: a save that silently drops the
+            // plugin's edits reads as success to the musician, but an autosave
+            // that nags every 30 seconds is noise.
             if (hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
-                preservedPlugins.push(device.externalPluginId ?? device.name);
+                if (shouldWarnExternalPluginRestoreFailure(instanceId)) {
+                    preservedPlugins.push(device.externalPluginId ?? device.name);
+                }
                 continue;
             }
 

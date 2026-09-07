@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<(action: unknown, options?: unknown) => Promise<void>>(),
     readPluginState: vi.fn<(instanceId: string) => Promise<string>>(),
     hasUnresolvedExternalPluginRestoreFailure: vi.fn<(instanceId: string) => boolean>(),
+    shouldWarnExternalPluginRestoreFailure: vi.fn<(instanceId: string) => boolean>(),
     notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
 }));
 
@@ -27,6 +28,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     readPluginState: mocks.readPluginState,
     hasUnresolvedExternalPluginRestoreFailure: mocks.hasUnresolvedExternalPluginRestoreFailure,
+    shouldWarnExternalPluginRestoreFailure: mocks.shouldWarnExternalPluginRestoreFailure,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
@@ -92,6 +94,7 @@ describe('captureExternalPluginStates', () => {
             },
         ]);
         mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
+        mocks.shouldWarnExternalPluginRestoreFailure.mockReturnValue(true);
         // The plugin's default state is exactly what must NOT be committed.
         mocks.readPluginState.mockResolvedValue('defaults');
 
@@ -106,6 +109,37 @@ describe('captureExternalPluginStates', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('preserved'), 'warning');
     });
 
+    // The warning is once per failure episode, not once per save: autosave ticks
+    // on a plugin that keeps rejecting its chunk must not nag every 30 seconds,
+    // while a resolved-then-refailed instance warns again. The episode tracking
+    // itself (what makes the second call false) is pinned end-to-end in the
+    // PluginHost integration spec.
+    it('warns once per failure episode across saves and again for a new episode', async () => {
+        setTrackDevices([
+            {
+                id: 'd1',
+                type: 'external-plugin',
+                externalInstanceId: 'inst-1',
+                externalStateChunk: 'original',
+                externalPluginId: 'serum',
+            },
+        ]);
+        mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
+        mocks.readPluginState.mockResolvedValue('defaults');
+        mocks.shouldWarnExternalPluginRestoreFailure
+            .mockReturnValueOnce(true)
+            .mockReturnValueOnce(false)
+            .mockReturnValueOnce(true);
+
+        await captureExternalPluginStates();
+        await captureExternalPluginStates();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+
+        // Resolved, then failed again: a new episode warns again.
+        await captureExternalPluginStates();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(2);
+    });
+
     it('captures normally again once the failed-restore marker resolves', async () => {
         const device: MockDevice = {
             id: 'd1',
@@ -116,6 +150,7 @@ describe('captureExternalPluginStates', () => {
         };
         setTrackDevices([device]);
         mocks.hasUnresolvedExternalPluginRestoreFailure.mockReturnValue(true);
+        mocks.shouldWarnExternalPluginRestoreFailure.mockReturnValue(true);
         mocks.readPluginState.mockResolvedValue('defaults');
 
         await captureExternalPluginStates();
