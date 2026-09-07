@@ -30,9 +30,9 @@ function reasonOf(error: unknown): string {
 /** Dispose `orphan` only if it is still the one this session is tracking. */
 function retireOrphanIfCurrent(orphan: AudioGraphBackend): void {
     if (nativeLiveGraphSession.orphanedBackend !== orphan) {
-        // Superseded while the apply was in flight — a later stall already
-        // disposed this handle and installed its own orphan; disposing again
-        // or nulling a field that no longer names this handle would be wrong.
+        // Cleared while the apply was in flight: a new session installed over
+        // this orphan and `installRolledSession` already disposed it, so
+        // disposing again would be a second dispose of a retired handle.
         return;
     }
     orphan.dispose();
