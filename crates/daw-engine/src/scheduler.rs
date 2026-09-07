@@ -6820,6 +6820,7 @@ mod tests {
 #[cfg(test)]
 mod timeline_tests {
     use super::*;
+    use crate::offline::OfflineRenderer;
     use crate::timeline::{AutomationEvent, DeviceKind, RampShape, MAX_TIMELINE_TRACKS};
     use crate::transport_map::{TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment};
     use rtrb::RingBuffer;
@@ -13118,6 +13119,86 @@ mod timeline_tests {
                 .iter()
                 .any(|sample| *sample != 0.0),
             "the note never sounded in the block that renders its frame"
+        );
+    }
+
+    /// The command batch for a track carrying a Fermenter generator playing
+    /// `events`, in the order both [`Harness`] and [`OfflineRenderer`] apply
+    /// commands: register the track, register the detached instrument with
+    /// its own note store, splice it into the chain, start the transport,
+    /// then schedule the phrase.
+    fn fermenter_phrase_commands(
+        track_id: usize,
+        effect_id: usize,
+        events: &[(u64, u8, bool)],
+    ) -> Vec<GraphCommand> {
+        vec![
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::fermenter_with_patch(FERMENTER_RATE, &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+            GraphCommand::SetTransport(TransportState {
+                is_playing: true,
+                ..TransportState::default()
+            }),
+            schedule_phrase(effect_id, events),
+        ]
+    }
+
+    /// The live scheduler and the offline renderer produce the same samples
+    /// for the same Fermenter note.
+    ///
+    /// [`OfflineRenderer`]'s own contract is that it is the null-test oracle
+    /// for the live engine: the same commands over the same frame count are
+    /// bit-identical. The onset (frame 300) and the release (frame 1,100)
+    /// both sit off the live 128-frame block grid and the offline
+    /// [`crate::offline::OFFLINE_BLOCK_FRAMES`] 512-frame grid, so a body
+    /// that quantised either edge to either grid would diverge here.
+    #[test]
+    fn a_fermenter_note_renders_the_same_samples_live_and_offline() {
+        const TRACK_ID: usize = 1;
+        const EFFECT_ID: usize = 7;
+        const NOTE_ON: u64 = 300;
+        const NOTE_OFF: u64 = 1_100;
+        const EVENTS: [(u64, u8, bool); 2] = [(NOTE_ON, 60, true), (NOTE_OFF, 60, false)];
+        const LIVE_BLOCK: usize = 128;
+        const LIVE_CALLBACKS: usize = 12;
+        const RENDERED: usize = LIVE_BLOCK * LIVE_CALLBACKS;
+        let onset = NOTE_ON as usize;
+
+        let mut harness = Harness::new(32);
+        for command in fermenter_phrase_commands(TRACK_ID, EFFECT_ID, &EVENTS) {
+            harness.send(command);
+        }
+        let (live_left, live_right) = render_master(&mut harness, LIVE_BLOCK, LIVE_CALLBACKS);
+
+        let mut offline = OfflineRenderer::new(FERMENTER_RATE, 32);
+        for command in fermenter_phrase_commands(TRACK_ID, EFFECT_ID, &EVENTS) {
+            offline.push(command).expect("the batch should fit");
+        }
+        let (offline_left, offline_right) = offline.render(RENDERED);
+
+        assert!(
+            live_left[..onset].iter().all(|sample| *sample == 0.0)
+                && live_right[..onset].iter().all(|sample| *sample == 0.0)
+                && offline_left[..onset].iter().all(|sample| *sample == 0.0)
+                && offline_right[..onset].iter().all(|sample| *sample == 0.0),
+            "one of the renders carried signal before the note was written for"
+        );
+        assert!(
+            rms(&live_left[onset..NOTE_OFF as usize]) > 0.0,
+            "the live render never sounded the note, so parity with silence would be vacuous"
+        );
+        assert_eq!(
+            live_left, offline_left,
+            "the live and offline left channels diverged for the same Fermenter phrase"
+        );
+        assert_eq!(
+            live_right, offline_right,
+            "the live and offline right channels diverged for the same Fermenter phrase"
         );
     }
 
