@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:c231f4098234535e50f96c315151ecff83dd2fb793b733169a04ff503ce7e69c
+// @wasm-bindgen-dts crate-source: sha256:8bb9a2d6380f457f35dd5411244d2d94120fdb285cd3090161fac6bb68978330
 /* tslint:disable */
 /* eslint-disable */
 
@@ -282,8 +282,8 @@ export class FermenterInstance {
      */
     note_on_with_channel(note: number, velocity: number, channel: number): void;
     /**
-     * Process a block of 128 samples. Returns pointer to left channel.
-     * Caller reads left + right from WASM memory.
+     * Process a block of [`FERMENTER_BLOCK_FRAMES`] samples. Returns pointer
+     * to left channel. Caller reads left + right from WASM memory.
      *
      * Consumes every event queued since the last call, splitting the render at
      * each event's sample offset, and empties the list.

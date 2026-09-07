@@ -13114,10 +13114,10 @@ mod timeline_tests {
     fn a_fermenter_instance_buffers_exactly_the_frames_a_run_reads() {
         let instance = FermenterInstance::new(FERMENTER_RATE, FERMENTER_MAX_VOICES);
         assert_eq!(
-            instance.block_frames(),
-            FERMENTER_BLOCK_FRAMES,
-            "FermenterInstance's channel buffers must be exactly \
-             FERMENTER_BLOCK_FRAMES long, or render_run's from_raw_parts \
+            instance.channel_buffer_frames(),
+            (FERMENTER_BLOCK_FRAMES, FERMENTER_BLOCK_FRAMES),
+            "FermenterInstance's left and right channel buffers must both be \
+             exactly FERMENTER_BLOCK_FRAMES long, or render_run's from_raw_parts \
              slices read past the allocation"
         );
     }

@@ -322,8 +322,8 @@ impl FermenterInstance {
         })
     }
 
-    /// Process a block of 128 samples. Returns pointer to left channel.
-    /// Caller reads left + right from WASM memory.
+    /// Process a block of [`FERMENTER_BLOCK_FRAMES`] samples. Returns pointer
+    /// to left channel. Caller reads left + right from WASM memory.
     ///
     /// Consumes every event queued since the last call, splitting the render at
     /// each event's sample offset, and empties the list.
@@ -388,14 +388,13 @@ impl FermenterInstance {
         self.event_count += 1;
         true
     }
-}
 
-impl FermenterInstance {
-    /// Length of the channel buffers `process` renders into, so a host can
-    /// assert the buffer it reads is the length [`FERMENTER_BLOCK_FRAMES`]
-    /// promises.
-    pub fn block_frames(&self) -> usize {
-        self.left_buf.len()
+    /// Lengths of the left and right channel buffers `process` renders into,
+    /// so the native engine host can assert both are the length
+    /// [`FERMENTER_BLOCK_FRAMES`] promises before it trusts pointers into
+    /// them (the worklet cannot call it, it is outside the bindings).
+    pub fn channel_buffer_frames(&self) -> (usize, usize) {
+        (self.left_buf.len(), self.right_buf.len())
     }
 }
 
@@ -403,7 +402,7 @@ impl FermenterInstance {
 mod tests {
     use assert_no_alloc::assert_no_alloc;
 
-    use super::{FermenterInstance, MAX_BLOCK_EVENTS};
+    use super::{FermenterInstance, FERMENTER_BLOCK_FRAMES, MAX_BLOCK_EVENTS};
     use crate::primitives::ProcessLifecycle;
 
     /// Index of the first sample the instance rendered as non-zero.
@@ -418,8 +417,8 @@ mod tests {
         instance.note_on(60, 100);
         let mut rendered = Vec::with_capacity(512);
         for _ in 0..4 {
-            instance.process(128);
-            rendered.extend_from_slice(&instance.left_buf[..128]);
+            instance.process(FERMENTER_BLOCK_FRAMES as u32);
+            rendered.extend_from_slice(&instance.left_buf[..FERMENTER_BLOCK_FRAMES]);
         }
         rendered
     }
