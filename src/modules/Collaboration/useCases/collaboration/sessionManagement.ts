@@ -41,6 +41,46 @@ import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer } from '../collaborationQueries';
 
 import { clearCollaborationFailure } from './clearCollaborationFailure';
+import { joinAttemptAuthority } from './joinAttemptAuthority';
+
+type InstalledSessionOwner = {
+    retired: boolean;
+    peerManager: PeerConnectionManager | null;
+    automergeSync: AutomergeSync | null;
+    assetTransfer: AssetTransfer | null;
+    cleanupProjectionBridge: (() => void) | null;
+    synchronizeAssetOwner:
+        | ((nextOwnerId: string) => Promise<
+              | {
+                    commit: () => Promise<void>;
+                    abort: () => Promise<void>;
+                }
+              | undefined
+          >)
+        | null;
+};
+
+let installedSessionOwner: InstalledSessionOwner | null = null;
+
+function captureInstalledSessionOwner(): InstalledSessionOwner | null {
+    return installedSessionOwner;
+}
+
+function isInstalledSessionOwner(owner: InstalledSessionOwner | null): owner is InstalledSessionOwner {
+    return owner !== null && installedSessionOwner === owner;
+}
+
+function canSessionOwnerWrite(owner: InstalledSessionOwner | null): owner is InstalledSessionOwner {
+    return isInstalledSessionOwner(owner) && !owner.retired;
+}
+
+function retireSessionOwner(owner: InstalledSessionOwner | null): void {
+    if (!owner || owner.retired) {
+        return;
+    }
+    owner.retired = true;
+    owner.automergeSync?.stop();
+}
 
 /**
  * §14.1 — Coalesce all collaboration-session mutables into one holder so the
@@ -173,6 +213,10 @@ function sanitizePresence(data: PresenceDelta): PresenceDelta {
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
 function startBranchSync(isHost: boolean): void {
+    const owner = captureInstalledSessionOwner();
+    if (!canSessionOwnerWrite(owner)) {
+        return;
+    }
     preserveBranchStateForSession();
     sessionState.hasBranchStateBackup = true;
 
@@ -192,6 +236,9 @@ function startBranchSync(isHost: boolean): void {
 
     // Mirror local branch mutations into the Automerge doc.
     sessionState.unsubscribeBranchStore = branchStore.subscribe((state) => {
+        if (!canSessionOwnerWrite(owner)) {
+            return;
+        }
         if (sessionState.isProjectingBranches || !state) {
             return;
         }
@@ -200,6 +247,9 @@ function startBranchSync(isHost: boolean): void {
         }
         const branches = structuredClone(state.branches);
         function writeBranchMetadata(): void {
+            if (!canSessionOwnerWrite(owner)) {
+                return;
+            }
             if (!hasCrdtDoc(DOC_BRANCHES)) {
                 return;
             }
@@ -216,7 +266,7 @@ function startBranchSync(isHost: boolean): void {
             return;
         }
         void transition.then((outcome) => {
-            if (outcome === 'committed') {
+            if (outcome === 'committed' && canSessionOwnerWrite(owner)) {
                 writeBranchMetadata();
             }
             return undefined;
@@ -225,6 +275,9 @@ function startBranchSync(isHost: boolean): void {
 
     // Project incoming __branches__ doc changes back into branchStore.
     sessionState.unsubscribeAutomergeChanges = subscribeToCrdtChanges((docId) => {
+        if (!canSessionOwnerWrite(owner)) {
+            return;
+        }
         // §138.1 — Skip the projection entirely when the hint tells us a
         // different doc changed. Only undefined (bulk) or DOC_BRANCHES
         // can affect the branch projection.
@@ -255,7 +308,7 @@ function startBranchSync(isHost: boolean): void {
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | null {
+function stopBranchSync(requestWitness: number): ReturnType<typeof restoreBranchStateAfterSession> | null {
     if (sessionState.unsubscribeBranchStore) {
         sessionState.unsubscribeBranchStore();
         sessionState.unsubscribeBranchStore = null;
@@ -287,7 +340,9 @@ function stopBranchSync(): ReturnType<typeof restoreBranchStateAfterSession> | n
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {
         logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
-        setCollaborationError('Failed to save project locally after leaving the session.');
+        if (joinAttemptAuthority.isCurrent(requestWitness)) {
+            setCollaborationError('Failed to save project locally after leaving the session.');
+        }
     });
 
     // Handed back rather than reported here. Reporting is the last thing
@@ -369,8 +424,8 @@ function setPeerSyncQuarantined(peerId: PeerId, isQuarantined: boolean): void {
     });
 }
 
-function reportSyncChannelQuarantine(quarantinedPeerId: PeerId): void {
-    const peerManager = sessionState.peerManager;
+function reportSyncChannelQuarantine(owner: InstalledSessionOwner, quarantinedPeerId: PeerId): void {
+    const peerManager = owner.peerManager;
     if (!peerManager) {
         return;
     }
@@ -402,9 +457,12 @@ function reportSyncChannelQuarantine(quarantinedPeerId: PeerId): void {
  * what a peer may do requires building and enforcing a real permission
  * model, not re-reading a role off the sync path.
  */
-function buildAutomergeSyncHooks(): AutomergeSyncHooks {
+function buildAutomergeSyncHooks(owner: InstalledSessionOwner): AutomergeSyncHooks {
     return {
         captureSyncAcceptance: ({ peerId, docId }) => {
+            if (!canSessionOwnerWrite(owner)) {
+                return { accepted: false, senderIsHost: false };
+            }
             const state = collaborationStore.value;
             const senderIsHost = state?.peers.some((peer) => peer.id === peerId && peer.isHost) ?? false;
             return {
@@ -415,6 +473,9 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             };
         },
         canApplySync: (peerId: PeerId, docId: string) => {
+            if (!canSessionOwnerWrite(owner)) {
+                return false;
+            }
             // The host is the session authority: its syncs always apply.
             const senderIsHost =
                 collaborationStore.value?.peers.some((param) => param.id === peerId && param.isHost) ?? false;
@@ -431,6 +492,9 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             return true;
         },
         getProtectedProjectId: ({ peerId, docId }) => {
+            if (!canSessionOwnerWrite(owner)) {
+                return undefined;
+            }
             const state = collaborationStore.value;
             if (!state || docId !== DOC_PREFIX_ROOT) {
                 return undefined;
@@ -439,29 +503,43 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             return senderIsHost ? undefined : getSettledProjectId();
         },
         onPersistError: () => {
-            setCollaborationError('Failed to save received changes locally.');
+            if (canSessionOwnerWrite(owner)) {
+                setCollaborationError('Failed to save received changes locally.');
+            }
         },
         prepareSyncPersistence: ({ docId, projectId, senderIsHost }) => {
+            if (!canSessionOwnerWrite(owner)) {
+                return Promise.reject(new Error('Collaboration session was superseded'));
+            }
             if (senderIsHost && docId === DOC_PREFIX_ROOT && projectId) {
-                return sessionState.synchronizeAssetOwner?.(projectId);
+                return owner.synchronizeAssetOwner?.(projectId);
             }
             return undefined;
         },
         onPostPersistError: () => {
-            setCollaborationError('Could not update ownership of shared audio. Restarting safely retries it.');
+            if (canSessionOwnerWrite(owner)) {
+                setCollaborationError('Could not update ownership of shared audio. Restarting safely retries it.');
+            }
         },
         onSendError: () => {
             // The peer is still connected but has not received these changes.
             // Saying so is the whole point: the alternative is a session that
             // looks healthy while the other side silently falls behind.
-            setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+            if (canSessionOwnerWrite(owner)) {
+                setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+            }
         },
         onSyncQuarantine: ({ peerId }) => {
+            if (!canSessionOwnerWrite(owner)) {
+                return;
+            }
             setPeerSyncQuarantined(peerId, true);
-            reportSyncChannelQuarantine(peerId);
+            reportSyncChannelQuarantine(owner, peerId);
         },
         onSyncQuarantineLifted: ({ peerId }) => {
-            setPeerSyncQuarantined(peerId, false);
+            if (canSessionOwnerWrite(owner)) {
+                setPeerSyncQuarantined(peerId, false);
+            }
         },
     };
 }
@@ -531,110 +609,165 @@ function initializeSessionRuntime(
     assetOwnerId: string,
     options: InitializeSessionRuntimeOptions = {}
 ): PeerConnectionManager {
-    const peerManager = new PeerConnectionManager({
-        onMessage: handlePeerMessage,
-        onConnected: handlePeerConnected,
-        onDisconnected: handlePeerDisconnected,
-        onSendError: ({ error }) => {
-            logger.warn('[Collaboration] Failed to broadcast to a peer:', error);
-            setCollaborationError('Could not send project changes to a peer — they may be out of date.');
-        },
-    });
-    sessionState.peerManager = peerManager;
-
-    sessionState.automergeSync = new AutomergeSync(peerManager, buildAutomergeSyncHooks());
-    sessionState.automergeSync.start();
-    sessionState.cleanupProjectionBridge = setupProjectionBridge();
-
-    sessionState.assetTransfer = new AssetTransfer(
-        peerManager,
-        {
-            onAssetAvailable: (hash) => {
-                void resolveAssetForClips(hash);
-            },
-            onProgress: (_hash, _received, _total) => {
-                // Could update a UI progress indicator.
-            },
-            // An abandoned asset transfer is not a session failure — peers stay
-            // connected and the hash becomes requestable again — but it does mean
-            // clips referencing it stay silent, which the user otherwise has no way
-            // to see. Surface it on the panel's error row.
-            // The message names the retry condition rather than promising a retry:
-            // the only thing that re-asks for an asset is the scheduler tick, so a
-            // request is re-issued when playback next runs over a clip that needs
-            // it — and only until AssetTransfer's attempt bound is spent.
-            onTransferFailed: (hash, reason) => {
-                logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
-                setCollaborationError(
-                    `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
-                );
-            },
-        },
-        assetOwnerId,
-        undefined,
-        {
-            durableStagingReady: options.rebindToSynchronizedOwner !== true,
-            handoffSourceOwnerIds: options.handoffSourceOwnerIds,
-        }
-    );
-
-    const assetTransfer = sessionState.assetTransfer;
-    const queueAssetOwnershipTask = <Result>(task: () => Promise<Result>): Promise<Result | undefined> => {
-        const result = sessionState.assetOwnershipTask.then(() => {
-            if (sessionState.assetTransfer !== assetTransfer) {
-                return undefined;
-            }
-            return task();
-        });
-        sessionState.assetOwnershipTask = result.then(
-            () => undefined,
-            () => undefined
-        );
-        return result;
+    const owner: InstalledSessionOwner = {
+        retired: false,
+        peerManager: null,
+        automergeSync: null,
+        assetTransfer: null,
+        cleanupProjectionBridge: null,
+        synchronizeAssetOwner: null,
     };
-    if (options.rebindToSynchronizedOwner) {
-        sessionState.synchronizeAssetOwner = (nextOwnerId) =>
-            queueAssetOwnershipTask(async () => {
-                const prepared = await assetTransfer.prepareDurableOwnerRebind(nextOwnerId);
-                if (prepared.status === 'failed') {
-                    throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);
-                }
-                return {
-                    commit: async () => {
-                        let failureReason = 'unknown';
-                        for (let attempt = 0; attempt < 3; attempt += 1) {
-                            try {
-                                await prepared.commit();
-                                return;
-                            } catch (error) {
-                                failureReason = error instanceof Error ? error.message : 'unexpected failure';
-                            }
-                            await Promise.resolve();
-                        }
-                        throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
-                    },
-                    abort: prepared.abort,
-                };
-            });
-    }
+    installedSessionOwner = owner;
 
-    return peerManager;
+    try {
+        const peerManager = new PeerConnectionManager({
+            onMessage: (input) => {
+                if (canSessionOwnerWrite(owner)) {
+                    handlePeerMessage(owner, input);
+                }
+            },
+            onConnected: (peerId) => {
+                if (canSessionOwnerWrite(owner)) {
+                    handlePeerConnected(owner, peerId);
+                }
+            },
+            onDisconnected: (peerId) => {
+                if (canSessionOwnerWrite(owner)) {
+                    handlePeerDisconnected(owner, peerId);
+                }
+            },
+            onSendError: ({ error }) => {
+                logger.warn('[Collaboration] Failed to broadcast to a peer:', error);
+                if (canSessionOwnerWrite(owner)) {
+                    setCollaborationError('Could not send project changes to a peer — they may be out of date.');
+                }
+            },
+        });
+        owner.peerManager = peerManager;
+        sessionState.peerManager = peerManager;
+
+        const automergeSync = new AutomergeSync(peerManager, buildAutomergeSyncHooks(owner));
+        owner.automergeSync = automergeSync;
+        sessionState.automergeSync = automergeSync;
+        automergeSync.start();
+        const cleanupProjectionBridge = setupProjectionBridge();
+        owner.cleanupProjectionBridge = cleanupProjectionBridge;
+        sessionState.cleanupProjectionBridge = cleanupProjectionBridge;
+
+        const assetTransfer = new AssetTransfer(
+            peerManager,
+            {
+                onAssetAvailable: (hash) => {
+                    if (canSessionOwnerWrite(owner)) {
+                        void resolveAssetForClips(owner, hash);
+                    }
+                },
+                onProgress: (_hash, _received, _total) => {
+                    // Could update a UI progress indicator.
+                },
+                // An abandoned asset transfer is not a session failure — peers stay
+                // connected and the hash becomes requestable again — but it does mean
+                // clips referencing it stay silent, which the user otherwise has no way
+                // to see. Surface it on the panel's error row.
+                // The message names the retry condition rather than promising a retry:
+                // the only thing that re-asks for an asset is the scheduler tick, so a
+                // request is re-issued when playback next runs over a clip that needs
+                // it — and only until AssetTransfer's attempt bound is spent.
+                onTransferFailed: (hash, reason) => {
+                    logger.warn(`[Collaboration] Asset transfer failed for ${hash}: ${reason}`);
+                    if (canSessionOwnerWrite(owner)) {
+                        setCollaborationError(
+                            `Could not receive shared audio from a peer — ${reason}. Playing over the affected clips asks again.`
+                        );
+                    }
+                },
+            },
+            assetOwnerId,
+            undefined,
+            {
+                durableStagingReady: options.rebindToSynchronizedOwner !== true,
+                handoffSourceOwnerIds: options.handoffSourceOwnerIds,
+            }
+        );
+        owner.assetTransfer = assetTransfer;
+        sessionState.assetTransfer = assetTransfer;
+
+        const queueAssetOwnershipTask = <Result>(task: () => Promise<Result>): Promise<Result> => {
+            const result = sessionState.assetOwnershipTask.then(() => {
+                if (!canSessionOwnerWrite(owner) || owner.assetTransfer !== assetTransfer) {
+                    throw new Error('Collaboration session was superseded');
+                }
+                return task();
+            });
+            sessionState.assetOwnershipTask = result.then(
+                () => undefined,
+                () => undefined
+            );
+            return result;
+        };
+        if (options.rebindToSynchronizedOwner) {
+            owner.synchronizeAssetOwner = (nextOwnerId) =>
+                queueAssetOwnershipTask(async () => {
+                    const prepared = await assetTransfer.prepareDurableOwnerRebind(nextOwnerId);
+                    if (prepared.status === 'failed') {
+                        throw new Error(`Durable asset owner handoff preparation failed: ${prepared.reason}`);
+                    }
+                    return {
+                        commit: async () => {
+                            let failureReason = 'unknown';
+                            for (let attempt = 0; attempt < 3; attempt += 1) {
+                                try {
+                                    await prepared.commit();
+                                    return;
+                                } catch (error) {
+                                    failureReason = error instanceof Error ? error.message : 'unexpected failure';
+                                }
+                                await Promise.resolve();
+                            }
+                            throw new Error(`Durable asset owner rebind failed after retry: ${failureReason}`);
+                        },
+                        abort: prepared.abort,
+                    };
+                });
+            sessionState.synchronizeAssetOwner = owner.synchronizeAssetOwner;
+        }
+
+        return peerManager;
+    } catch (error) {
+        retireSessionOwner(owner);
+        try {
+            cleanupSubsystems(owner);
+        } catch (cleanupError) {
+            logger.warn('[Collaboration] Failed to clean up partial session initialization:', cleanupError);
+        }
+        throw error;
+    }
 }
 
 /** Tear down all subsystems without changing store state. */
-function cleanupSubsystems(): void {
+function cleanupSubsystems(
+    owner?: InstalledSessionOwner | null,
+    requestWitness = joinAttemptAuthority.capture()
+): boolean {
+    const targetOwner = arguments.length === 0 ? installedSessionOwner : (owner ?? null);
+    if (targetOwner !== installedSessionOwner) {
+        return false;
+    }
+    if (!targetOwner) {
+        return true;
+    }
+    retireSessionOwner(targetOwner);
     sessionState.synchronizeAssetOwner = null;
     sessionState.pendingInviteId = null;
     sessionState.sessionSecret = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
-    const branchRestoreOutcome = stopBranchSync();
+    const branchRestoreOutcome = stopBranchSync(requestWitness);
     for (const timer of peerCleanupTimers.values()) {
         clearTimeout(timer);
     }
     peerCleanupTimers.clear();
     if (sessionState.automergeSync) {
-        sessionState.automergeSync.stop();
         sessionState.automergeSync = null;
     }
     if (sessionState.cleanupProjectionBridge) {
@@ -650,6 +783,10 @@ function cleanupSubsystems(): void {
         sessionState.peerManager.closeAll();
         sessionState.peerManager = null;
     }
+    targetOwner.cleanupProjectionBridge = null;
+    targetOwner.assetTransfer = null;
+    targetOwner.peerManager = null;
+    installedSessionOwner = null;
     // `presenceListeners` is deliberately NOT cleared here: it holds
     // app-lifetime observers owned by their subscribers, not session state.
 
@@ -660,6 +797,7 @@ function cleanupSubsystems(): void {
     // failure the branch-restore report exists to prevent. Nothing that only
     // talks to the user runs before the session is actually torn down.
     reportBranchRestoreOutcome(branchRestoreOutcome);
+    return true;
 }
 
 // -- Asset resolution --
@@ -669,8 +807,11 @@ function cleanupSubsystems(): void {
  * and decode the blob into the AudioEngine buffer cache under their audioBufferId.
  * This lets the scheduler play the clip on the next playback start.
  */
-async function resolveAssetForClips(hash: string): Promise<void> {
-    const blob = sessionState.assetTransfer?.getAsset(hash);
+async function resolveAssetForClips(owner: InstalledSessionOwner, hash: string): Promise<void> {
+    if (!canSessionOwnerWrite(owner)) {
+        return;
+    }
+    const blob = owner.assetTransfer?.getAsset(hash);
     if (!blob) {
         return;
     }
@@ -693,10 +834,18 @@ async function resolveAssetForClips(hash: string): Promise<void> {
             }
             try {
                 const arrayBuffer = await blob.arrayBuffer();
+                if (!canSessionOwnerWrite(owner)) {
+                    return;
+                }
                 const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                if (!canSessionOwnerWrite(owner)) {
+                    return;
+                }
                 cacheAudioBuffer({ bufferId: clip.audioBufferId, buffer: audioBuffer });
             } catch {
-                logger.warn('[Collaboration] Failed to decode asset for clip', clip.id);
+                if (canSessionOwnerWrite(owner)) {
+                    logger.warn('[Collaboration] Failed to decode asset for clip', clip.id);
+                }
             }
         }
     }
@@ -705,14 +854,24 @@ async function resolveAssetForClips(hash: string): Promise<void> {
     // failure row is written by `onTransferFailed` and otherwise only cleared by
     // session-lifecycle use cases, so without this the message survives its own
     // successful retry and sits there until the user leaves the session.
-    clearCollaborationFailure();
+    if (canSessionOwnerWrite(owner)) {
+        clearCollaborationFailure();
+    }
 }
 
 // -- Playhead broadcast --
 
 function startPlayheadBroadcast(): void {
+    const owner = captureInstalledSessionOwner();
+    if (!canSessionOwnerWrite(owner)) {
+        return;
+    }
     sessionState.playheadBroadcastInterval = setInterval(() => {
-        if (!sessionState.peerManager || sessionState.peerManager.getConnectedPeerIds().length === 0) {
+        if (
+            !canSessionOwnerWrite(owner) ||
+            !owner.peerManager ||
+            owner.peerManager.getConnectedPeerIds().length === 0
+        ) {
             return;
         }
         const state = collaborationStore.value;
@@ -724,7 +883,7 @@ function startPlayheadBroadcast(): void {
         // (rather than nulling them) lets the receiver's merge preserve the
         // cursor set by the higher-rate cursor-broadcast path, eliminating the
         // 4 Hz presence flicker.
-        sessionState.peerManager.broadcastPresence({
+        owner.peerManager.broadcastPresence({
             type: 'presence',
             data: {
                 peerId: state.localPeerId,
@@ -746,16 +905,16 @@ function stopPlayheadBroadcast(): void {
 // -- Internal handlers --
 
 type HandlePeerMessageInput = { peerId: PeerId; message: PeerMessage };
-function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
+function handlePeerMessage(owner: InstalledSessionOwner, { peerId, message }: HandlePeerMessageInput): void {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === DOC_ID_ASSET) {
-            void sessionState.assetTransfer?.handleMessage(peerId, message);
+            void owner.assetTransfer?.handleMessage(peerId, message);
         } else {
             // A `__permissions__` doc used to be routed to a role manager here.
             // That scaffold is gone (ADR 0016 ruling 4); AutomergeSync drops the
             // docId as unknown, so a stale peer's role grant has no effect.
-            sessionState.automergeSync?.handlePeerMessage({ peerId, message });
+            owner.automergeSync?.handlePeerMessage({ peerId, message });
         }
     } else if (message.type === 'presence') {
         // Only surface presence from a peer the store already knows, and bound
@@ -792,12 +951,12 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
         // party. Without this a hostile joiner could eject any other peer by
         // id (closing the underlying connection).
         if (message.peerId === peerId) {
-            removePeer(message.peerId);
+            removePeer(owner, message.peerId);
         }
     }
 }
 
-function handlePeerConnected(peerId: PeerId): void {
+function handlePeerConnected(owner: InstalledSessionOwner, peerId: PeerId): void {
     // Cancel any pending cleanup from a prior disconnect.
     const existing = peerCleanupTimers.get(peerId);
     if (existing !== undefined) {
@@ -805,9 +964,9 @@ function handlePeerConnected(peerId: PeerId): void {
         peerCleanupTimers.delete(peerId);
     }
 
-    sessionState.automergeSync?.addPeer(peerId);
+    owner.automergeSync?.addPeer(peerId);
 
-    void sessionState.peerManager
+    void owner.peerManager
         ?.sendCrdtSync({
             peerId,
             message: { type: 'peer-info', peer: getLocalPeerInfo() },
@@ -824,7 +983,7 @@ function handlePeerConnected(peerId: PeerId): void {
     if (hostState?.isHost) {
         const assigned = hostState.peers.find((param) => param.id === peerId);
         if (assigned) {
-            void sessionState.peerManager
+            void owner.peerManager
                 ?.sendCrdtSync({
                     peerId,
                     message: { type: 'peer-info', peer: { ...assigned, isConnected: true, lastSeen: Date.now() } },
@@ -886,8 +1045,8 @@ function endSessionAfterHostDeparture(): void {
     }
 }
 
-function handlePeerDisconnected(peerId: PeerId): void {
-    sessionState.automergeSync?.removePeer(peerId);
+function handlePeerDisconnected(owner: InstalledSessionOwner, peerId: PeerId): void {
+    owner.automergeSync?.removePeer(peerId);
     updatePeerConnectionState(peerId, false);
 
     // Schedule removal in case the peer never sends peer-leave (tab crash, etc.).
@@ -900,10 +1059,13 @@ function handlePeerDisconnected(peerId: PeerId): void {
     // in handlePeerConnected the moment the peer comes back.
     const timer = setTimeout(() => {
         peerCleanupTimers.delete(peerId);
+        if (!canSessionOwnerWrite(owner)) {
+            return;
+        }
         const current = collaborationStore.value;
         const hostDeparted =
             current !== null && !current.isHost && current.peers.some((param) => param.id === peerId && param.isHost);
-        removePeer(peerId);
+        removePeer(owner, peerId);
         if (hostDeparted) {
             endSessionAfterHostDeparture();
         }
@@ -996,7 +1158,7 @@ function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
  * a sync channel that was closed against it. The immediate disconnect path
  * also fires on the transient ICE `disconnected` state.
  */
-function removePeer(peerId: PeerId): void {
+function removePeer(owner: InstalledSessionOwner, peerId: PeerId): void {
     collaborationStore.update((state) => {
         if (!state) {
             return state;
@@ -1007,8 +1169,8 @@ function removePeer(peerId: PeerId): void {
             quarantinedPeerIds: state.quarantinedPeerIds.filter((param) => param !== peerId),
         };
     });
-    sessionState.automergeSync?.forgetPeer(peerId);
-    sessionState.peerManager?.removePeer(peerId);
+    owner.automergeSync?.forgetPeer(peerId);
+    owner.peerManager?.removePeer(peerId);
 }
 
 function updatePeerLastSeen(peerId: PeerId): void {
@@ -1100,6 +1262,10 @@ export const sessionRuntimePrimitives = {
     state: sessionState,
     presenceListeners,
     initialize: initializeSessionRuntime,
+    captureOwner: captureInstalledSessionOwner,
+    isInstalled: isInstalledSessionOwner,
+    canWrite: canSessionOwnerWrite,
+    retire: retireSessionOwner,
     cleanup: cleanupSubsystems,
     startBranchSync,
     startPlayheadBroadcast,

@@ -13,11 +13,15 @@ const mockRuntime = vi.hoisted(() => ({
     },
     generatePeerId: vi.fn<() => string>(),
     compressInvite: vi.fn<(json: string) => Promise<string>>(),
+    captureOwner: vi.fn<() => object | null>(),
+    canWrite: vi.fn<(owner: object | null) => boolean>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
 describe('generateInvite', () => {
+    const ownerA = {};
+    const ownerB = {};
     let removePeer: ReturnType<typeof vi.fn>;
     let createPeer: ReturnType<typeof vi.fn>;
     let createOffer: ReturnType<typeof vi.fn>;
@@ -32,6 +36,8 @@ describe('generateInvite', () => {
         mockRuntime.state.peerManager = { createPeer, removePeer } as unknown as PeerConnectionManager;
         mockRuntime.generatePeerId.mockReturnValue('joiner-new');
         mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
+        mockRuntime.captureOwner.mockReturnValue(ownerA);
+        mockRuntime.canWrite.mockImplementation((owner) => owner === mockRuntime.captureOwner());
 
         collaborationStore.set({
             isEnabled: true,
@@ -134,5 +140,59 @@ describe('generateInvite', () => {
         mockRuntime.state.sessionSecret = null;
 
         await expect(generateInvite()).rejects.toThrow('No active session');
+    });
+
+    it('does not let an offer from an old session overwrite its replacement', async () => {
+        const offer = Promise.withResolvers<string>();
+        createOffer.mockReturnValueOnce(offer.promise);
+
+        const generating = generateInvite();
+        await vi.waitFor(() => expect(createOffer).toHaveBeenCalledTimes(1));
+
+        const sessionBManager = { createPeer: vi.fn(), removePeer: vi.fn() } as unknown as PeerConnectionManager;
+        mockRuntime.captureOwner.mockReturnValue(ownerB);
+        mockRuntime.state.peerManager = sessionBManager;
+        mockRuntime.state.pendingInviteId = 'session-b-invite';
+        mockRuntime.state.sessionSecret = 'session-b-secret';
+        collaborationStore.set({
+            isEnabled: true,
+            sessionId: 'session-b',
+            localPeerId: 'session-b-host',
+            localName: 'Session B',
+            localColor: '#ef4444',
+            isHost: true,
+            peers: [],
+            connectionStatus: 'connected',
+            error: null,
+            quarantinedPeerIds: [],
+        });
+
+        offer.resolve('old-offer');
+
+        await expect(generating).rejects.toThrow('superseded by a newer session');
+        expect(mockRuntime.state.peerManager).toBe(sessionBManager);
+        expect(mockRuntime.state.pendingInviteId).toBe('session-b-invite');
+        expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', error: null });
+    });
+
+    it('does not let compressed invite completion from an old session affect its replacement', async () => {
+        const compression = Promise.withResolvers<string>();
+        mockRuntime.compressInvite.mockReturnValueOnce(compression.promise);
+
+        const generating = generateInvite();
+        await vi.waitFor(() => expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1));
+
+        const sessionBManager = { createPeer: vi.fn(), removePeer: vi.fn() } as unknown as PeerConnectionManager;
+        mockRuntime.captureOwner.mockReturnValue(ownerB);
+        mockRuntime.state.peerManager = sessionBManager;
+        mockRuntime.state.pendingInviteId = 'session-b-invite';
+        collaborationStore.set({ ...collaborationStore.value!, sessionId: 'session-b', error: null });
+
+        compression.resolve('old-compressed-invite');
+
+        await expect(generating).rejects.toThrow('superseded by a newer session');
+        expect(mockRuntime.state.peerManager).toBe(sessionBManager);
+        expect(mockRuntime.state.pendingInviteId).toBe('session-b-invite');
+        expect(collaborationStore.value).toMatchObject({ sessionId: 'session-b', error: null });
     });
 });
