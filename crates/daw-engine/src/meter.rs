@@ -64,4 +64,27 @@ mod tests {
         // ...and releases once the accumulated silence reaches the window.
         assert_eq!(hold.hold(0.0, frames, hold_frames), 0.0);
     }
+
+    #[test]
+    fn a_louder_peak_restarts_a_partly_spent_window() {
+        let mut hold = PeakHold::default();
+        let hold_frames = 1000;
+        let frames = 400;
+
+        // Spend part of a window on 0.5 before a louder transient arrives:
+        // a louder peak must get a full window of its own, not the leftover
+        // of the window the quieter peak already spent.
+        assert_eq!(hold.hold(0.5, frames, hold_frames), 0.5);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.5);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.5);
+
+        // The louder peak resets held_frames to 0, so the window that
+        // follows is a full 1000 frames, not the 800 already spent.
+        assert_eq!(hold.hold(0.6, frames, hold_frames), 0.6);
+
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.6);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.6);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.6);
+        assert_eq!(hold.hold(0.0, frames, hold_frames), 0.0);
+    }
 }
