@@ -1,4 +1,4 @@
-import { TransactionalPersistence } from './transactionalPersistence';
+import { TransactionalPersistence, type TransactionalPersistenceDatabase } from './transactionalPersistence';
 
 export type TransactionalIndexedDbInstallation = {
     readonly persistence: TransactionalPersistence;
@@ -9,12 +9,118 @@ export type InstallTransactionalIndexedDbOptions = {
     autoCompleteReadwrite?: boolean;
 };
 
-type TransactionalDatabase = IDBDatabase & {
+type TransactionalDatabase = {
+    transaction: TransactionalPersistenceDatabase['transaction'];
+    objectStoreNames: { contains: (name: string) => boolean };
+    createObjectStore: (name: string) => undefined;
     onversionchange: (() => void) | null;
+    close: () => void;
 };
 
-function waitForMicrotask(): Promise<void> {
-    return new Promise((resolve) => queueMicrotask(resolve));
+type OpenRequest = {
+    result: TransactionalDatabase;
+    error: null;
+    onblocked: (() => void) | null;
+    onerror: (() => void) | null;
+    onsuccess: (() => void) | null;
+    onupgradeneeded: (() => void) | null;
+};
+
+type OpenLifecycle = {
+    request: OpenRequest;
+    cancelled: boolean;
+};
+
+type AdapterState = {
+    version: number;
+    disposed: boolean;
+};
+
+function createUnsettledTransactionError(): Error {
+    return new Error('Transactional IndexedDB still has unsettled transactions during cleanup');
+}
+
+function cancelOpen(pendingOpens: Set<OpenLifecycle>, lifecycle: OpenLifecycle): void {
+    lifecycle.cancelled = true;
+    pendingOpens.delete(lifecycle);
+}
+
+function canDispatchOpen(state: AdapterState, lifecycle: OpenLifecycle): boolean {
+    return !state.disposed && !lifecycle.cancelled;
+}
+
+function restoreIndexedDbGlobal(indexedDbDescriptor: PropertyDescriptor | undefined): void {
+    if (indexedDbDescriptor) {
+        Object.defineProperty(globalThis, 'indexedDB', indexedDbDescriptor);
+        return;
+    }
+    Reflect.deleteProperty(globalThis, 'indexedDB');
+}
+
+function invalidateConnections(connections: Set<TransactionalDatabase>): unknown {
+    let firstError: unknown;
+    for (const connection of connections) {
+        try {
+            connection.onversionchange?.();
+        } catch (error) {
+            firstError ??= error;
+        }
+        try {
+            connection.close();
+        } catch (error) {
+            firstError ??= error;
+        }
+    }
+    return firstError;
+}
+
+function createIndexedDbFactory({
+    connections,
+    database,
+    pendingOpens,
+    state,
+}: {
+    connections: Set<TransactionalDatabase>;
+    database: TransactionalDatabase;
+    pendingOpens: Set<OpenLifecycle>;
+    state: AdapterState;
+}) {
+    return {
+        open: (_name: string, requestedVersion?: number) => {
+            const request: OpenRequest = {
+                result: database,
+                error: null,
+                onblocked: null,
+                onerror: null,
+                onsuccess: null,
+                onupgradeneeded: null,
+            };
+            const lifecycle: OpenLifecycle = { request, cancelled: false };
+            const needsUpgrade = (requestedVersion ?? 1) > state.version;
+            state.version = Math.max(state.version, requestedVersion ?? 1);
+            pendingOpens.add(lifecycle);
+
+            queueMicrotask(() => {
+                if (!canDispatchOpen(state, lifecycle)) {
+                    cancelOpen(pendingOpens, lifecycle);
+                    return;
+                }
+                if (needsUpgrade) {
+                    request.onupgradeneeded?.();
+                }
+                queueMicrotask(() => {
+                    if (!canDispatchOpen(state, lifecycle)) {
+                        cancelOpen(pendingOpens, lifecycle);
+                        return;
+                    }
+                    pendingOpens.delete(lifecycle);
+                    connections.add(database);
+                    request.onsuccess?.();
+                });
+            });
+            return request;
+        },
+    };
 }
 
 /**
@@ -28,70 +134,46 @@ export function installTransactionalIndexedDb(
     const indexedDbDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
     const persistence = new TransactionalPersistence({ autoCompleteReadwrite: options.autoCompleteReadwrite ?? true });
     const storeNames = new Set<string>();
-    let version = 0;
-    let closed = false;
+    const pendingOpens = new Set<OpenLifecycle>();
+    const connections = new Set<TransactionalDatabase>();
+    const state: AdapterState = { version: 0, disposed: false };
 
-    const database = persistence.database as TransactionalDatabase;
-    Object.assign(database, {
+    const database: TransactionalDatabase = {
+        transaction: persistence.database.transaction,
         objectStoreNames: {
-            contains: (name: string) => storeNames.has(name),
+            contains: (name) => storeNames.has(name),
         },
-        createObjectStore: (name: string) => {
+        createObjectStore: (name) => {
             storeNames.add(name);
             return undefined;
         },
         onversionchange: null,
-        close: () => {
-            closed = true;
-        },
-    });
-
-    const indexedDb = {
-        open: (_name: string, requestedVersion?: number) => {
-            const request = {
-                result: database,
-                error: null,
-                onblocked: null as (() => void) | null,
-                onerror: null as (() => void) | null,
-                onsuccess: null as (() => void) | null,
-                onupgradeneeded: null as (() => void) | null,
-            };
-            const needsUpgrade = (requestedVersion ?? 1) > version;
-            version = Math.max(version, requestedVersion ?? 1);
-            closed = false;
-            queueMicrotask(() => {
-                if (needsUpgrade) {
-                    request.onupgradeneeded?.();
-                }
-                queueMicrotask(() => request.onsuccess?.());
-            });
-            return request;
-        },
-    } as IDBFactory;
+        close: () => undefined,
+    };
+    const indexedDb = createIndexedDbFactory({ connections, database, pendingOpens, state });
 
     Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: indexedDb, writable: true });
 
     return {
         persistence,
         async dispose(): Promise<void> {
-            for (let attempt = 0; attempt < 3; attempt++) {
-                if (persistence.getTransactions().every((transaction) => transaction.isSettled())) {
-                    break;
-                }
-                await waitForMicrotask();
-            }
-            if (!persistence.getTransactions().every((transaction) => transaction.isSettled())) {
-                throw new Error('Transactional IndexedDB still has unsettled transactions during cleanup');
+            state.disposed = true;
+            for (const lifecycle of pendingOpens) {
+                cancelOpen(pendingOpens, lifecycle);
             }
 
-            if (!closed) {
-                database.onversionchange?.();
-                database.close();
+            const unsettledTransaction = persistence.getTransactions().some((transaction) => !transaction.isSettled());
+            const cleanupError = invalidateConnections(connections);
+            restoreIndexedDbGlobal(indexedDbDescriptor);
+
+            if (unsettledTransaction) {
+                throw createUnsettledTransactionError();
             }
-            if (indexedDbDescriptor) {
-                Object.defineProperty(globalThis, 'indexedDB', indexedDbDescriptor);
-            } else {
-                Reflect.deleteProperty(globalThis, 'indexedDB');
+            if (cleanupError instanceof Error) {
+                throw cleanupError;
+            }
+            if (cleanupError !== undefined) {
+                throw new Error('Transactional IndexedDB cleanup failed', { cause: cleanupError });
             }
         },
     };
