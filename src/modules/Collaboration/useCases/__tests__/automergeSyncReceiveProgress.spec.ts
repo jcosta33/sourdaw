@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base64ToBytes } from '#/utils/base64';
 
 type ProjectDocument = {
-    edits?: string[];
+    edits: string[];
 };
 
 type SyncConstructor = typeof import('../automergeSync').AutomergeSync;
@@ -109,7 +109,7 @@ async function createEndpoint({
 
     const { AutomergeSync } = await import('../automergeSync');
     const sync = new AutomergeSync({
-        getConnectedPeerIds: () => peerIds,
+        getConnectedPeerIds: () => [...peerIds],
         sendCrdtSync: ({ peerId: recipient, message }) => {
             if (message.type !== 'crdt-sync' || message.docId !== ROOT_DOCUMENT_ID) {
                 throw new Error('unexpected outbound collaboration message');
@@ -229,11 +229,11 @@ describe('AutomergeSync receive progress', () => {
             expect(sortedHeads(leftDocument), `wire events: ${describeWireLog(events)}`).toEqual(
                 sortedHeads(rightDocument)
             );
-            expect([...leftDocument.edits!].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual([
+            expect([...leftDocument.edits].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual([
                 'left edit',
                 'right edit',
             ]);
-            expect([...rightDocument.edits!].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual([
+            expect([...rightDocument.edits].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual([
                 'left edit',
                 'right edit',
             ]);
@@ -284,13 +284,13 @@ describe('AutomergeSync receive progress', () => {
             const hostHeads = sortedHeads(host.readDocument());
             expect(sortedHeads(joinerA.readDocument()), `wire events: ${describeWireLog(events)}`).toEqual(hostHeads);
             expect(sortedHeads(joinerB.readDocument()), `wire events: ${describeWireLog(events)}`).toEqual(hostHeads);
-            expect([...host.readDocument().edits!].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual(
+            expect([...host.readDocument().edits].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual(
                 expectedEdits
             );
-            expect([...joinerA.readDocument().edits!].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual(
+            expect([...joinerA.readDocument().edits].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual(
                 expectedEdits
             );
-            expect([...joinerB.readDocument().edits!].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual(
+            expect([...joinerB.readDocument().edits].toSorted(), `wire events: ${describeWireLog(events)}`).toEqual(
                 expectedEdits
             );
         } finally {

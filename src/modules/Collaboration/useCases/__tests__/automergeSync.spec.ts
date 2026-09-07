@@ -1,3 +1,5 @@
+import { setImmediate } from 'node:timers/promises';
+
 import {
     init as automergeInit,
     initSyncState,
@@ -246,6 +248,10 @@ describe('AutomergeSync', () => {
 
     it('journals a converged owner handoff before persistence and commits it afterward', async () => {
         const order: string[] = [];
+        const persistenceEntered = Promise.withResolvers<void>();
+        const releasePersistence = Promise.withResolvers<void>();
+        const commitEntered = Promise.withResolvers<void>();
+        const releaseCommit = Promise.withResolvers<void>();
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
@@ -255,6 +261,8 @@ describe('AutomergeSync', () => {
         });
         vi.mocked(persistCrdtProject).mockImplementation(async () => {
             order.push('persist-project');
+            persistenceEntered.resolve();
+            await releasePersistence.promise;
         });
         const peerManager = makePeerManager();
         peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
@@ -264,6 +272,8 @@ describe('AutomergeSync', () => {
                 return {
                     commit: async () => {
                         order.push('commit-handoff');
+                        commitEntered.resolve();
+                        await releaseCommit.promise;
                     },
                     abort: async () => undefined,
                 };
@@ -279,9 +289,20 @@ describe('AutomergeSync', () => {
         );
         expect(editBearingMessage).toBeDefined();
         sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: editBearingMessage! });
+
+        await persistenceEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releasePersistence.resolve();
+        await commitEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releaseCommit.resolve();
         await sync.flushPersistence();
 
-        expect(order.slice(-4)).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
+        expect(order).toEqual(['prepare-handoff', 'publish-root', 'persist-project', 'commit-handoff']);
         await vi.waitFor(() => {
             expect(peerManager.sendCrdtSync).toHaveBeenCalled();
         });
@@ -347,6 +368,10 @@ describe('AutomergeSync', () => {
     });
 
     it('adopts the settled owner from an authoritative converged root without rewriting project state', async () => {
+        const persistenceEntered = Promise.withResolvers<void>();
+        const releasePersistence = Promise.withResolvers<void>();
+        const commitEntered = Promise.withResolvers<void>();
+        const releaseCommit = Promise.withResolvers<void>();
         const canonical = change(seedAmDoc(), (draft) => {
             draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
         });
@@ -356,11 +381,18 @@ describe('AutomergeSync', () => {
         vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
-        const commitHandoff = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-        const prepareSyncPersistence = vi.fn().mockResolvedValue({
-            commit: commitHandoff,
-            abort: vi.fn().mockResolvedValue(undefined),
+        vi.mocked(persistCrdtProject).mockImplementation(async () => {
+            persistenceEntered.resolve();
+            await releasePersistence.promise;
         });
+        const commitHandoff = vi.fn(async () => {
+            commitEntered.resolve();
+            await releaseCommit.promise;
+        });
+        const prepareSyncPersistence = vi.fn(async () => ({
+            commit: commitHandoff,
+            abort: async () => undefined,
+        }));
         const peerManager = makePeerManager();
         peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
         const sync = new AutomergeSync(peerManager, {
@@ -368,9 +400,22 @@ describe('AutomergeSync', () => {
             prepareSyncPersistence,
         });
 
-        for (const syncMessageBase64 of createPeerSyncMessages({ remote, local: live })) {
-            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64 });
-        }
+        const noChangeMessage = createPeerSyncMessages({ remote, local: live }).find(
+            (message) => decodeSyncMessage(base64ToBytes(message)).changes.length === 0
+        );
+        expect(noChangeMessage).toBeDefined();
+        sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: noChangeMessage! });
+
+        await persistenceEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releasePersistence.resolve();
+        await commitEntered.promise;
+        await setImmediate();
+        expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+
+        releaseCommit.resolve();
         await sync.flushPersistence();
 
         expect(prepareSyncPersistence).toHaveBeenCalledWith({
@@ -387,6 +432,111 @@ describe('AutomergeSync', () => {
             expect(peerManager.sendCrdtSync).toHaveBeenCalled();
         });
     });
+
+    it.each(['persistence', 'commit'] as const)(
+        'does not reply after a changed root owner handoff %s failure',
+        async (failurePoint) => {
+            const { live: initialLive, remoteSeed } = forkPeerDocs();
+            let live: Doc<unknown> = initialLive;
+            vi.mocked(getCrdtDoc).mockImplementation(() => live);
+            vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
+                live = doc;
+            });
+            const failure = new Error(`${failurePoint} failed`);
+            vi.mocked(persistCrdtProject).mockImplementation(async () => {
+                if (failurePoint === 'persistence') {
+                    throw failure;
+                }
+            });
+            const onPersistError = vi.fn();
+            const onPostPersistError = vi.fn();
+            const peerManager = makePeerManager();
+            peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+            const sync = new AutomergeSync(peerManager, {
+                onPersistError,
+                onPostPersistError,
+                prepareSyncPersistence: async () => ({
+                    commit: async () => {
+                        if (failurePoint === 'commit') {
+                            throw failure;
+                        }
+                    },
+                    abort: async () => undefined,
+                }),
+            });
+            const remote = change(remoteSeed, (draft) => {
+                draft.projectId = 'project:host-authoritative';
+                draft.peerProbe = 'host-root-advanced';
+            });
+            const editBearingMessage = createPeerSyncMessages({ remote, local: live }).find(
+                (message) => decodeSyncMessage(base64ToBytes(message)).changes.length > 0
+            );
+            expect(editBearingMessage).toBeDefined();
+
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: editBearingMessage! });
+            await sync.flushPersistence();
+
+            expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+            if (failurePoint === 'persistence') {
+                expect(onPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+                expect(onPostPersistError).not.toHaveBeenCalled();
+            } else {
+                expect(onPersistError).not.toHaveBeenCalled();
+                expect(onPostPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+            }
+        }
+    );
+
+    it.each(['persistence', 'commit'] as const)(
+        'does not reply after a no-op root owner handoff %s failure',
+        async (failurePoint) => {
+            const canonical = change(seedAmDoc(), (draft) => {
+                draft.projectMeta = { projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' };
+            });
+            const live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
+            const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
+            vi.mocked(getCrdtDoc).mockReturnValue(live);
+            const failure = new Error(`${failurePoint} failed`);
+            vi.mocked(persistCrdtProject).mockImplementation(async () => {
+                if (failurePoint === 'persistence') {
+                    throw failure;
+                }
+            });
+            const onPersistError = vi.fn();
+            const onPostPersistError = vi.fn();
+            const peerManager = makePeerManager();
+            peerManager.getConnectedPeerIds.mockReturnValue(['host-peer']);
+            const sync = new AutomergeSync(peerManager, {
+                captureSyncAcceptance: () => ({ accepted: true, senderIsHost: true }),
+                onPersistError,
+                onPostPersistError,
+                prepareSyncPersistence: async () => ({
+                    commit: async () => {
+                        if (failurePoint === 'commit') {
+                            throw failure;
+                        }
+                    },
+                    abort: async () => undefined,
+                }),
+            });
+            const noChangeMessage = createPeerSyncMessages({ remote, local: live }).find(
+                (message) => decodeSyncMessage(base64ToBytes(message)).changes.length === 0
+            );
+            expect(noChangeMessage).toBeDefined();
+
+            sync.receiveSync({ peerId: 'host-peer', docId: 'root', syncMessageBase64: noChangeMessage! });
+            await sync.flushPersistence();
+
+            expect(peerManager.sendCrdtSync).not.toHaveBeenCalled();
+            if (failurePoint === 'persistence') {
+                expect(onPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+                expect(onPostPersistError).not.toHaveBeenCalled();
+            } else {
+                expect(onPersistError).not.toHaveBeenCalled();
+                expect(onPostPersistError).toHaveBeenCalledExactlyOnceWith(failure);
+            }
+        }
+    );
 
     it('replies after a no-change prepared branch sync commits its peer state', async () => {
         const { live: initialLive } = forkPeerDocs();
