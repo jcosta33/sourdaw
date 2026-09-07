@@ -153,6 +153,7 @@ export const RotaryKnob = ({
     const startY = useRef(0);
     const startValue = useRef(value);
     const currentValue = useRef(value);
+    const hasEmittedTransientRef = useRef(false);
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
     const onChangeRef = useRef(onChange);
@@ -230,7 +231,14 @@ export const RotaryKnob = ({
             // it. A render that does follow the commit overwrites this again
             // with the value the owner actually accepted.
             currentValue.current = value;
-            if (ownsCurrentGesture && !Object.is(gestureValue, startValue.current)) {
+            // The commit that closes the gesture. Emitted whenever the gesture
+            // sent at least one transient sample, not when the final value differs
+            // from the start: a drag that moves away and returns to its start
+            // value still drove the engine through transients and must still settle
+            // project truth, even though `currentValue` lands back on the value the
+            // gesture began from. A bare click on the knob emits no transient and
+            // remains silent.
+            if (ownsCurrentGesture && hasEmittedTransientRef.current) {
                 onChangeRef.current(gestureValue, false);
             }
             return true;
@@ -316,6 +324,7 @@ export const RotaryKnob = ({
         event.currentTarget.setPointerCapture(event.pointerId);
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
+        hasEmittedTransientRef.current = false;
         gestureOwnerAtStartRef.current = gestureToken;
         startY.current = event.clientY;
         startValue.current = value;
@@ -362,6 +371,7 @@ export const RotaryKnob = ({
             return;
         }
         currentValue.current = clamped;
+        hasEmittedTransientRef.current = true;
         onChangeRef.current(clamped, true);
     };
 
