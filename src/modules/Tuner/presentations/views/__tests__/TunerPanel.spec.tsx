@@ -518,16 +518,26 @@ describe('TunerPanel', () => {
     });
 
     it('triggers importTuningScale on file selection and clears error on success', async () => {
-        vi.mocked(importTuningScale).mockResolvedValue({ ok: true, name: 'Just Intonation' });
+        vi.mocked(importTuningScale).mockResolvedValueOnce({ ok: false });
         const { container } = render(<TunerPanel deviceId={mockDeviceId} />);
 
         const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
         expect(fileInput).not.toBeNull();
         expect(fileInput).toHaveAttribute('accept', '.scl,.tun');
 
-        const file = new File(['! scl file\n12\n'], 'scale.scl', { type: 'text/plain' });
+        // First trigger a failed import to seed an error
+        const badFile = new File(['invalid'], 'invalid.scl', { type: 'text/plain' });
         await act(async () => {
-            fireEvent.change(fileInput, { target: { files: [file] } });
+            fireEvent.change(fileInput, { target: { files: [badFile] } });
+        });
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Failed to import scale: invalid or unrepresentable file');
+
+        // Now trigger a successful import and verify the error clears
+        vi.mocked(importTuningScale).mockResolvedValueOnce({ ok: true, name: 'Just Intonation' });
+        const validFile = new File(['! scl file\n12\n'], 'scale.scl', { type: 'text/plain' });
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [validFile] } });
         });
 
         expect(importTuningScale).toHaveBeenCalledWith(mockDeviceId, 'scala', '! scl file\n12\n');
@@ -548,5 +558,22 @@ describe('TunerPanel', () => {
         const alert = screen.getByRole('alert');
         expect(alert).toBeInTheDocument();
         expect(alert).toHaveTextContent(/failed to import scale/i);
+    });
+
+    it('displays role="alert" with error message when file reading fails', async () => {
+        const { container } = render(<TunerPanel deviceId={mockDeviceId} />);
+
+        const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+        const file = new File(['content'], 'test.scl', { type: 'text/plain' });
+        vi.spyOn(file, 'text').mockRejectedValue(new Error('I/O error'));
+
+        await act(async () => {
+            fireEvent.change(fileInput, { target: { files: [file] } });
+        });
+
+        const alert = screen.getByRole('alert');
+        expect(alert).toBeInTheDocument();
+        expect(alert).toHaveTextContent('Failed to read scale file');
+        expect(importTuningScale).not.toHaveBeenCalled();
     });
 });

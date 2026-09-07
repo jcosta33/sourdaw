@@ -252,19 +252,21 @@ export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 if (!file) {
                                     return;
                                 }
+                                let text: string;
                                 try {
-                                    const text = await file.text();
-                                    const format = file.name.toLowerCase().endsWith('.tun') ? 'tun' : 'scala';
-                                    const result = await importTuningScale(deviceId, format, text);
-                                    if (!result.ok) {
-                                        setImportError('Failed to import scale: invalid or unrepresentable file');
-                                    } else {
-                                        setImportError(null);
-                                    }
+                                    text = await file.text();
                                 } catch {
                                     setImportError('Failed to read scale file');
+                                    return;
                                 } finally {
                                     e.target.value = '';
+                                }
+                                const format = file.name.toLowerCase().endsWith('.tun') ? 'tun' : 'scala';
+                                const result = await importTuningScale(deviceId, format, text);
+                                if (!result.ok) {
+                                    setImportError('Failed to import scale: invalid or unrepresentable file');
+                                } else {
+                                    setImportError(null);
                                 }
                             }}
                         />
