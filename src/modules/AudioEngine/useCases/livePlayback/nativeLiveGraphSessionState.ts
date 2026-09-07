@@ -143,6 +143,22 @@ export type NativeLiveGraphSession = {
      */
     nativeChainByStripId: ReadonlyMap<string, readonly string[]>;
     /**
+     * Whether this play has already spent its one automatic re-arm (#3960).
+     *
+     * A lost engine is retired and offered back to the transport, which starts
+     * a fresh session on the current default device. That start can itself be
+     * lost — a headset that keeps dropping out re-dies on the rebuilt stream —
+     * so the offer needs a guard, or the renderer cycles retire, re-arm, lose,
+     * retire for as long as the device misbehaves.
+     *
+     * Set by `claimNativeSessionRearm`, cleared only by
+     * `stopNativeLiveGraphSession`: a musician's stop or pause is what ends a
+     * play, and the next play boots its own engine anyway. A start must never
+     * clear it, because the re-armed start is itself a start — clearing there
+     * would hand the guard back to the very session it exists to bound.
+     */
+    rearmClaimed: boolean;
+    /**
      * The strips this session is sounding, as it last claimed them.
      *
      * The same set `setNativeCarriedTracks` shuts the Web Audio gates for, held
@@ -174,6 +190,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     lastDeferredChainNotice: null,
     livenessWatch: null,
     nativeChainByStripId: new Map(),
+    rearmClaimed: false,
     carriedStripIds: new Set(),
     pending: Promise.resolve(),
 };
