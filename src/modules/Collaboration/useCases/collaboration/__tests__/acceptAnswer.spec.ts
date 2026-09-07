@@ -3,12 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type CollaborationState } from '../../../models/CollaborationTypes';
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { acceptAnswer } from '../acceptAnswer';
+import { generateInvite } from '../generateInvite';
 
 type AnswerPeer = {
     acceptAnswer: (sdp: string) => Promise<void>;
+    createOffer: () => Promise<string>;
 };
 
 type AnswerPeerManager = {
+    createPeer: (peerId: string) => AnswerPeer;
     getPeer: (peerId: string) => AnswerPeer | undefined;
     rekeyPeer: (oldPeerId: string, newPeerId: string, localPeerId?: string | null) => boolean;
     removePeer: (peerId: string) => void;
@@ -18,13 +21,17 @@ const mockRuntime = vi.hoisted(() => {
     const state: {
         peerManager: AnswerPeerManager | null;
         pendingInviteId: string | null;
+        sessionSecret: string | null;
     } = {
         peerManager: null,
         pendingInviteId: null,
+        sessionSecret: null,
     };
     return {
         state,
+        compressInvite: vi.fn<(json: string) => Promise<string>>(),
         decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
+        generatePeerId: vi.fn<() => string>(),
         pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
         captureOwner: vi.fn<() => object | null>(),
         canWrite: vi.fn<(owner: object | null) => boolean>(),
@@ -61,15 +68,24 @@ describe('acceptAnswer', () => {
     const ownerA = {};
     const ownerB = {};
     let peers: Map<string, AnswerPeer>;
+    let createOffer: ReturnType<typeof vi.fn<() => Promise<string>>>;
+    let createPeer: ReturnType<typeof vi.fn<AnswerPeerManager['createPeer']>>;
     let getPeer: AnswerPeerManager['getPeer'];
     let getPeerCalls: string[];
     let rekeyPeer: ReturnType<typeof vi.fn<AnswerPeerManager['rekeyPeer']>>;
     let removePeer: ReturnType<typeof vi.fn<AnswerPeerManager['removePeer']>>;
     let acceptAnswerOnPeer: ReturnType<typeof vi.fn<AnswerPeer['acceptAnswer']>>;
 
+    function makePeer(
+        acceptAnswer: AnswerPeer['acceptAnswer'] = vi.fn<AnswerPeer['acceptAnswer']>().mockResolvedValue(undefined),
+        offer: AnswerPeer['createOffer'] = vi.fn<AnswerPeer['createOffer']>().mockResolvedValue('offer-sdp')
+    ): AnswerPeer {
+        return { acceptAnswer, createOffer: offer };
+    }
+
     function installPendingPeer(peerId: string): void {
         peers.clear();
-        peers.set(peerId, { acceptAnswer: acceptAnswerOnPeer });
+        peers.set(peerId, makePeer(acceptAnswerOnPeer));
         mockRuntime.state.pendingInviteId = peerId;
     }
 
@@ -78,6 +94,12 @@ describe('acceptAnswer', () => {
         collaborationStore.set({ ...baseState, peers: [] });
         acceptAnswerOnPeer = vi.fn<AnswerPeer['acceptAnswer']>().mockResolvedValue(undefined);
         peers = new Map();
+        createOffer = vi.fn<AnswerPeer['createOffer']>().mockResolvedValue('new-offer-sdp');
+        createPeer = vi.fn<AnswerPeerManager['createPeer']>().mockImplementation((peerId) => {
+            const peer = makePeer(vi.fn<AnswerPeer['acceptAnswer']>().mockResolvedValue(undefined), createOffer);
+            peers.set(peerId, peer);
+            return peer;
+        });
         getPeerCalls = [];
         installPendingPeer('pending-1');
         getPeer = (peerId) => {
@@ -96,8 +118,11 @@ describe('acceptAnswer', () => {
         removePeer = vi.fn<AnswerPeerManager['removePeer']>().mockImplementation((peerId) => {
             peers.delete(peerId);
         });
-        mockRuntime.state.peerManager = { getPeer, rekeyPeer, removePeer };
+        mockRuntime.state.peerManager = { createPeer, getPeer, rekeyPeer, removePeer };
+        mockRuntime.state.sessionSecret = 'session-secret';
+        mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
         mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
+        mockRuntime.generatePeerId.mockReturnValue('pending-new');
         mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
         mockRuntime.captureOwner.mockReturnValue(ownerA);
         mockRuntime.canWrite.mockImplementation((owner) => owner === mockRuntime.captureOwner());
@@ -118,6 +143,7 @@ describe('acceptAnswer', () => {
 
         await expect(acceptAnswer('garbage')).rejects.toThrow();
 
+        expect(mockRuntime.decompressInvite).toHaveBeenCalledWith('garbage');
         expect(collaborationStore.value).toEqual({
             ...baseState,
             error: 'Invalid answer — must be a valid answer string',
@@ -172,15 +198,38 @@ describe('acceptAnswer', () => {
 
     it('rejects when there is no active session runtime', async () => {
         mockRuntime.state.peerManager = null;
-        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
         await expect(acceptAnswer('raw')).rejects.toThrow('No active session');
+        expect(mockRuntime.decompressInvite).not.toHaveBeenCalled();
     });
 
-    it('rejects when no pending peer connection matches the answer', async () => {
-        peers.clear();
-        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
-        await expect(acceptAnswer('raw')).rejects.toThrow('No pending peer connection');
-    });
+    it.each([
+        [
+            'there is no pending invite id',
+            () => {
+                mockRuntime.state.pendingInviteId = null;
+            },
+        ],
+        [
+            'the pending invite has no mapped peer',
+            () => {
+                peers.clear();
+            },
+        ],
+    ])(
+        'rejects malformed input before decode when %s, then leaves a new invite clean',
+        async (_caseName, removePending) => {
+            removePending();
+
+            await expect(acceptAnswer('malformed answer')).rejects.toThrow('No pending peer connection');
+            expect(mockRuntime.decompressInvite).not.toHaveBeenCalled();
+
+            await expect(generateInvite()).resolves.toContain('z:');
+            expect(mockRuntime.state.pendingInviteId).toBe('pending-new');
+            expect(peers.get('pending-new')).toBeDefined();
+            expect(collaborationStore.value?.error).toBeNull();
+        }
+    );
 
     it('applies the SDP answer to the matching pending peer', async () => {
         installPendingPeer('pending-7');
@@ -295,7 +344,7 @@ describe('acceptAnswer', () => {
 
     it('rejects answer and closes pending connection if rekeyPeer fails due to duplicate peer ID', async () => {
         installPendingPeer('pending-slot-42');
-        peers.set('duplicate-peer-id', { acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>() });
+        peers.set('duplicate-peer-id', makePeer());
         mockRuntime.decompressInvite.mockResolvedValueOnce(
             JSON.stringify(makeAnswer({ pendingPeerId: 'pending-slot-42', peerId: 'duplicate-peer-id' }))
         );
@@ -312,6 +361,7 @@ describe('acceptAnswer', () => {
 
         const sessionBGetPeer = vi.fn<AnswerPeerManager['getPeer']>();
         const sessionBManager: AnswerPeerManager = {
+            createPeer: () => makePeer(),
             getPeer: sessionBGetPeer,
             rekeyPeer: () => false,
             removePeer: () => undefined,
@@ -338,6 +388,7 @@ describe('acceptAnswer', () => {
         await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
 
         const sessionBManager: AnswerPeerManager = {
+            createPeer: () => makePeer(),
             getPeer: () => undefined,
             rekeyPeer: () => false,
             removePeer: () => undefined,
@@ -363,7 +414,7 @@ describe('acceptAnswer', () => {
         const accepting = acceptAnswer('raw');
         await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
 
-        const newerPeer: AnswerPeer = { acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>() };
+        const newerPeer = makePeer();
         peers.set('pending-2', newerPeer);
         mockRuntime.state.pendingInviteId = 'pending-2';
         const liveJoiner = {
@@ -420,7 +471,7 @@ describe('acceptAnswer', () => {
             if (mappingChange === 'removed') {
                 peers.delete('joiner-1');
             } else {
-                peers.set('joiner-1', { acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>() });
+                peers.set('joiner-1', makePeer());
             }
             mockRuntime.state.pendingInviteId = 'pending-2';
             const replacementState = {
@@ -467,7 +518,7 @@ describe('acceptAnswer', () => {
             if (mappingChange === 'removed') {
                 peers.delete('joiner-1');
             } else {
-                peers.set('joiner-1', { acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>() });
+                peers.set('joiner-1', makePeer());
             }
             mockRuntime.state.pendingInviteId = 'pending-2';
             const replacementState = { ...baseState, error: 'current error' };
@@ -504,7 +555,7 @@ describe('acceptAnswer', () => {
 
             const accepting = acceptAnswer('raw');
             const settled = Promise.allSettled([accepting]);
-            const successorPeer: AnswerPeer = { acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>() };
+            const successorPeer = makePeer();
             peers.set('pending-1', successorPeer);
             peers.set('pending-2', successorPeer);
             mockRuntime.state.pendingInviteId = 'pending-2';
@@ -585,21 +636,17 @@ describe('acceptAnswer', () => {
         });
     });
 
-    it('admits a later explicit acceptance after a failed call releases its record', async () => {
-        acceptAnswerOnPeer.mockRejectedValueOnce(new Error('first SDP failure'));
-        await expect(acceptAnswer(JSON.stringify(makeAnswer()))).rejects.toThrow('first SDP failure');
+    it('releases a failed decode record so the same pending peer can accept a valid answer', async () => {
+        mockRuntime.decompressInvite.mockRejectedValueOnce(new Error('first decode failure'));
+        await expect(acceptAnswer('invalid answer')).rejects.toThrow('Invalid answer');
 
-        const retryPeer: AnswerPeer = {
-            acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>().mockResolvedValue(undefined),
-        };
-        peers.clear();
-        peers.set('pending-retry', retryPeer);
-        mockRuntime.state.pendingInviteId = 'pending-retry';
+        const originalPeer = peers.get('pending-1');
+        expect(originalPeer).toBeDefined();
+        expect(mockRuntime.state.pendingInviteId).toBe('pending-1');
 
-        await expect(
-            acceptAnswer(JSON.stringify(makeAnswer({ pendingPeerId: 'pending-retry', peerId: 'joiner-retry' })))
-        ).resolves.toBeUndefined();
-        expect(retryPeer.acceptAnswer).toHaveBeenCalledTimes(1);
+        await expect(acceptAnswer(JSON.stringify(makeAnswer()))).resolves.toBeUndefined();
+        expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1);
+        expect(peers.get('joiner-1')).toBe(originalPeer);
         expect(collaborationStore.value?.error).toBeNull();
     });
 
@@ -609,18 +656,24 @@ describe('acceptAnswer', () => {
         const first = acceptAnswer(JSON.stringify(makeAnswer()));
         await vi.waitFor(() => expect(acceptAnswerOnPeer).toHaveBeenCalledTimes(1));
 
-        const secondPeer: AnswerPeer = {
-            acceptAnswer: vi.fn<AnswerPeer['acceptAnswer']>().mockRejectedValue(new Error('newer SDP failure')),
-        };
+        const secondSdp = Promise.withResolvers<void>();
+        const secondPeer = makePeer(vi.fn<AnswerPeer['acceptAnswer']>().mockReturnValue(secondSdp.promise));
         peers.set('pending-2', secondPeer);
         mockRuntime.state.pendingInviteId = 'pending-2';
-        await expect(
-            acceptAnswer(JSON.stringify(makeAnswer({ pendingPeerId: 'pending-2', peerId: 'joiner-2' })))
-        ).rejects.toThrow('newer SDP failure');
+        const second = acceptAnswer(JSON.stringify(makeAnswer({ pendingPeerId: 'pending-2', peerId: 'joiner-2' })));
+        const secondSettled = Promise.allSettled([second]);
+        await vi.waitFor(() => expect(secondPeer.acceptAnswer).toHaveBeenCalledTimes(1));
 
         firstSdp.resolve();
         await expect(first).resolves.toBeUndefined();
+        secondSdp.reject(new Error('newer SDP failure'));
+        const [secondResult] = await secondSettled;
+
         expect(secondPeer.acceptAnswer).toHaveBeenCalledTimes(1);
+        expect(secondResult).toMatchObject({
+            status: 'rejected',
+            reason: expect.objectContaining({ message: 'newer SDP failure' }),
+        });
         expect(collaborationStore.value?.error).toBe('newer SDP failure');
     });
 });

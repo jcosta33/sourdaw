@@ -21,9 +21,10 @@ function createSupersededOperationError(): Error {
  * the peer connection has already left the signaling state that accepts an
  * answer. Reporting that rejection would tell the host the join failed while
  * the joiner is connected, so only an attempt that is still current when it
- * fails may write the error row. Both beginning a newer attempt and settling
- * one successfully retire every attempt already in flight. The rejection still
- * reaches the caller either way — this gates the store write, not the throw.
+ * fails may write the error row. Beginning a newer attempt retires every older
+ * attempt, while a successful settlement retires only itself when it remains
+ * current. The rejection still reaches the caller either way — this gates the
+ * store write, not the throw.
  *
  * Mirrors `joinAttemptAuthority`, which gates `joinSession`'s failure write the
  * same way; that one is shared because session lifecycle use cases invalidate
@@ -62,13 +63,10 @@ function getActiveAcceptance(peerManager: PeerManager, pendingId: string): Activ
 }
 
 function admitAcceptance(
-    peerManager: PeerManager | null,
-    pendingId: string | null,
-    peer: PendingPeer
-): ActiveAcceptance | undefined {
-    if (!peerManager || !pendingId || !peer) {
-        return undefined;
-    }
+    peerManager: PeerManager,
+    pendingId: string,
+    peer: NonNullable<PendingPeer>
+): ActiveAcceptance {
     const activeAcceptance: ActiveAcceptance = {
         token: Symbol('active acceptance'),
         pendingId,
@@ -102,6 +100,20 @@ function getPendingPeer(peerManager: PeerManager | null, pendingId: string | nul
     return peerManager.getPeer(pendingId);
 }
 
+function requirePendingAcceptance(
+    peerManager: PeerManager | null,
+    pendingId: string | null,
+    peer: PendingPeer
+): { peerManager: PeerManager; pendingId: string; peer: NonNullable<PendingPeer> } {
+    if (!peerManager) {
+        throw createCollaborationError('No active session');
+    }
+    if (!pendingId || !peer) {
+        throw createCollaborationError('No pending peer connection matches this answer — the invite may have expired');
+    }
+    return { peerManager, pendingId, peer };
+}
+
 function isCurrentSession(
     owner: ReturnType<typeof runtime.captureOwner>,
     requestWitness: ReturnType<typeof joinAttemptAuthority.capture>,
@@ -113,12 +125,8 @@ function isCurrentSession(
     return owner === null ? runtime.captureOwner() === null : runtime.canWrite(owner);
 }
 
-function matchesOriginalPendingPeer(
-    answer: SignalingMessage,
-    originalPendingId: string | null,
-    pendingPeer: PendingPeer
-): pendingPeer is NonNullable<PendingPeer> {
-    return originalPendingId === answer.pendingPeerId && pendingPeer !== undefined;
+function matchesOriginalPendingPeer(answer: SignalingMessage, originalPendingId: string): boolean {
+    return originalPendingId === answer.pendingPeerId;
 }
 
 function isPeerMapped(peerManager: PeerManager | null, peerId: string | null, pendingPeer: PendingPeer): boolean {
@@ -139,13 +147,6 @@ function ownsActivePeer(peerManager: PeerManager, activeAcceptance: ActiveAccept
         getActiveAcceptance(peerManager, activeAcceptance.pendingId)?.token === activeAcceptance.token &&
         isPeerMapped(peerManager, peerId, activeAcceptance.peer)
     );
-}
-
-function isActiveAcceptanceCurrent(
-    peerManager: PeerManager | null,
-    activeAcceptance: ActiveAcceptance | undefined
-): boolean {
-    return !activeAcceptance || (peerManager !== null && ownsActivePeer(peerManager, activeAcceptance));
 }
 
 function appendAnsweredPeer(answer: SignalingMessage): void {
@@ -212,42 +213,45 @@ export async function acceptAnswer(answerString: string): Promise<void> {
     if (peerManager && originalPendingId && getActiveAcceptance(peerManager, originalPendingId)) {
         throw createSupersededOperationError();
     }
-    const activeAcceptance = admitAcceptance(peerManager, originalPendingId, pendingPeer);
     clearCollaborationFailure();
     const acceptAttempt = acceptAttemptAuthority.begin();
     let removedCurrentPeer = false;
-    const isCurrentAcceptance = () =>
-        isCurrentSession(owner, requestWitness, peerManager) &&
-        isActiveAcceptanceCurrent(peerManager, activeAcceptance);
+    let activeAcceptance: ActiveAcceptance | undefined;
     try {
+        const currentAcceptance = requirePendingAcceptance(peerManager, originalPendingId, pendingPeer);
+        const activePeerManager = currentAcceptance.peerManager;
+        const activePendingId = currentAcceptance.pendingId;
+        const activePendingPeer = currentAcceptance.peer;
+
+        activeAcceptance = admitAcceptance(activePeerManager, activePendingId, activePendingPeer);
+        const isCurrentAcceptance = () =>
+            isCurrentSession(owner, requestWitness, activePeerManager) &&
+            ownsActivePeer(activePeerManager, activeAcceptance);
         const answer = await decodeAnswer(answerString);
         if (!isCurrentAcceptance()) {
             throw createSupersededOperationError();
         }
 
-        if (!peerManager) {
-            throw createCollaborationError('No active session');
-        }
-        if (!matchesOriginalPendingPeer(answer, originalPendingId, pendingPeer)) {
+        if (!matchesOriginalPendingPeer(answer, activePendingId)) {
             throw createCollaborationError(
                 'No pending peer connection matches this answer — the invite may have expired'
             );
         }
 
-        if (!activeAcceptance || !ownsActivePeer(peerManager, activeAcceptance)) {
+        if (!ownsActivePeer(activePeerManager, activeAcceptance)) {
             throw createSupersededOperationError();
         }
 
         const state = collaborationStore.value;
         if (conflictsWithLocalPeer(answer, state)) {
-            removedCurrentPeer = removePeerIfMapped(peerManager, originalPendingId, pendingPeer);
+            removedCurrentPeer = removePeerIfMapped(activePeerManager, activePendingId, activePendingPeer);
             throw createCollaborationError(
                 'Invalid answer — peer ID is already in use by another session peer or the host'
             );
         }
 
-        if (!rekeyPendingPeer(peerManager, answer, state?.localPeerId)) {
-            removedCurrentPeer = removePeerIfMapped(peerManager, originalPendingId, pendingPeer);
+        if (!rekeyPendingPeer(activePeerManager, answer, state?.localPeerId)) {
+            removedCurrentPeer = removePeerIfMapped(activePeerManager, activePendingId, activePendingPeer);
             throw createCollaborationError(
                 'Invalid answer — peer ID is already in use by another session peer or the host'
             );
@@ -257,18 +261,21 @@ export async function acceptAnswer(answerString: string): Promise<void> {
             throw createSupersededOperationError();
         }
 
-        await pendingPeer.acceptAnswer(answer.sdp);
+        await activePendingPeer.acceptAnswer(answer.sdp);
         if (!isCurrentAcceptance()) {
             throw createSupersededOperationError();
         }
-        if (runtime.state.pendingInviteId === originalPendingId) {
+        if (runtime.state.pendingInviteId === activePendingId) {
             runtime.state.pendingInviteId = null;
         }
 
         appendAnsweredPeer(answer);
         acceptAttemptAuthority.settle(acceptAttempt);
     } catch (error) {
-        if (!isCurrentSession(owner, requestWitness, peerManager) || (!removedCurrentPeer && !isCurrentAcceptance())) {
+        if (
+            !isCurrentSession(owner, requestWitness, peerManager) ||
+            (!removedCurrentPeer && activeAcceptance !== undefined && !ownsActivePeer(peerManager, activeAcceptance))
+        ) {
             throw createSupersededOperationError();
         }
         if (acceptAttemptAuthority.isCurrent(acceptAttempt)) {
