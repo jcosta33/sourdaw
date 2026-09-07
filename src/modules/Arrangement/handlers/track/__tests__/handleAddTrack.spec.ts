@@ -52,6 +52,8 @@ describe('handleAddTrack', () => {
             name: 'Bass',
             kind: 'audio',
             select: false,
+            color: action.payload.color,
+            initialAlternativeId: action.payload.initialAlternativeId,
             suppressAddedEvent: true,
         });
         expect(trackId).toMatch(/^track-ai-/);
@@ -84,8 +86,51 @@ describe('handleAddTrack', () => {
             id: trackId,
             name: 'Guitar',
             kind: 'audio',
+            color: action.payload.color,
+            initialAlternativeId: action.payload.initialAlternativeId,
             suppressAddedEvent: true,
         });
+    });
+
+    it('pins per-execute creation inputs so redo reproduces identical content', () => {
+        // Redo re-executes the original action. The color comes from an
+        // advancing palette counter and the alternative/device ids from fresh
+        // UUIDs — minted per execute they would make the recreated track
+        // diverge from the discard guard, and the undo after a redo would
+        // conflict. ensureStableCreationInputs pins them on the payload once.
+        const action: Parameters<typeof handleAddTrack.describe>[0] = {
+            type: 'addTrack',
+            payload: { name: 'Keys', kind: 'midi' },
+        };
+        handleAddTrack.describe(action);
+        const pinned = {
+            color: action.payload.color,
+            initialAlternativeId: action.payload.initialAlternativeId,
+            initialDeviceId: action.payload.initialDeviceId,
+        };
+        expect(pinned.color).toEqual(expect.any(String));
+        expect(pinned.initialAlternativeId).toEqual(expect.any(String));
+        expect(pinned.initialDeviceId).toEqual(expect.any(String));
+
+        handleAddTrack.describe(action);
+        expect(action.payload.color).toBe(pinned.color);
+        expect(action.payload.initialAlternativeId).toBe(pinned.initialAlternativeId);
+        expect(action.payload.initialDeviceId).toBe(pinned.initialDeviceId);
+
+        // Explicit inputs are never overwritten.
+        const explicit: Parameters<typeof handleAddTrack.describe>[0] = {
+            type: 'addTrack',
+            payload: {
+                name: 'Custom',
+                kind: 'audio',
+                color: '#123456',
+                initialAlternativeId: 'alt-explicit',
+            },
+        };
+        handleAddTrack.describe(explicit);
+        expect(explicit.payload.color).toBe('#123456');
+        expect(explicit.payload.initialAlternativeId).toBe('alt-explicit');
+        expect(explicit.payload.initialDeviceId).toBeUndefined();
     });
 
     it('publishes only a track found in durable truth after an ambiguous commit', async () => {

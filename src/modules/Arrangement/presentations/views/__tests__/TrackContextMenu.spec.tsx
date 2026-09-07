@@ -294,7 +294,7 @@ describe('TrackContextMenu', () => {
         expect(vi.mocked(saveTrackAsTemplate)).toHaveBeenCalledWith('track1', 'Test Track');
     });
 
-    it('adds a midi clip when the track kind is midi', () => {
+    it('adds a midi clip through the registered addClip action when the track kind is midi', () => {
         const midiTrack = TrackDummy.create({ id: 'midi1', kind: 'midi' });
         renderWithTooltip(
             <TrackContextMenu track={midiTrack}>
@@ -303,10 +303,44 @@ describe('TrackContextMenu', () => {
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
         fireEvent.click(screen.getByText('Add Clip'));
-        expect(vi.mocked(addClip)).toHaveBeenCalledTimes(1);
-        const arg = vi.mocked(addClip).mock.calls[0]![0];
-        expect(arg.type).toBe('midi');
-        expect(arg.trackId).toBe('midi1');
+        // The undoable `addClip` action, not the bare use case: the use case
+        // captures no inverse, so a menu-created clip left no history
+        // (issue #3696). `addClipUndo.integration.spec.tsx` asserts the
+        // resulting undo/redo end-to-end.
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'addClip',
+            payload: expect.objectContaining({
+                trackId: 'midi1',
+                startBeat: 0,
+                endBeat: 16,
+                name: expect.stringMatching(/^Clip \d+$/),
+                type: 'midi',
+            }),
+        });
+        expect(vi.mocked(addClip)).not.toHaveBeenCalled();
+    });
+
+    it('adds an audio clip through the registered addClip action when the track kind is audio', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Add Clip'));
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
+            type: 'addClip',
+            payload: expect.objectContaining({
+                trackId: 'track1',
+                startBeat: 0,
+                endBeat: 16,
+                name: expect.stringMatching(/^Clip \d+$/),
+                type: 'audio',
+            }),
+        });
+        expect(vi.mocked(addClip)).not.toHaveBeenCalled();
     });
 
     it('unfreezes a frozen track and offers Flatten Track', () => {
