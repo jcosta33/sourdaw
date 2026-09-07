@@ -189,6 +189,10 @@ beforeEach(() => {
     nativeLiveGraphSession.loopRegion = null;
     nativeLiveGraphSession.loopEnabled = false;
     nativeLiveGraphSession.pending = Promise.resolve();
+    // Leaked between cases otherwise: the record a chain edit installs is
+    // read by every arm, and a stale entry from one case would answer the
+    // next case's abandoned-target check.
+    nativeLiveGraphSession.nativeChainByStripId = new Map();
 });
 
 describe('the live MIDI writer', () => {
@@ -397,7 +401,10 @@ describe('the live MIDI writer', () => {
     // instrument inserted ahead of another takes over as the note carrier, and
     // the device it displaced keeps whatever the outgoing pass left in its
     // store unless something clears it — the part would otherwise sound on
-    // both.
+    // both. The clear for it is owed rather than folded into the incoming
+    // pass's own opening batch: the pass that named it is already gone by the
+    // time this arm runs, so it travels in its own batch ahead of the one that
+    // clears and refills what the incoming pass actually names.
     it('clears the store of a target the outgoing pass held and the incoming one drops', async () => {
         mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
         mocks.events = lane(5);
@@ -409,13 +416,15 @@ describe('the live MIDI writer', () => {
 
         await arm(0);
 
-        expect(clearsIn(1)).toEqual(
-            expect.arrayContaining([
-                { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'plug' }, fromTime: 0, toTime: null },
-                { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'ferm' }, fromTime: 0, toTime: null },
-            ])
-        );
-        const scheduleCommands = (batches()[1]?.commands ?? []).filter(
+        expect(batches()[1]?.commands).toEqual([
+            { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'plug' }, fromTime: 0, toTime: null },
+        ]);
+        expect(clearsIn(2)).toEqual([
+            { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'ferm' }, fromTime: 0, toTime: null },
+        ]);
+        const secondBatchDeviceIds = (batches()[2]?.commands ?? []).map((command) => command.target.deviceId);
+        expect(secondBatchDeviceIds).not.toContain('plug');
+        const scheduleCommands = (batches()[2]?.commands ?? []).filter(
             (command): command is AudioGraphScheduleMidiCommand => command.kind === 'schedule-midi'
         );
         expect(scheduleCommands.map((command) => command.target.deviceId)).toEqual(['ferm']);
@@ -425,7 +434,8 @@ describe('the live MIDI writer', () => {
     // A device the chain edit also removed is one `graph.rs` no longer holds a
     // strip slot for: naming it in a `clear-midi` refuses the whole batch, so
     // the abandoned-target clear must skip exactly what the removal already
-    // accounts for.
+    // accounts for — and, once skipped, it stays skipped rather than being
+    // retried forever by every later arm.
     it('leaves a dropped target alone when the engine no longer holds its device', async () => {
         mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
         mocks.events = lane(5);
@@ -437,7 +447,113 @@ describe('the live MIDI writer', () => {
 
         await arm(0);
 
-        const secondBatchDeviceIds = (batches()[1]?.commands ?? []).map((command) => command.target.deviceId);
-        expect(secondBatchDeviceIds).not.toContain('plug');
+        // From the second arm on: the first arm's own batch legitimately
+        // names plug, since plug was the live target when it was sent.
+        const afterDrop = batches()
+            .slice(1)
+            .flatMap((batch) => batch.commands)
+            .map((command) => command.target.deviceId);
+        expect(afterDrop).not.toContain('plug');
+
+        // A further arm with the same targets: the owed entry was forgotten,
+        // not merely skipped once, so nothing revives a clear naming it.
+        await arm(0);
+
+        const afterSecondArm = batches()
+            .slice(1)
+            .flatMap((batch) => batch.commands)
+            .map((command) => command.target.deviceId);
+        expect(afterSecondArm).not.toContain('plug');
+    });
+
+    // A refusal answers only for the batch it was sent on: the pass that owed
+    // the clear is gone, so the entry has to survive the refusal and come back
+    // on the next arm, or a chain edit that briefly finds the engine busy
+    // would abandon the store for good.
+    it('re-issues an owed clear the engine refused', async () => {
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
+        mocks.events = lane(5);
+
+        await arm(0);
+
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'ferm' }];
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['midi-1', ['ferm', 'plug']]]);
+        mocks.apply.mockResolvedValueOnce(REFUSED);
+
+        await arm(0);
+
+        expect(batches()[1]?.commands).toEqual([
+            { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'plug' }, fromTime: 0, toTime: null },
+        ]);
+
+        // Unchanged targets: nothing about this arm renews the abandonment,
+        // but the earlier refusal left the entry owed, and this arm is the
+        // retry.
+        await arm(0);
+
+        expect(batches()[3]?.commands).toEqual([
+            { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'plug' }, fromTime: 0, toTime: null },
+        ]);
+
+        // That retry applied, so a further arm owes nothing more for it.
+        await arm(0);
+
+        // From the second arm on: the first arm's own opening batch
+        // legitimately clears plug too, since plug was its own live target.
+        const plugClears = batches()
+            .slice(1)
+            .flatMap((batch) => batch.commands)
+            .filter((command) => command.kind === 'clear-midi' && command.target.deviceId === 'plug');
+        expect(plugClears).toHaveLength(2);
+    });
+
+    // The owed clear and the incoming pass's own opening batch are the two
+    // things a chain edit produces, and they must not share a fate: an owed
+    // clear naming a device the engine happens to refuse at that instant must
+    // not cost the incoming pass its own clear and notes.
+    it('a refused owed clear does not take the opening batch with it', async () => {
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
+        mocks.events = lane(5);
+
+        await arm(0);
+
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'ferm' }];
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['midi-1', ['ferm', 'plug']]]);
+        mocks.apply.mockResolvedValueOnce(REFUSED);
+
+        await arm(0);
+
+        expect(clearsIn(2)).toEqual([
+            { kind: 'clear-midi', target: { trackId: 'midi-1', deviceId: 'ferm' }, fromTime: 0, toTime: null },
+        ]);
+        expect(scheduledIn(2).length).toBeGreaterThan(0);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.cursor).toBeGreaterThan(0);
+    });
+
+    // `readNativeChain` returning `undefined` says the session built no such
+    // strip at all — stronger than a chain that merely no longer lists the
+    // device — and an owed clear addressed to a strip this gone must be
+    // forgotten exactly the same way, not kept alive by a fallback that reads
+    // an absent record as still naming the device.
+    it('forgets an owed clear once the chain record drops its device', async () => {
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'plug' }];
+        mocks.events = lane(5);
+
+        await arm(0);
+
+        mocks.targets = [{ trackId: 'midi-1', deviceId: 'ferm' }];
+        // The strip itself is gone from the record, not merely missing this
+        // one device.
+        nativeLiveGraphSession.nativeChainByStripId = new Map();
+
+        await arm(0);
+
+        // From the second arm on: the first arm's own batch legitimately
+        // names plug, since plug was the live target when it was sent.
+        const deviceIds = batches()
+            .slice(1)
+            .flatMap((batch) => batch.commands)
+            .map((command) => command.target.deviceId);
+        expect(deviceIds).not.toContain('plug');
     });
 });
