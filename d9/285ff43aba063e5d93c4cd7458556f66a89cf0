@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  s_87ab0a2f60ccf8::t_ac8c587c4af0a8 211,286,295,308-309,316,323-332,362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "d9285ff43aba063e5d93c4cd7458556f66a89cf0",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
