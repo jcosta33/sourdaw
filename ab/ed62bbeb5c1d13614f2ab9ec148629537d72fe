@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_9b530f08172a54::t_fad7382f89816b 122-140
+src/modules/AudioEngine/useCases/livePlayback/__tests__/retireOrphanedNativeEngine.spec.ts
+  s_9b530f08172a54::t_e4bb5e3b7a3a9b 75-99
+src/modules/Transport/useCases/transportControls/rearmNativeSessionAfterEngineRetire.ts
+  s_9b530f08172a54::t_e5834aed1f8182 53-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "abed62bbeb5c1d13614f2ab9ec148629537d72fe",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
