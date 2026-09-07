@@ -119,6 +119,25 @@ describe('rearmNativeSessionAfterEngineRetire', () => {
         await vi.waitFor(() => expect(startNativeLiveGraphSession).toHaveBeenCalledTimes(1));
     });
 
+    it('leaves the engine down when the play ends during the plugin reload', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
+        let settleActivation = (): void => undefined;
+        const activation = new Promise<{ status: 'active' }>((resolve) => {
+            settleActivation = () => resolve({ status: 'active' });
+        });
+        vi.mocked(ensureTrackStrips).mockReturnValue(readyStrips([activation]));
+
+        offerRearm();
+        await flushMicrotasks();
+
+        // The Stop lands while the reload is still in the air.
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false, tempo: 120 });
+        settleActivation();
+        await flushMicrotasks();
+
+        expect(startNativeLiveGraphSession).not.toHaveBeenCalled();
+    });
+
     it('re-arms once per play, however many engines the same play loses', async () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true, tempo: 120 });
 

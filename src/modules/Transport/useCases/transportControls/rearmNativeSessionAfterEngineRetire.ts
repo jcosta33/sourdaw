@@ -50,6 +50,15 @@ async function rearmNativeSession(tempo: number): Promise<void> {
     // so the start batch would attach none of them if it ran first — and no
     // later batch reloads a plugin the projection already believes is live.
     await Promise.allSettled(strips.externalPluginActivations);
+    // The reload spans seconds, one round trip per instance, and the transport
+    // keeps running across it — a Stop that lands inside must win. Without
+    // this re-read, a settled activation would still start a session, booting
+    // an engine rolling from beat 0 with the transport stopped and nothing
+    // left to park it.
+    if (!getTransportState()?.isPlaying) {
+        logger.info('The play ended while the native session reloaded; the re-arm stays down.');
+        return;
+    }
     startNativeSessionAtBeat(playheadPositionRef.current, tempo);
 }
 

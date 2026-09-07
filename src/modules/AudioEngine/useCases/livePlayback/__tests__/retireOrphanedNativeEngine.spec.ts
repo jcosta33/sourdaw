@@ -72,6 +72,31 @@ describe('retireOrphanedNativeEngine', () => {
         expect(offers()).toBe(1);
     });
 
+    it('forgets the instances before it publishes the offer', async () => {
+        const orphan = fakeBackend();
+        nativeLiveGraphSession.orphanedBackend = orphan;
+        mocks.retireNativeEngine.mockResolvedValue({
+            outcome: 'retired',
+            retiredInstanceIds: ['inst-1', 'inst-2'],
+        });
+
+        let forgetCallsSeenByOffer = -1;
+        const unsubscribe = nativeEngineRearmStore.subscribe(() => {
+            forgetCallsSeenByOffer = mocks.forgetRetiredPluginInstances.mock.calls.length;
+        });
+
+        try {
+            await retireOrphanedNativeEngine();
+        } finally {
+            unsubscribe();
+        }
+
+        // A re-armed session's ensureTrackStrips short-circuits on an instance
+        // PluginHost still believes is live, so the offer's subscriber must see
+        // the forget already done, not merely queued.
+        expect(forgetCallsSeenByOffer).toBe(1);
+    });
+
     it('drops a spent orphan on an empty slot without offering anything to re-arm', async () => {
         const orphan = fakeBackend();
         nativeLiveGraphSession.orphanedBackend = orphan;
