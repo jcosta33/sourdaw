@@ -379,7 +379,7 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         ).toBe(true);
     });
 
-    it('characterization: a null audio-buffer candidate stalls the switch silently (#2898)', async () => {
+    it('surfaces a failure notification when an audio-buffer candidate aborts without a successor (#2898)', async () => {
         await saveProjectA();
         // The same restored-blank workspace the committed case boots into,
         // modelled directly: after that case's explicit load activated, a
@@ -405,15 +405,9 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
             await new Promise((resolve) => setTimeout(resolve, 0));
         });
 
-        // TODAY's behavior — the reproduced #2898 silent stall mechanism. The
-        // null candidate drives replaceProjectData into its abort path,
-        // loadRecentProject returns 'aborted', and handleLoad deliberately
-        // does nothing for it: the active project stays on the blank one and
-        // no error is surfaced anywhere. These assertions pin the silence;
-        // they flip when the real fix lands, which is the point of this
-        // characterization.
+        expect(notifyUser).toHaveBeenCalledWith('Could not open "Saved Song" — see logs for details.', 'error');
         expect(projectStore.value?.name).toBe(BLANK_PROJECT_NAME);
         expect(projectStore.value?.loading).toBe(false);
-        expect(notifyUser).not.toHaveBeenCalled();
+        expect(getRecentProjects().some((entry) => entry.name === SAVED_PROJECT_NAME)).toBe(true);
     });
 });
