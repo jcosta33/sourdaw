@@ -30,6 +30,7 @@ const nativePayload = {
     captureBlocksDropped: 12,
     captureInputUnderruns: 13,
     inputLatencyFrames: 14,
+    outputStreamLoss: 'deviceChanged',
     events: [{ type: 'streamError', side: 'input', kind: 'deviceNotAvailable' }],
 };
 
@@ -71,6 +72,50 @@ describe('getEngineRtDiagnostics', () => {
 
         expect(diagnostics.running).toBe(false);
         expect(diagnostics.unmappedSetParamCalls).toBe(5);
+        // A lost output stream is exactly this shape: `running: false` on an
+        // engine that still has a real loss to report, not the all-zeros
+        // not-running default.
+        expect(diagnostics.outputStreamLoss).toBe('deviceChanged');
+    });
+
+    it('reads a recognized output-stream-loss kind', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamLoss: 'deviceChanged' });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamLoss).toBe('deviceChanged');
+    });
+
+    it('reads a null output-stream-loss as no loss', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamLoss: null });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamLoss).toBeNull();
+    });
+
+    it('reads a missing output-stream-loss as no loss', async () => {
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        const { outputStreamLoss: _omitted, ...payloadWithoutLoss } = nativePayload;
+        vi.mocked(desktopInvoke).mockResolvedValue(payloadWithoutLoss);
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamLoss).toBeNull();
+    });
+
+    it('keeps an output-stream-loss kind it does not recognize', async () => {
+        // The same honesty the event-kind fallback exists for: an unmapped
+        // kind still means the stream ended, so it must not be reported as
+        // no loss at all.
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...nativePayload, outputStreamLoss: 'somethingNew' });
+
+        const diagnostics = await getEngineRtDiagnostics();
+
+        expect(diagnostics.outputStreamLoss).toBe('backendSpecific');
     });
 
     it('keeps a stream error whose kind it does not recognize', async () => {

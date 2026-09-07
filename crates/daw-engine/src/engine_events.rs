@@ -80,6 +80,23 @@ impl StreamErrorKind {
             _ => None,
         }
     }
+
+    /// Whether a stream reporting this kind from its error callback has
+    /// stopped rendering.
+    ///
+    /// An xrun is a report *from* a stream that keeps running — cpal and
+    /// WASAPI both call it out from inside the ordinary callback cadence, an
+    /// audible glitch rather than a teardown. Every other kind is documented
+    /// the opposite way: `DeviceNotAvailable`, `DeviceBusy`, `DeviceChanged`
+    /// and `StreamInvalidated` are cpal's own vocabulary for a stream that no
+    /// longer calls back, and WASAPI's `BackendSpecific` failures reach the
+    /// error callback only when the shared-mode client itself has gone
+    /// invalid. So the split is exhaustive by exclusion rather than by
+    /// listing every ending kind: anything that is not an xrun ends the
+    /// stream it was reported on.
+    pub(crate) const fn ends_the_stream(self) -> bool {
+        !matches!(self, Self::Xrun)
+    }
 }
 
 /// Which of the engine's two device streams a report came from.

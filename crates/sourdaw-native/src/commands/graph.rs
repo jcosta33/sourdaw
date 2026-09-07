@@ -3597,6 +3597,19 @@ pub async fn apply_graph_commands(
         ));
     };
 
+    // An engine object existing is not the same as it rendering: a fatal
+    // output-stream error leaves this slot filled with a handle whose render
+    // callback has stopped, and a batch pushed past that point queues into a
+    // ring nobody drains. Checked before anything is mapped or pushed, so a
+    // lost engine refuses cleanly rather than accepting a batch that can
+    // never land.
+    if let Some(kind) = engine.output_stream_loss() {
+        return result_json(&GraphApplyResultPayload::rejected(format!(
+            "engine-stream-lost: the output stream reported {kind:?}; the engine renders \
+             nothing until it is restarted"
+        )));
+    }
+
     // Admission opens by subtracting what the engine has proven landed since
     // the last batch: the queue ledger releases exactly the stamps the
     // progress echo covers, so a slow writer never fills a queue forever.
@@ -6095,6 +6108,44 @@ mod tests {
             "each applied batch reports the next fence, never the one before it"
         );
         assert_eq!(drain_counting_fences(&mut command_rx), 1);
+    }
+
+    /// The honesty slice (#3635): an `EngineHandle` can outlive its output
+    /// stream. A fatal output-stream error leaves the render callback dead
+    /// while `state.engine` still holds `Some`, so a batch reaching this
+    /// engine must be refused before anything is mapped or pushed — the
+    /// ring nobody is left to drain. Mutation: delete the
+    /// `engine.output_stream_loss()` guard in `apply_graph_commands` — this
+    /// goes red because the batch would then apply and push its fence onto
+    /// a ring the engine will never drain again.
+    #[test]
+    fn a_batch_for_a_lost_engine_is_refused_before_anything_is_pushed() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        engine.mark_output_stream_lost(daw_engine::engine_events::StreamErrorKind::DeviceChanged);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("a refusal resolves to a result");
+
+        assert_eq!(result["acceptance"], "rejected");
+        let reason = result["reason"]
+            .as_str()
+            .expect("a rejection names a reason");
+        assert!(
+            reason.starts_with("engine-stream-lost:"),
+            "unexpected reason: {reason}"
+        );
+        assert_eq!(
+            drain_counting_fences(&mut command_rx),
+            0,
+            "a lost engine's ring must never receive this batch's fence"
+        );
     }
 
     /// Issue #2265: the engine starts here, on the first batch, so this is the

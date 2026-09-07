@@ -50,6 +50,14 @@ export type EngineRtDiagnostics = {
      */
     inputLatencyFrames: number;
     /**
+     * The kind of fatal error the output stream reported, or `null` if it has
+     * not. `running: false` with this non-null is a different condition than
+     * `running: false` with no engine ever started: an engine object exists
+     * and its other counters are real readings, but its output stream ended
+     * and nothing renders until the engine is restarted.
+     */
+    outputStreamLoss: EngineStreamErrorKind | null;
+    /**
      * Events drained by this read. The engine hands each event out exactly
      * once, so a reader that discards them loses them.
      */
@@ -68,5 +76,6 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     captureBlocksDropped: 0,
     captureInputUnderruns: 0,
     inputLatencyFrames: 0,
+    outputStreamLoss: null,
     events: [],
 };

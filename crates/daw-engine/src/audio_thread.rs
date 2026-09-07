@@ -240,6 +240,9 @@ pub(crate) struct SpawnedAudioThread {
     /// The slot a refused capture open or start stores its kind into. See
     /// [`new_capture_refusal_slot`].
     pub capture_refusal: Arc<AtomicU8>,
+    /// The slot a fatal output-stream error stores its kind into. See
+    /// [`new_output_stream_loss_slot`].
+    pub output_stream_loss: Arc<AtomicU8>,
     pub retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
 }
 
@@ -271,6 +274,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let input_latency_slot = Arc::clone(&input_latency_frames);
     let capture_refusal = new_capture_refusal_slot();
     let capture_refusal_slot = Arc::clone(&capture_refusal);
+    let output_stream_loss = new_output_stream_loss_slot();
+    let output_stream_loss_slot = Arc::clone(&output_stream_loss);
 
     let handle = spawn_owned_audio_stream(move || {
         match build_audio_stream(
@@ -287,6 +292,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             &sample_rate_slot,
             &input_latency_slot,
             &capture_refusal_slot,
+            &output_stream_loss_slot,
         ) {
             Ok(streams) => Ok(StreamWithReclaimerShutdown(
                 Some(streams),
@@ -310,6 +316,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         sample_rate,
         input_latency_frames,
         capture_refusal,
+        output_stream_loss,
         retired_adoption_tx,
     })
 }
@@ -433,6 +440,22 @@ pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
 /// `drain_engine_events` swaps this back to zero on every read, so a refusal
 /// is reported exactly once, on the first drain after it is stored.
 pub(crate) fn new_capture_refusal_slot() -> Arc<AtomicU8> {
+    Arc::new(AtomicU8::new(0))
+}
+
+/// The slot a fatal output-stream error publishes into, so the control side
+/// can tell a running engine object from a stream that has stopped rendering.
+///
+/// Zero means "no loss" and is never a valid encoding of a kind: a loss
+/// stores `kind as u8 + 1`, the same encoding [`new_capture_refusal_slot`]
+/// uses and [`crate::engine_events::StreamErrorKind::from_slot`] decodes.
+/// Unlike the capture refusal slot this one is never swapped back to zero:
+/// the condition it reports — the output stream has ended — holds for the
+/// life of the handle, so every read after the first loss must still see it.
+/// `stream_error_sink` stores into it with `compare_exchange(0, ..)` rather
+/// than an unconditional store, so the first cause reported wins and a
+/// second, unrelated failure on the way down cannot overwrite it.
+pub(crate) fn new_output_stream_loss_slot() -> Arc<AtomicU8> {
     Arc::new(AtomicU8::new(0))
 }
 
@@ -831,13 +854,14 @@ fn capture_beside<Output, B: InputBackend>(
     input_latency_slot: &Arc<AtomicUsize>,
     feed_tx: &mut Producer<CaptureFeed>,
     capture_refusal_slot: &Arc<AtomicU8>,
+    output_stream_loss_slot: &Arc<AtomicU8>,
 ) -> Result<(Option<<B::Open as OpenInput>::Stream>, Output), String> {
     let output = output?;
     let capture = capture_event_tx.and_then(|tx| {
         capture_side(
             attach_capture::<B>(
                 engine_sample_rate,
-                stream_error_sink(StreamSide::Input, tx),
+                stream_error_sink(StreamSide::Input, tx, Arc::clone(output_stream_loss_slot)),
                 Arc::clone(input_latency_slot),
             ),
             feed_tx,
@@ -862,12 +886,34 @@ fn capture_beside<Output, B: InputBackend>(
 /// The side is bound here, where the stream it belongs to is known, because
 /// nothing downstream can recover it: the event is drained long after the
 /// callback that pushed it.
+///
+/// `output_stream_loss` is threaded into both sides' sink rather than only
+/// the output's, because `build_audio_stream` builds this closure from one
+/// function for both streams. The input side is simply never the one that
+/// writes it below — a lost capture stream costs the take being recorded,
+/// not the engine's ability to render, so it stays on the ring like any
+/// other input-side event. Giving the input sink a clone it never writes is
+/// simpler than splitting this function in two for one `if`. When the side
+/// is `Output` and the reported kind [`StreamErrorKind::ends_the_stream`],
+/// the encoded kind is stored with `compare_exchange(0, ..)` so the first
+/// loss recorded is the one that survives.
 fn stream_error_sink(
     side: StreamSide,
     mut engine_event_tx: Producer<EngineEvent>,
+    output_stream_loss: Arc<AtomicU8>,
 ) -> StreamErrorFn {
     Box::new(move |kind: StreamErrorKind| {
         let _ = engine_event_tx.push(EngineEvent::StreamError { side, kind });
+
+        if side == StreamSide::Output && kind.ends_the_stream() {
+            let encoded = kind as u8 + 1;
+            let _ = output_stream_loss.compare_exchange(
+                0,
+                encoded,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
     })
 }
 
@@ -896,6 +942,7 @@ fn build_audio_stream(
     sample_rate_out: &OnceLock<f32>,
     input_latency_slot: &Arc<AtomicUsize>,
     capture_refusal_slot: &Arc<AtomicU8>,
+    output_stream_loss_slot: &Arc<AtomicU8>,
 ) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -935,13 +982,18 @@ fn build_audio_stream(
     capture_beside::<_, PlatformInputBackend>(
         open.start(
             render,
-            stream_error_sink(StreamSide::Output, engine_event_tx),
+            stream_error_sink(
+                StreamSide::Output,
+                engine_event_tx,
+                Arc::clone(output_stream_loss_slot),
+            ),
         ),
         capture_event_tx,
         sample_rate,
         input_latency_slot,
         &mut capture_feed_tx,
         capture_refusal_slot,
+        output_stream_loss_slot,
     )
 }
 
@@ -949,7 +1001,7 @@ fn build_audio_stream(
 mod capture_seam_tests {
     use super::{
         attach_capture, capture_beside, capture_side, new_capture_refusal_slot,
-        new_input_latency_slot, CaptureFeed,
+        new_input_latency_slot, new_output_stream_loss_slot, CaptureFeed,
     };
     use crate::capture::target_depth_frames;
     use crate::device::{
@@ -1045,7 +1097,7 @@ mod capture_seam_tests {
 
     fn error_sink() -> StreamErrorFn {
         let (tx, _rx) = engine_event_channel();
-        super::stream_error_sink(StreamSide::Input, tx)
+        super::stream_error_sink(StreamSide::Input, tx, new_output_stream_loss_slot())
     }
 
     /// The one-slot handoff `build_audio_stream` builds, in the shape a test
@@ -1190,6 +1242,7 @@ mod capture_seam_tests {
             &slot,
             &mut feed_tx,
             &refusal_slot,
+            &new_output_stream_loss_slot(),
         );
 
         assert!(built.is_err(), "a failed output build stays failed");
@@ -1218,6 +1271,7 @@ mod capture_seam_tests {
             &slot,
             &mut feed_tx,
             &refusal_slot,
+            &new_output_stream_loss_slot(),
         )
         .expect("a started output build stays started");
 
@@ -1242,6 +1296,7 @@ mod capture_seam_tests {
             &slot,
             &mut feed_tx,
             &refusal_slot,
+            &new_output_stream_loss_slot(),
         )
         .expect("a started output build stays started");
 
@@ -1286,7 +1341,7 @@ mod capture_seam_tests {
         let capture = capture_side(
             attach_capture::<AbsentInput>(
                 ENGINE_RATE,
-                super::stream_error_sink(StreamSide::Input, tx),
+                super::stream_error_sink(StreamSide::Input, tx, new_output_stream_loss_slot()),
                 Arc::clone(&slot),
             ),
             &mut feed_tx,
@@ -1375,7 +1430,8 @@ mod capture_seam_tests {
     #[test]
     fn the_capture_error_sink_reports_on_the_input_side() {
         let (tx, mut rx) = engine_event_channel();
-        let mut sink = super::stream_error_sink(StreamSide::Input, tx);
+        let mut sink =
+            super::stream_error_sink(StreamSide::Input, tx, new_output_stream_loss_slot());
 
         sink(StreamErrorKind::Xrun);
 
@@ -1385,6 +1441,91 @@ mod capture_seam_tests {
                 side: StreamSide::Input,
                 kind: StreamErrorKind::Xrun
             })
+        );
+    }
+
+    /// A `DeviceChanged` reported on the output stream still crosses the
+    /// event ring like any other report, and it also records into the loss
+    /// slot: an event a host can log and a state a host can poll are two
+    /// different needs, and this sink is the one place both are written.
+    #[test]
+    fn an_output_device_change_records_the_loss_and_still_reports_the_event() {
+        let (tx, mut rx) = engine_event_channel();
+        let slot = new_output_stream_loss_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Output, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::DeviceChanged);
+
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Output,
+                kind: StreamErrorKind::DeviceChanged
+            })
+        );
+        assert_eq!(
+            StreamErrorKind::from_slot(slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::DeviceChanged)
+        );
+    }
+
+    /// An xrun is a report from a stream that keeps running, so it must not
+    /// be read as the stream having ended.
+    #[test]
+    fn an_output_xrun_records_no_loss() {
+        let (tx, _rx) = engine_event_channel();
+        let slot = new_output_stream_loss_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Output, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::Xrun);
+
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            0,
+            "an xrun does not end the stream it was reported on"
+        );
+    }
+
+    /// A lost capture stream costs the take being recorded, not the engine's
+    /// ability to render, so it must never be mistaken for an output loss —
+    /// the one condition that stops a batch from applying.
+    #[test]
+    fn an_input_stream_invalidation_records_no_output_loss() {
+        let (tx, mut rx) = engine_event_channel();
+        let slot = new_output_stream_loss_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Input, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::StreamInvalidated);
+
+        assert_eq!(slot.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::StreamInvalidated
+            })
+        );
+    }
+
+    /// The Bluetooth-headset failure this slice exists for: the output
+    /// stream reports more than once on its way down, and the cause a host
+    /// should act on is the first one, not whichever arrived last.
+    /// Mutation: replace the sink's `compare_exchange(0, ..)` with an
+    /// unconditional `store` — this goes red because the second report would
+    /// then overwrite the first.
+    #[test]
+    fn the_first_output_loss_is_kept() {
+        let (tx, _rx) = engine_event_channel();
+        let slot = new_output_stream_loss_slot();
+        let mut sink = super::stream_error_sink(StreamSide::Output, tx, Arc::clone(&slot));
+
+        sink(StreamErrorKind::DeviceChanged);
+        sink(StreamErrorKind::StreamInvalidated);
+
+        assert_eq!(
+            StreamErrorKind::from_slot(slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::DeviceChanged),
+            "the first cause reported must survive a later one"
         );
     }
 }

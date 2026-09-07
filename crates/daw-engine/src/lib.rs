@@ -177,6 +177,16 @@ pub struct EngineHandle {
     /// [`Self::drain_engine_events`] swaps it back to zero on every drain and
     /// turns a non-zero read into one `EngineEvent::StreamError`.
     capture_refusal: Arc<AtomicU8>,
+    /// The kind of a fatal output-stream error the audio thread's error sink
+    /// stored, or zero for none, encoded as `kind as u8 + 1`.
+    ///
+    /// Unlike `capture_refusal`, this is state rather than a one-shot event:
+    /// once the output stream has ended nothing renders again until the
+    /// engine is restarted, so every read after the first loss must keep
+    /// seeing it. [`Self::output_stream_loss`] therefore loads it rather than
+    /// swapping it back to zero. See
+    /// `audio_thread::new_output_stream_loss_slot`.
+    output_stream_loss: Arc<AtomicU8>,
 }
 
 impl EngineHandle {
@@ -279,6 +289,7 @@ impl EngineHandle {
             sample_rate: spawned.sample_rate,
             input_latency_frames: spawned.input_latency_frames,
             capture_refusal: spawned.capture_refusal,
+            output_stream_loss: spawned.output_stream_loss,
         })
     }
 
@@ -308,6 +319,28 @@ impl EngineHandle {
     /// rather than compensating a take by zero.
     pub fn input_latency_frames(&self) -> usize {
         self.input_latency_frames.load(Ordering::Relaxed)
+    }
+
+    /// The kind of fatal error the output stream reported, if it has stopped
+    /// rendering.
+    ///
+    /// `None` means the output stream is still rendering, never that this
+    /// handle is otherwise healthy — a capture refusal or a scheduler
+    /// counter is read separately. `Some` means no render callback is
+    /// running for this engine: nothing pushed onto its command ring will be
+    /// heard until it is restarted. This is state, not a drained event, so
+    /// it is a plain `load` — every read after the first loss keeps seeing
+    /// it, unlike `drain_engine_events`'s one-shot reports.
+    pub fn output_stream_loss(&self) -> Option<StreamErrorKind> {
+        StreamErrorKind::from_slot(self.output_stream_loss.load(Ordering::Relaxed))
+    }
+
+    /// Record an output-stream loss without a device, for a fixture that
+    /// needs to drive the code that reads [`Self::output_stream_loss`].
+    #[cfg(any(test, feature = "command-capture-fixture"))]
+    pub fn mark_output_stream_lost(&self, kind: StreamErrorKind) {
+        self.output_stream_loss
+            .store(kind as u8 + 1, Ordering::Relaxed);
     }
 
     /// Publish one validated batch with all-or-nothing visibility.
@@ -1290,6 +1323,7 @@ fn engine_handle_fixture(
     engine_events: Consumer<EngineEvent>,
     capture_events: Consumer<EngineEvent>,
     capture_refusal: Arc<AtomicU8>,
+    output_stream_loss: Arc<AtomicU8>,
 ) -> EngineHandle {
     EngineHandle {
         command_tx,
@@ -1309,6 +1343,7 @@ fn engine_handle_fixture(
         sample_rate: 48_000.0,
         input_latency_frames: audio_thread::new_input_latency_slot(),
         capture_refusal,
+        output_stream_loss,
     }
 }
 
@@ -1348,6 +1383,7 @@ pub fn engine_handle_for_command_capture(
             engine_event_rx,
             capture_event_rx,
             audio_thread::new_capture_refusal_slot(),
+            audio_thread::new_output_stream_loss_slot(),
         ),
         command_rx,
         retired_adoption_rx,
@@ -2407,6 +2443,7 @@ mod tests {
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
+                crate::audio_thread::new_output_stream_loss_slot(),
             ),
             command_rx,
             diagnostics_tx,
@@ -2591,6 +2628,7 @@ mod tests {
                 engine_event_rx,
                 capture_event_rx,
                 crate::audio_thread::new_capture_refusal_slot(),
+                crate::audio_thread::new_output_stream_loss_slot(),
             ),
             engine_event_tx,
             capture_event_tx,
@@ -2677,6 +2715,7 @@ mod tests {
             engine_event_rx,
             capture_event_rx,
             capture_refusal,
+            crate::audio_thread::new_output_stream_loss_slot(),
         );
 
         assert_eq!(
@@ -2691,5 +2730,25 @@ mod tests {
             engine.drain_engine_events().is_empty(),
             "the slot swaps back to zero, so a second drain reports nothing further"
         );
+    }
+
+    /// [`EngineHandle::output_stream_loss`] reads the same slot the audio
+    /// thread's error sink writes — proven here via
+    /// `mark_output_stream_lost`, the fixture route to it — and a handle
+    /// that has recorded no loss reads `None` rather than some stale
+    /// default.
+    #[test]
+    fn output_stream_loss_reads_the_slot_the_sink_wrote() {
+        let (engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        engine.mark_output_stream_lost(StreamErrorKind::DeviceChanged);
+
+        assert_eq!(
+            engine.output_stream_loss(),
+            Some(StreamErrorKind::DeviceChanged)
+        );
+
+        let (fresh, _fresh_command_rx, _fresh_retired_adoption_rx) =
+            engine_handle_for_command_capture(64);
+        assert_eq!(fresh.output_stream_loss(), None);
     }
 }
