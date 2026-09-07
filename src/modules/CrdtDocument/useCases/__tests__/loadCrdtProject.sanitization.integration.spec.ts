@@ -95,10 +95,9 @@ function load_saved_root(bundle: Map<string, Uint8Array>): PersistedRootDocument
     return load<PersistedRootDocument>(root);
 }
 
-function expect_sanitized_saved_root(bundle: Map<string, Uint8Array>, project: string): void {
-    const persisted_root = load_saved_root(bundle);
-    expect(persisted_root.project).toBe(project);
-    expect(persisted_root.actionHistory?.entries[0]).toEqual({
+function expect_sanitized_root(root: PersistedRootDocument | undefined, project: string): void {
+    expect(root?.project).toBe(project);
+    expect(root?.actionHistory?.entries[0]).toEqual({
         id: 'entry',
         label: 'Set tempo',
         actionKind: 'setTempo',
@@ -106,6 +105,14 @@ function expect_sanitized_saved_root(bundle: Map<string, Uint8Array>, project: s
         timestamp: 1,
         reverted: false,
     });
+}
+
+function expect_sanitized_saved_root(bundle: Map<string, Uint8Array>, project: string): void {
+    expect_sanitized_root(load_saved_root(bundle), project);
+}
+
+function expect_sanitized_installed_root(project: string): void {
+    expect_sanitized_root(automergeRepository.getDoc<PersistedRootDocument>('root'), project);
 }
 
 describe('loadCrdtProject persisted action-history sanitization', () => {
@@ -170,6 +177,7 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         const persisted_bundle = mocks.saveAllToIdb.mock.calls[0]?.[0] as Map<string, Uint8Array>;
         expect(mocks.saveAllToIdb.mock.calls[0]?.[1]).toEqual({ expectedAuthority: expected_authority });
         expect_sanitized_saved_root(persisted_bundle, 'B');
+        expect_sanitized_installed_root('B');
     });
 
     it('preserves a sanitation-save refusal and the installed root document', async () => {
@@ -218,6 +226,7 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         expect(mocks.saveAllToIdb.mock.calls[1]?.[1]).toEqual({ expectedAuthority: retry_authority });
         expect_sanitized_saved_root(first_saved_bundle, 'B');
         expect_sanitized_saved_root(retried_saved_bundle, 'C');
+        expect_sanitized_installed_root('C');
         expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('C');
     });
 });
