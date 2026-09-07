@@ -1,0 +1,54 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_87ab0a2f60ccf8::t_c63d028b2434f8 44-47,559
+src/modules/AudioEngine/repositories/audioRecorder/armRecordingStopFlushTimer.ts
+  s_87ab0a2f60ccf8::t_7730390f894783 4,18
+src/modules/AudioEngine/repositories/audioRecorder/settleRecordingSession.ts
+  s_87ab0a2f60ccf8::t_8b197d17bd603b 20
+  s_87ab0a2f60ccf8::t_7730390f894783 1-19,21-25
+  s_87ab0a2f60ccf8::t_e35bf0b29b7140 26-31
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/recorder.spec.ts
+  s_87ab0a2f60ccf8::t_c63d028b2434f8 29-31
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_87ab0a2f60ccf8::t_79faa2928313be 174-175
+  s_87ab0a2f60ccf8::t_7730390f894783 29-35,37,53,125-126,172,193,204,225-228,233-234,240-243,245-247,249
+  s_87ab0a2f60ccf8::t_d750db7dc05613 43-49
+src/modules/AudioEngine/useCases/audioRecorder/startAudioRecording.ts
+  s_87ab0a2f60ccf8::t_7730390f894783 6,10
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startAudioRecording.spec.ts
+  s_87ab0a2f60ccf8::t_c63d028b2434f8 23,25,28,32,34,37,41,43,46,50,52,55
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_87ab0a2f60ccf8::t_c63d028b2434f8 32-34,333,360-387,568,609
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_87ab0a2f60ccf8::t_7730390f894783 441-445
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_87ab0a2f60ccf8::t_8206f3c5a7fab4 36
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_87ab0a2f60ccf8::t_c63d028b2434f8 956,959,961,974-975,983-1009
+  s_87ab0a2f60ccf8::t_6b189451897098 1010-1011
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_87ab0a2f60ccf8::t_64e98c2c1d39d9 433,458-464,469-474,479-481,483-498,500-509
+  s_87ab0a2f60ccf8::t_c63d028b2434f8 152-170
+  s_87ab0a2f60ccf8::t_8206f3c5a7fab4 273,354,465-468,475-478,482,499
+  s_87ab0a2f60ccf8::t_9e6ccfc6fee3b3 3-4,101,118-119,135,140,200-201,204,235,247-248,256-257,275-277,281-282,291-292,301-302,309-310,315-316,326-327,362-432
+  s_87ab0a2f60ccf8::t_274f6f04bf61de 434
+src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts
+  s_87ab0a2f60ccf8::t_7730390f894783 14-22,30-31
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_87ab0a2f60ccf8::t_7730390f894783 38-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "6b93e95d4ef7be5bb3a20a4d679d50e3c17c3c00",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
