@@ -1,0 +1,43 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_87ab0a2f60ccf8::t_9071dbca47f412 83,317-353
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_d764b1e6c8b07b 15,49-51,356-376
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_87ab0a2f60ccf8::t_8e049345080b26 178-182,195-212
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_87ab0a2f60ccf8::t_243e940152f4fa 25-32
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_87ab0a2f60ccf8::t_868d8e3d39e70e 5,18,29,47,50,244-333
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  s_87ab0a2f60ccf8::t_5c6a24a06373ed 7,38,142
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  s_87ab0a2f60ccf8::t_25c9075525f762 2,11-25,57-64,68,71,75,115-118,120,124-143,153-182
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_87ab0a2f60ccf8::t_d43e75d88b6b2c 76-79,81-82,165-168,170-174
+src/modules/Project/useCases/projectPersistence/saveProject/warnedExternalPluginCaptureRejections.ts
+  s_57b7eaed091e1e::t_5d12487666f087 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "60c0e08eb00dc6c8218ff69a86a4b8b48298a5b8",
+  "prompts": {},
+  "sessions": {
+    "s_57b7eaed091e1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6d725ef5ec1b8bd4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
