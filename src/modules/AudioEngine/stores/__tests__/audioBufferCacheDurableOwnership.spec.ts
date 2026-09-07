@@ -247,6 +247,24 @@ describe('audioBufferCache durable ownership', () => {
                 expect.objectContaining({ error: expect.anything() })
             );
         });
+
+        it('keeps raw PCM and metadata in a freeze sweep when no ownership provider is registered', async () => {
+            controls.committed.set('freeze-provider-absent', ordinaryRecord(NOW, 4));
+            controls.committedMeta.set('freeze-provider-absent', {
+                lastAccessed: NOW,
+                sizeInBytes: 4,
+                freezeProjectId: 200,
+            });
+
+            await routes.audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set<string>(), projectId: 200 });
+
+            expect(controls.committed.get('freeze-provider-absent')).toEqual(ordinaryRecord(NOW, 4));
+            expect(controls.committedMeta.get('freeze-provider-absent')).toEqual({
+                lastAccessed: NOW,
+                sizeInBytes: 4,
+                freezeProjectId: 200,
+            });
+        });
     });
 
     describe('production size sweep', () => {
