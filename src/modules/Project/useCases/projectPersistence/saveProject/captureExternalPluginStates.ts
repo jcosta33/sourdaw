@@ -1,6 +1,11 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { readPluginState } from '#/modules/PluginHost/useCases';
+import {
+    hasUnresolvedExternalPluginRestoreFailure,
+    readPluginState,
+    shouldWarnExternalPluginRestoreFailure,
+} from '#/modules/PluginHost/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { capturedNativePluginStateCache } from './capturedNativePluginStateCache';
 
@@ -16,6 +21,16 @@ import { capturedNativePluginStateCache } from './capturedNativePluginStateCache
  * stored chunk survives a round-trip through a machine without the plugin
  * (Decision 0003 — never overwrite saved plugin state on instantiation
  * failure).
+ *
+ * A plugin that instantiated but REJECTED its saved state stays loaded holding
+ * its own defaults, so its get-state is not the user's data either. While that
+ * failure stands unresolved, the stored chunk stays authoritative for the slot
+ * and the host is not read at all; a later successful restore or an explicit
+ * `setExternalPluginState` replacement (which pushes the chunk to the host)
+ * clears the marker and capture resumes. The skip is never silent — but it
+ * warns exactly once per failure episode: autosave ticks on a plugin that
+ * keeps rejecting its chunk must not nag every 30 seconds, while a
+ * resolved-then-refailed instance warns again.
  *
  * The write is gated on whether THIS peer's own host state changed since its last
  * capture (`capturedNativePluginStateCache`), not on whether the stored chunk
@@ -33,10 +48,24 @@ export async function captureExternalPluginStates(): Promise<void> {
         return;
     }
 
+    const preservedPlugins: string[] = [];
     for (const track of state.tracks) {
         for (const device of track.devices) {
             const instanceId = device.externalInstanceId;
             if (device.type !== 'external-plugin' || !instanceId) {
+                continue;
+            }
+
+            // The plugin rejected its saved state, so its current runtime state
+            // is defaults. Preserve the stored original chunk by leaving the
+            // slot untouched until authoritative state exists again — and say
+            // so, once per failure episode: a save that silently drops the
+            // plugin's edits reads as success to the musician, but an autosave
+            // that nags every 30 seconds is noise.
+            if (hasUnresolvedExternalPluginRestoreFailure(instanceId)) {
+                if (shouldWarnExternalPluginRestoreFailure(instanceId)) {
+                    preservedPlugins.push(device.externalPluginId ?? device.name);
+                }
                 continue;
             }
 
@@ -73,5 +102,12 @@ export async function captureExternalPluginStates(): Promise<void> {
                 { skipMacroRecording: true }
             );
         }
+    }
+
+    if (preservedPlugins.length > 0) {
+        notifyUser(
+            `Saved state was preserved for ${preservedPlugins.join(', ')} after a failed restore — edits made in the plugin since were not captured.`,
+            'warning'
+        );
     }
 }
