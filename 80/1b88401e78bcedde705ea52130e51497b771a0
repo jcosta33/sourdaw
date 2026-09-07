@@ -1,0 +1,75 @@
+.agents/skills/web-audio-engine/SKILL.md
+  s_87ab0a2f60ccf8::t_775d5f4ec6639e 72-93
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_87ab0a2f60ccf8::t_895569a21fa933 48-51,57-59,130,137-144,152,161,182-183,216-217,224-226,232-233,237-239,241,243-252,261-270
+  s_87ab0a2f60ccf8::t_09010d270e0513 5,7,9,236,242,271-273,275-294
+  s_87ab0a2f60ccf8::t_c54f835ea4c8a4 240
+  s_87ab0a2f60ccf8::t_e8798c98ea86d0 274
+  s_87ab0a2f60ccf8::t_93f22d0976f04d 200-215,295
+  s_87ab0a2f60ccf8::t_859c2d1a4b2dbf 296
+  s_87ab0a2f60ccf8::t_de13d4df0b79e9 307-310,316-319,324-325
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recording.spec.ts
+  s_87ab0a2f60ccf8::t_5b956e98041a43 71-74,80,107-110,113-118,243-245
+src/modules/AudioEngine/models/RecordingRingProtocol.ts
+  s_87ab0a2f60ccf8::t_1e1eb7acc2743f 1-57
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  s_87ab0a2f60ccf8::t_ed751abccdf525 206-207,305-325,342-371,373-398,400-411,452
+  s_87ab0a2f60ccf8::t_61e5bea6ba985d 372,399
+  s_87ab0a2f60ccf8::t_2e05de51d07a3a 32-35,48-49,109,477-503,512-517
+  s_87ab0a2f60ccf8::t_e8a784f5852261 523-571
+  s_87ab0a2f60ccf8::t_223c34761cc558 504-511,518-522
+  s_87ab0a2f60ccf8::t_e0db0246c144f7 3-11,134-143,199-205,208,217,224,228,235,238,240,248-250,256,266,279,283,285,292,297,301,421,426,459,462,469,586,594,602
+  s_9b530f08172a54::t_833bc4e03ffebe 144
+  s_87ab0a2f60ccf8::t_0209cfeab026a9 145-151,255,257-259,261,264,271-272,326-341
+src/modules/AudioEngine/repositories/audioRecorder/stopAudioRecording.ts
+  s_87ab0a2f60ccf8::t_d751d8af26c8cb 16
+src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts
+  s_87ab0a2f60ccf8::t_1e1eb7acc2743f 3-4,10,23
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_87ab0a2f60ccf8::t_05aab2084e998f 27
+  s_87ab0a2f60ccf8::t_d751d8af26c8cb 116,121-137
+  s_9b530f08172a54::t_338df956d90253 138
+src/modules/AudioEngine/repositories/audioRecorder/armRecordingStopFlushTimer.ts
+  s_87ab0a2f60ccf8::t_d751d8af26c8cb 3,10,19
+src/modules/AudioEngine/services/recordingProcessor.ts
+  s_87ab0a2f60ccf8::t_5c08935a8a3358 8-9,15,18-25,39,41-44,48-51,55,58,67-68,70-72,80-83,91,99
+  s_87ab0a2f60ccf8::t_05aab2084e998f 31-35
+src/modules/AudioEngine/repositories/audioRecorder/cleanupNodesForRecordingSession.ts
+  s_87ab0a2f60ccf8::t_d751d8af26c8cb 6
+src/modules/AudioEngine/services/__tests__/recordingProcessor.spec.ts
+  s_87ab0a2f60ccf8::t_61e5bea6ba985d 150,194
+  s_87ab0a2f60ccf8::t_0b0b5ccfd889eb 170-171,200
+  s_87ab0a2f60ccf8::t_988af6f1488610 3-10,38-50,61,67,74,77,88,95,99,105,114,119,122,127,139,141-149,151,153-154,161-164,172-193,195-199
+  s_87ab0a2f60ccf8::t_8c01f6e02f281f 60,113,125
+src/modules/AudioEngine/workers/recordingWorker.ts
+  s_87ab0a2f60ccf8::t_ed751abccdf525 39-47,242,248
+  s_87ab0a2f60ccf8::t_27b4cbb80ec639 409-411
+  s_87ab0a2f60ccf8::t_5ec89e2e415add 38
+  s_87ab0a2f60ccf8::t_05aab2084e998f 96-99,299
+  s_87ab0a2f60ccf8::t_f82ac2acfdadd8 2-8,37,56-58,89-91,116-129,136,150-161,163-165,169,171,183-185,191-192,194,197,206-210,222-225,227-234,238,241,243-247,250-268,281-284,293,300-301,307,319-323,330-343,364,393-395,400-408,412,418
+  s_87ab0a2f60ccf8::t_8e031ec5f0a83f 162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "801b88401e78bcedde705ea52130e51497b771a0",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": null
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
