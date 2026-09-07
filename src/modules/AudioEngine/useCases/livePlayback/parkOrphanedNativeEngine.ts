@@ -27,14 +27,13 @@ function reasonOf(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-/** Dispose `orphan` only if it is still the one this session is tracking. */
-function retireOrphanIfCurrent(orphan: AudioGraphBackend): void {
-    if (nativeLiveGraphSession.orphanedBackend !== orphan) {
-        // Cleared while the apply was in flight: a new session installed over
-        // this orphan and `installRolledSession` already disposed it, so
-        // disposing again would be a second dispose of a retired handle.
-        return;
-    }
+/**
+ * Dispose `orphan` and clear the field, with no identity re-check: this park
+ * and `installRolledSession` (the only writer that clears `orphanedBackend`)
+ * are each one whole work on `queueOnNativeLiveGraphSession`'s chain, so they
+ * can never interleave and find the field already moved out from under them.
+ */
+function retireOrphan(orphan: AudioGraphBackend): void {
     orphan.dispose();
     nativeLiveGraphSession.orphanedBackend = null;
 }
@@ -59,19 +58,20 @@ export function parkOrphanedNativeEngine(): Promise<void> {
                 ],
             });
             if (result.application === 'applied') {
-                retireOrphanIfCurrent(orphan);
+                retireOrphan(orphan);
             }
             // Any other application — the engine stalled again between the
             // reading and this batch — leaves the orphan in place. The next
             // `running: true` reading retries.
         } catch (error) {
-            // `apply` already turns a transport rejection into `rejected`
-            // (`createNativeLiveGraphBackend.ts`), so a thrown error here can
-            // only be `readAppliedResult` finding an unknown outcome: the
-            // engine answered, unreadably, and may well still be rolling.
-            // Disposing the orphan on that would abandon the very engine this
-            // park exists to stop, so the handle is kept. The next
-            // `running: true` reading retries.
+            // `apply` already turns transport failures into `rejected`, so a
+            // throw here means the engine answered but the answer could not
+            // be read — either an unknown outcome or an applied answer with
+            // unreadable reports or revision. Either way the engine may still
+            // be rolling, so the handle is kept and re-parked on the next
+            // `running: true` reading; the re-park is idempotent and
+            // continues until a start replaces the topology and disposes the
+            // orphan.
             logger.warn(`[AudioEngine] native transport answered the orphan park unreadably: ${reasonOf(error)}`);
         }
     });
