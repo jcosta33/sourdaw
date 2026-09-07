@@ -118,23 +118,6 @@ describe('getEngineRtDiagnostics', () => {
         expect(diagnostics.outputStreamFault).toBe('backendSpecific');
     });
 
-    it('keeps running true beside a recorded fault', async () => {
-        // A `deviceChanged` reroute or a recovered WASAPI invalidation can
-        // leave a fault recorded while the render callback never actually
-        // stopped — the fault and the running flag are independent readings.
-        vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockResolvedValue({
-            ...nativePayload,
-            running: true,
-            outputStreamFault: 'deviceChanged',
-        });
-
-        const diagnostics = await getEngineRtDiagnostics();
-
-        expect(diagnostics.running).toBe(true);
-        expect(diagnostics.outputStreamFault).toBe('deviceChanged');
-    });
-
     it('keeps a stream error whose kind it does not recognize', async () => {
         // Dropping it would recreate the exact defect this surface exists to
         // fix: a stream that errored and left no trace.

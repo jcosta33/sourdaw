@@ -109,13 +109,20 @@ pub(crate) struct RenderLivenessPolicy {
     pub stall_after_polls: u32,
 }
 
-/// A one-second stall window. The largest device period this engine ever
-/// negotiates — 4096 frames at 44.1 kHz, about 93 ms — is an order of
-/// magnitude shorter, so a healthy stream can never be read as stalled by
-/// this policy. WASAPI's own reopen campaign for a device-invalidation
-/// recovery (`device::wasapi::backend`) budgets 5 s, so a recovered
-/// invalidation reads as a stall that clears itself once callbacks resume —
-/// which is the truth: the stream really did stop rendering for that long.
+/// A one-second stall window. It assumes no device period the engine ever
+/// runs approaches `poll × stall_after_polls`, and both outcomes of
+/// negotiation hold that assumption. A negotiated `Fixed` period
+/// ([`negotiated_buffer_size`]) is clamped to at most `MAX_CALLBACK_FRAMES` —
+/// 4096 frames, about 93 ms at 44.1 kHz — an order of magnitude short of the
+/// window. A `Default` period, on a device whose range negotiation cannot
+/// help (its minimum already exceeds the limit), is still short of it: cpal
+/// itself ceilings a device's advertised buffer at 8192 frames, which even at
+/// the lowest rate this engine opens — 16 kHz — is about 512 ms, hundreds of
+/// milliseconds under the window. WASAPI's own reopen campaign for a
+/// device-invalidation recovery (`device::wasapi::backend`) budgets 5 s, so a
+/// recovered invalidation reads as a stall that clears itself once callbacks
+/// resume — which is the truth: the stream really did stop rendering for
+/// that long.
 pub(crate) const RENDER_LIVENESS_POLICY: RenderLivenessPolicy = RenderLivenessPolicy {
     poll: Duration::from_millis(250),
     stall_after_polls: 4,
@@ -2100,9 +2107,13 @@ mod tests {
     /// is restored the moment a callback advances the counter again — the
     /// WASAPI-reopen and system-wake case `RENDER_LIVENESS_POLICY` documents.
     /// Mutation: delete the `liveness.rendering.store(rendering, ..)` call in
-    /// the owner loop — the first wait below times out; delete
-    /// `RenderStallWatch`'s idle-count reset on an advance — the second wait
-    /// times out instead.
+    /// the owner loop — the first wait below times out. Deleting
+    /// `RenderStallWatch`'s idle-count reset on an advance does not fail this
+    /// test: `observe` returns `true` on any advance regardless of a carried
+    /// idle count, so the second wait still passes here. That reset is
+    /// pinned by
+    /// `a_stall_watch_reports_not_rendering_after_the_idle_polls_and_recovers_on_the_next_advance`
+    /// alone.
     #[test]
     fn the_owner_thread_clears_rendering_on_a_stalled_stream_and_restores_it_when_callbacks_resume()
     {

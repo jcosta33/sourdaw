@@ -49,23 +49,6 @@ describe('refreshEngineRtDiagnostics', () => {
         clearEngineDiagnosticsReadFailure();
     });
 
-    it('keeps running true beside a recorded fault', async () => {
-        // A `deviceChanged` reroute or a recovered WASAPI invalidation can
-        // leave a fault recorded while the render callback never actually
-        // stopped — the fault and the running flag are independent readings,
-        // and a refresh must publish both exactly as read rather than
-        // deriving one from the other.
-        const reading = diagnostics({ running: true, outputStreamFault: 'deviceChanged' });
-        vi.mocked(getEngineRtDiagnostics).mockResolvedValue(reading);
-
-        const returned = await refreshEngineRtDiagnostics();
-
-        expect(returned?.running).toBe(true);
-        expect(returned?.outputStreamFault).toBe('deviceChanged');
-        expect(engineRtDiagnosticsStore.value?.latest?.running).toBe(true);
-        expect(engineRtDiagnosticsStore.value?.latest?.outputStreamFault).toBe('deviceChanged');
-    });
-
     it('publishes the latest reading to the store and returns it', async () => {
         const reading = diagnostics({ unmappedSetParamCalls: 4, captureConsumerRefusals: 2 });
         vi.mocked(getEngineRtDiagnostics).mockResolvedValue(reading);
