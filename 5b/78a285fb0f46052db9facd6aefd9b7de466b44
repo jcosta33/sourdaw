@@ -1,0 +1,29 @@
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_9b530f08172a54::t_31b54a6a2edebb 1,126-135,194-201,203-258,260-265,308-313,317-328,332-337,341-352
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_87ab0a2f60ccf8::t_e9970b39443734 228,389,410-605,617
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "5b78a285fb0f46052db9facd6aefd9b7de466b44",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
