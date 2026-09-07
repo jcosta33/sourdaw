@@ -1,5 +1,5 @@
 /// Audio preprocessing for pitch detection.
-/// DC removal, adaptive bandpass, RMS gate, Hann windowing.
+/// DC removal, adaptive bandpass, RMS gate.
 use std::f32::consts::TAU;
 
 /// First-order IIR highpass for DC removal (~20 Hz cutoff).
@@ -93,19 +93,6 @@ impl RmsTracker {
 
     pub fn level(&self) -> f32 {
         self.rms_sq.sqrt()
-    }
-}
-
-/// Apply Hann window to a buffer in-place.
-pub fn apply_hann_window(buffer: &mut [f32]) {
-    let n = buffer.len();
-    if n == 0 {
-        return;
-    }
-    let inv_n = 1.0 / n as f32;
-    for i in 0..n {
-        let w = 0.5 * (1.0 - (TAU * i as f32 * inv_n).cos());
-        buffer[i] *= w;
     }
 }
 

@@ -71,6 +71,7 @@ export { addMidiFxToStrip } from './deviceControls/addMidiFxToStrip';
 export { removeMidiFxFromStrip } from './deviceControls/removeMidiFxFromStrip';
 export { updateMidiFxBypass } from './deviceControls/updateMidiFxBypass';
 export { updateMidiFxParam } from './deviceControls/updateMidiFxParam';
+export { importScoringTuning } from './deviceControls/importScoringTuning';
 
 export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';

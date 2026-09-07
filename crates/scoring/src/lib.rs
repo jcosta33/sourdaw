@@ -451,6 +451,7 @@ pub struct ScoringInstance {
     out_left: Vec<f32>,
     out_right: Vec<f32>,
     nan_flush_count: u64,
+    scale_name: String,
 }
 
 #[wasm_bindgen]
@@ -462,6 +463,7 @@ impl ScoringInstance {
             out_left: vec![0.0; 1024],
             out_right: vec![0.0; 1024],
             nan_flush_count: 0,
+            scale_name: String::new(),
         }
     }
 
@@ -556,6 +558,12 @@ impl ScoringInstance {
             return false;
         }
         self.engine.tuning.offsets = scale.to_12tet_offsets();
+        let desc = scale.description();
+        self.scale_name = if desc.is_empty() {
+            "Scala scale".to_string()
+        } else {
+            desc.to_string()
+        };
         true
     }
 
@@ -593,7 +601,13 @@ impl ScoringInstance {
         if let Some(a4) = a4_hz {
             self.engine.tuning.a4_hz = a4;
         }
+        self.scale_name = "AnaMark tuning".to_string();
         true
+    }
+
+    #[wasm_bindgen]
+    pub fn scale_description(&self) -> String {
+        self.scale_name.clone()
     }
 }
 
@@ -1200,6 +1214,55 @@ C twenty cents flat
         );
         assert_eq!(instance.engine.tuning.a4_hz, 432.0);
         assert_eq!(instance.engine.tuning.offsets, untouched);
+    }
+
+    #[test]
+    fn scale_description_reflects_imports_and_preserves_on_failure() {
+        let mut instance = ScoringInstance::new(44100.0);
+        assert_eq!(instance.scale_description(), "");
+
+        assert!(instance.import_scala(TWELVE_TET_SCL));
+        assert_eq!(instance.scale_description(), "12-tone equal temperament");
+
+        let empty_desc_scl = "\n12\n100.0\n200.0\n300.0\n400.0\n500.0\n600.0\n700.0\n800.0\n900.0\n1000.0\n1100.0\n1200.0\n";
+        assert!(instance.import_scala(empty_desc_scl));
+        assert_eq!(instance.scale_description(), "Scala scale");
+
+        let thirteen = "\
+13 of them
+ 13
+ 92.0
+ 185.0
+ 277.0
+ 369.0
+ 462.0
+ 554.0
+ 646.0
+ 738.0
+ 831.0
+ 923.0
+ 1015.0
+ 1108.0
+ 1200.0
+";
+        assert!(!instance.import_scala(thirteen));
+        assert_eq!(
+            instance.scale_description(),
+            "Scala scale",
+            "rejected import changed scale description"
+        );
+
+        let tun = "; ten cents flat\n[Tuning]\nnote 60 = 5990.0\n";
+        assert!(instance.import_tun(tun));
+        assert_eq!(instance.scale_description(), "AnaMark tuning");
+
+        let bad_tun = "[Tuning]\nnote 0 = invalid\n";
+        assert!(!instance.import_tun(bad_tun));
+        assert_eq!(
+            instance.scale_description(),
+            "AnaMark tuning",
+            "rejected tun import changed scale description"
+        );
     }
 }
 
