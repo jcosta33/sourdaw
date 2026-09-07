@@ -1,0 +1,35 @@
+src/modules/AudioEngine/useCases/livePlayback/abandonNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_9b972bab7bd503 16-22
+  s_9b530f08172a54::t_e71b572ccda74a 36-39,42-43
+src/modules/AudioEngine/useCases/livePlayback/__tests__/watchNativeEngineLiveness.spec.ts
+  s_9b530f08172a54::t_7815d2d9ad0cb5 107-158
+  s_9b530f08172a54::t_0fd19313c9f0d7 46-51
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_9b530f08172a54::t_b70951ed18d46d 112-120
+src/modules/AudioEngine/useCases/livePlayback/__tests__/abandonNativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_f63d84b26de9a3 113-115,133-135,143,149,152-154,159,164,166
+  s_9b530f08172a54::t_81e941ba7d6d49 6-7,15
+  s_9b530f08172a54::t_535b56231a58a0 94-95,101
+  s_9b530f08172a54::t_a1999cfbbf08b5 56-73
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_3c501925bf3d9c 1659
+src/modules/AudioEngine/useCases/livePlayback/watchNativeEngineLiveness.ts
+  s_9b530f08172a54::t_4e98a6cfe52db2 45-54
+  s_9b530f08172a54::t_081d320d2075eb 60-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "32cc0a881cb283215b7ccd5248761d42d966def8",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
