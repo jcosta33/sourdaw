@@ -126,6 +126,7 @@ import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
+import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
 
 /**
  * What a session runs at unless a caller asks for the shadow.
@@ -791,6 +792,12 @@ async function installRolledSession(input: {
 }): Promise<void> {
     const { session, backend, topology, installed, rebound, monitor } = input;
     nativeLiveGraphSession.backend?.dispose();
+    // This session's `replaceTopology` batch has already replaced the whole
+    // topology a still-orphaned handle was left rolling, so that handle has
+    // nothing left to park — the engine it named no longer holds the strips
+    // it abandoned.
+    nativeLiveGraphSession.orphanedBackend?.dispose();
+    nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.backend = backend;
     nativeLiveGraphSession.lastDeferredChainNotice = null;
     const shadowed = monitor === 'shadowed';
@@ -825,6 +832,9 @@ async function installRolledSession(input: {
         notifyNativeDecline(parkedReason);
     }
     startNativeEnginePlayheadFeed();
+    // The session stands parked or rolling either way, and a stall is a fact
+    // about the engine under both — so the watch runs whichever this session is.
+    startNativeEngineLivenessWatch();
 }
 
 export function startNativeLiveGraphSession(

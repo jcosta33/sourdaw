@@ -20,10 +20,13 @@
  * for good.
  */
 
+import { abandonNativeLiveGraphSession } from './abandonNativeLiveGraphSession';
 import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
+import { describeEngineNotRenderingRefusal } from './describeEngineNotRenderingRefusal';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
+import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
@@ -70,7 +73,15 @@ export function stopNativeLiveGraphSession(
             // The session stays: a refused stop means the engine did not take
             // the command, not that the graph it holds went away, and dropping
             // the handle would strand a still-playing engine with no way to
-            // reach it.
+            // reach it. A refusal saying the engine no longer renders is the
+            // one exception — the graph a kept handle would strand is one
+            // nothing renders any more, so dropping it strands nothing.
+            if (isEngineNotRenderingRefusal(result.reason)) {
+                // Described, not raw: the notice this puts in front of a
+                // musician has no business showing the machine prefix
+                // `isEngineNotRenderingRefusal` matched on.
+                abandonNativeLiveGraphSession(describeEngineNotRenderingRefusal(result.reason));
+            }
             return { outcome: 'declined', reason: result.reason };
         }
         // Cleared only once the park actually applied. A refused stop leaves a

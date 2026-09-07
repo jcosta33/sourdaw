@@ -20,7 +20,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
-import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import {
+    type AudioGraphBackend,
+    type AudioGraphCommand,
+    type AudioGraphCommandBatch,
+} from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
@@ -67,6 +71,8 @@ const mocks = vi.hoisted(() => ({
     ),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
+    startLivenessWatch: vi.fn(),
+    stopLivenessWatch: vi.fn(),
     /**
      * A batch to send in place of the one the real producer builds, or `null`
      * to send the real one. The producer's own programme is proven where it
@@ -130,6 +136,12 @@ vi.mock('../startNativeEnginePlayheadFeed', () => ({
 }));
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({
     stopNativeEnginePlayheadFeed: () => mocks.stopPlayheadFeed(),
+}));
+vi.mock('../watchNativeEngineLiveness', () => ({
+    startNativeEngineLivenessWatch: () => mocks.startLivenessWatch(),
+}));
+vi.mock('../stopNativeEngineLivenessWatch', () => ({
+    stopNativeEngineLivenessWatch: () => mocks.stopLivenessWatch(),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
@@ -492,6 +504,8 @@ beforeEach(() => {
     mocks.setEngineTransportMaps.mockClear();
     mocks.startPlayheadFeed.mockClear();
     mocks.stopPlayheadFeed.mockClear();
+    mocks.startLivenessWatch.mockClear();
+    mocks.stopLivenessWatch.mockClear();
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
     mocks.warn.mockClear();
@@ -515,6 +529,7 @@ beforeEach(() => {
     // inherited the previous one's belief would see no registration at all.
     registeredNativeTimelineSampleIds.clear();
     nativeLiveGraphSession.backend = null;
+    nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.monitorShadowed = true;
     nativeLiveGraphSession.rolling = false;
@@ -533,6 +548,7 @@ beforeEach(() => {
     // one's would silence an IPC write for a strip this session never claimed.
     nativeLiveGraphSession.carriedStripIds = new Set();
     nativeLiveGraphSession.pending = Promise.resolve();
+    nativeLiveGraphSession.livenessWatch = null;
     // The fader's position is module state too, and every batch below states
     // it, so a case inheriting the previous one's would open a session at a
     // level no gesture in it ever set.
@@ -896,6 +912,23 @@ describe('startNativeLiveGraphSession', () => {
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'bus-1' }),
         ]);
+    });
+
+    it('installing a new session disposes the orphan, which has nothing left to park', async () => {
+        // The new session's `replaceTopology` batch has already torn down and
+        // rebuilt the whole topology a still-orphaned handle was left
+        // rolling, so there is nothing left for that handle to reach.
+        const orphan: AudioGraphBackend & { dispose: ReturnType<typeof vi.fn<() => void>> } = {
+            backendId: 'stub-orphan',
+            apply: vi.fn(),
+            dispose: vi.fn(),
+        };
+        nativeLiveGraphSession.orphanedBackend = orphan;
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(orphan.dispose).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.orphanedBackend).toBeNull();
     });
 
     it('says what the programme could not carry, and still plays everything it could', async () => {
@@ -1638,6 +1671,15 @@ describe('startNativeLiveGraphSession', () => {
         // because the note store is not what a monitor gates.
         expect(mocks.carriedClaims.map((claim) => claim.ids)).toEqual([[]]);
     });
+
+    // #3635: a stall is a fact about the engine whether this session is
+    // parked or rolling, so the watch starts on every session the same way.
+    it('starts the liveness watch on a started session, with no notice shown yet', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(mocks.startLivenessWatch).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
 });
 
 describe('updateNativeLiveGraphSessionTransportMaps', () => {
@@ -1884,6 +1926,60 @@ describe('stopNativeLiveGraphSession', () => {
         // still close it, or a stopped transport keeps a request in flight for
         // the rest of the session.
         expect(mocks.stopPlayheadFeed).toHaveBeenCalled();
+    });
+
+    // #3635: a refusal saying the engine no longer renders is the one
+    // exception to keeping the session — the graph a kept handle would
+    // strand is one nothing renders any more, so dropping it strands nothing.
+    it('abandons the session when the stop is refused because the engine stopped rendering', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason:
+                'engine-not-rendering: the output stream stopped calling back after reporting DeviceChanged; ' +
+                'the engine refuses batches until rendering resumes',
+        });
+
+        const result = await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason:
+                'engine-not-rendering: the output stream stopped calling back after reporting DeviceChanged; ' +
+                'the engine refuses batches until rendering resumes',
+        });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        // Orphaned, not disposed: the engine behind this handle kept the
+        // topology and the `playing` flag this session left it, and only a
+        // resumed stream — `parkOrphanedNativeEngine.ts` — can still stop it.
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([false]);
+        expect(nativeLiveGraphSession.orphanedBackend).not.toBeNull();
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('warning');
+        // The notice a musician reads carries the prose, not the machine
+        // prefix `isEngineNotRenderingRefusal` matches on.
+        const [message] = mocks.notifyUser.mock.calls[0] as [string, string];
+        expect(message).not.toContain('engine-not-rendering:');
+        expect(message).toContain('the output stream stopped calling back after reporting DeviceChanged');
+    });
+
+    it('keeps the session on an ordinary standing refusal, and shows no abandon notice', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'automation-queue-capacity — the mixer strip queue is full',
+        });
+
+        const result = await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation-queue-capacity — the mixer strip queue is full',
+        });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('never overtakes a start that is still in flight', async () => {

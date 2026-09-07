@@ -19,6 +19,27 @@ import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
 export type NativeLiveGraphSession = {
     backend: AudioGraphBackend | null;
     /**
+     * The handle of a session the renderer abandoned on a stall, retained
+     * until the engine is seen rendering again so the transport it left
+     * rolling can be parked.
+     *
+     * A stall abandon (`abandonNativeLiveGraphSession.ts`) is renderer-side
+     * only: the engine keeps the abandoned topology and its `playing` flag,
+     * because nothing tells it otherwise. A stream that resumes callbacks
+     * would then render those strips again from the frozen position, right
+     * beside whatever Web Audio is already sounding — doubled, out-of-phase
+     * audio with no route back, because the watch this session started keeps
+     * running for exactly this reason (`watchNativeEngineLiveness.ts`), and
+     * `parkOrphanedNativeEngine.ts` is what it calls once a reading says the
+     * engine is rendering again.
+     *
+     * At most one of {@link backend} and this field is ever set: an abandon
+     * moves the handle from `backend` to here, and installing a rolled
+     * session (`installRolledSession` in `startNativeLiveGraphSession.ts`)
+     * nulls this field before it adopts a new one into `backend`.
+     */
+    orphanedBackend: AudioGraphBackend | null;
+    /**
      * Whether this session's engine is the one a musician is actually hearing.
      *
      * Two independent conditions, and both have to hold: the batch has to
@@ -98,6 +119,15 @@ export type NativeLiveGraphSession = {
      */
     lastDeferredChainNotice: string | null;
     /**
+     * The running liveness poll this session started, or `null` when none is
+     * running.
+     *
+     * Held so `startNativeEngineLivenessWatch` can stay idempotent, and so the
+     * watch's own `pollOnce` can find and clear the interval when it retires
+     * itself — the only production caller of `stopNativeEngineLivenessWatch`.
+     */
+    livenessWatch: ReturnType<typeof setInterval> | null;
+    /**
      * What the engine's chain holds, per strip this session built, in graph
      * order.
      *
@@ -129,6 +159,7 @@ export type NativeLiveGraphSession = {
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
+    orphanedBackend: null,
     audibleCarrier: false,
     // Shadowed until a session says otherwise. This is the initial state, not
     // the default a session starts in — the safe reading before any session has
@@ -141,6 +172,7 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     lastDeclineNotice: null,
     lastSilentPluginNotice: null,
     lastDeferredChainNotice: null,
+    livenessWatch: null,
     nativeChainByStripId: new Map(),
     carriedStripIds: new Set(),
     pending: Promise.resolve(),

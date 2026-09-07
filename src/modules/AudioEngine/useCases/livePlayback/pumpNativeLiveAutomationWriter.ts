@@ -49,6 +49,7 @@ import { type AudioGraphApplyResult, type AudioGraphParameterWrite } from '../..
 import { automationWriteCommand } from '../offlineRender/automationWriteCommand';
 
 import { carryQueuedStamps } from './carryQueuedStamps';
+import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
 import {
     AUTOMATION_QUEUE_CAPACITY,
     AUTOMATION_QUEUE_MARGIN,
@@ -573,7 +574,7 @@ function isStandingRefusal(reason: string): boolean {
     return (
         reason.includes('automation-queue-capacity') ||
         reason.includes('device-param-queue-capacity') ||
-        reason.startsWith('engine-not-rendering:')
+        isEngineNotRenderingRefusal(reason)
     );
 }
 
