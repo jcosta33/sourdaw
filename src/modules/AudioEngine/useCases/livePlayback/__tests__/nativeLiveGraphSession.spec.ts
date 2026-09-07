@@ -67,6 +67,8 @@ const mocks = vi.hoisted(() => ({
     ),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
+    startLivenessWatch: vi.fn(),
+    stopLivenessWatch: vi.fn(),
     /**
      * A batch to send in place of the one the real producer builds, or `null`
      * to send the real one. The producer's own programme is proven where it
@@ -130,6 +132,12 @@ vi.mock('../startNativeEnginePlayheadFeed', () => ({
 }));
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({
     stopNativeEnginePlayheadFeed: () => mocks.stopPlayheadFeed(),
+}));
+vi.mock('../watchNativeEngineLiveness', () => ({
+    startNativeEngineLivenessWatch: () => mocks.startLivenessWatch(),
+}));
+vi.mock('../stopNativeEngineLivenessWatch', () => ({
+    stopNativeEngineLivenessWatch: () => mocks.stopLivenessWatch(),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
@@ -492,6 +500,8 @@ beforeEach(() => {
     mocks.setEngineTransportMaps.mockClear();
     mocks.startPlayheadFeed.mockClear();
     mocks.stopPlayheadFeed.mockClear();
+    mocks.startLivenessWatch.mockClear();
+    mocks.stopLivenessWatch.mockClear();
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
     mocks.warn.mockClear();
@@ -525,6 +535,7 @@ beforeEach(() => {
     nativeLiveGraphSession.lastDeclineNotice = null;
     nativeLiveGraphSession.lastSilentPluginNotice = null;
     nativeLiveGraphSession.lastDeferredChainNotice = null;
+    nativeLiveGraphSession.lastStreamLossNotice = null;
     // The chain record is module state too, and a case inheriting the previous
     // one's would read a strip as built that this session never built.
     nativeLiveGraphSession.nativeChainByStripId = new Map();
@@ -533,6 +544,7 @@ beforeEach(() => {
     // one's would silence an IPC write for a strip this session never claimed.
     nativeLiveGraphSession.carriedStripIds = new Set();
     nativeLiveGraphSession.pending = Promise.resolve();
+    nativeLiveGraphSession.livenessWatch = null;
     // The fader's position is module state too, and every batch below states
     // it, so a case inheriting the previous one's would open a session at a
     // level no gesture in it ever set.
@@ -1638,6 +1650,15 @@ describe('startNativeLiveGraphSession', () => {
         // because the note store is not what a monitor gates.
         expect(mocks.carriedClaims.map((claim) => claim.ids)).toEqual([[]]);
     });
+
+    // #3635: a stall is a fact about the engine whether this session is
+    // parked or rolling, so the watch starts on every session the same way.
+    it('starts the liveness watch on a started session, with no notice shown yet', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(mocks.startLivenessWatch).toHaveBeenCalledTimes(1);
+        expect(nativeLiveGraphSession.lastStreamLossNotice).toBeNull();
+    });
 });
 
 describe('updateNativeLiveGraphSessionTransportMaps', () => {
@@ -1884,6 +1905,51 @@ describe('stopNativeLiveGraphSession', () => {
         // still close it, or a stopped transport keeps a request in flight for
         // the rest of the session.
         expect(mocks.stopPlayheadFeed).toHaveBeenCalled();
+    });
+
+    // #3635: a refusal saying the engine no longer renders is the one
+    // exception to keeping the session — the graph a kept handle would
+    // strand is one nothing renders any more, so dropping it strands nothing.
+    it('abandons the session when the stop is refused because the engine stopped rendering', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason:
+                'engine-not-rendering: the output stream stopped calling back after reporting DeviceChanged; ' +
+                'the engine refuses batches until rendering resumes',
+        });
+
+        const result = await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason:
+                'engine-not-rendering: the output stream stopped calling back after reporting DeviceChanged; ' +
+                'the engine refuses batches until rendering resumes',
+        });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(mocks.openedBackends.map((backend) => backend.disposed)).toEqual([true]);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('warning');
+    });
+
+    it('keeps the session on an ordinary standing refusal, and shows no abandon notice', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.applyGraphCommands.mockResolvedValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'automation-queue-capacity — the mixer strip queue is full',
+        });
+
+        const result = await stopNativeLiveGraphSession({ positionSeconds: 8 });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation-queue-capacity — the mixer strip queue is full',
+        });
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('never overtakes a start that is still in flight', async () => {

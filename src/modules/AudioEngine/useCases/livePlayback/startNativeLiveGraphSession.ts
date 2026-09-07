@@ -126,6 +126,7 @@ import { replaceNativeChains } from './replaceNativeChains';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 import { projectStripCarriers, type StripCarrier } from './stripCarriers';
+import { startNativeEngineLivenessWatch } from './watchNativeEngineLiveness';
 
 /**
  * What a session runs at unless a caller asks for the shadow.
@@ -793,6 +794,7 @@ async function installRolledSession(input: {
     nativeLiveGraphSession.backend?.dispose();
     nativeLiveGraphSession.backend = backend;
     nativeLiveGraphSession.lastDeferredChainNotice = null;
+    nativeLiveGraphSession.lastStreamLossNotice = null;
     const shadowed = monitor === 'shadowed';
     nativeLiveGraphSession.monitorShadowed = shadowed;
     // The batch the engine actually holds, not the session's own claimed set:
@@ -825,6 +827,9 @@ async function installRolledSession(input: {
         notifyNativeDecline(parkedReason);
     }
     startNativeEnginePlayheadFeed();
+    // The session stands parked or rolling either way, and a stall is a fact
+    // about the engine under both — so the watch runs whichever this session is.
+    startNativeEngineLivenessWatch();
 }
 
 export function startNativeLiveGraphSession(
