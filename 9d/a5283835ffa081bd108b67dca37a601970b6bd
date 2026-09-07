@@ -1,0 +1,41 @@
+tests/e2e/effectsPanels.spec.ts
+  s_9b530f08172a54::t_ad8fe2927d03b7 2,10
+tests/e2e/arrangement.spec.ts
+  s_7695b767f35e5d::t_e332615a01e3ca 36,49
+tests/e2e/mixerUndoRedo.spec.ts
+  s_7695b767f35e5d::t_cbbf9c10253101 30,36-39,59-62
+tests/e2e/preferencesDialogDeepTestId.spec.ts
+  s_7695b767f35e5d::t_22361df0b89797 73-76,82-85
+tests/e2e/proofPresetSelectTestId.spec.ts
+  s_7695b767f35e5d::t_858b25cf959571 39
+tests/e2e/trackGainKeyboardTestId.spec.ts
+  s_7695b767f35e5d::t_dee408c71091f1 3,22
+tests/e2e/tracks.spec.ts
+  s_7695b767f35e5d::t_b0ec40fa0129bb 49
+tests/e2e/transportDeep.spec.ts
+  s_7695b767f35e5d::t_8b9b93a101b807 78-81,111-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "9da5283835ffa081bd108b67dca37a601970b6bd",
+  "prompts": {},
+  "sessions": {
+    "s_7695b767f35e5d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a82e6b2a5bb05a606",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
