@@ -223,10 +223,11 @@ export async function acceptAnswer(answerString: string): Promise<void> {
         const activePendingId = currentAcceptance.pendingId;
         const activePendingPeer = currentAcceptance.peer;
 
-        activeAcceptance = admitAcceptance(activePeerManager, activePendingId, activePendingPeer);
+        const admittedAcceptance = admitAcceptance(activePeerManager, activePendingId, activePendingPeer);
+        activeAcceptance = admittedAcceptance;
         const isCurrentAcceptance = () =>
             isCurrentSession(owner, requestWitness, activePeerManager) &&
-            ownsActivePeer(activePeerManager, activeAcceptance);
+            ownsActivePeer(activePeerManager, admittedAcceptance);
         const answer = await decodeAnswer(answerString);
         if (!isCurrentAcceptance()) {
             throw createSupersededOperationError();
@@ -238,7 +239,7 @@ export async function acceptAnswer(answerString: string): Promise<void> {
             );
         }
 
-        if (!ownsActivePeer(activePeerManager, activeAcceptance)) {
+        if (!ownsActivePeer(activePeerManager, admittedAcceptance)) {
             throw createSupersededOperationError();
         }
 
@@ -256,8 +257,8 @@ export async function acceptAnswer(answerString: string): Promise<void> {
                 'Invalid answer — peer ID is already in use by another session peer or the host'
             );
         }
-        activeAcceptance.confirmedPeerId = answer.peerId;
-        if (!ownsActivePeer(peerManager, activeAcceptance)) {
+        admittedAcceptance.confirmedPeerId = answer.peerId;
+        if (!ownsActivePeer(activePeerManager, admittedAcceptance)) {
             throw createSupersededOperationError();
         }
 
@@ -274,7 +275,9 @@ export async function acceptAnswer(answerString: string): Promise<void> {
     } catch (error) {
         if (
             !isCurrentSession(owner, requestWitness, peerManager) ||
-            (!removedCurrentPeer && activeAcceptance !== undefined && !ownsActivePeer(peerManager, activeAcceptance))
+            (!removedCurrentPeer &&
+                activeAcceptance !== undefined &&
+                (!peerManager || !ownsActivePeer(peerManager, activeAcceptance)))
         ) {
             throw createSupersededOperationError();
         }
