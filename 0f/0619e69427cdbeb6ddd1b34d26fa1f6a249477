@@ -1,0 +1,22 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/saveIncrementalsToIdb.spec.ts
+  s_87ab0a2f60ccf8::t_fc9f38acb19ca0 153-160
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/crdtPersistence.spec.ts
+  s_87ab0a2f60ccf8::t_cc4c570abc8110 221
+  s_87ab0a2f60ccf8::t_fc9f38acb19ca0 208-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0f0619e69427cdbeb6ddd1b34d26fa1f6a249477",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
