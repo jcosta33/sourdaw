@@ -567,6 +567,73 @@ pub fn attach_dormant_crumbs(
     Ok(refusals)
 }
 
+/// Put every attached instance back to dormant, because the engine holding
+/// their slots has been retired (`commands::engine_lifecycle`).
+///
+/// An `Attached` slot holds the command side of rings whose slot side went
+/// with the retired engine's scheduler, so a write parked there reaches
+/// nothing and the next [`attach_dormant_crumbs`] would skip the instance
+/// entirely. Dormant is the state that instance was created in before any
+/// engine existed, and it is the one the next graph batch re-registers from —
+/// at the *new* device's sample rate, which is the whole reason the engine is
+/// being replaced rather than restarted.
+///
+/// The parked-write table starts empty, because the params, the mode and the
+/// active sample the panel set after the attach live only inside the engine's
+/// own [`CrumbsEngine`] — [`CrumbsInstanceData`] mirrors none of them, so
+/// there is nothing here to seed them from. The sample map is mirrored
+/// command-side, so [`replay_parked_writes`] still refills the new engine's
+/// pool from it; only the settings are lost, and the panel rewrites those on
+/// its next write.
+///
+/// A take the audio thread had already handed off does survive, and only
+/// because it is drained first: the commit ring's command side goes with the
+/// slot being replaced, so a queued [`PendingRecordingCommit`] left there is a
+/// recording the musician performed and the session then silently lost. The
+/// drain lands it in `samples`, which is the command-side authority the next
+/// attach refills the new engine's pool from. Its mirror pushes are lost with
+/// the ring they land on, whichever way they go: the consumer is still alive
+/// here — the scheduler owning `command_rx` goes with the handle the retire
+/// drops after this drain — but a stalled engine has stopped draining, so the
+/// command ring may hold anything from nothing to its full capacity. A push
+/// lands while there is room and parks in `pending_mirror` once there is not.
+/// Either outcome costs nothing: the ring and the pool it fed die with the
+/// slot, but `pending_mirror` is a field of this instance rather than of the
+/// slot, so it does not. Left alone it would carry a selection into the
+/// replacement engine that the panel never asked this attach for, so the
+/// detach below clears it once every id the mirror names is already in
+/// `samples`, whether the drain above landed it there or a previous replay read
+/// it from there — which sample is active afterward is the panel's to rewrite
+/// once a retire has happened, not a stale mirror's. `samples` is what
+/// [`replay_parked_writes`] rebuilds the *new* engine's pool from on the next
+/// attach.
+///
+/// Takes the instances lock beneath the registry guard the retire's drain
+/// holds, which is the registry -> instances order `apply_graph_commands` and
+/// [`create_crumbs`] already establish.
+pub(crate) fn detach_from_retired_engine(state: &CrumbsState) {
+    let mut instances = crate::state::locked_or_poisoned(&state.instances);
+
+    for instance in instances.values_mut() {
+        if !matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }) {
+            continue;
+        }
+        drain_pending_recording_commits(instance);
+        instance.pending_mirror.clear();
+        instance.engine_slot = CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default());
+    }
+}
+
+/// Whether `instance_id` holds a slot on the live engine. For tests outside
+/// this module that drive an attach or a detach.
+#[cfg(test)]
+pub(crate) fn instance_is_attached(state: &CrumbsState, instance_id: &str) -> bool {
+    let instances = crate::state::locked_or_poisoned(&state.instances);
+    instances
+        .get(instance_id)
+        .is_some_and(|instance| matches!(instance.engine_slot, CrumbsEngineSlot::Attached { .. }))
+}
+
 /// Create a new crumbs engine instance.
 ///
 /// Takes no sample rate: the sampler records the engine's own input tap and
@@ -1746,6 +1813,99 @@ mod tests {
             }
         }
         assert!(saw_add && saw_active);
+    }
+
+    /// Detaching replaces the slot, and the commit ring's command side goes
+    /// with it. A take the audio thread had already handed off is the
+    /// musician's performance, so it must land in the command-side sample map
+    /// before the ring holding it is dropped.
+    #[test]
+    fn detaching_a_retired_engine_keeps_a_take_the_audio_thread_handed_off() {
+        let state = CrumbsState::default();
+        let (instance, mut commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
+        state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .insert("instance-1".to_string(), instance);
+        commit_tx
+            .push(PendingRecordingCommit {
+                left: vec![0.5f32; 256],
+                right: vec![0.25f32; 256],
+                sample_rate: 48_000,
+            })
+            .expect("the commit ring takes the handoff");
+
+        detach_from_retired_engine(&state);
+
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        let instance = instances.get("instance-1").expect("the instance survives");
+        assert!(
+            matches!(instance.engine_slot, CrumbsEngineSlot::Dormant(_)),
+            "the instance must end dormant, which is what the next batch re-registers from"
+        );
+        let take = instance
+            .samples
+            .get(&1)
+            .expect("the handed-off take must survive the slot the retire replaced");
+        assert_eq!(take.meta.frame_count as usize, 256);
+        assert!(take.left.iter().all(|&frame| (frame - 0.5).abs() < 1.0e-6));
+        assert!(take
+            .right
+            .iter()
+            .all(|&frame| (frame - 0.25).abs() < 1.0e-6));
+    }
+
+    /// A take the drain parks in `pending_mirror` — because the ring it would
+    /// mirror onto is full — must not survive the detach that follows it.
+    /// `pending_mirror` is a field of the instance, not of the slot the ring
+    /// belongs to, so a naive detach would carry the parked selection into
+    /// the replacement engine and reassert it there, even though the panel
+    /// never asked that attach for it. The take itself is not at risk either
+    /// way, because the drain lands it in `samples` before it ever tries the
+    /// ring.
+    #[test]
+    fn detaching_a_retired_engine_clears_a_mirror_the_drain_parked() {
+        let state = CrumbsState::default();
+        let (mut instance, mut commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
+        fill_command_ring(&mut instance);
+        commit_tx
+            .push(PendingRecordingCommit {
+                left: vec![0.5f32; 256],
+                right: vec![0.25f32; 256],
+                sample_rate: 48_000,
+            })
+            .expect("the commit ring takes the handoff");
+        state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available")
+            .insert("instance-1".to_string(), instance);
+
+        detach_from_retired_engine(&state);
+
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        let instance = instances.get("instance-1").expect("the instance survives");
+        assert!(
+            matches!(instance.engine_slot, CrumbsEngineSlot::Dormant(_)),
+            "the instance must end dormant, which is what the next batch re-registers from"
+        );
+        let take = instance
+            .samples
+            .get(&1)
+            .expect("the handed-off take must survive the slot the retire replaced");
+        assert_eq!(take.meta.frame_count as usize, 256);
+        assert!(
+            instance.pending_mirror.is_empty(),
+            "a mirror parked against the retired slot's ring must not carry a stale \
+             selection into the replacement engine"
+        );
     }
 
     /// A mirror is a pair. One free slot takes the AddSample and leaves the

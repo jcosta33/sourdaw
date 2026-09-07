@@ -92,7 +92,7 @@ static PLUGIN_RUNTIME_GATE: tokio::sync::RwLock<()> = tokio::sync::RwLock::const
 /// Production holds the bare guard — outside `cfg(test)` this name is the
 /// guard's own type and [`observe_gate_release`] is the identity.
 #[cfg(test)]
-struct ObservedGateGuard<G>(Option<G>);
+pub(crate) struct ObservedGateGuard<G>(Option<G>);
 
 #[cfg(test)]
 impl<G> Drop for ObservedGateGuard<G> {
@@ -105,7 +105,7 @@ impl<G> Drop for ObservedGateGuard<G> {
 }
 
 #[cfg(not(test))]
-type ObservedGateGuard<G> = G;
+pub(crate) type ObservedGateGuard<G> = G;
 
 #[cfg(test)]
 fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
@@ -115,6 +115,82 @@ fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
 #[cfg(not(test))]
 fn observe_gate_release<G>(guard: G) -> ObservedGateGuard<G> {
     guard
+}
+
+/// Hold the plugin-runtime gate in read mode for a caller outside this module.
+///
+/// The gate is what serialises every body that touches a live runtime against
+/// every other one, and it stays private here so no caller can take it in a
+/// mode this module did not sanction. A retire drains `engine_plugins` and
+/// reaches into third-party editor code, so it needs exactly the mode a keyed
+/// unload takes: shared with other drains, excluded by the quit cascade's
+/// writer.
+///
+/// The caller must let the guard go before it sweeps the retirement vec. The
+/// gate is fair, so a queued writer would otherwise wait out third-party
+/// teardown of unbounded length.
+pub(crate) async fn hold_plugin_runtime_gate(
+) -> ObservedGateGuard<tokio::sync::RwLockReadGuard<'static, ()>> {
+    observe_gate_release(PLUGIN_RUNTIME_GATE.read().await)
+}
+
+/// Serialises the tests that take `PLUGIN_RUNTIME_GATE` exclusively against
+/// the tests whose batch has to attach a dormant instance, because
+/// [`attach_dormant_plugins`] only `try_read`s the process-global gate and so
+/// answers "nothing attached" rather than waiting while any writer is held.
+#[cfg(test)]
+static EXCLUSIVE_GATE_TEST_SERIAL: Mutex<()> = Mutex::new(());
+
+/// Take that serial lock: the first statement of any test that holds the gate
+/// exclusively, observes it exclusively, or asserts an attach.
+///
+/// Poisoning is ignored, because the lock guards a schedule rather than data —
+/// one panicking test must not turn every other one into a panic of its own.
+#[cfg(test)]
+pub(crate) fn serialize_against_exclusive_gate_holds() -> std::sync::MutexGuard<'static, ()> {
+    EXCLUSIVE_GATE_TEST_SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The exclusive hold a test takes: the gate's own writer, and the serial lock
+/// that keeps an attach out from under it.
+///
+/// Field order is drop order, and it is load bearing here: releasing the
+/// schedule first would let an attach through while the writer it must not
+/// race is still held.
+#[cfg(test)]
+pub(crate) struct ExclusiveGateHold {
+    _gate: tokio::sync::RwLockWriteGuard<'static, ()>,
+    _serial: std::sync::MutexGuard<'static, ()>,
+}
+
+/// Hold the gate in the exclusive mode [`unload_all_plugin_runtimes`] takes,
+/// for a test outside this module.
+///
+/// `cfg(test)` only, and deliberately not a production seam: the gate stays
+/// private precisely so no body elsewhere can choose its own mode. What a test
+/// gets from it is a stand-in for the load or unload a reader must wait for,
+/// which is the only way a test in another module can observe that a caller of
+/// [`hold_plugin_runtime_gate`] really waits.
+#[cfg(test)]
+pub(crate) async fn hold_plugin_runtime_gate_exclusively() -> ExclusiveGateHold {
+    let serial = serialize_against_exclusive_gate_holds();
+    ExclusiveGateHold {
+        _gate: PLUGIN_RUNTIME_GATE.write().await,
+        _serial: serial,
+    }
+}
+
+/// Answer whether the gate is free for a writer right now, without waiting.
+///
+/// For a test that already holds the serial lock, which is why this one never
+/// takes it: a `std` `Mutex` is not reentrant, so claiming it a second time on
+/// the same thread would deadlock rather than serialise anything.
+#[cfg(test)]
+pub(crate) fn try_hold_plugin_runtime_gate_exclusively(
+) -> Option<tokio::sync::RwLockWriteGuard<'static, ()>> {
+    PLUGIN_RUNTIME_GATE.try_write().ok()
 }
 
 struct PluginLifecycleLease {
@@ -2123,7 +2199,7 @@ fn attach_one_dormant_plugin(
     }
 }
 
-fn remove_plugin_window(
+pub(crate) fn remove_plugin_window(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
     state: &AppState,
@@ -2228,12 +2304,12 @@ async fn unload_all_plugin_runtimes(
     Ok(reply)
 }
 
-/// The thread this unload's editor teardown must run on.
+/// The thread an instance's editor teardown must run on.
 ///
-/// An unload can run with no window host at all — a shell may lose its windows
+/// A teardown can run with no window host at all — a shell may lose its windows
 /// before its last instance — and [`NoWindowHost`] says so: the editor calls then
 /// run on this thread, which is the only one left to run them on.
-fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
+pub(crate) fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
     windows_host.unwrap_or(&NoWindowHost)
 }
 
@@ -4082,6 +4158,7 @@ mod tests {
     /// every instrument it holds the moment it attaches.
     #[test]
     fn a_dormant_instrument_attaches_as_a_generator() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4126,6 +4203,7 @@ mod tests {
     /// here parks the next batch behind a plugin's editor twice over.
     #[test]
     fn an_attach_installs_the_host_request_wake_with_the_engine_lock_free() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4199,6 +4277,7 @@ mod tests {
     /// follows a topology within one start sequence.
     #[test]
     fn the_attach_takes_no_more_instances_than_its_caller_reserved_room_for() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4555,6 +4634,7 @@ mod tests {
     /// whose sweep can reach it.
     #[test]
     fn the_quit_cascade_sweeps_retired_runtimes_only_after_releasing_the_runtime_gate() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = Arc::new(AppState::default());
         let (engine, mut command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -4646,6 +4726,7 @@ mod tests {
     /// engine holding nothing, on a batch that reserved room for one.
     #[test]
     fn a_refused_instance_does_not_spend_the_slot_reserved_for_another() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         let (engine, _command_rx, _retired_adoption_rx) =
             daw_engine::engine_handle_for_command_capture(64);
@@ -6914,6 +6995,7 @@ mod tests {
 
     #[test]
     fn bulk_unload_waits_for_inflight_load_or_unload_access() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         crate::block_on_test(async {
             let state = AppState::default();
             let _runtime_operation = PLUGIN_RUNTIME_GATE.read().await;
@@ -6928,6 +7010,7 @@ mod tests {
 
     #[test]
     fn unload_preserves_failed_engine_owner_and_cleans_command_owner() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
         let wrapper =
@@ -7392,6 +7475,7 @@ mod tests {
     /// it, each with an intermediate one.
     #[test]
     fn an_unkeyed_unload_reports_each_released_strip_once_with_its_final_chain() {
+        let _gate_serial = serialize_against_exclusive_gate_holds();
         let state = AppState::default();
         insert_engine_owned_fixture_with_id(&state, "inst-a", 301);
         insert_engine_owned_fixture_with_id(&state, "inst-b", 302);
