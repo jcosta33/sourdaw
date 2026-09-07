@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import {
+    installTransactionalIndexedDb,
+    type TransactionalIndexedDbInstallation,
+} from '#/infra/testing/installTransactionalIndexedDb';
 import { clipSelectionStore, defaultTrackState, markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -183,11 +187,19 @@ function seedProject(): void {
 }
 
 describe('semantic project queries', () => {
+    let indexedDb: TransactionalIndexedDbInstallation | null = null;
+
     beforeEach(async () => {
+        indexedDb = installTransactionalIndexedDb();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         await createCrdtProject('Semantic Query Project');
         seedProject();
+    });
+
+    afterEach(async () => {
+        await indexedDb?.dispose();
+        indexedDb = null;
     });
 
     it('returns schema-versioned revision receipts with bounded stale-safe pagination', async () => {

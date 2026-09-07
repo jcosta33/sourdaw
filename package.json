@@ -153,6 +153,7 @@
         "eslint-plugin-prettier": "^5.5.6",
         "eslint-plugin-promise": "^7.3.0",
         "eslint-plugin-react-hooks": "^7.1.1",
+        "fake-indexeddb": "6.2.5",
         "globals": "^17.11.0",
         "jsdom": "^30.0.1",
         "knip": "^6.32.2",
