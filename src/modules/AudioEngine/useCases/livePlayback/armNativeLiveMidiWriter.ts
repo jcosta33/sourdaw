@@ -211,7 +211,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
 
     const trackNameById = new Map(input.stripTracks.map((track): [string, string] => [track.id, track.name]));
     nativeLiveMidiWriter.epoch += 1;
-    // Captured in the same statement as the bump, and used for everything
+    // Captured right after the bump, before any await, and used for everything
     // this arm does from here on: a re-read after the settle await below
     // would answer with a newer arm's epoch instead of this one's.
     const epoch = nativeLiveMidiWriter.epoch;
@@ -257,9 +257,11 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
     // fires the pump right behind this call without waiting for it, and a
     // pump that read this pass between here and its own opening batch would
     // extend an uncleared store — the exact race the opening batch's own
-    // clear exists to close. `applyMidiBatch` restates the same claim once it
-    // runs and releases it in its `finally`, so the pass stays claimed for
-    // this whole sequence rather than only for the batch that ends it.
+    // clear exists to close. `applyMidiBatch` restates the same claim when it
+    // sends and releases it in its `finally`, so the pass stays claimed for
+    // this whole sequence; a pass with nothing to send leaves the claim standing
+    // until the next arm's own, which costs nothing because the pump has nothing
+    // to send for it either.
     nativeLiveMidiWriter.inFlightEpoch = epoch;
 
     // Ahead of this pass's own batch: a target the outgoing pass abandoned is
@@ -269,9 +271,10 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
 
     // A newer arm or a disarm owns the writer now: this pass's opening batch
     // belongs to a world that no longer exists, and `applyMidiBatch` sends
-    // before it checks. Nothing to release either — the newer arm already
-    // overwrote `inFlightEpoch` with its own claim when it ran this same
-    // statement, so a stale claim of `epoch` here is already gone.
+    // before it checks. Nothing to release either: the epoch only ever
+    // increases, so a claim of this one can never equal a live epoch again, and
+    // after a disarm the pump bails on the missing pass before it reads the
+    // claim.
     if (nativeLiveMidiWriter.epoch !== epoch) {
         return;
     }

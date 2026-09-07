@@ -648,8 +648,8 @@ describe('the live MIDI writer', () => {
         releaseFirstSettle?.(APPLIED);
         await first;
 
-        // The stale reply landed applied, but under an epoch that had already
-        // moved on: it must not touch a map a newer settle already resolved.
+        // The newer arm's own settle discharged the debt; the older reply finds
+        // nothing left to decide.
         expect(nativeLiveMidiWriter.owedClears.size).toBe(0);
 
         // Invert: this time the newer settle is the one the engine refuses,
