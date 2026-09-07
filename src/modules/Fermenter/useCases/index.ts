@@ -1,6 +1,7 @@
 export { applyFermenterRuntimeParam } from './applyFermenterRuntimeParam';
 export { setFermenterDependencies } from './fermenterDependencies';
 export { getFermenterFactoryPresets } from './getFermenterFactoryPresets';
+export { hydrateFermenterFromProject } from './hydrateFermenterFromProject';
 // The descriptor-id → DSP-name translation the live write path uses. Published
 // because the offline automation ordinal pin needs the same translation to
 // derive Rust parameter names from the TS ordinal map rather than restating

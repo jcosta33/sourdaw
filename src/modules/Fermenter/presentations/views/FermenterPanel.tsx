@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
@@ -10,7 +10,9 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Slider } from '#/components/ui/slider';
+import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { MidiLearnRotaryKnob } from '#/modules/ControlSurface/presentations/views';
 
 import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
@@ -24,6 +26,7 @@ import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMa
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
+import { hydrateFermenterFromProject } from '../../useCases/hydrateFermenterFromProject';
 import { loadUserPatches } from '../../useCases/user-patches/load-user-patches';
 import { saveUserPatch } from '../../useCases/user-patches/save-user-patch';
 import { AdditiveSection } from '../components/AdditiveSection';
@@ -450,7 +453,18 @@ function renderSectionContent(
     );
 }
 
+const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+
 export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const trackState = useStore(trackStore, defaultTrackState);
+    const projectParameterValues = trackState.tracks
+        .flatMap((track) => track.devices)
+        .find((device) => device.id === deviceId)?.parameterValues;
+
+    useEffect(() => {
+        hydrateFermenterFromProject(deviceId);
+    }, [deviceId, projectParameterValues]);
+
     const { patch, activeVoices, uiLevel } = useStoreSelector(
         fermenterStore,
         (state: Record<string, FermenterState> | null) => {
