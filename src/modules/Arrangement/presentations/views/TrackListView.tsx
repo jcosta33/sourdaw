@@ -26,8 +26,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptDraft } from '#/modules/AiRuntime/useCases';
-import { isKeyboardEditableTarget } from '#/modules/CommandInterface/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { isKeyboardEditableTarget } from '#/modules/CommandInterface/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
