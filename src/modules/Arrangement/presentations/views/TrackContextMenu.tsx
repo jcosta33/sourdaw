@@ -13,7 +13,6 @@ import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
-import { addClip } from '../../useCases/clip/addClip';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { bounceTrack, type BounceOptions } from '../../useCases/freezeBounce/bounceTrack';
 import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
@@ -107,12 +106,19 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: 'Add Clip',
             action: () => {
-                addClip({
-                    trackId: track.id,
-                    startBeat: 0,
-                    endBeat: 16,
-                    name: `Clip ${Date.now() % 1000}`,
-                    type: track.kind === 'midi' ? 'midi' : 'audio',
+                // The undoable `addClip` action, not the bare use case: the use
+                // case captures no inverse (issue #3696), so a menu-created
+                // clip left no history. The handler's discard inverse removes
+                // precisely the created clip and redo restores its id.
+                void executeUserAppAction({
+                    type: 'addClip',
+                    payload: {
+                        trackId: track.id,
+                        startBeat: 0,
+                        endBeat: 16,
+                        name: `Clip ${Date.now() % 1000}`,
+                        type: track.kind === 'midi' ? 'midi' : 'audio',
+                    },
                 });
                 close();
             },
