@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     CHECKPOINT_RETENTION_STORE,
@@ -39,17 +41,25 @@ type RetentionApi = {
     prepare: typeof import('../prepareCachedAudioBuffersFromIdb').prepareCachedAudioBuffersFromIdb;
 };
 
+let lockManager: ReturnType<typeof createControlledLockManager>;
+let setDurableAudioBufferOwnershipProvider:
+    typeof import('../../stores/durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider | undefined;
+
 async function importApi(): Promise<RetentionApi> {
-    const [acquire, release, collectByAge, collectBySize, collectFreeze, clear, remove, prepare] = await Promise.all([
-        import('../acquireCheckpointAudioRetention'),
-        import('../releaseCheckpointAudioRetention'),
-        import('../garbageCollectCachedAudioBuffersByAge'),
-        import('../garbageCollectCachedAudioBuffersBySize'),
-        import('../garbageCollectFreezeAudioBuffers'),
-        import('../clearCachedAudioBuffers'),
-        import('../discardDecodedAudioFile'),
-        import('../prepareCachedAudioBuffersFromIdb'),
-    ]);
+    const [acquire, release, collectByAge, collectBySize, collectFreeze, clear, remove, prepare, ownership] =
+        await Promise.all([
+            import('../acquireCheckpointAudioRetention'),
+            import('../releaseCheckpointAudioRetention'),
+            import('../garbageCollectCachedAudioBuffersByAge'),
+            import('../garbageCollectCachedAudioBuffersBySize'),
+            import('../garbageCollectFreezeAudioBuffers'),
+            import('../clearCachedAudioBuffers'),
+            import('../discardDecodedAudioFile'),
+            import('../prepareCachedAudioBuffersFromIdb'),
+            import('../../stores/durableAudioBufferOwnership'),
+        ]);
+    setDurableAudioBufferOwnershipProvider = ownership.setDurableAudioBufferOwnershipProvider;
+    setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
     return {
         acquire: acquire.acquireCheckpointAudioRetention,
         release: release.releaseCheckpointAudioRetention,
@@ -123,11 +133,15 @@ describe('checkpoint audio retention', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.resetModules();
+        lockManager = createControlledLockManager();
+        vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
         installTestAudioBufferConstructor();
         controls = installFakeAudioIndexedDb({ existingStores: CURRENT_STORES });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        setDurableAudioBufferOwnershipProvider?.(null);
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });

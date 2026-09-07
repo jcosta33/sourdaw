@@ -2,6 +2,8 @@ import { Blob as NodeBlob } from 'node:buffer';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+
 import {
     BUFFER_STORE,
     flushIndexedDbTasks,
@@ -22,16 +24,25 @@ import {
 let audioBufferCache: typeof import('../audioBufferCache').audioBufferCache;
 let clearRuntimeAudioBufferCache: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
 let reclaimPreparedBufferOrphans: typeof import('../audioBufferCache').reclaimPreparedBufferOrphans;
+let lockManager: ReturnType<typeof createControlledLockManager>;
+let setDurableAudioBufferOwnershipProvider:
+    typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider | undefined;
 
 beforeEach(async () => {
     vi.resetModules();
+    lockManager = createControlledLockManager();
+    vi.stubGlobal('navigator', { ...navigator, locks: lockManager.locks });
     installTestAudioBufferConstructor();
-    ({ audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans } =
-        await import('../audioBufferCache'));
+    [
+        { audioBufferCache, clearRuntimeAudioBufferCache, reclaimPreparedBufferOrphans },
+        { setDurableAudioBufferOwnershipProvider },
+    ] = await Promise.all([import('../audioBufferCache'), import('../durableAudioBufferOwnership')]);
+    setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
 });
 
-afterEach(() => {
-    audioBufferCache.clear();
+afterEach(async () => {
+    clearRuntimeAudioBufferCache();
+    setDurableAudioBufferOwnershipProvider?.(null);
     vi.unstubAllGlobals();
 });
 
@@ -208,7 +219,11 @@ describe('prepared audio-buffer recovery and project admission', () => {
         expect(controls.committedRecovery.has(id)).toBe(false);
 
         vi.resetModules();
-        ({ audioBufferCache } = await import('../audioBufferCache'));
+        [{ audioBufferCache }, { setDurableAudioBufferOwnershipProvider }] = await Promise.all([
+            import('../audioBufferCache'),
+            import('../durableAudioBufferOwnership'),
+        ]);
+        setDurableAudioBufferOwnershipProvider(() => Promise.resolve([]));
         const secondContext = createTestContext(
             vi.fn((_channels: number, length: number, sampleRate: number) => createAudioBuffer({ length, sampleRate }))
         );
