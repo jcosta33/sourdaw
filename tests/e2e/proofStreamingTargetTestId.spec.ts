@@ -27,7 +27,6 @@ test.describe('Proof streaming-loudness target — selection changes Target read
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Proof$/ }).click();
-        await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Proof$/i })).toBeVisible();
         await inspector.getByText('Proof', { exact: false }).first().click();
         await expect(page.getByRole('slider', { name: 'Master limiter ceiling' })).toBeVisible({

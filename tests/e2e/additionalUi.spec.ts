@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
-const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 // ---------------------------------------------------------------------------
 // Chord track (Pop Song) — lane renders with chord content + add button.
@@ -59,7 +58,9 @@ test.describe('Browser and prompt input', () => {
     });
 
     test('Browser search accepts typed text', async ({ page }) => {
-        const search = page.getByRole('complementary', { name: 'Browser panel' }).getByRole('searchbox', { name: 'Search browser' });
+        const search = page
+            .getByRole('complementary', { name: 'Browser panel' })
+            .getByRole('searchbox', { name: 'Search browser' });
         await search.fill('synth');
         await expect(search).toHaveValue('synth');
     });
@@ -82,7 +83,6 @@ test.describe('Undo history panel', () => {
 
         const undo_toggle = page.getByRole('button', { name: /Toggle undo history panel/i });
         await undo_toggle.click();
-        await page.waitForTimeout(500);
 
         // The panel renders with a visible header.
         await expect(page.getByText(/Undo History/i)).toBeVisible();
