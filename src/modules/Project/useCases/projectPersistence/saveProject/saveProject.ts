@@ -73,9 +73,13 @@ export async function saveProject(): Promise<boolean> {
         // before serialization, so a reopened project restores editor-driven state
         // (presets, oversampling, internal routing) instead of plugin defaults
         // (PH-3). A capture failure must not abort the save — the rest of the
-        // project still persists.
+        // project still persists. A PRECOMMIT rejection is reported back instead
+        // of thrown: that plugin's live edit is not in project truth, so this
+        // save must not read as a clean success for it.
+        let rejectedCapturePlugins: readonly string[] = [];
         try {
-            await captureExternalPluginStates();
+            const capture = await captureExternalPluginStates();
+            rejectedCapturePlugins = capture.rejectedPlugins;
         } catch (error) {
             logger.warn('[saveProject] Native plugin state capture failed:', error);
         }
@@ -158,9 +162,16 @@ export async function saveProject(): Promise<boolean> {
 
         // The CRDT snapshot and named project file above establish the same
         // durable project identity and exact PCM set. Only this receipt may
-        // clear dirty; replacement, removal, or transition invalidates it.
+        // clear dirty; replacement, removal, or transition invalidates it — and
+        // so does a rejected plugin capture, which left that plugin's live edit
+        // out of the persisted truth: the project stays dirty and the next
+        // save retries the capture.
         const latest = projectStore.value!;
-        projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
+        projectStore.set({
+            ...latest,
+            dirty: rejectedCapturePlugins.length > 0,
+            identityPersistencePending: false,
+        });
         return true;
     } catch (error) {
         logger.warn('[saveProject] Project persistence failed:', error);

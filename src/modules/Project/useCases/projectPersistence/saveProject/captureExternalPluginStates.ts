@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
     hasUnresolvedExternalPluginRestoreFailure,
     readPluginState,
@@ -8,6 +8,21 @@ import {
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { capturedNativePluginStateCache } from './capturedNativePluginStateCache';
+import { warnedExternalPluginCaptureRejections } from './warnedExternalPluginCaptureRejections';
+
+export type ExternalPluginCaptureOutcome = {
+    /**
+     * Plugins whose capture command was rejected before any project write
+     * landed, so their live edit is NOT in project truth. The caller must not
+     * treat the save as a clean success for those edits.
+     */
+    readonly rejectedPlugins: readonly string[];
+};
+
+type RejectedCapture = {
+    readonly instanceId: string;
+    readonly pluginName: string;
+};
 
 /**
  * Capture the live state chunk of every loaded native plugin into project truth
@@ -39,16 +54,25 @@ import { capturedNativePluginStateCache } from './capturedNativePluginStateCache
  * autosave tick while the peer did the reverse — an endless ping-pong. Comparing
  * against the self-read baseline makes "host unchanged" a guaranteed no-write.
  *
+ * The baseline advances only once the command machinery reports the capture as
+ * accepted — committed (including a committed-but-observer-error, where truth
+ * holds the chunk even though post-commit processing failed) or needing no
+ * write at all. A PRECOMMIT rejection wrote nothing, so the baseline stays
+ * untouched and the next save retries the capture even when the host reads an
+ * unchanged chunk; the rejected plugin is returned to the caller and named in a
+ * warning, once per failed-capture episode.
+ *
  * Reads and commits are serialized per device so a slow host cannot flood the
  * IPC bridge and so each commit lands before the next read observes the store.
  */
-export async function captureExternalPluginStates(): Promise<void> {
+export async function captureExternalPluginStates(): Promise<ExternalPluginCaptureOutcome> {
     const state = trackStore.value;
     if (!state) {
-        return;
+        return { rejectedPlugins: [] };
     }
 
     const preservedPlugins: string[] = [];
+    const rejectedCaptures: RejectedCapture[] = [];
     for (const track of state.tracks) {
         for (const device of track.devices) {
             const instanceId = device.externalInstanceId;
@@ -88,19 +112,35 @@ export async function captureExternalPluginStates(): Promise<void> {
                 continue;
             }
 
-            // Record this peer's fresh host read as the new baseline before any
-            // commit, so subsequent ticks compare against it in either branch.
-            capturedNativePluginStateCache.set(instanceId, stateChunk);
-
-            // Project truth already holds our host state — nothing to write.
+            // Project truth already holds our host state — nothing to write. The
+            // read still becomes the baseline: after a sync replaces the stored
+            // chunk, an unchanged host must keep skipping rather than re-commit
+            // our chunk over the peer's (collab ping-pong).
             if (stateChunk === device.externalStateChunk) {
+                recordAcceptedCapture(instanceId, stateChunk);
                 continue;
             }
 
-            await executeAppAction(
-                { type: 'setExternalPluginState', payload: { deviceId: device.id, stateChunk } },
-                { skipMacroRecording: true }
-            );
+            try {
+                await executeAppAction(
+                    { type: 'setExternalPluginState', payload: { deviceId: device.id, stateChunk } },
+                    { skipMacroRecording: true }
+                );
+            } catch (error) {
+                if (isAppActionCommittedError(error)) {
+                    // The commit landed; only post-commit processing failed. The
+                    // chunk is in project truth, so this capture counts as done
+                    // and the unchanged-host skip keeps holding.
+                    recordAcceptedCapture(instanceId, stateChunk);
+                    continue;
+                }
+                // Precommit rejection: nothing was written, so the baseline stays
+                // untouched and the next save retries the capture even though the
+                // host will read the same chunk.
+                rejectedCaptures.push({ instanceId, pluginName: device.externalPluginId ?? device.name });
+                continue;
+            }
+            recordAcceptedCapture(instanceId, stateChunk);
         }
     }
 
@@ -110,4 +150,34 @@ export async function captureExternalPluginStates(): Promise<void> {
             'warning'
         );
     }
+
+    warnOncePerEpisode(rejectedCaptures);
+
+    return { rejectedPlugins: rejectedCaptures.map((rejection) => rejection.pluginName) };
+}
+
+/**
+ * Record a capture the command machinery accepted — committed, or needing no
+ * write at all. The baseline advances so unchanged-host saves keep skipping,
+ * and a pending failed-capture episode for the instance ends.
+ */
+function recordAcceptedCapture(instanceId: string, stateChunk: string): void {
+    capturedNativePluginStateCache.set(instanceId, stateChunk);
+    warnedExternalPluginCaptureRejections.delete(instanceId);
+}
+
+function warnOncePerEpisode(rejectedCaptures: readonly RejectedCapture[]): void {
+    const unwarned = rejectedCaptures.filter(
+        (rejection) => !warnedExternalPluginCaptureRejections.has(rejection.instanceId)
+    );
+    for (const rejection of unwarned) {
+        warnedExternalPluginCaptureRejections.add(rejection.instanceId);
+    }
+    if (unwarned.length === 0) {
+        return;
+    }
+    notifyUser(
+        `The latest state of ${unwarned.map((rejection) => rejection.pluginName).join(', ')} could not be saved — the project still reports unsaved changes, so save again to retry.`,
+        'warning'
+    );
 }
