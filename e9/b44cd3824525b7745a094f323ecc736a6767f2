@@ -1,0 +1,116 @@
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  s_87ab0a2f60ccf8::t_5e6e3fcab6d41d 3-4,6-23,29,31-60,62-63,65-86,88-103,105-117,119-120,122-141,143,145-150,152,184-185,188-190,193-194,197-208,211,213,215-237,239-244,246,248-262,264-266,268-286,288-289,291,310-319,325,327,329-330,334-335,344-345,350,352-355
+  s_87ab0a2f60ccf8::t_dd29a7a1a79470 336-343,346-349,351
+  s_87ab0a2f60ccf8::t_f4b1b53edfab3a 151,154-156,158-161,166-175,177-182,212,214,238,245,247,263,267,287,290,309,320-324,326,328
+  s_87ab0a2f60ccf8::t_56583ccdd5a3a3 186,191-192,292-308
+  s_87ab0a2f60ccf8::t_8e3f77aa371e13 356
+  s_87ab0a2f60ccf8::t_ffbe25d852116f 24-26,28
+  s_87ab0a2f60ccf8::t_69d8a4d50ea54c 331,333
+  s_87ab0a2f60ccf8::t_f2357a368ea4ef 162-165,332
+  s_87ab0a2f60ccf8::t_88c2fd7017d837 5
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_87ab0a2f60ccf8::t_acad0eadac4656 2,967-979,982-983,985-986,994,1658-1659,1663-1664
+  s_87ab0a2f60ccf8::t_c93341c2abbc9f 981,1883-1899,1901-1905,2395-2415,2417,2419-2425,2427-2435,2437-2440,2442-2474,2476-2510,2512-2514,2516-2520,2523-2524,2551-2575,2577-2591,2593,2595-2598,2604-2605,2607-2610,2612-2613
+  s_87ab0a2f60ccf8::t_78d59e3f795f30 964,980,984,987-993,1699,1702
+  s_87ab0a2f60ccf8::t_fc34b5ee539bb5 1877-1882,1906-1908
+  s_87ab0a2f60ccf8::t_fa24b66d972538 2320,2341,2353,2365,2371-2373,2418,2426,2436,2475,2511,2515,2525-2529,2592,2599-2603,2606,2614-2617
+  s_87ab0a2f60ccf8::t_6afb4ab0d8c795 2305-2308,2310-2319,2321-2340,2342-2348,2350-2352,2354-2362,2364,2366-2367,2369-2370,2374-2375,2385-2388,2390-2394,2530-2531,2542-2550,2619-2620
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurability.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,24,134,136-138,142
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheMetadataStore.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,69-73,83
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWaveform.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,10,14-19,22
+  s_87ab0a2f60ccf8::t_176d37774f6c6e 23
+.agents/skills/crdt-collaboration/SKILL.md
+  s_87ab0a2f60ccf8::t_b8c44dd8434150 76-81
+tests/e2e/audioOwnership.native.spec.ts
+  s_87ab0a2f60ccf8::t_f2357a368ea4ef 42-55,68-86,88-110,112-126,224-225,242-244,311-313
+  s_87ab0a2f60ccf8::t_904dd86b418891 192-196,201-203
+  s_87ab0a2f60ccf8::t_0a0eba186d569c 1-41,56-67,87,111,127-191,197-200,204-223,226-241,245-246,257-310,314-348
+  s_87ab0a2f60ccf8::t_9c59b2ed4abd97 247-256
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  s_87ab0a2f60ccf8::t_ff9e00de73a486 3-4,138
+src/modules/AudioEngine/stores/durableAudioBufferOwnership.ts
+  s_87ab0a2f60ccf8::t_acad0eadac4656 13-15
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheWriteObservation.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,44-48,58
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,13,17,19-23,26
+  s_87ab0a2f60ccf8::t_6740b9e5f5c2dc 27
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_87ab0a2f60ccf8::t_ba82c2c62f4072 2,117,130,136-171
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_87ab0a2f60ccf8::t_879a00c2ec389d 251-260
+  s_87ab0a2f60ccf8::t_ff9e00de73a486 6,118
+  s_87ab0a2f60ccf8::t_ecd87e0cc2205b 123-127,150-157,166,169,178,192
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,6,160-161,168
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurableOwnership.spec.ts
+  s_87ab0a2f60ccf8::t_ff9e00de73a486 3-4
+  s_87ab0a2f60ccf8::t_559c902d8ac848 331-342,394
+  s_87ab0a2f60ccf8::t_149376c8175867 371-393,395
+  s_87ab0a2f60ccf8::t_b609787a92236d 93-101,105,107-108,112,117-118,329-330,343-370
+  s_87ab0a2f60ccf8::t_2e75e14509a2d3 191,197-198,200-202,284-328
+  s_87ab0a2f60ccf8::t_ffbe25d852116f 102-104,106
+src/infra/storage/withProjectAudioStorageLock.ts
+  s_87ab0a2f60ccf8::t_0a6520558bd730 5-8,10-11,13
+  s_87ab0a2f60ccf8::t_43461ce1cf7391 1,3-4,9,12,14-15,17,19
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheConnectionChurn.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,36-40,62
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.storage.integration.spec.ts
+  s_87ab0a2f60ccf8::t_7d058ad8d664ad 169
+  s_87ab0a2f60ccf8::t_f0f0e2922bb172 165,178,220
+  s_87ab0a2f60ccf8::t_d1472b1a1258f1 66-78,171,180,191,209-219,221-242
+  s_87ab0a2f60ccf8::t_88c2fd7017d837 3
+  s_9b530f08172a54::t_3b7f9e4e8a4cb7 243-244
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheLifecycle.spec.ts
+  s_87ab0a2f60ccf8::t_d5f4dcc1e6c89d 3-4,10,14-19
+  s_87ab0a2f60ccf8::t_df1643b9f73b78 183
+src/infra/testing/createControlledLockManager.ts
+  s_87ab0a2f60ccf8::t_095c3bef898eb6 56
+  s_87ab0a2f60ccf8::t_43461ce1cf7391 1-2,5-7,10-13,15-16,19-21,24-27,29,31-55,57-61,63
+src/modules/Project/repositories/project/__tests__/readNamedProjectJson.spec.ts
+  s_87ab0a2f60ccf8::t_f92bb3856e64a1 21,32,40,43,49
+src/infra/storage/__tests__/withProjectAudioStorageLock.spec.ts
+  s_87ab0a2f60ccf8::t_0a6520558bd730 28,49,56,61-62
+  s_87ab0a2f60ccf8::t_ffbe25d852116f 10-12,14
+  s_87ab0a2f60ccf8::t_722b5bed9200d7 1,22-23,45
+  s_87ab0a2f60ccf8::t_43461ce1cf7391 3-5,7,9,15,17-19,26-27,29-38,40-42,44,48,51,54-55,58,60,64-68
+src/modules/Project/repositories/project/readNamedProjectJson.ts
+  s_87ab0a2f60ccf8::t_4ba056bb2357f6 3,5
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_87ab0a2f60ccf8::t_ffbe25d852116f 150-152,154
+  s_87ab0a2f60ccf8::t_ff9e00de73a486 3-4
+  s_87ab0a2f60ccf8::t_811584852a472a 267,269-282
+  s_87ab0a2f60ccf8::t_91f4e403f42d3c 149,153,155-156,158-159,162-163,247-266
+  s_87ab0a2f60ccf8::t_24c12c636a6bf7 268
+src/modules/Project/AGENTS.md
+  s_87ab0a2f60ccf8::t_4ba056bb2357f6 13
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_87ab0a2f60ccf8::t_ff9e00de73a486 3-4,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e9b44cd3824525b7745a094f323ecc736a6767f2",
+  "prompts": {},
+  "sessions": {
+    "s_87ab0a2f60ccf8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06e84-1a29-7213-9885-8a031720e1b2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
