@@ -1,0 +1,19 @@
+scripts/resourceGuard.ts
+  s_a66c8bf089d53c::t_7a82c691e94e29 1295-1304,1309-1312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "f8ef65d3a51b6a41d6a7adb6d04c8947ccb51544",
+  "prompts": {},
+  "sessions": {
+    "s_a66c8bf089d53c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07bc7-90ca-7b61-9589-1ec4cecd3db0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
