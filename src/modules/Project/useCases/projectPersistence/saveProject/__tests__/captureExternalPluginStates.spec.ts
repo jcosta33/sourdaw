@@ -188,6 +188,40 @@ describe('captureExternalPluginStates', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
+    // The store-equal skip must still seed the self-read baseline (issue 3694,
+    // collab contract): the first capture enters the skip branch with the host
+    // read equal to the stored chunk, and when a collaboration sync later
+    // replaces the stored chunk with a peer's value, the unchanged host must
+    // keep skipping instead of re-committing our chunk over the peer's.
+    // Deleting the recordAcceptedCapture call in that skip branch reds exactly
+    // this test.
+    it('keeps skipping an unchanged host after a sync replaces the stored chunk, when the first capture took the store-equal skip', async () => {
+        const device: MockDevice = {
+            id: 'd1',
+            type: 'external-plugin',
+            externalInstanceId: 'inst-store-equal',
+            externalStateChunk: 'same',
+        };
+        setTrackDevices([device]);
+        mocks.readPluginState.mockResolvedValue('same');
+
+        // First capture enters the store-equal skip: nothing to write, but the
+        // read must become the baseline.
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(capturedNativePluginStateCache.get('inst-store-equal')).toBe('same');
+
+        // A sync replaces the stored chunk with the peer's value while the
+        // host is untouched: no recapture loop.
+        device.externalStateChunk = 'peer-B';
+
+        await captureExternalPluginStates();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.readPluginState).toHaveBeenCalledTimes(2);
+    });
+
     it('ignores built-in devices and external devices without an instance id', async () => {
         setTrackDevices([
             { id: 'builtin', type: 'builtin-synth' },

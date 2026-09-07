@@ -5,7 +5,7 @@ import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore
 import { projectStore } from '../../../stores/projectStore';
 import { pickFiles } from '../../fileDialog';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
-import { saveProject } from '../saveProject/saveProject';
+import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
 
@@ -20,14 +20,12 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
     }
 
     // Pre-save the open project before the import replaces it — otherwise
-    // unsaved edits since the last save are silently lost (audit #568 F3). A
-    // failed save (already notified) aborts the import so the current project
-    // stays open. A save can also resolve while the project is still dirty — a
-    // plugin state capture rejected before commit warns and stays retryable —
-    // and importing over that uncaptured edit loses it all the same.
+    // unsaved edits since the last save are silently lost (audit #568 F3). The
+    // guard refuses a failed save and a save that resolved with the project
+    // still dirty (a plugin capture rejected before commit; both surfaces
+    // already notified), so the current project stays open.
     if (projectStore.value?.dirty) {
-        const saved = await saveProject();
-        if (!saved || projectStore.value?.dirty === true) {
+        if (!(await saveProjectBeforeReplacement())) {
             return false;
         }
     }
