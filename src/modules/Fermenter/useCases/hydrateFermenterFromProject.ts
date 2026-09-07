@@ -21,6 +21,22 @@ function isPatchUnchanged(currentInstance: unknown, currentPatch: FermenterPatch
     });
 }
 
+function applyParameterValues(patch: FermenterPatch, parameterValues: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(parameterValues)) {
+        if (key === 'macros' || key === 'macroMappings' || key === 'name' || key === 'version') {
+            continue;
+        }
+        if (key in patch && typeof value === 'number' && Number.isFinite(value)) {
+            (patch as Record<string, unknown>)[key] = value;
+        } else if (key.startsWith('macro') && typeof value === 'number' && Number.isFinite(value)) {
+            const idx = parseInt(key.slice(5), 10);
+            if (idx >= 0 && idx < 8) {
+                patch.macros[idx] = value;
+            }
+        }
+    }
+}
+
 /**
  * Hydrate the Fermenter session state store from project parameter values.
  *
@@ -39,23 +55,18 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
         return null;
     }
 
-    const patch: FermenterPatch = { ...DEFAULT_PATCH, macros: [...DEFAULT_PATCH.macros] };
-
-    if (device.parameterValues) {
-        for (const [key, value] of Object.entries(device.parameterValues)) {
-            if (key in patch && typeof value === 'number' && Number.isFinite(value)) {
-                (patch as Record<string, unknown>)[key] = value;
-            } else if (key.startsWith('macro') && typeof value === 'number' && Number.isFinite(value)) {
-                const idx = parseInt(key.slice(5), 10);
-                if (idx >= 0 && idx < 8) {
-                    patch.macros[idx] = value;
-                }
-            }
-        }
-    }
-
     const currentInstance = (fermenterStore.value ?? {})[deviceId];
     const currentPatch = currentInstance?.patch ?? DEFAULT_PATCH;
+
+    const patch: FermenterPatch = {
+        ...currentPatch,
+        macros: [...currentPatch.macros],
+        macroMappings: currentPatch.macroMappings ? [...currentPatch.macroMappings] : undefined,
+    };
+
+    if (device.parameterValues) {
+        applyParameterValues(patch, device.parameterValues);
+    }
 
     if (!isPatchUnchanged(currentInstance, currentPatch, patch)) {
         loadFermenterPatch(deviceId, patch);

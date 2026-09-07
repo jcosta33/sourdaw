@@ -4,7 +4,7 @@ import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH } from '../../models/FermenterPatch';
-import { fermenterStore, getFermenterState } from '../../stores/fermenterStore';
+import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../stores/fermenterStore';
 import * as fermenterStoreModule from '../../stores/fermenterStore';
 import { hydrateFermenterFromProject } from '../hydrateFermenterFromProject';
 
@@ -114,6 +114,47 @@ describe('hydrateFermenterFromProject', () => {
         expect(patch?.filterDrive).toBe(DEFAULT_PATCH.filterDrive);
         expect(patch?.oscLevel).toBe(DEFAULT_PATCH.oscLevel);
         expect(patch?.macros[0]).toBe(DEFAULT_PATCH.macros[0]);
+        expect(patch?.macros).toEqual(DEFAULT_PATCH.macros);
+        expect(patch?.macros).toHaveLength(8);
+    });
+
+    it('preserves active preset name and macroMappings during parameter hydration', () => {
+        const customMacroMappings = [
+            {
+                targets: [
+                    {
+                        target: 'filterCutoff' as const,
+                        center: 750,
+                        depth: 500,
+                        min: 20,
+                        max: 20_000,
+                        curve: 'exponential' as const,
+                    },
+                ],
+            },
+        ];
+        const customPatch = {
+            ...DEFAULT_PATCH,
+            name: 'Warm Brass',
+            macroMappings: customMacroMappings,
+        };
+        loadFermenterPatch(DEVICE_ID, customPatch);
+
+        trackStore.set({
+            tracks: [makeTrack({ filterCutoff: 750 })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        const patch = hydrateFermenterFromProject(DEVICE_ID);
+
+        expect(patch?.name).toBe('Warm Brass');
+        expect(patch?.macroMappings).toEqual(customMacroMappings);
+        expect(patch?.filterCutoff).toBe(750);
+
+        const state = getFermenterState(DEVICE_ID);
+        expect(state.patch.name).toBe('Warm Brass');
+        expect(state.patch.macroMappings).toEqual(customMacroMappings);
     });
 
     it('is idempotent and does not call loadFermenterPatch when patch is unchanged', () => {

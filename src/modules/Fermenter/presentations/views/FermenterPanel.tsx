@@ -10,7 +10,6 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Slider } from '#/components/ui/slider';
-import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { MidiLearnRotaryKnob } from '#/modules/ControlSurface/presentations/views';
@@ -453,13 +452,12 @@ function renderSectionContent(
     );
 }
 
-const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
-
 export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const trackState = useStore(trackStore, defaultTrackState);
-    const projectParameterValues = trackState.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.parameterValues;
+    const projectParameterValues = useStoreSelector(
+        trackStore,
+        (state) =>
+            state?.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId)?.parameterValues
+    );
 
     useEffect(() => {
         hydrateFermenterFromProject(deviceId);
