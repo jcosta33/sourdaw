@@ -1459,6 +1459,8 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workletNode: makeWorkletNode(),
                 setParam: vi.fn(),
                 setBypass: vi.fn(),
+                importScala: vi.fn(),
+                importTun: vi.fn(),
                 onTelemetry: vi.fn((cb) => {
                     telemetryCallback = cb;
                 }),
@@ -1474,6 +1476,15 @@ describe('wasmDeviceRegistry descriptors', () => {
 
             const { loadPromise } = requireDescriptor('native-scoring').create(deps);
             await loadPromise;
+
+            expect(deps.onLoaded).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    scoringControls: {
+                        importScala: result.importScala,
+                        importTun: result.importTun,
+                    },
+                })
+            );
 
             if (!telemetryCallback) {
                 throw new Error('expected the scoring telemetry callback to be registered');

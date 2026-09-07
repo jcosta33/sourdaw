@@ -27,13 +27,16 @@ test.describe('Mixer mutation undo/redo round-trips', () => {
         if (!/true/i.test((await dock.getAttribute('aria-pressed')) ?? '')) {
             await dock.click();
         }
-        await page.waitForTimeout(500);
+        await expect(page.locator('#bottom-dock-tab-mixer')).toBeVisible();
         await page.locator('#bottom-dock-tab-mixer').click();
         await expect(page.getByRole('region', { name: 'Mixer panel' })).toBeVisible({ timeout: 5000 });
     });
 
     test('channel gain: undo restores, redo re-applies', async ({ page }) => {
-        const firstChannel = page.getByRole('region', { name: 'Mixer panel' }).getByRole('group', { name: /channel/i }).first();
+        const firstChannel = page
+            .getByRole('region', { name: 'Mixer panel' })
+            .getByRole('group', { name: /channel/i })
+            .first();
         const gain = firstChannel.getByRole('slider', { name: /gain/i });
         await expect(gain).toBeAttached({ timeout: 5000 });
         const baseline = Number(await gain.getAttribute('aria-valuenow'));
@@ -53,7 +56,10 @@ test.describe('Mixer mutation undo/redo round-trips', () => {
     });
 
     test('channel pan: undo restores, redo re-applies', async ({ page }) => {
-        const firstChannel = page.getByRole('region', { name: 'Mixer panel' }).getByRole('group', { name: /channel/i }).first();
+        const firstChannel = page
+            .getByRole('region', { name: 'Mixer panel' })
+            .getByRole('group', { name: /channel/i })
+            .first();
         const pan = firstChannel.getByRole('slider', { name: /pan$/i });
         await expect(pan).toBeAttached({ timeout: 5000 });
         const baseline = Number(await pan.getAttribute('aria-valuenow'));

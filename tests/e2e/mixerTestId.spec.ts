@@ -18,7 +18,6 @@ test.describe('Mixer channel strip — test-id targeted', () => {
         // Open the mixer via the bottom dock toggle.
         const mixerToggle = page.getByRole('button', { name: 'Toggle bottom dock' }).first();
         await mixerToggle.click();
-        await page.waitForTimeout(500);
     });
 
     test('mute button toggles data-active via test ID', async ({ page }) => {

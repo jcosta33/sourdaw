@@ -39,6 +39,8 @@ import {
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
 
+import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
+
 export type NativeBuiltinBody = Readonly<{
     /** Whether the engine registers a note store for this body (mirror of `BuiltinEffectType::sounds_notes`). */
     soundsNotes: boolean;
@@ -76,6 +78,27 @@ const KNEAD_ENGINE_PARAM_NAMES: ReadonlySet<string> = new Set([
  */
 const FERMENTER_PARAM_IDS: ReadonlySet<string> = new Set(FERMENTER_PARAMS.map((param) => param.id));
 
+/**
+ * Grand Boule's patch, in the instrument's own vocabulary.
+ *
+ * Project truth's `parameterValues` for a device is an open record — a preset
+ * name, a morph state, anything a panel has ever persisted there — so an entry
+ * the instrument does not address is dropped rather than forwarded. Forwarding
+ * one would cost the whole batch: `builtin_named_parameter`
+ * (`crates/sourdaw-native/src/commands/graph.rs`) refuses a key carrying an
+ * uppercase letter, and one refused key fails the entire chain mapping.
+ */
+function grandBoulePatch(parameterValues: Readonly<Record<string, unknown>>): Readonly<Record<string, number>> {
+    const patch: Record<string, number> = {};
+    for (const [paramId, value] of Object.entries(parameterValues)) {
+        const name = mapGrandBouleParamToDspParam({ paramId });
+        if (name !== null && typeof value === 'number') {
+            patch[name] = value;
+        }
+    }
+    return patch;
+}
+
 const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
     [
         'knead',
@@ -93,6 +116,22 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             parameterName: (paramId) => mapFermenterParamToDspParam({ paramId }),
             projectPatch: (parameterValues) => mapFermenterPatchToDspPatch({ patch: parameterValues }),
             addressesParameter: (paramId) => FERMENTER_PARAM_IDS.has(paramId),
+        },
+    ],
+    [
+        'grand-boule',
+        {
+            soundsNotes: true,
+            /**
+             * The fallback is unreachable for anything a lane or a panel can
+             * spell: `descriptorEngineParamWeld.spec.ts` pins every
+             * `GRAND_BOULE_DESCRIPTOR` parameter id to an entry in this table,
+             * and `readLiveAutomationWrites` gates on `addressesParameter`
+             * before it asks for a name.
+             */
+            parameterName: (paramId) => mapGrandBouleParamToDspParam({ paramId }) ?? paramId,
+            projectPatch: grandBoulePatch,
+            addressesParameter: (paramId) => mapGrandBouleParamToDspParam({ paramId }) !== null,
         },
     ],
 ]);

@@ -35,6 +35,15 @@ export const ConfirmDialog = (): ReactElement => {
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
                     onKeyDown={(event) => {
+                        // This dialog portals to <body> with a focused
+                        // button, so an unstopped Delete/Backspace reaches
+                        // the window-level shortcut layer and deletes the
+                        // selected clips with no confirmation (#3602).
+                        // Enter/Escape must keep bubbling: Radix dismiss and
+                        // the Enter-confirm path listen above this content.
+                        if (event.key === 'Delete' || event.key === 'Backspace') {
+                            event.stopPropagation();
+                        }
                         if (event.key === 'Enter') {
                             if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
                                 return;

@@ -1552,6 +1552,10 @@ const scoringDescriptor: WasmDeviceDescriptor = {
     create({ context, deviceId, deviceType, signal, onLoaded }) {
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = { setParam: () => {}, setBypass: () => {} };
+        placeholder.scoringControls = {
+            importScala: async () => ({ ok: false }),
+            importTun: async () => ({ ok: false }),
+        };
         const loadPromise = createScoringNode(context, signal)
             .then(async (result: ScoringNodeResult) => {
                 if ((await waitForDeviceReady({ deviceType, result, signal })) === null) {
@@ -1577,6 +1581,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                    scoringControls: { importScala: result.importScala, importTun: result.importTun },
                 });
                 return;
             })

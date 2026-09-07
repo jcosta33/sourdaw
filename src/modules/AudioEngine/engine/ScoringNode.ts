@@ -59,12 +59,79 @@ export type ScoringNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
+    importScala: (text: string) => Promise<{ ok: boolean; name?: string }>;
+    importTun: (text: string) => Promise<{ ok: boolean; name?: string }>;
     onTelemetry: (callback: (data: TunerTelemetry) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
     ready: Promise<Record<string, unknown>>;
 };
+
+type ScaleImportResultMsg = {
+    type: 'scale-import-result';
+    id: string;
+    ok: boolean;
+    name?: string;
+};
+
+function isScaleImportResultMsg(data: unknown): data is ScaleImportResultMsg {
+    if (typeof data !== 'object' || data === null) {
+        return false;
+    }
+    const record = data as Record<string, unknown>;
+    return record.type === 'scale-import-result' && typeof record.id === 'string';
+}
+
+function setupScaleImportPort(
+    node: AudioWorkletNode,
+    handshake: ReturnType<typeof createReadyHandshake>
+): {
+    importScala: (text: string) => Promise<{ ok: boolean; name?: string }>;
+    importTun: (text: string) => Promise<{ ok: boolean; name?: string }>;
+    clearPendingImports: () => void;
+} {
+    let nextRequestId = 1;
+    const pendingImportRequests = new Map<string, (result: { ok: boolean; name?: string }) => void>();
+
+    node.port.onmessage = (event: MessageEvent<unknown>) => {
+        if (isScaleImportResultMsg(event.data)) {
+            const resolver = pendingImportRequests.get(event.data.id);
+            if (resolver) {
+                pendingImportRequests.delete(event.data.id);
+                resolver({
+                    ok: Boolean(event.data.ok),
+                    name: typeof event.data.name === 'string' ? event.data.name : undefined,
+                });
+            }
+            return;
+        }
+        handshake.onMessage(event as MessageEvent);
+    };
+
+    return {
+        importScala: (text: string) => {
+            const id = `scl-${nextRequestId++}`;
+            return new Promise<{ ok: boolean; name?: string }>((resolve) => {
+                pendingImportRequests.set(id, resolve);
+                node.port.postMessage({ type: 'import-scala', id, text });
+            });
+        },
+        importTun: (text: string) => {
+            const id = `tun-${nextRequestId++}`;
+            return new Promise<{ ok: boolean; name?: string }>((resolve) => {
+                pendingImportRequests.set(id, resolve);
+                node.port.postMessage({ type: 'import-tun', id, text });
+            });
+        },
+        clearPendingImports: () => {
+            for (const resolve of pendingImportRequests.values()) {
+                resolve({ ok: false });
+            }
+            pendingImportRequests.clear();
+        },
+    };
+}
 
 export function isScoringDevice(deviceType: string): boolean {
     return deviceType === 'native-scoring';
@@ -110,9 +177,7 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
     }
 
     const handshake = createReadyHandshake({ pluginName: 'ScoringNode' });
-    node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
-    };
+    const { importScala, importTun, clearPendingImports } = setupScaleImportPort(node, handshake);
     const readyPromise = handshake.promise;
 
     node.port.postMessage({ type: 'init' });
@@ -127,6 +192,8 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
         setBypass: (bypassed) => {
             node.port.postMessage({ type: 'bypass', bypassed });
         },
+        importScala,
+        importTun,
         onTelemetry: (callback) => {
             if (telemetryRafId !== null) {
                 cancelAnimationFrame(telemetryRafId);
@@ -155,6 +222,7 @@ export async function createScoringNode(ctx: BaseAudioContext, signal?: AbortSig
             }
         },
         destroy: () => {
+            clearPendingImports();
             if (telemetryRafId !== null) {
                 cancelAnimationFrame(telemetryRafId);
                 telemetryRafId = null;

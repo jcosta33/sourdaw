@@ -11,6 +11,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type Clip } from '../../models/Track';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
+import { collectTracksClipBufferIds } from '../timeOperations/collectTracksClipBufferIds';
 
 import { detectSilentBake } from './detectSilentBake';
 import { renderTrackOffline, type RenderScheduleTally } from './renderOffline';
@@ -266,6 +267,11 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     }
 
     const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+    // Undo restores the pre-bounce tracks, redo the post-bounce ones; both
+    // carry clips referencing audio buffers the history must keep alive.
+    const restoresBufferIds = [
+        ...new Set([...collectTracksClipBufferIds(tracksBefore), ...collectTracksClipBufferIds(tracksAfter)]),
+    ];
     pushUndoEntry(
         'Bounce Selection',
         () => {
@@ -293,7 +299,8 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
             for (const [clipId, snapshot] of midiSnapshotsAfter) {
                 applyMidiClipDataSnapshot(clipId, snapshot);
             }
-        }
+        },
+        { restoresBufferIds }
     );
     return true;
 }

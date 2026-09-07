@@ -3504,9 +3504,8 @@ mod compensation_render_alloc_guards {
         BuiltinEffectType, GraphCommand, PluginCore, RetiredGraphObjects,
     };
     use crate::timeline::{
-        timeline_rt_diagnostics_channel, ChainEntry, ClipPlacement, ClipPlayback, DeviceKind,
-        DeviceParam, FermenterParamName, RouteTarget, SendTap, TimelineBus, TimelineClip,
-        TimelineTrack,
+        timeline_rt_diagnostics_channel, BuiltinParamName, ChainEntry, ClipPlacement, ClipPlayback,
+        DeviceKind, DeviceParam, RouteTarget, SendTap, TimelineBus, TimelineClip, TimelineTrack,
     };
     use assert_no_alloc::assert_no_alloc;
     use rtrb::{Consumer, Producer, RingBuffer};
@@ -4075,7 +4074,7 @@ mod compensation_render_alloc_guards {
         /// The filter cutoff, written while the instrument is already sounding
         /// so the write lands on a drain the guard wraps.
         const CUTOFF: DeviceParam =
-            DeviceParam::FermenterNamed(match FermenterParamName::parse("cutoff") {
+            DeviceParam::BuiltinNamed(match BuiltinParamName::parse("cutoff") {
                 Some(name) => name,
                 None => panic!("'cutoff' is shaped like one of the instrument's names"),
             });

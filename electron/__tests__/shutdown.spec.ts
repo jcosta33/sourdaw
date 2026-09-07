@@ -11,6 +11,10 @@
  * The residue is recorded in the pull request rather than hidden behind these
  * assertions.
  */
+import { spawn, type ChildProcess } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -18,7 +22,10 @@ import {
     runBeforeQuitCascade,
     runShutdownWithDeadline,
     SHUTDOWN_DEADLINE_MS,
+    spawnShutdownWatchdog,
     type ShutdownOutcome,
+    type Watchdog,
+    type WatchdogSpawner,
 } from '../shutdown.js';
 
 import type { Timers } from '../timers.js';
@@ -91,6 +98,78 @@ describe('the exit cascade under its deadline', () => {
         expect(armedDuringCascade).toBe(1);
     });
 
+    it('arms the watchdog before shutdown() is called', async () => {
+        const { timers } = manualTimers();
+        let armedBeforeShutdown = false;
+        let armedDeadlineMs: number | undefined;
+        const disarm = vi.fn();
+        const armWatchdog: WatchdogSpawner = vi.fn((deadlineMs: number): Watchdog => {
+            armedDeadlineMs = deadlineMs;
+            return { disarm };
+        });
+
+        await runShutdownWithDeadline({
+            shutdown: () => {
+                armedBeforeShutdown = armedDeadlineMs === 250;
+                return undefined;
+            },
+            deadlineMs: 250,
+            timers,
+            armWatchdog,
+        });
+
+        expect(armedBeforeShutdown).toBe(true);
+        expect(armWatchdog).toHaveBeenCalledWith(250);
+    });
+
+    it('disarms the watchdog when cascade completes successfully', async () => {
+        const { timers } = manualTimers();
+        const disarm = vi.fn();
+        const armWatchdog: WatchdogSpawner = vi.fn(() => ({ disarm }));
+
+        await runShutdownWithDeadline({
+            shutdown: () => 'done',
+            timers,
+            armWatchdog,
+        });
+
+        expect(disarm).toHaveBeenCalledTimes(1);
+    });
+
+    it('disarms the watchdog when cascade throws', async () => {
+        const { timers } = manualTimers();
+        const disarm = vi.fn();
+        const armWatchdog: WatchdogSpawner = vi.fn(() => ({ disarm }));
+
+        await runShutdownWithDeadline({
+            shutdown: () => {
+                throw new Error('plugin editor crashed');
+            },
+            timers,
+            armWatchdog,
+        });
+
+        expect(disarm).toHaveBeenCalledTimes(1);
+    });
+
+    it('disarms the watchdog when timer deadline fires', async () => {
+        const { timers, fire } = manualTimers();
+        const disarm = vi.fn();
+        const armWatchdog: WatchdogSpawner = vi.fn(() => ({ disarm }));
+
+        const outcome = runShutdownWithDeadline({
+            shutdown: () => new Promise(() => undefined),
+            timers,
+            armWatchdog,
+        });
+
+        expect(disarm).not.toHaveBeenCalled();
+        fire();
+        await outcome;
+
+        expect(disarm).toHaveBeenCalledTimes(1);
+    });
+
     it('resolves rather than rejecting when the cascade throws', async () => {
         // The caller's next act is to end the process, so a rejection here
         // would be an unhandled one on the way out. A failed teardown is also
@@ -109,6 +188,21 @@ describe('the exit cascade under its deadline', () => {
 
     it('gives the cascade five seconds', () => {
         expect(SHUTDOWN_DEADLINE_MS).toBe(5_000);
+    });
+});
+
+describe('spawnShutdownWatchdog', () => {
+    it('disarms without throwing', () => {
+        const watchdog = spawnShutdownWatchdog(10_000);
+        expect(() => watchdog.disarm()).not.toThrow();
+    });
+
+    it('is idempotent when disarm is called multiple times', () => {
+        const watchdog = spawnShutdownWatchdog(10_000);
+        expect(() => {
+            watchdog.disarm();
+            watchdog.disarm();
+        }).not.toThrow();
     });
 });
 
@@ -134,6 +228,93 @@ describe('plugin command admission before the cascade', () => {
 
         expect(order).toEqual(['refuse', 'shutdown']);
     });
+
+    it('forwards armWatchdog to runShutdownWithDeadline', async () => {
+        const { timers } = manualTimers();
+        const disarm = vi.fn();
+        const armWatchdog: WatchdogSpawner = vi.fn(() => ({ disarm }));
+
+        await runBeforeQuitCascade({
+            refusePluginCommands: () => undefined,
+            host: { shutdown: () => 'done' },
+            timers,
+            armWatchdog,
+        });
+
+        expect(armWatchdog).toHaveBeenCalledTimes(1);
+        expect(disarm).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('quit cascade synchronous watchdog bound (issue #2096)', () => {
+    const spawnIsolatedShutdownProcess = (
+        shutdownBody: string,
+        deadlineMs: number
+    ): {
+        readonly child: ChildProcess;
+        readonly exitPromise: Promise<{
+            code: number | null;
+            signal: NodeJS.Signals | null;
+            elapsedMs: number;
+            stderr: string;
+        }>;
+    } => {
+        const shutdownHref = pathToFileURL(join(import.meta.dirname, '../shutdown.ts')).href;
+        const timersHref = pathToFileURL(join(import.meta.dirname, '../timers.ts')).href;
+        const script = `
+            const { runShutdownWithDeadline } = await import(${JSON.stringify(shutdownHref)});
+            const { systemTimers } = await import(${JSON.stringify(timersHref)});
+            await runShutdownWithDeadline({
+                shutdown: () => { ${shutdownBody} },
+                deadlineMs: ${deadlineMs},
+                timers: systemTimers,
+            });
+            process.exit(0);
+        `;
+        const start = Date.now();
+        const child = spawn(process.execPath, ['--import', 'tsx', '-e', script], {
+            stdio: ['ignore', 'ignore', 'pipe'],
+        });
+        let stderr = '';
+        child.stderr.setEncoding('utf8');
+        child.stderr.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        const exitPromise = new Promise<{
+            code: number | null;
+            signal: NodeJS.Signals | null;
+            elapsedMs: number;
+            stderr: string;
+        }>((resolve, reject) => {
+            const timeoutTimer = setTimeout(() => {
+                child.kill('SIGKILL');
+                reject(new Error(`Process timed out waiting for exit. Stderr: ${stderr}`));
+            }, 4_000);
+
+            child.on('close', (code, signal) => {
+                clearTimeout(timeoutTimer);
+                resolve({ code, signal, elapsedMs: Date.now() - start, stderr });
+            });
+        });
+        return { child, exitPromise };
+    };
+
+    it('bounds a synchronous main-thread hang by terminating the process within the deadline', async () => {
+        const { exitPromise } = spawnIsolatedShutdownProcess('while (true) {}', 300);
+        const { code, signal, elapsedMs } = await exitPromise;
+
+        expect(signal === 'SIGKILL' || (code !== null && code !== 0)).toBe(true);
+        expect(elapsedMs).toBeLessThan(2_000);
+    }, 10_000);
+
+    it('exits cleanly with code 0 when shutdown completes normally in a subprocess', async () => {
+        const { exitPromise } = spawnIsolatedShutdownProcess('return "ok";', 300);
+        const { code, signal, stderr } = await exitPromise;
+
+        expect(stderr).toBe('');
+        expect(code).toBe(0);
+        expect(signal).toBeNull();
+    }, 10_000);
 });
 
 describe('the before-quit handler', () => {

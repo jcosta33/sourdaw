@@ -54,6 +54,7 @@ vi.mock('electron', () => {
         app: {
             isPackaged: false,
             getAppPath: () => '/app',
+            requestSingleInstanceLock: () => true,
             whenReady: () => Promise.resolve(),
             on: vi.fn(),
             exit: vi.fn(),

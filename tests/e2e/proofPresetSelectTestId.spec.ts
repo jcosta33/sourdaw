@@ -25,7 +25,6 @@ test.describe('Proof preset selection — changes patch name readout', () => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Proof$/ }).click();
-        await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Proof$/i })).toBeVisible();
         await inspector.getByText('Proof', { exact: false }).first().click();
         await expect(page.getByRole('slider', { name: 'Master limiter ceiling' })).toBeVisible({
@@ -37,9 +36,7 @@ test.describe('Proof preset selection — changes patch name readout', () => {
         // The "Preset" readout label (singular) is unique vs the "Presets" rail
         // header (plural); its sole following-sibling span holds the active
         // patch name (default "Init").
-        const presetReadout = page
-            .getByText('Preset', { exact: true })
-            .locator('xpath=following-sibling::span');
+        const presetReadout = page.getByText('Preset', { exact: true }).locator('xpath=following-sibling::span');
 
         const before = (await presetReadout.textContent()) ?? '';
 

@@ -75,7 +75,10 @@ test.describe('Transport deep — BPM, metronome, loop', () => {
 
     test('Time signature display shows 4/4 and changes to 3/4', async ({ page }) => {
         // The time signature is shown as a readout in the transport bar.
-        const timeSig = page.getByLabel(/time signature/i).or(page.getByText(/^\d\/\d$/)).first();
+        const timeSig = page
+            .getByLabel(/time signature/i)
+            .or(page.getByText(/^\d\/\d$/))
+            .first();
         await timeSig.waitFor({ state: 'visible', timeout: 10_000 });
 
         // Default is 4/4.
@@ -100,15 +103,13 @@ test.describe('Transport deep — BPM, metronome, loop', () => {
 
         // Play.
         await playButton.click();
-        await page.waitForTimeout(600);
 
         // Pause button should appear.
         const pauseButton = page.getByRole('button', { name: 'Pause', exact: true });
         await expect(pauseButton).toBeVisible();
 
-        // Capture moving playhead — it must have advanced from start.
-        const movingText = (await playheadReadout.innerText()).trim();
-        expect(movingText).not.toMatch(/1\.1\.000/);
+        // Playhead must have advanced from start.
+        await expect(playheadReadout).not.toHaveText(/1\.1\.000/);
 
         // Stop.
         await stopButton.click();

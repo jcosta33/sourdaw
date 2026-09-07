@@ -15,14 +15,15 @@ use crate::midi_fx::{
 use crate::pdc::{CompensationDelay, MAX_COMPENSATION_FRAMES};
 use crate::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use crate::timeline::{
-    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, ChainEntry, ClipPlacement,
-    ClipPlayback, CompensationDevices, DeviceChain, DeviceParam, DeviceParamEvent,
-    DeviceParamQueue, DeviceParamTarget, FermenterParamName, RetiredTimelineObject, RouteTarget,
+    timeline_rt_diagnostics_channel, AutomationTarget, AutomationWrite, BuiltinParamName,
+    ChainEntry, ClipPlacement, ClipPlayback, CompensationDevices, DeviceChain, DeviceParam,
+    DeviceParamEvent, DeviceParamQueue, DeviceParamTarget, RetiredTimelineObject, RouteTarget,
     SendTap, TimelineBus, TimelineClip, TimelineGraph, TimelineRtDiagnosticsSnapshot,
     TimelineTrack, MAX_BUS_DEVICES, MAX_TIMELINE_BUSES, MAX_TIMELINE_TRACKS, MAX_TRACK_DEVICES,
 };
 use crate::transport_map::{LoopRegion, TransportMaps};
 use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
+use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::{Consumer, Producer, PushError};
 use triple_buffer::{Input, Output};
@@ -241,6 +242,7 @@ fn knead_instance() -> PluginCore {
 pub enum BuiltinEffectType {
     Knead,
     Fermenter,
+    GrandBoule,
 }
 
 impl BuiltinEffectType {
@@ -251,6 +253,7 @@ impl BuiltinEffectType {
         match self {
             Self::Knead => "knead",
             Self::Fermenter => "fermenter",
+            Self::GrandBoule => "grand-boule",
         }
     }
 
@@ -261,6 +264,7 @@ impl BuiltinEffectType {
         match name {
             "knead" => Some(Self::Knead),
             "fermenter" => Some(Self::Fermenter),
+            "grand-boule" => Some(Self::GrandBoule),
             _ => None,
         }
     }
@@ -276,6 +280,7 @@ impl BuiltinEffectType {
         match self {
             Self::Knead => false,
             Self::Fermenter => true,
+            Self::GrandBoule => true,
         }
     }
 }
@@ -295,6 +300,12 @@ pub enum GraphCommand {
     /// sounds notes ([`BuiltinEffectType::sounds_notes`]). A built-in
     /// instrument is scheduled against like any hosted one, and a store built
     /// anywhere but the control thread would be an allocation on the callback.
+    ///
+    /// A built-in that sounds notes is refused here rather than installed,
+    /// counted on [`crate::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot::unsupported_effect_additions`]:
+    /// the master chain is effects-only, so an instrument body belongs on a
+    /// track chain's generator pass instead. [`GraphCommand::AddDetachedEffect`]
+    /// followed by a track splice is its registration.
     AddEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     /// Register a built-in effect, already built control-side, detached from
     /// every chain.
@@ -547,10 +558,12 @@ pub enum GraphCommand {
         hold: Option<Box<CompensationDelay>>,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
-    /// returns to its home placement — the master insert chain for everything
-    /// the engine owns end to end, and detached for a hosted plugin, whose
-    /// lifetime belongs to the load that registered it and which must not land
-    /// on the whole mix because the user took it off one track.
+    /// returns to its home placement — the master insert chain for an effect
+    /// body, and detached for an instrument body and for a hosted plugin: an
+    /// instrument runs nowhere until a chain takes it again, because the
+    /// master chain runs effects only, and a hosted plugin's lifetime belongs
+    /// to the load that registered it and must not land on the whole mix
+    /// because the user took it off one track.
     RemoveTrackDevice {
         track_id: usize,
         effect_id: usize,
@@ -897,6 +910,7 @@ impl GraphCommand {
 pub enum PluginCore {
     Knead(KneadEngine),
     Fermenter(Box<FermenterBody>),
+    GrandBoule(Box<GrandBouleBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -911,6 +925,7 @@ impl PluginCore {
         match plugin_type {
             BuiltinEffectType::Knead => Self::Knead(KneadEngine::new(sample_rate)),
             BuiltinEffectType::Fermenter => Self::fermenter_with_patch(sample_rate, &[]),
+            BuiltinEffectType::GrandBoule => Self::grand_boule_with_patch(sample_rate, &[]),
         }
     }
 
@@ -920,10 +935,49 @@ impl PluginCore {
     /// command ring is finite, so the initial patch is written into the
     /// instance before it crosses the ring rather than sent as that many
     /// commands behind the registration.
-    pub fn fermenter_with_patch(sample_rate: f32, patch: &[(FermenterParamName, f32)]) -> Self {
+    pub fn fermenter_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
         let mut body = FermenterBody::new(sample_rate);
         body.load_patch(patch);
         Self::Fermenter(Box::new(body))
+    }
+
+    /// Build a Grand Boule carrying `patch`, on the control thread.
+    ///
+    /// Written into the instance before it crosses the ring for the same
+    /// reason as [`Self::fermenter_with_patch`]: a piano's patch is dozens of
+    /// the instrument's own parameters per strip and the command ring is
+    /// finite. There is no ordering law over the writes — the instrument has
+    /// no layer selection routing later writes, so every entry addresses the
+    /// one instrument whatever order the record is read in.
+    pub fn grand_boule_with_patch(sample_rate: f32, patch: &[(BuiltinParamName, f32)]) -> Self {
+        let mut body = GrandBouleBody::new(sample_rate);
+        body.load_patch(patch);
+        Self::GrandBoule(Box::new(body))
+    }
+
+    /// The registry entry this instance was built from — the inverse of
+    /// [`Self::builtin`] — or `None` for a native plugin, which has no
+    /// registry entry.
+    pub const fn builtin_type(&self) -> Option<BuiltinEffectType> {
+        match self {
+            Self::Knead(_) => Some(BuiltinEffectType::Knead),
+            Self::Fermenter(_) => Some(BuiltinEffectType::Fermenter),
+            Self::GrandBoule(_) => Some(BuiltinEffectType::GrandBoule),
+            Self::Native(_) => None,
+        }
+    }
+
+    /// The instance-side reading of [`BuiltinEffectType::sounds_notes`]: true
+    /// for a built-in body that turns notes into audio, read through
+    /// [`Self::builtin_type`] so the two cannot disagree.
+    ///
+    /// A native plugin answers `false` here regardless of what it actually
+    /// plays, because its note handling is the plugin's own — `AddPlugin`
+    /// carries the store decision for it, made where the plugin is loaded,
+    /// not by this instance-side match.
+    pub fn sounds_notes(&self) -> bool {
+        self.builtin_type()
+            .is_some_and(BuiltinEffectType::sounds_notes)
     }
 }
 
@@ -1105,7 +1159,7 @@ impl FermenterBody {
     /// Write one of the instrument's own parameters by name.
     ///
     /// Real-time safe: the name arrives inline in the command
-    /// ([`FermenterParamName`]) and the instrument resolves it by comparison,
+    /// ([`BuiltinParamName`]) and the instrument resolves it by comparison,
     /// allocating nothing.
     fn set_param(&mut self, name: &str, value: f32) {
         self.instance.set_param(name, value);
@@ -1122,8 +1176,8 @@ impl FermenterBody {
     /// it, so a patch written to one layer while the instance selects
     /// another would put patch-time and live-time writes on different
     /// layers with the producer believing both landed together.
-    fn load_patch(&mut self, patch: &[(FermenterParamName, f32)]) {
-        for (name, value) in layer_routing_first(patch, FermenterParamName::as_str) {
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in layer_routing_first(patch, BuiltinParamName::as_str) {
             self.set_param(name.as_str(), value);
         }
     }
@@ -1176,11 +1230,222 @@ fn member_channel(channel: i16) -> Option<u8> {
     Some(channel as u8)
 }
 
+/// Frames one hosted Grand Boule run renders.
+///
+/// The web runtime's render quantum: the offline processor drives the
+/// instrument 128 frames at a time, and `receiveGrandBouleMessage` voices a
+/// framed message as soon as the block about to render is the one holding its
+/// frame — so a scheduled note sounds there from the start of the 128-frame
+/// block that holds it, counted from the timeline's absolute frame 0. The
+/// instrument takes no per-note sample offset, so the run length *is* the
+/// timing resolution, and the host splits a callback into runs this long to
+/// land a note on the same run the worklet lands it on.
+///
+/// That parity holds exactly only when the span being split itself starts on
+/// the absolute 128-frame grid the worklet grids from — the host counts its
+/// own runs from the span's own frame 0, not from that absolute origin. A
+/// span starting off it, after a loop seam or under a device callback whose
+/// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not divide
+/// it), voices a note up to
+/// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands it,
+/// because the instrument has no offset-aware note API to close the gap.
+/// Tracked as #3997.
+///
+/// Well inside [`GRAND_BOULE_BLOCK_FRAMES`], the ceiling the instrument's own
+/// channel buffers impose: the run is the finer of the two figures, and the
+/// only one note timing depends on.
+const GRAND_BOULE_RUN_FRAMES: usize = 128;
+
+/// The bound `GrandBouleBody::render_run` reads the instrument's channel
+/// buffers under, refused at compile time rather than asserted at render time.
+/// A run longer than the buffers would read past both of them through the raw
+/// pointers `process` returns, so the figure above may never be raised past the
+/// instrument's own ceiling.
+const _: () = assert!(GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES);
+
+/// Note-voices one hosted Grand Boule can sound at once.
+///
+/// The figure the web runtime builds its own instance with
+/// (`GRAND_BOULE_VOICE_COUNT` in `grandBouleEngineCore.ts`), so a strip that
+/// moves between the two runtimes steals voices at the same point rather than
+/// sounding different under load.
+const GRAND_BOULE_MAX_VOICES: u32 = 64;
+
+/// The full-scale 7-bit MIDI velocity, which is the divisor that turns the
+/// figure a producer wrote into the `0..1` fraction the instrument takes.
+///
+/// The same divisor the web runtime applies on the way in
+/// (`velocityTransform` in `scheduleMidiNotes.ts`), so one performance sounds
+/// at one dynamic on both runtimes.
+const MIDI_VELOCITY_FULL_SCALE: f32 = 127.0;
+
+/// The Grand Boule piano, hosted as a built-in instrument body.
+///
+/// Boxed inside [`PluginCore`] for the reason given on [`FermenterBody`]: a
+/// `GraphCommand` moves through a fixed-size ring, and inline this body's voice
+/// pool and its two channel buffers would set the size of every command the
+/// engine sends.
+///
+/// This hosts the model alone. The instrument's attack clips
+/// (`GrandBouleInstance::load_attack_clip`) are optional, and with none loaded
+/// it renders from the modal engine unaided; clip transport and the three
+/// pedals (`set_sustain`, `set_una_corda`, `set_sostenuto`, reached over
+/// CC64/66/67) are follow-ups on the native-body work rather than part of this
+/// body, so a hosted piano sustains nothing a pedal was meant to hold.
+pub struct GrandBouleBody {
+    instance: GrandBouleInstance,
+}
+
+impl GrandBouleBody {
+    /// Build the instrument on the control thread — it allocates its voice
+    /// pool and its channel buffers, neither of which the audio thread may do
+    /// (ADR 0020).
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            instance: GrandBouleInstance::new(sample_rate, GRAND_BOULE_MAX_VOICES),
+        }
+    }
+
+    /// Render this instrument's material for the block and sum it into the
+    /// pair, sounding each queued note in the run that holds its frame.
+    ///
+    /// Summed rather than written because an instrument is a generator: what
+    /// it produces joins whatever already stands at its place in the chain.
+    ///
+    /// The block is split into runs of at most [`GRAND_BOULE_RUN_FRAMES`],
+    /// each one a whole `process` call, and every event whose frame falls
+    /// inside a run is delivered before that run renders. The instrument has
+    /// no note API carrying a sample offset, so the run boundary is the whole
+    /// of the timing resolution available — and it is exactly the resolution
+    /// the web runtime has, which is why the run is that runtime's quantum
+    /// rather than the far longer block the instrument's buffers would allow.
+    ///
+    /// This block is one span, and the runs above are counted from that
+    /// span's own frame 0 — not from the timeline's absolute frame 0 the
+    /// worklet grids its own runs from. Parity with the worklet is exact only
+    /// when the span itself starts on the absolute 128-frame grid; a span
+    /// starting off it, after a loop seam or under a device callback whose
+    /// period is not a multiple of 128 (`GRAND_BOULE_RUN_FRAMES` does not
+    /// divide it), sounds a note up to
+    /// `GRAND_BOULE_RUN_FRAMES - 1` frames away from where the worklet lands
+    /// it, because the instrument has no offset-aware note API to close the
+    /// gap (#3997).
+    ///
+    /// Nothing here allocates: the runs write into buffers the instrument
+    /// already owns, and a note is a call rather than a queued message.
+    fn process(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        frames: usize,
+        events: &[MidiNoteEvent],
+    ) {
+        let mut next_event = 0;
+        let mut rendered = 0;
+        while rendered < frames {
+            let run_end = rendered + (frames - rendered).min(GRAND_BOULE_RUN_FRAMES);
+            while let Some(event) = events.get(next_event) {
+                // The last run takes everything still queued: an event stamped
+                // past the block it was handed with would otherwise fall
+                // through every run and never sound at all.
+                let at = (event.frame_offset as usize).min(frames - 1);
+                if at >= run_end {
+                    break;
+                }
+                self.deliver(event);
+                next_event += 1;
+            }
+            self.render_run(&mut left[rendered..run_end], &mut right[rendered..run_end]);
+            rendered = run_end;
+        }
+    }
+
+    /// Sound one note on the instrument, at the head of the run about to
+    /// render.
+    ///
+    /// A note-off narrows to the member channel its note-on sounded on, so
+    /// releasing one key cannot silence a different note holding the same
+    /// pitch on another channel. A channel MIDI has no address for narrows to
+    /// nothing, and the note-off then releases every voice at that pitch, for
+    /// the reason given on [`FermenterBody::push_event`]: a key nothing can
+    /// ever lift is the one outcome worse than releasing more than was asked.
+    fn deliver(&mut self, event: &MidiNoteEvent) {
+        let channel = member_channel(event.channel);
+        match (event.is_note_on, channel) {
+            // An unaddressable channel still sounds: the key went down, and
+            // the base member channel is where a note with no channel of its
+            // own belongs.
+            (true, channel) => self.instance.note_on_with_channel(
+                event.note,
+                f32::from(event.velocity) / MIDI_VELOCITY_FULL_SCALE,
+                channel.unwrap_or(0),
+            ),
+            (false, Some(channel)) => self.instance.note_off_on_channel(event.note, channel),
+            (false, None) => self.instance.note_off(event.note),
+        }
+    }
+
+    /// Render one run into the instrument's own buffers and sum them out.
+    fn render_run(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len();
+        // The right pointer is derived after the render, never before: the
+        // render takes a mutable reborrow of each buffer and writes through
+        // it, which under the aliasing model retires any pointer derived from
+        // an earlier shared borrow of that buffer. Derived afterwards, both
+        // pointers stay valid until the next mutation of the instance.
+        let rendered_left = self.instance.process(frames as u32);
+        let rendered_right = self.instance.get_right_ptr();
+        // SAFETY: both pointers were derived after the render and name the
+        // instrument's own channel buffers, which `GrandBouleInstance::new`
+        // sizes at `daw_dsp::grand_boule::GRAND_BOULE_BLOCK_FRAMES` and no
+        // method resizes. `frames` is one run's length, so
+        // `frames <= GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES` and
+        // each slice lies inside the allocation it names. The two buffers are
+        // separate heap allocations, so the pair of slices aliases nothing.
+        // Nothing mutates the instrument between the render and this copy.
+        let (rendered_left, rendered_right) = unsafe {
+            (
+                std::slice::from_raw_parts(rendered_left, frames),
+                std::slice::from_raw_parts(rendered_right, frames),
+            )
+        };
+        for (out, sample) in left.iter_mut().zip(rendered_left) {
+            *out += *sample;
+        }
+        for (out, sample) in right.iter_mut().zip(rendered_right) {
+            *out += *sample;
+        }
+    }
+
+    /// Write one of the instrument's own parameters by name.
+    ///
+    /// Real-time safe: the name arrives inline in the command
+    /// ([`BuiltinParamName`]) and the instrument resolves it by comparison,
+    /// allocating nothing.
+    fn set_param(&mut self, name: &str, value: f32) {
+        self.instance.set_param(name, value);
+    }
+
+    /// Apply a whole patch, on the control thread, before this body crosses
+    /// the command ring.
+    ///
+    /// Applied in the order the record was collected, with no key brought
+    /// forward: the instrument has no selection that routes the writes behind
+    /// it, so every entry addresses the one instrument whichever order they
+    /// arrive in — the ordering law [`FermenterBody::load_patch`] obeys has no
+    /// counterpart here to obey.
+    fn load_patch(&mut self, patch: &[(BuiltinParamName, f32)]) {
+        for (name, value) in patch {
+            self.set_param(name.as_str(), *value);
+        }
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
 /// The name-to-address resolution happened control-side — [`DeviceParam`] for
-/// knead's closed vocabulary, a shape check for the Fermenter's own — so
+/// knead's closed vocabulary, a shape check for an instrument's own — so
 /// `false` here is not an unknown parameter but a producer that lost track of
 /// what an effect id holds. The caller counts it rather than the engine
 /// guessing which body the value was meant for.
@@ -1198,7 +1463,11 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             engine.set_formant_preserve(value != 0.0);
             true
         }
-        (PluginCore::Fermenter(body), DeviceParam::FermenterNamed(name)) => {
+        (PluginCore::Fermenter(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value);
+            true
+        }
+        (PluginCore::GrandBoule(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value);
             true
         }
@@ -1862,7 +2131,11 @@ impl ActiveEffect {
 
     /// An effect placed somewhere other than the master chain, but still homed
     /// there: a built-in the graph registers detached is the engine's own, and
-    /// the master chain is where it belongs once no strip holds it.
+    /// the master chain is where it belongs once no strip holds it. That is a
+    /// registration rule, not one this constructor enforces: `add_builtin_effect`
+    /// homes an instrument body detached instead (see [`Self::detached`]),
+    /// because the master chain runs effects only, and a refusal builds its
+    /// retirement carrier through here with whatever body it carried.
     fn with_placement(id: usize, instance: PluginCore, placement: EffectPlacement) -> Self {
         Self::homed(id, instance, placement, EffectPlacement::MasterChain)
     }
@@ -2763,7 +3036,11 @@ impl AudioScheduler {
         {
             let retired = match cmd {
                 GraphCommand::AddEffect(id, instance, notes) => {
-                    self.add_builtin_effect(id, instance, notes, EffectPlacement::MasterChain)
+                    if instance.sounds_notes() {
+                        Some(self.refuse_master_chain_sink(id, instance, notes))
+                    } else {
+                        self.add_builtin_effect(id, instance, notes, EffectPlacement::MasterChain)
+                    }
                 }
                 GraphCommand::AddDetachedEffect(id, instance, notes) => {
                     self.add_builtin_effect(id, instance, notes, EffectPlacement::Detached)
@@ -3041,9 +3318,9 @@ impl AudioScheduler {
                     effect_id,
                 } => {
                     if self.timeline.remove_track_device(track_id, effect_id) {
-                        // Return it to the master chain only when its
-                        // placement is the one this track owns, for the reason
-                        // given on `RemoveTrack`.
+                        // Return it to its home only when its placement is
+                        // the one this track owns, for the reason given on
+                        // `RemoveTrack`.
                         self.release_effect(effect_id, EffectPlacement::Track(track_id));
                     }
                     None
@@ -3369,8 +3646,24 @@ impl AudioScheduler {
         // Built holding the store on every path, refusals included, so a
         // refused registration retires the whole effect rather than freeing
         // the box the command carried.
-        let effect =
-            ActiveEffect::with_placement(id, instance, placement).holding_midi_notes(notes);
+        //
+        // A note-sink built-in is homed detached rather than on the master
+        // chain: the master chain runs effects only, so an instrument body
+        // must never be what a release hands back. `AddEffect` already
+        // refuses a sink before it reaches here, so a sink's `placement` is
+        // always `Detached` already — the assert below is the invariant, not
+        // a live branch.
+        let sounds_notes = instance.sounds_notes();
+        debug_assert!(
+            !(sounds_notes && placement == EffectPlacement::MasterChain),
+            "a note-sink built-in must never be registered onto the master chain"
+        );
+        let effect = if sounds_notes {
+            ActiveEffect::detached(id, instance)
+        } else {
+            ActiveEffect::with_placement(id, instance, placement)
+        }
+        .holding_midi_notes(notes);
         if self.effect_id_exists(id) {
             self.midi_rt_diagnostics.record_effect_id_collision(1);
             return Some(RetiredGraphObjects::effect(effect));
@@ -3381,6 +3674,31 @@ impl AudioScheduler {
         }
         self.push_effect(effect);
         None
+    }
+
+    /// Refuse an `AddEffect` naming a note-sink built-in: the master insert
+    /// chain runs effects only, because its dry-line pass
+    /// (`feed_dry_delay`/`run_dry_delay`) is the effect contract, and an
+    /// instrument body under it shifts the chain signal by its declared
+    /// latency on every bypass toggle instead of being summed in place. A
+    /// track chain's generator pass is where a body belongs.
+    ///
+    /// Counted rather than silently dropped: nothing may be dropped on the
+    /// callback (ADR 0020), so the whole effect — the carried instance and
+    /// the note store the command shipped — retires over the same channel
+    /// `add_builtin_effect`'s own refusals use.
+    fn refuse_master_chain_sink(
+        &mut self,
+        id: usize,
+        instance: PluginCore,
+        notes: Option<Box<MidiNoteStore>>,
+    ) -> RetiredGraphObjects {
+        self.midi_rt_diagnostics
+            .record_unsupported_effect_addition(1);
+        RetiredGraphObjects::effect(
+            ActiveEffect::with_placement(id, instance, EffectPlacement::MasterChain)
+                .holding_midi_notes(notes),
+        )
     }
 
     /// Record where an effect now runs, after a chain has accepted it — or
@@ -4292,6 +4610,12 @@ fn process_device(
                 effect.pending_midi.as_slice(),
                 midi_rt_diagnostics,
             );
+            effect.pending_midi.clear();
+        }
+        // On the same law as the Fermenter above: always processed, and its
+        // MIDI always cleared.
+        PluginCore::GrandBoule(body) => {
+            body.process(left, right, frames, effect.pending_midi.as_slice());
             effect.pending_midi.clear();
         }
         PluginCore::Native(plugin) => {
@@ -5610,6 +5934,121 @@ mod tests {
             .is_some());
     }
 
+    /// A built-in that sounds notes is refused onto the master chain: the
+    /// master insert chain runs effects only, and an instrument body under
+    /// its dry-line contract would shift the chain signal by its declared
+    /// latency on every bypass toggle instead of being summed in place. The
+    /// refusal is counted on `unsupported_effect_additions` and retires the
+    /// whole effect exactly as `add_builtin_effect`'s own refusals do (ADR
+    /// 0020). A plain effect like Knead still lands, so the last assertion
+    /// proves the refusal is the note-sink and not `AddEffect` itself.
+    #[test]
+    fn a_note_sink_built_in_is_refused_onto_the_master_chain() {
+        let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
+
+        command_tx
+            .push(GraphCommand::AddEffect(
+                7,
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(
+            !scheduler.effect_id_exists(7),
+            "a note-sink built-in must not land on the master chain"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            1
+        );
+        let retired = retired_rx
+            .pop()
+            .expect("the refused instrument must hand its carried instance off");
+        let retired_effect = retired
+            .effect
+            .as_ref()
+            .expect("the refusal retires an effect");
+        assert_eq!(
+            retired_effect.id, 7,
+            "the retired effect must be the one the refused command carried"
+        );
+        assert!(
+            retired_effect.midi_notes.is_some(),
+            "the note store must cross the retirement channel with its effect, not drop on the \
+             refusal callback"
+        );
+
+        command_tx
+            .push(GraphCommand::AddEffect(
+                9,
+                PluginCore::builtin(BuiltinEffectType::GrandBoule, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(
+            !scheduler.effect_id_exists(9),
+            "Grand Boule sounds notes too, and is refused the same way"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            2
+        );
+        retired_rx
+            .pop()
+            .expect("Grand Boule's refusal must also hand its carried instance off");
+
+        // A plain effect still lands: the refusal above is the note-sink,
+        // not `AddEffect` refusing every registration.
+        command_tx
+            .push(GraphCommand::AddEffect(8, knead_instance(), None))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(
+            scheduler.effect_id_exists(8),
+            "an effect that does not sound notes must still register"
+        );
+    }
+
+    /// `AddDetachedEffect` is not the master chain, so it still admits a
+    /// note-sink built-in — that is how a track's instrument reaches the
+    /// graph in the first place, spliced onto a track chain's generator pass
+    /// afterwards.
+    #[test]
+    fn a_note_sink_built_in_is_still_admitted_detached() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+
+        command_tx
+            .push(GraphCommand::AddDetachedEffect(
+                7,
+                PluginCore::builtin(BuiltinEffectType::Fermenter, 48_000.0),
+                Some(MidiNoteStore::new()),
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(
+            scheduler.effect_id_exists(7),
+            "a detached registration is not the master chain and must land"
+        );
+        assert_eq!(
+            scheduler
+                .midi_rt_diagnostics
+                .snapshot()
+                .unsupported_effect_additions,
+            0
+        );
+    }
+
     /// A full effect table refuses `AddHostedPlugin`. Without that guard the
     /// push reallocates the effect table on the callback, moving every live
     /// `ActiveEffect` with it.
@@ -6807,6 +7246,68 @@ mod tests {
                 &retired.timeline_object,
                 Some(RetiredTimelineObject::Delay(_))
             ));
+        }
+
+        /// A hosted Grand Boule sounds a note and renders without allocating.
+        ///
+        /// The body is built outside the guard, where its voice pool and its
+        /// two channel buffers are legitimately allocated (ADR 0020); inside
+        /// it, only the note delivery and the render runs may run, and neither
+        /// may touch the heap. The render reaches the instrument's whole voice
+        /// bank, its sympathetic strings, its soundboard and its noise
+        /// generators, so an allocation under any of them aborts here rather
+        /// than on a musician's callback.
+        ///
+        /// Both a note-on and a note-off run inside the guard, because the two
+        /// take different routes through the engine — a note-on allocates a
+        /// voice and arms the attack, a note-off applies damping and triggers
+        /// the damper-lift transient — and either could allocate without the
+        /// other doing so.
+        #[test]
+        fn a_grand_boule_note_on_and_render_allocate_nothing() {
+            const FRAMES: usize = 512;
+
+            let mut body = GrandBouleBody::new(48_000.0);
+            let mut sounding_left = vec![0.0_f32; FRAMES];
+            let mut sounding_right = vec![0.0_f32; FRAMES];
+            let mut released_left = vec![0.0_f32; FRAMES];
+            let mut released_right = vec![0.0_f32; FRAMES];
+            let note = MidiNoteEvent {
+                note: 60,
+                velocity: 100,
+                channel: 0,
+                is_note_on: true,
+                probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                project_probability_seed: 0,
+                clip_id_hash: 0,
+                event_id_hash: 0,
+                absolute_occurrence_index: 0,
+                frame_offset: 0,
+            };
+            let release = MidiNoteEvent {
+                is_note_on: false,
+                ..note
+            };
+
+            assert_no_alloc(|| {
+                body.process(
+                    &mut sounding_left,
+                    &mut sounding_right,
+                    FRAMES,
+                    std::slice::from_ref(&note),
+                );
+                body.process(
+                    &mut released_left,
+                    &mut released_right,
+                    FRAMES,
+                    std::slice::from_ref(&release),
+                );
+            });
+
+            assert!(
+                sounding_left.iter().any(|sample| *sample != 0.0),
+                "the instrument never sounded, so the guard covered a silent path"
+            );
         }
     }
 }
@@ -8970,6 +9471,60 @@ mod timeline_tests {
             .pop()
             .expect("the removed effect must be handed off for reclamation");
         assert!(retired.effect.is_some());
+    }
+
+    /// A note-sink built-in released from a track chain must run nowhere,
+    /// never land back on the master chain: `add_builtin_effect` homes it
+    /// detached (`ActiveEffect::detached`), so `release_effect` returns it to
+    /// that home instead of to `EffectPlacement::MasterChain` — the same
+    /// defect `AddEffect` already refuses when a sink registers directly, now
+    /// closed at the release path too. An effect body released the same way
+    /// still returns to the master chain, so the second half proves the
+    /// branch is the note-sink and not every release.
+    #[test]
+    fn a_released_note_sink_built_in_runs_nowhere_rather_than_on_the_master_chain() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        track_with_fermenter(&mut harness, 1, 7);
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+        });
+
+        let slot = harness
+            .scheduler
+            .effect_index
+            .lookup(7)
+            .expect("a released effect stays registered");
+        assert_eq!(
+            harness.scheduler.effects[slot].placement,
+            EffectPlacement::Detached,
+            "a released note-sink built-in must run nowhere, not on the master chain"
+        );
+        assert!(
+            !harness.scheduler.master_work.links[slot].member,
+            "the master insert chain must not walk a released instrument body"
+        );
+
+        // An ordinary effect body, released the same way, still returns home
+        // to the master chain.
+        harness.send(GraphCommand::AddDetachedEffect(8, knead_instance(), None));
+        harness.send(insert_track_device(1, effect(8), 0));
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 8,
+        });
+        let effect_slot = harness
+            .scheduler
+            .effect_index
+            .lookup(8)
+            .expect("a released effect stays registered");
+        assert_eq!(
+            harness.scheduler.effects[effect_slot].placement,
+            EffectPlacement::MasterChain,
+            "an effect body's release must be unaffected by the note-sink branch"
+        );
     }
 
     #[test]
@@ -13043,7 +13598,7 @@ mod timeline_tests {
     fn fermenter_strip_commands(
         track_id: usize,
         effect_id: usize,
-        patch: &[(FermenterParamName, f32)],
+        patch: &[(BuiltinParamName, f32)],
     ) -> Vec<GraphCommand> {
         vec![
             GraphCommand::AddTrack(TimelineTrack::new(track_id)),
@@ -13063,7 +13618,7 @@ mod timeline_tests {
         harness: &mut Harness,
         track_id: usize,
         effect_id: usize,
-        patch: &[(FermenterParamName, f32)],
+        patch: &[(BuiltinParamName, f32)],
     ) {
         for command in fermenter_strip_commands(track_id, effect_id, patch) {
             harness.send(command);
@@ -13071,14 +13626,14 @@ mod timeline_tests {
     }
 
     /// One of the instrument's own parameter names, as the mapper resolves it.
-    fn fermenter_name(name: &str) -> FermenterParamName {
-        FermenterParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
+    fn fermenter_name(name: &str) -> BuiltinParamName {
+        BuiltinParamName::parse(name).expect("the fixture spells a well-shaped parameter name")
     }
 
     /// The address a `SetParam` carries for one of the instrument's own
     /// parameters.
     fn fermenter_param(name: &str) -> DeviceParam {
-        DeviceParam::FermenterNamed(fermenter_name(name))
+        DeviceParam::BuiltinNamed(fermenter_name(name))
     }
 
     /// Render `callbacks` blocks of `frames` and return the master pair
@@ -13438,29 +13993,25 @@ mod timeline_tests {
         );
     }
 
-    /// A master-chain Fermenter renders no further than the pair it was
+    /// A track-chain Fermenter renders no further than the pair it was
     /// handed, whatever frame count the caller asks for.
     ///
     /// `process_block` is public, and its frame count is the caller's ask
     /// while the buffers are the truth — which is why it clamps the two
-    /// together at its head. Every stage the master chain runs indexes the
-    /// pair by the count it is given, so an ask past the buffers slices past
-    /// them and panics on the callback unless that clamped count is what
-    /// reaches all of them. The declared latency below puts the dry line's
-    /// own pass over the pair on that same path, ahead of the body.
+    /// together at its head. Every stage the chain runs indexes the pair by
+    /// the count it is given, so an ask past the buffers slices past them and
+    /// panics on the callback unless that clamped count is what reaches all
+    /// of them. The declared latency below puts the dry line's own pass over
+    /// the pair on that same path, ahead of the body.
     #[test]
-    fn a_master_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
+    fn a_track_chain_fermenter_renders_no_further_than_the_pair_it_was_handed() {
         /// Shorter than the ask and not a whole number of runs, so the second
         /// run is the one that would reach past the buffer.
         const BUFFER: usize = 192;
         const OVER_ASK: usize = 512;
 
         let mut harness = Harness::new(32);
-        harness.send(GraphCommand::AddEffect(
-            7,
-            PluginCore::builtin(BuiltinEffectType::Fermenter, FERMENTER_RATE),
-            Some(MidiNoteStore::new()),
-        ));
+        track_with_fermenter(&mut harness, 1, 7);
         harness.send(set_latency(7, 64));
         harness.playing();
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
@@ -13704,14 +14255,14 @@ mod timeline_tests {
 
     /// Render a Fermenter built with `patch`, sounding one note from the top
     /// of the render.
-    fn render_fermenter_patch(patch: &[(FermenterParamName, f32)]) -> Vec<f32> {
+    fn render_fermenter_patch(patch: &[(BuiltinParamName, f32)]) -> Vec<f32> {
         render_fermenter_patch_then_write(patch, None)
     }
 
     /// The same render, with `write` sent to the instance through the ordinary
     /// `SetParam` path after the patch and before anything is rendered.
     fn render_fermenter_patch_then_write(
-        patch: &[(FermenterParamName, f32)],
+        patch: &[(BuiltinParamName, f32)],
         write: Option<(DeviceParam, f32)>,
     ) -> Vec<f32> {
         let mut harness = Harness::new(32);
@@ -13827,6 +14378,445 @@ mod timeline_tests {
         assert_eq!(
             written_live, carried_by_the_patch,
             "the live write reached a different layer from the one the patch wrote to"
+        );
+    }
+
+    // ── Grand Boule ────────────────────────────────────────────────────────
+
+    /// The rate every Grand Boule spec here renders at, which is the rate
+    /// [`Harness::new`] builds its scheduler at. A reference instance built at
+    /// any other rate renders a different piano, and the parity spec below
+    /// would be comparing two instruments.
+    const GRAND_BOULE_RATE: f32 = 48_000.0;
+
+    /// The MIDI velocity [`note_on`] stamps, which is what the hosted body
+    /// divides by [`MIDI_VELOCITY_FULL_SCALE`] before the instrument sees it.
+    const GRAND_BOULE_VELOCITY: u8 = 100;
+
+    /// The velocity fraction the instrument is handed for a note the fixtures
+    /// stamp.
+    ///
+    /// The divisor is the MIDI 7-bit full-scale literal, spelled independently
+    /// of [`MIDI_VELOCITY_FULL_SCALE`] rather than reusing it: reusing the
+    /// production constant would make this oracle agree with the body by
+    /// construction and pass even if the body's own divisor drifted.
+    fn grand_boule_velocity() -> f32 {
+        f32::from(GRAND_BOULE_VELOCITY) / 127.0
+    }
+
+    /// Place a Grand Boule generator on a track, the way `commands/graph.rs`
+    /// places a built-in instrument: registered detached with its own note
+    /// store, then spliced at the head of the chain.
+    ///
+    /// The track holds no clip, so every non-zero sample the master carries
+    /// came out of the instrument.
+    fn track_with_grand_boule(harness: &mut Harness, track_id: usize, effect_id: usize) {
+        for command in [
+            GraphCommand::AddTrack(TimelineTrack::new(track_id)),
+            GraphCommand::AddDetachedEffect(
+                effect_id,
+                PluginCore::grand_boule_with_patch(GRAND_BOULE_RATE, &[]),
+                Some(MidiNoteStore::new()),
+            ),
+            insert_track_device(track_id, generator(effect_id), 0),
+        ] {
+            harness.send(command);
+        }
+    }
+
+    /// Render `runs` runs of a reference instance, calling `deliver` with the
+    /// run index before each one — the worklet's own driving of the
+    /// instrument, which hands it [`GRAND_BOULE_RUN_FRAMES`] at a time and
+    /// voices a framed message as soon as the block about to render holds its
+    /// frame.
+    fn render_grand_boule_reference(
+        runs: usize,
+        mut deliver: impl FnMut(usize, &mut GrandBouleInstance),
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut left = Vec::with_capacity(runs * GRAND_BOULE_RUN_FRAMES);
+        let mut right = Vec::with_capacity(runs * GRAND_BOULE_RUN_FRAMES);
+        for run in 0..runs {
+            deliver(run, &mut instance);
+            let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `GRAND_BOULE_RUN_FRAMES`
+            // frames into the instance's own pair of buffers, which are
+            // `GRAND_BOULE_BLOCK_FRAMES` long — never shorter, as the spec
+            // below pins — and are never resized.
+            unsafe {
+                left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+                right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+            }
+        }
+        (left, right)
+    }
+
+    /// The instance buffers exactly the frames the host's slices are bounded
+    /// by.
+    ///
+    /// [`GrandBouleBody::render_run`] reads `frames` samples out of the
+    /// pointers `process` returns, and that is sound because
+    /// `frames <= GRAND_BOULE_RUN_FRAMES <= GRAND_BOULE_BLOCK_FRAMES` while
+    /// the instance's buffers are exactly `GRAND_BOULE_BLOCK_FRAMES` long.
+    /// The middle link is a relation between two constants and is refused at
+    /// compile time beside `GRAND_BOULE_RUN_FRAMES`; the outer one is what
+    /// this reads, off a real instance, because only the instance can say how
+    /// long its buffers were actually built.
+    ///
+    /// Sizing the `daw-dsp` buffers at half `GRAND_BOULE_BLOCK_FRAMES` fails
+    /// the equality here instead of reading past an allocation at run time.
+    #[test]
+    fn a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts() {
+        let instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+
+        assert_eq!(
+            instance.block_frames(),
+            GRAND_BOULE_BLOCK_FRAMES,
+            "the instance's buffers are not the length the host's slices are bounded by"
+        );
+    }
+
+    /// The hosted body renders exactly what the worklet's own driving of
+    /// [`GrandBouleInstance`] renders for the same programme.
+    ///
+    /// The worklet hands the instance [`GRAND_BOULE_RUN_FRAMES`] at a time and
+    /// voices a note as soon as the block about to render holds its frame,
+    /// because the instrument takes no per-note sample offset. The scheduler
+    /// hands the body a longer callback, so the run split is the whole of what
+    /// makes the two agree.
+    ///
+    /// Two mutations red this: dividing the velocity by 100 rather than by
+    /// [`MIDI_VELOCITY_FULL_SCALE`] sounds the reference note at a different
+    /// dynamic, and delivering every event at the head of the callback rather
+    /// than at its own run moves the release off run nine.
+    #[test]
+    fn a_hosted_grand_boule_renders_the_worklet_samples_for_the_same_programme() {
+        const CALLBACK: usize = 256;
+        const CALLBACKS: usize = 8;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        /// The run the release is stamped inside, chosen off a callback
+        /// boundary so a body that only split at callbacks would miss it.
+        const RELEASE_RUN: usize = 9;
+        const RELEASE_FRAME: u64 = (RELEASE_RUN * GRAND_BOULE_RUN_FRAMES) as u64;
+
+        let mut harness = Harness::new(32);
+        track_with_grand_boule(&mut harness, 1, 7);
+        harness.playing();
+        harness.send(schedule_phrase(
+            7,
+            &[(0, NOTE, true), (RELEASE_FRAME, NOTE, false)],
+        ));
+        let (hosted_left, hosted_right) = render_master(&mut harness, CALLBACK, CALLBACKS);
+
+        let (worklet_left, worklet_right) =
+            render_grand_boule_reference(RENDERED / GRAND_BOULE_RUN_FRAMES, |run, instance| {
+                if run == 0 {
+                    instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+                }
+                if run == RELEASE_RUN {
+                    instance.note_off_on_channel(NOTE, 0);
+                }
+            });
+
+        assert!(
+            worklet_left[..RELEASE_FRAME as usize]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "the reference render is silent before the release, so an equality against it proves nothing"
+        );
+        assert_eq!(
+            hosted_left, worklet_left,
+            "the hosted body's left channel is not the signal the worklet renders"
+        );
+        assert_eq!(
+            hosted_right, worklet_right,
+            "the hosted body's right channel is not the signal the worklet renders"
+        );
+    }
+
+    /// A note sounds from the run that holds the frame it was stamped for, and
+    /// the runs ahead of it are silent.
+    ///
+    /// The instrument has no note API carrying a sample offset, so the run is
+    /// the whole of the timing resolution — and it is the resolution the web
+    /// runtime has too, which is why the note is expected at the head of its
+    /// run rather than on its own frame. A body that delivered every event at
+    /// the head of the callback would sound this note in the first run, where
+    /// the leading assertion reads silence.
+    #[test]
+    fn a_grand_boule_note_on_sounds_from_the_run_that_holds_its_frame() {
+        const CALLBACK: usize = 512;
+        const STAMPED_FRAME: u32 = 200;
+        /// The run holding frame 200, which is where the note is expected.
+        const SOUNDING_RUN: usize = 1;
+        const ONSET: usize = SOUNDING_RUN * GRAND_BOULE_RUN_FRAMES;
+
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut event = note_on(60);
+        event.velocity = GRAND_BOULE_VELOCITY;
+        event.frame_offset = STAMPED_FRAME;
+        let mut hosted_left = vec![0.0_f32; CALLBACK];
+        let mut hosted_right = vec![0.0_f32; CALLBACK];
+        body.process(
+            &mut hosted_left,
+            &mut hosted_right,
+            CALLBACK,
+            std::slice::from_ref(&event),
+        );
+
+        let (reference_left, reference_right) =
+            render_grand_boule_reference(CALLBACK / GRAND_BOULE_RUN_FRAMES, |run, instance| {
+                if run == SOUNDING_RUN {
+                    instance.note_on_with_channel(event.note, grand_boule_velocity(), 0);
+                }
+            });
+
+        assert!(
+            hosted_left[..ONSET].iter().all(|sample| *sample == 0.0),
+            "the body sounded before the run that holds the note's frame"
+        );
+        assert!(
+            reference_left[ONSET..].iter().any(|sample| *sample != 0.0),
+            "the reference is silent past the onset, so the equality below proves nothing"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal the worklet renders for this note"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal the worklet renders for this note"
+        );
+    }
+
+    /// A span the run size does not divide still renders its partial final
+    /// run, rather than stopping at the last whole one.
+    ///
+    /// [`GrandBouleBody::process`] computes
+    /// `run_end = rendered + (frames - rendered).min(GRAND_BOULE_RUN_FRAMES)`,
+    /// so 300 frames — two whole runs and a 44-frame remainder — walks a
+    /// third, shorter run rather than leaving `[256..300)` untouched. A body
+    /// whose outer loop instead required a full `GRAND_BOULE_RUN_FRAMES` to
+    /// start a run would render the first two runs identically and only go
+    /// silent on that tail, so the tail assertion below is what catches it —
+    /// without it, a silent tail would match a silent reference by accident.
+    #[test]
+    fn a_grand_boule_span_that_the_run_does_not_divide_renders_its_partial_tail() {
+        const FRAMES: usize = 300;
+        const NOTE: u8 = 60;
+        const STAMPED_FRAME: u32 = 200;
+        const TAIL_FRAMES: usize = FRAMES - 2 * GRAND_BOULE_RUN_FRAMES;
+
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+        let mut event = note_on(NOTE);
+        event.velocity = GRAND_BOULE_VELOCITY;
+        event.frame_offset = STAMPED_FRAME;
+        let mut hosted_left = vec![0.0_f32; FRAMES];
+        let mut hosted_right = vec![0.0_f32; FRAMES];
+        body.process(
+            &mut hosted_left,
+            &mut hosted_right,
+            FRAMES,
+            std::slice::from_ref(&event),
+        );
+
+        // The reference drives the instance the way the worklet would: two
+        // whole runs, with the stamped note (frame 200, inside the second
+        // run) delivered before that run renders, then the 44-frame tail.
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut reference_left = Vec::with_capacity(FRAMES);
+        let mut reference_right = Vec::with_capacity(FRAMES);
+        for (run, run_frames) in [GRAND_BOULE_RUN_FRAMES, GRAND_BOULE_RUN_FRAMES, TAIL_FRAMES]
+            .into_iter()
+            .enumerate()
+        {
+            if run == 1 {
+                instance.note_on_with_channel(NOTE, grand_boule_velocity(), 0);
+            }
+            let rendered_left = instance.process(run_frames as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: `process` has just rendered `run_frames` frames into the
+            // instance's own pair of buffers, which are
+            // `GRAND_BOULE_BLOCK_FRAMES` long — as
+            // `a_grand_boule_instance_buffers_exactly_the_frames_the_host_trusts`
+            // pins — and `run_frames` never exceeds that. Both pointers are
+            // read and copied here, before the instance is mutated again.
+            unsafe {
+                reference_left
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_left, run_frames));
+                reference_right
+                    .extend_from_slice(std::slice::from_raw_parts(rendered_right, run_frames));
+            }
+        }
+
+        assert!(
+            hosted_left[(2 * GRAND_BOULE_RUN_FRAMES)..]
+                .iter()
+                .any(|sample| sample.abs() > 0.0),
+            "the partial tail is silent, so a body that skipped it would match a silent \
+             reference by accident"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal the worklet renders across a partial \
+             final run"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal the worklet renders across a partial \
+             final run"
+        );
+    }
+
+    /// A note-off narrowed to one member channel on delivery releases only
+    /// that channel's voice, leaving a note held on another channel sounding.
+    ///
+    /// [`GrandBouleBody::deliver`] passes `channel.unwrap_or(0)` to
+    /// `note_on_with_channel`, so two notes stamped on different wire
+    /// channels must still sound as two separate voices rather than both
+    /// folding onto member channel 0 — a body that dropped the channel would
+    /// voice both notes on channel 0, so the channel-2 note-off would find no
+    /// channel-2 voice to narrow onto and release neither, leaving both
+    /// notes ringing where the reference render lets only one continue.
+    #[test]
+    fn a_grand_boule_note_off_on_a_channel_releases_only_that_channels_voice() {
+        const NOTE: u8 = 60;
+        const SPAN: usize = 4 * GRAND_BOULE_RUN_FRAMES;
+
+        let mut hosted_left = vec![0.0_f32; SPAN];
+        let mut hosted_right = vec![0.0_f32; SPAN];
+        let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+
+        let mut note_on_channel_1 = note_on(NOTE);
+        note_on_channel_1.velocity = GRAND_BOULE_VELOCITY;
+        note_on_channel_1.channel = 1;
+        let mut note_on_channel_2 = note_on(NOTE);
+        note_on_channel_2.velocity = GRAND_BOULE_VELOCITY;
+        note_on_channel_2.channel = 2;
+        body.process(
+            &mut hosted_left[..GRAND_BOULE_RUN_FRAMES],
+            &mut hosted_right[..GRAND_BOULE_RUN_FRAMES],
+            GRAND_BOULE_RUN_FRAMES,
+            &[note_on_channel_1, note_on_channel_2],
+        );
+
+        let mut note_off_channel_2 = note_on(NOTE);
+        note_off_channel_2.is_note_on = false;
+        note_off_channel_2.channel = 2;
+        body.process(
+            &mut hosted_left[GRAND_BOULE_RUN_FRAMES..],
+            &mut hosted_right[GRAND_BOULE_RUN_FRAMES..],
+            SPAN - GRAND_BOULE_RUN_FRAMES,
+            std::slice::from_ref(&note_off_channel_2),
+        );
+
+        let mut instance = GrandBouleInstance::new(GRAND_BOULE_RATE, GRAND_BOULE_MAX_VOICES);
+        let mut reference_left = Vec::with_capacity(SPAN);
+        let mut reference_right = Vec::with_capacity(SPAN);
+        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 1);
+        instance.note_on_with_channel(NOTE, grand_boule_velocity(), 2);
+        for run in 0..4 {
+            if run == 1 {
+                instance.note_off_on_channel(NOTE, 2);
+            }
+            let rendered_left = instance.process(GRAND_BOULE_RUN_FRAMES as u32);
+            let rendered_right = instance.get_right_ptr();
+            // SAFETY: as in the partial-tail spec above — the pointers name
+            // this run's fixed-length render into the instance's own
+            // buffers, copied before the instance is mutated again.
+            unsafe {
+                reference_left.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_left,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+                reference_right.extend_from_slice(std::slice::from_raw_parts(
+                    rendered_right,
+                    GRAND_BOULE_RUN_FRAMES,
+                ));
+            }
+        }
+
+        assert!(
+            reference_left[..GRAND_BOULE_RUN_FRAMES]
+                .iter()
+                .any(|sample| *sample != 0.0),
+            "both notes must be audible before the channel-2 release, or the comparison below \
+             is against silence"
+        );
+        assert_eq!(
+            hosted_left, reference_left,
+            "the hosted left channel is not the signal a channel-narrowed release produces"
+        );
+        assert_eq!(
+            hosted_right, reference_right,
+            "the hosted right channel is not the signal a channel-narrowed release produces"
+        );
+    }
+
+    /// A note-off carrying no addressable channel releases every voice at its
+    /// pitch, and one carrying a channel releases only that channel's.
+    ///
+    /// Two keys at one pitch on two member channels is what an MPE part
+    /// produces, and the instrument keeps them as separate voices. The two
+    /// renders here differ only in whether the second channel's voice is
+    /// released as well, so a body that dropped the note-off altogether — or
+    /// narrowed the channel-less one to a single member — leaves them the same
+    /// signal.
+    #[test]
+    fn a_grand_boule_note_off_without_a_channel_releases_every_voice_at_the_pitch() {
+        const CALLBACK: usize = 512;
+        const CALLBACKS: usize = 16;
+        const RENDERED: usize = CALLBACK * CALLBACKS;
+        const NOTE: u8 = 60;
+        const RELEASE_FRAME: u32 = 1_024;
+        /// Far enough past the release that the damper-lift transient a
+        /// channel-less note-off triggers has died away, so what the window
+        /// reads is the strings still ringing rather than the thud.
+        const TAIL: usize = 3_072;
+        /// The channel MIDI has no address for: `member_channel` narrows it to
+        /// `None`, which is the route under test.
+        const UNADDRESSABLE_CHANNEL: i16 = -1;
+
+        fn render_releasing(release_channel: i16) -> Vec<f32> {
+            let mut body = GrandBouleBody::new(GRAND_BOULE_RATE);
+            let mut left = vec![0.0_f32; RENDERED];
+            let mut right = vec![0.0_f32; RENDERED];
+
+            let mut held = [note_on(NOTE), note_on(NOTE)];
+            held[0].channel = 1;
+            held[1].channel = 2;
+            let mut release = note_on(NOTE);
+            release.is_note_on = false;
+            release.channel = release_channel;
+            release.frame_offset = RELEASE_FRAME;
+
+            let mut events = held.to_vec();
+            events.push(release);
+            body.process(&mut left, &mut right, RENDERED, &events);
+            left
+        }
+
+        let one_released = render_releasing(1);
+        let both_released = render_releasing(UNADDRESSABLE_CHANNEL);
+
+        assert!(
+            rms(&one_released[TAIL..]) > 0.0,
+            "releasing one channel silenced everything, so the comparison proves nothing"
+        );
+        assert!(
+            rms(&both_released[TAIL..]) < rms(&one_released[TAIL..]),
+            "the channel-less release ({}) left as much sound as the one narrowed to a \
+             single channel ({}), so it reached at most one of the two voices",
+            rms(&both_released[TAIL..]),
+            rms(&one_released[TAIL..])
         );
     }
 }

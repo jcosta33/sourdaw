@@ -94,6 +94,7 @@ export { hydrateClipGainEnvelopes } from './clipGainEnvelope/hydrateClipGainEnve
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
+export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedByUndoHistory';
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────
 
